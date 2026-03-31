@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/api/assets/logoblissgh.png" alt="Bliss Finance" width="700" />
+  <img src="apps/api/assets/logoblissgh.png" alt="Bliss Finance" width="400" />
 </p>
 <p align="center">
   <strong>The open-source financial control panel for global professionals.</strong><br>
