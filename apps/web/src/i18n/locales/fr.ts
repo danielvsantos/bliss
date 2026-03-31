@@ -650,7 +650,7 @@ const fr = {
     info: "Information",
     notification: "Notification",
     alert: "Alerte",
-    dialog: "Boîte de dialogue",
+    dialogElement: "Boîte de dialogue",
     modal: "Modal",
     modalDialog: "Boîte de dialogue",
     drawer: "Tiroir",

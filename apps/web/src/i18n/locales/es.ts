@@ -645,7 +645,7 @@ const es = {
     info: "Información",
     notification: "Notificación",
     alert: "Alerta",
-    dialog: "Diálogo",
+    dialogElement: "Diálogo",
     modal: "Modal",
     drawer: "Panel lateral",
     toast: "Notificación toast",
