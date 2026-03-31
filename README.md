@@ -1,17 +1,18 @@
 <p align="center">
-  <img src="docs/assets/bliss-logo.png" alt="Bliss Finance" width="120" />
+  <img src="apps/api/assets/logobliss.png" alt="Bliss Finance" width="120" />
 </p>
 
 <h1 align="center">Bliss Finance</h1>
 
 <p align="center">
-  <strong>The open-source financial dashboard for global professionals.</strong><br>
+  <strong>The open-source financial control panel for global professionals.</strong><br>
   Multi-currency wealth tracking, AI-powered transaction classification, and portfolio management — unified in one calm, powerful interface.
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#features">Features</a> &bull;
+  <a href="#develop-with-claude-code">Claude Code</a> &bull;
   <a href="docs/getting-started.md">Docs</a> &bull;
   <a href="docs/architecture.md">Architecture</a> &bull;
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -21,6 +22,7 @@
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" />
   <img src="https://img.shields.io/badge/tests-588%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Claude%20Code-ready-6D657A?logo=anthropic&logoColor=white" alt="Claude Code Ready" />
 </p>
 
 ---
@@ -173,6 +175,26 @@ pnpm dev                    # starts all three services in parallel
 - Backend: http://localhost:3001
 
 See [docs/getting-started.md](docs/getting-started.md) for detailed setup instructions.
+
+### Develop with Claude Code
+
+Bliss ships with carefully crafted [`CLAUDE.md`](CLAUDE.md) files that give AI assistants full context on the architecture, conventions, and subsystems. If you use [Claude Code](https://claude.ai/code), just open the repo and start working -- it already knows the codebase.
+
+```bash
+cd bliss
+claude   # Claude Code automatically loads the project context
+```
+
+The project includes four `CLAUDE.md` files that layer context by scope:
+
+| File | Scope |
+|------|-------|
+| [`CLAUDE.md`](CLAUDE.md) | System architecture, critical rules (module systems, design tokens), all subsystems |
+| [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md) | Route handler patterns, auth flow, Prisma extensions, event dispatch |
+| [`apps/backend/CLAUDE.md`](apps/backend/CLAUDE.md) | Worker patterns, event routing, services, classification config |
+| [`apps/web/CLAUDE.md`](apps/web/CLAUDE.md) | Design tokens, component conventions, hooks reference, chart colors |
+
+Claude Code loads the root file everywhere, plus the app-specific file when you're working in that directory. This means it knows to use `require()` in the backend, `import` in the API, and never to use `green-500` in the frontend -- without you having to explain it.
 
 ---
 
