@@ -33,6 +33,12 @@ Most financial tools force you to choose: basic budgeting apps that can't handle
 
 ---
 
+## Built with Spec-Driven Development
+
+Bliss was built using a strict Spec-Driven Development framework. Every feature, from the Plaid sync engine to the AI classification waterfall, was documented in detailed technical specifications before a single line of code was written. This approach ensures a decoupled architecture, predictable state management, and a codebase that is easy to reason about and extend.
+
+---
+
 ## Features
 
 ### AI-Powered Transaction Classification
@@ -128,6 +134,12 @@ See [docs/architecture.md](docs/architecture.md) for the full deep dive.
 
 ---
 
+## Security & Privacy
+
+All sensitive API keys and Plaid access tokens are encrypted at rest using AES-256-GCM. Because Bliss is self-hosted, your transaction data never leaves your infrastructure.
+
+---
+
 ## Quick Start
 
 ### With Docker (recommended)
@@ -169,7 +181,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup instru
 | Service | Tech | Port | Role |
 |---------|------|------|------|
 | **web** | React + Vite + shadcn/ui | 8080 | SPA frontend served by nginx (Docker) or Vite dev server |
-| **api** | Next.js (Pages Router) | 3000 | Auth, REST API, Prisma ORM, file uploads |
+| **api** | Next.js | 3000 | Auth, REST API, Prisma ORM, file uploads |
 | **backend** | Express + BullMQ | 3001 | 10 async workers: AI classification, portfolio valuation, Plaid sync, analytics |
 | **postgres** | PostgreSQL 16 + pgvector | 5432 | Primary datastore with vector similarity search |
 | **redis** | Redis 7 | 6379 | Job queues (BullMQ) and caching |
@@ -196,7 +208,7 @@ Without these keys, Bliss still provides full manual transaction management, CSV
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, TypeScript, Vite, TanStack Query, Recharts, shadcn/ui, Tailwind CSS, Framer Motion |
-| API | Next.js (Pages Router), NextAuth.js, Prisma ORM |
+| API | Next.js, NextAuth.js, Prisma ORM |
 | Backend | Express, BullMQ, Google Generative AI SDK |
 | Database | PostgreSQL 16 with pgvector extension |
 | Queue | Redis 7 via BullMQ |

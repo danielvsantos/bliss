@@ -1,0 +1,247 @@
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Bliss Design Tokens ───────────────────────────── */
+    --font-size: 16px;
+    --font-family-base: 'Urbanist', sans-serif;
+
+    /* Canvas */
+    --background: 0 0% 98%;
+    /* #FAFAFA */
+    --foreground: 260 25% 12%;
+    /* #1A1625 */
+
+    /* Brand */
+    --brand-primary: 263 9% 43%;
+    /* #6D657A */
+    --brand-deep: 263 11% 23%;
+    /* #3A3542 */
+
+    /* Accents */
+    --positive: 147 50% 36%;
+    /* #2E8B57 */
+    --negative: 359 58% 75%;
+    /* #E5989B */
+    --warning: 36 77% 50%;
+    /* #E09F12 — warm amber for caution/attention states */
+
+    /* Borders */
+    --border-color: 214 31% 91%;
+    /* #E2E8F0 */
+
+    /* Muted text */
+    --muted-fg: 260 6% 61%;
+    /* #9A95A4 */
+
+    /* Card / Glass */
+    --card: 0 0% 100%;
+    --card-foreground: 260 25% 12%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 25% 12%;
+
+    /* Buttons */
+    --primary: 263 11% 23%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 100%;
+    --secondary-foreground: 263 11% 23%;
+
+    /* Misc */
+    --muted: 265 24% 95%;
+    /* #F1EEF5 */
+    --muted-foreground: 260 6% 61%;
+    --accent: 264 26% 93%;
+    /* #EDE9F3 */
+    --accent-foreground: 263 11% 23%;
+    --destructive: 359 58% 75%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 31% 91%;
+    --input: 214 31% 91%;
+    /* same as --border-color – gives visible borders on form fields */
+    --input-background: 264 22% 96%;
+    --switch-background: 264 12% 82%;
+    --ring: 263 9% 43%;
+    --ring-offset: 0 0% 98%;
+
+    /* Charts */
+    --chart-1: 263 9% 43%;
+    --chart-2: 147 50% 36%;
+    --chart-3: 359 58% 75%;
+    --chart-4: 256 12% 64%;
+    --chart-5: 263 11% 23%;
+
+    /* Data-viz extended palette (8 hues for portfolio/chart groups) */
+    --dataviz-1: 263 9% 43%;     /* brand-primary #6D657A */
+    --dataviz-2: 147 50% 36%;    /* positive #2E8B57 */
+    --dataviz-3: 36 77% 50%;     /* warning #E09F12 */
+    --dataviz-4: 263 11% 23%;    /* brand-deep #3A3542 */
+    --dataviz-5: 180 35% 35%;    /* teal #3A8A8F */
+    --dataviz-6: 265 30% 72%;    /* light purple #B8AEC8 */
+    --dataviz-7: 260 12% 52%;    /* mid purple #7E7590 */
+    --dataviz-8: 260 6% 61%;     /* muted #9A95A4 */
+
+    --radius: 0.75rem;
+
+    /* Sidebar */
+    --sidebar-background: 264 22% 96%;
+    --sidebar-foreground: 263 11% 23%;
+    --sidebar-primary: 263 11% 23%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 264 26% 93%;
+    --sidebar-accent-foreground: 263 11% 23%;
+    --sidebar-border: 214 31% 91%;
+    --sidebar-ring: 263 9% 43%;
+  }
+
+  .dark {
+    --background: 260 25% 12%;
+    --foreground: 262 25% 95%;
+
+    --card: 257 18% 17%;
+    --card-foreground: 262 25% 95%;
+
+    --popover: 257 18% 17%;
+    --popover-foreground: 262 25% 95%;
+
+    --primary: 262 25% 95%;
+    --primary-foreground: 263 11% 23%;
+
+    --secondary: 257 18% 17%;
+    --secondary-foreground: 262 25% 95%;
+
+    --muted: 255 23% 20%;
+    --muted-foreground: 258 8% 50%;
+
+    --accent: 255 23% 20%;
+    --accent-foreground: 262 25% 95%;
+
+    --destructive: 359 58% 75%;
+    --destructive-foreground: 260 25% 12%;
+
+    --border: 255 23% 20%;
+    --input: 255 23% 20%;
+    --ring: 260 6% 61%;
+    --ring-offset: 260 25% 12%;
+
+    --sidebar-background: 257 18% 17%;
+    --sidebar-foreground: 262 25% 95%;
+    --sidebar-primary: 262 25% 95%;
+    --sidebar-primary-foreground: 263 11% 23%;
+    --sidebar-accent: 255 23% 20%;
+    --sidebar-accent-foreground: 262 25% 95%;
+    --sidebar-border: 255 23% 20%;
+    --sidebar-ring: 260 6% 61%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: var(--font-size);
+    font-family: var(--font-family-base);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-family-base);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0em;
+  }
+
+  h3 {
+    font-size: 1.125rem;
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+  }
+
+  h4 {
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+  }
+
+  p {
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+
+  label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  button {
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.5;
+    letter-spacing: 0.015em;
+    font-family: var(--font-family-base);
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.5;
+    font-family: var(--font-family-base);
+  }
+}
+
+/* ── Liquid Glass Card ──────────────────────────────── */
+/* Applied globally to all Card components via data-slot */
+[data-slot="card"] {
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow:
+    0 1px 2px rgba(58, 53, 66, 0.04),
+    0 4px 12px rgba(58, 53, 66, 0.06),
+    0 16px 40px rgba(58, 53, 66, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.dark [data-slot="card"] {
+  background: rgba(42, 37, 54, 0.68);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 16px 40px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ── Focus Ring Utility ─────────────────────────────── */
+.bliss-focus-ring:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px hsl(var(--ring-offset)),
+    0 0 0 4px hsl(var(--ring));
+}

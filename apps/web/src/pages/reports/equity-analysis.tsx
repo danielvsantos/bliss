@@ -1,0 +1,395 @@
+import { useState, useMemo } from 'react';
+import { ArrowLeft, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from 'recharts';
+import { motion } from 'framer-motion';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+
+import { useEquityAnalysis } from '@/hooks/use-equity-analysis';
+import { formatCurrency, formatPercentage } from '@/lib/utils';
+import type { EquityHolding } from '@/types/equity-analysis';
+
+/* ── Dataviz palette (design tokens) ── */
+const CHART_COLORS = ['#6D657A', '#2E8B57', '#E09F12', '#3A3542', '#3A8A8F', '#B8AEC8', '#7E7590', '#9A95A4'];
+
+const fadeUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.4 },
+};
+
+const GROUPING_OPTIONS = [
+  { key: 'sector', label: 'Sector' },
+  { key: 'industry', label: 'Industry' },
+  { key: 'country', label: 'Country' },
+] as const;
+
+type SortField = 'symbol' | 'name' | 'currentValue' | 'weight' | 'peRatio' | 'dividendYield' | 'trailingEps' | 'week52High' | 'week52Low';
+
+function SortChevron({ dir }: { dir: 'asc' | 'desc' | null }) {
+  if (!dir) return <span className="ml-1 w-3" />;
+  return dir === 'asc'
+    ? <ChevronUp className="ml-1 inline h-3 w-3" />
+    : <ChevronDown className="ml-1 inline h-3 w-3" />;
+}
+
+/* ── Custom Pie label ── */
+const RADIAN = Math.PI / 180;
+function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) {
+  if (percent < 0.04) return null;
+  const radius = innerRadius + (outerRadius - innerRadius) * 1.3;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="var(--brand-deep)" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs">
+      {name} ({(percent * 100).toFixed(1)}%)
+    </text>
+  );
+}
+
+/* ── Custom Tooltip ── */
+function ChartTooltip({ active, payload, currency }: any) {
+  if (!active || !payload?.length) return null;
+  const { name, value, weight } = payload[0].payload;
+  return (
+    <div className="rounded-lg border bg-white px-3 py-2 shadow-sm text-sm">
+      <p className="font-medium text-brand-deep">{name}</p>
+      <p className="text-muted-foreground">{formatCurrency(value, currency)} ({formatPercentage(weight * 100)})</p>
+    </div>
+  );
+}
+
+export default function EquityAnalysisPage() {
+  const [groupBy, setGroupBy] = useState<string>('sector');
+  const [sortField, setSortField] = useState<SortField>('currentValue');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const { data, isLoading, error } = useEquityAnalysis(groupBy);
+
+  const portfolioCurrency = data?.portfolioCurrency ?? 'USD';
+  const summary = data?.summary;
+  const groups = data?.groups ?? [];
+
+  // Flatten all holdings for the table
+  const allHoldings = useMemo(() => {
+    return groups.flatMap((g) => g.holdings);
+  }, [groups]);
+
+  // Sorted holdings
+  const sortedHoldings = useMemo(() => {
+    return [...allHoldings].sort((a, b) => {
+      const aVal = a[sortField] ?? -Infinity;
+      const bVal = b[sortField] ?? -Infinity;
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sortOrder === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    });
+  }, [allHoldings, sortField, sortOrder]);
+
+  // Donut chart data
+  const donutData = useMemo(() => {
+    return groups.map((g) => ({
+      name: g.name,
+      value: g.totalValue,
+      weight: g.weight,
+    }));
+  }, [groups]);
+
+  // Top 10 bar chart data
+  const topHoldings = useMemo(() => {
+    return [...allHoldings]
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 10)
+      .map((h) => ({
+        symbol: h.symbol,
+        name: h.name,
+        weight: h.weight * 100,
+        value: h.currentValue,
+      }));
+  }, [allHoldings]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+  };
+
+  const SortableHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+    <th
+      className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-brand-deep whitespace-nowrap"
+      onClick={() => handleSort(field)}
+    >
+      {children}
+      <SortChevron dir={sortField === field ? sortOrder : null} />
+    </th>
+  );
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <p className="text-destructive">Failed to load equity analysis data.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-12">
+      {/* ── Header ── */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-3">
+          <Link to="/reports/portfolio">
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-brand-primary" />
+            <h1 className="text-lg font-semibold text-brand-deep">Equity Analysis</h1>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 space-y-6">
+        {/* ── Summary Cards ── */}
+        <motion.div {...fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Equity Value</p>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 mt-1" />
+              ) : (
+                <p className="text-xl font-bold text-brand-deep mt-1">
+                  {formatCurrency(summary?.totalEquityValue ?? 0, portfolioCurrency)}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Holdings</p>
+              {isLoading ? (
+                <Skeleton className="h-7 w-16 mt-1" />
+              ) : (
+                <p className="text-xl font-bold text-brand-deep mt-1">{summary?.holdingsCount ?? 0}</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg P/E Ratio</p>
+              {isLoading ? (
+                <Skeleton className="h-7 w-16 mt-1" />
+              ) : (
+                <p className="text-xl font-bold text-brand-deep mt-1">
+                  {summary?.weightedPeRatio != null ? summary.weightedPeRatio.toFixed(1) : '—'}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg Dividend Yield</p>
+              {isLoading ? (
+                <Skeleton className="h-7 w-16 mt-1" />
+              ) : (
+                <p className="text-xl font-bold text-brand-deep mt-1">
+                  {summary?.weightedDividendYield != null
+                    ? `${(summary.weightedDividendYield * 100).toFixed(2)}%`
+                    : '—'}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* ── Grouping selector ── */}
+        <motion.div {...fadeUp} transition={{ duration: 0.4, delay: 0.05 }}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Group by:</span>
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+              {GROUPING_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setGroupBy(opt.key)}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    groupBy === opt.key
+                      ? 'bg-primary text-white font-medium'
+                      : 'text-muted-foreground hover:text-brand-deep'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+
+        {/* ── Charts Row ── */}
+        <motion.div {...fadeUp} transition={{ duration: 0.4, delay: 0.1 }} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Donut Chart */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Allocation by {GROUPING_OPTIONS.find((o) => o.key === groupBy)?.label}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-[280px] w-full rounded" />
+              ) : donutData.length === 0 ? (
+                <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
+                  No stock holdings found
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={donutData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      dataKey="value"
+                      label={renderCustomLabel}
+                      labelLine={false}
+                    >
+                      {donutData.map((_, idx) => (
+                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip currency={portfolioCurrency} />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Holdings Bar Chart */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Top 10 Holdings by Weight</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-[280px] w-full rounded" />
+              ) : topHoldings.length === 0 ? (
+                <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
+                  No stock holdings found
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={topHoldings} layout="vertical" margin={{ left: 50, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                    <YAxis type="category" dataKey="symbol" width={50} tick={{ fontSize: 12 }} />
+                    <Tooltip
+                      formatter={(value: number) => [`${value.toFixed(1)}%`, 'Weight']}
+                      labelFormatter={(label) => {
+                        const h = topHoldings.find((t) => t.symbol === label);
+                        return h ? `${h.name} (${h.symbol})` : label;
+                      }}
+                    />
+                    <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
+                      {topHoldings.map((_, idx) => (
+                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* ── Holdings Table ── */}
+        <motion.div {...fadeUp} transition={{ duration: 0.4, delay: 0.15 }}>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">All Stock Holdings</CardTitle>
+            </CardHeader>
+            <CardContent className="px-0">
+              {isLoading ? (
+                <div className="px-4 space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : sortedHoldings.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8 text-sm">
+                  No stock holdings found. Add stocks to your portfolio to see equity analysis.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <SortableHeader field="symbol">Symbol</SortableHeader>
+                        <SortableHeader field="name">Name</SortableHeader>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Sector
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Industry
+                        </th>
+                        <SortableHeader field="peRatio">P/E</SortableHeader>
+                        <SortableHeader field="dividendYield">Div Yield</SortableHeader>
+                        <SortableHeader field="trailingEps">EPS</SortableHeader>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                          52W Range
+                        </th>
+                        <SortableHeader field="weight">Weight</SortableHeader>
+                        <SortableHeader field="currentValue">Value</SortableHeader>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedHoldings.map((h: EquityHolding) => (
+                        <tr key={h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
+                          <td className="px-3 py-2.5 font-medium text-brand-deep">{h.symbol}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground max-w-[160px] truncate">{h.name}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground text-xs">{h.sector}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">{h.industry}</td>
+                          <td className="px-3 py-2.5 tabular-nums">
+                            {h.peRatio != null ? h.peRatio.toFixed(1) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums">
+                            {h.dividendYield != null ? `${(h.dividendYield * 100).toFixed(2)}%` : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums">
+                            <span className={h.trailingEps != null && h.trailingEps > 0 ? 'text-positive' : h.trailingEps != null && h.trailingEps < 0 ? 'text-negative' : ''}>
+                              {h.trailingEps != null ? h.trailingEps.toFixed(2) : '—'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                            {h.week52Low != null && h.week52High != null
+                              ? `${formatCurrency(h.week52Low, portfolioCurrency, undefined, { maximumFractionDigits: 0 })} – ${formatCurrency(h.week52High, portfolioCurrency, undefined, { maximumFractionDigits: 0 })}`
+                              : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums font-medium">
+                            {formatPercentage(h.weight * 100)}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums font-medium text-brand-deep">
+                            {formatCurrency(h.currentValue, portfolioCurrency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
