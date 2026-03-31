@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate --schema=../../prisma/schema.prisma --no-engine && next build",
+    "build": "pnpm --filter @bliss/shared build && prisma generate --no-engine --schema=../../prisma/schema.prisma && next build",
     "start": "next start",
     "lint": "next lint",
     "knip": "knip",

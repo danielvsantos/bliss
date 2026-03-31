@@ -202,3 +202,86 @@ jobs:
 
       - name: Run backend integration tests
         run: pnpm --filter @bliss/backend test:integration
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Web: Unit Tests (Vitest + jsdom + MSW, no infrastructure needed)
+  # ─────────────────────────────────────────────────────────────────────────────
+  web-unit:
+    name: Web — Unit Tests
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'apps/web/') ||
+      contains(github.event.pull_request.changed_files, 'packages/shared/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @bliss/shared build
+
+      - name: Run web unit tests
+        run: pnpm --filter @bliss/web test
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Docker: Build & Smoke Test
+  # Ensures the Docker Compose stack builds and starts correctly so that
+  # self-hosters always have a working local setup as the app evolves.
+  # ─────────────────────────────────────────────────────────────────────────────
+  docker-smoke:
+    name: Docker — Build & Health Check
+    runs-on: ubuntu-latest
+    # Run on every push to main; on PRs only when Docker/infra files change
+    if: |
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'docker/') ||
+      contains(github.event.pull_request.changed_files, 'docker-compose') ||
+      contains(github.event.pull_request.changed_files, 'prisma/') ||
+      contains(github.event.pull_request.changed_files, 'package.json') ||
+      contains(github.event.pull_request.changed_files, 'pnpm-lock.yaml')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from example
+        run: |
+          cp .env.example .env
+          # Inject generated secrets so the stack can actually start
+          sed -i "s|ENCRYPTION_SECRET=.*|ENCRYPTION_SECRET=ci-test-secret-exactly-32-bytes!|" .env
+          sed -i "s|JWT_SECRET_CURRENT=.*|JWT_SECRET_CURRENT=ci-test-jwt-secret-32-chars-long!|" .env
+          sed -i "s|INTERNAL_API_KEY=.*|INTERNAL_API_KEY=ci-test-internal-api-key|" .env
+          sed -i "s|NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET=ci-test-nextauth-secret-value|" .env
+
+      - name: Build Docker stack
+        run: docker compose build
+        timeout-minutes: 15
+
+      - name: Boot Docker stack
+        run: docker compose up -d
+        timeout-minutes: 5
+
+      - name: Wait for services to be healthy
+        run: |
+          # Check API is accepting TCP connections on port 3000 (no HTTP route needed)
+          echo "Waiting for API (port 3000)..."
+          timeout 60 bash -c 'until nc -z localhost 3000; do sleep 2; done'
+          # Backend already has a /health route with rate limiting
+          echo "Waiting for Backend..."
+          timeout 60 bash -c 'until curl -sf http://localhost:3001/health; do sleep 2; done'
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
