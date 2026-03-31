@@ -1,104 +1,187 @@
-# Bliss Frontend — Claude Code Instructions
+# Bliss Frontend (React + Vite)
 
-## Design System — MANDATORY
+This is the single-page application that users interact with. Built with React 18, Vite, shadcn/ui, Tailwind CSS, and TanStack Query.
 
-All frontend components MUST use the Bliss design token system. **Never use raw Tailwind color utilities** (e.g., `green-500`, `amber-100`, `blue-700`, `red-600`) for semantic colors. Use the design tokens defined in `src/index.css` and mapped in `tailwind.config.ts` instead.
+## Module system: ESM
 
-### Available Semantic Color Tokens
+All files use `import` / `export`. Never use `require()` in this app.
 
-| Token | CSS Variable | Tailwind Class | Hex (Light) | Use For |
-|-------|-------------|----------------|-------------|---------|
-| **positive** | `--positive` | `text-positive`, `bg-positive`, `bg-positive/10` | #2E8B57 | Success, healthy, synced, approved |
-| **negative** | `--negative` | `text-negative`, `bg-negative`, `bg-negative/10` | #E5989B | Negative amounts, losses |
-| **warning** | `--warning` | `text-warning`, `bg-warning`, `bg-warning/10` | #E09F12 | Caution, attention required, pending |
-| **destructive** | `--destructive` | `text-destructive`, `bg-destructive` | #E5989B | Errors, delete actions, critical |
-| **brand-primary** | `--brand-primary` | `text-brand-primary`, `bg-brand-primary/10` | #6D657A | Brand accents, info badges |
-| **brand-deep** | `--brand-deep` | `text-brand-deep`, `bg-brand-deep` | #3A3542 | Primary text, deep accents |
-| **muted** | `--muted` | `text-muted-foreground`, `bg-muted` | #F1EEF5 | Disabled, inactive, manual |
-| **primary** | `--primary` | `text-primary`, `bg-primary` | #3A3542 | Buttons, selected states |
-| **accent** | `--accent` | `text-accent-foreground`, `bg-accent` | #EDE9F3 | Hover, subtle highlights |
+## Directory structure
 
-### Badge Pattern
+```
+apps/web/src/
+  pages/                # Route pages
+    auth/               # Sign-in, sign-up
+    reports/            # Financial reports (sub-pages)
+    settings/           # User and tenant settings
+    bliss-agents/       # AI-powered features
+    dashboard.tsx       # Main dashboard
+    accounts.tsx        # Account management
+    transactions.tsx    # Transaction list
+    smart-import.tsx    # CSV/XLSX import flow
+    transaction-review.tsx  # Plaid transaction review
+    insights.tsx        # AI insights
+    manual-updates.tsx  # Manual asset value updates
+    currency-rates.tsx  # Exchange rates
+    Categories.tsx      # Category management
+    onboarding.tsx      # First-time setup
+  components/
+    ui/                 # shadcn/ui primitives (55 components -- do not modify directly)
+    layout/             # App shell, sidebar, navigation
+    dashboard/          # Dashboard widgets
+    accounts/           # Account-related components
+    charts/             # Recharts-based chart components
+    metrics/            # Financial metric displays
+    insights/           # Insight cards
+    review/             # Transaction review components
+    entities/           # Shared entity components
+    settings/           # Settings panels
+    onboarding/         # Onboarding flow components
+  hooks/                # 40+ custom React hooks (use-*.ts)
+  contexts/             # AuthContext (single context provider)
+  lib/                  # Utility modules
+    portfolio-utils.ts  # parseDecimal, getGroupColor, buildGroupColorMap, getGroupIcon
+  types/                # TypeScript type definitions
+  i18n/                 # Internationalization (i18next, multiple locales)
+```
+
+## Design system -- MANDATORY
+
+All semantic colors must use design tokens from `src/index.css`. **Never use raw Tailwind color utilities** (e.g., `green-500`, `red-600`, `amber-100`, `blue-700`) in JSX.
+
+### Semantic color tokens
+
+| Token | Hex | Tailwind classes | Use for |
+|-------|-----|------------------|---------|
+| `positive` | #2E8B57 | `text-positive`, `bg-positive`, `bg-positive/10` | Success, gains, synced, healthy |
+| `negative` | #E5989B | `text-negative`, `bg-negative`, `bg-negative/10` | Losses, negative amounts |
+| `warning` | #E09F12 | `text-warning`, `bg-warning`, `bg-warning/10` | Caution, pending, attention |
+| `destructive` | #E5989B | `text-destructive`, `bg-destructive` | Errors, delete actions |
+| `brand-primary` | #6D657A | `text-brand-primary`, `bg-brand-primary/10` | Brand accents, info badges |
+| `brand-deep` | #3A3542 | `text-brand-deep`, `bg-brand-deep` | Primary text, deep accents |
+| `muted` | #F1EEF5 | `text-muted-foreground`, `bg-muted` | Disabled, inactive, manual |
+| `primary` | #3A3542 | `text-primary`, `bg-primary` | Buttons, selected states |
+| `accent` | #EDE9F3 | `text-accent-foreground`, `bg-accent` | Hover, subtle highlights |
+
+### Badge pattern
 
 ```tsx
-// ✅ CORRECT — uses design tokens
+// CORRECT
 <Badge className="bg-positive/10 text-positive border-positive/20">Success</Badge>
 <Badge className="bg-warning/10 text-warning border-warning/20">Pending</Badge>
 <Badge className="bg-brand-primary/10 text-brand-primary border-brand-primary/20">Info</Badge>
 <Badge variant="destructive">Error</Badge>
-<Badge variant="secondary">Manual</Badge>
 
-// ❌ WRONG — never do this
+// WRONG -- never do this
 <Badge className="bg-green-100 text-green-700">Success</Badge>
-<Badge className="bg-amber-100 text-amber-700">Warning</Badge>
-<Badge className="bg-blue-100 text-blue-700">Info</Badge>
 ```
 
-### Opacity Variants for Light Backgrounds
+Use `/10` opacity for light backgrounds, `/20` for subtle borders.
 
-Use `/10` or `/20` opacity suffix for light background tints derived from tokens:
-- `bg-positive/10` — light green background
-- `bg-warning/10` — light amber background
-- `bg-destructive/10` — light rose background
-- `border-positive/20` — subtle green border
+### Status indicators
 
-### Status Indicator Colors
-
-| Status | Text Class | Background | Dot/Indicator |
-|--------|-----------|------------|---------------|
+| Status | Text | Background | Dot |
+|--------|------|------------|-----|
 | Healthy / Synced | `text-positive` | `bg-positive/10` | `bg-positive` |
 | Warning / Action Required | `text-warning` | `bg-warning/10` | `bg-warning` |
 | Error / Critical | `text-destructive` | `bg-destructive/10` | `bg-destructive` |
 | Disconnected / Manual | `text-muted-foreground` | `bg-muted` | `bg-muted-foreground` |
 
-### Allowed Raw Tailwind Colors
+### Allowed raw Tailwind colors
 
-The ONLY raw Tailwind colors permitted are:
-- **Gray scale**: `gray-50` through `gray-900` — for structural elements (borders, dividers, backgrounds)
-- **White/Black**: `white`, `black` — for absolute contrast needs
-- **Inherit/Current**: `inherit`, `current` — for inheriting parent colors
+Only these are permitted without tokens:
+- **Gray scale:** `gray-50` through `gray-900` (structural elements)
+- **White / Black:** absolute contrast
+- **Inherit / Current:** inheriting parent colors
 
-Everything else (green, red, blue, amber, yellow, orange, indigo, etc.) MUST come from the design token system.
+Everything else (green, red, blue, amber, yellow, orange, indigo, etc.) must come from the token system.
 
-### Data-Viz Palette (Charts & Portfolio Groups)
+### Data visualization palette (charts)
 
-For charts, portfolio category groups, and any data visualization that needs N distinct colors, use the `dataviz` tokens. These are mapped deterministically to category groups at runtime via `getGroupColor()` in `src/lib/portfolio-utils.ts`.
+Use `dataviz-1` through `dataviz-8` tokens for charts and portfolio groups. These are assigned dynamically via `buildGroupColorMap()` and `getGroupColor()` from `src/lib/portfolio-utils.ts`.
 
-| Token | CSS Variable | Tailwind Class | Hex | Use For |
-|-------|-------------|----------------|-----|---------|
-| **dataviz-1** | `--dataviz-1` | `bg-dataviz-1`, `text-dataviz-1` | #6D657A | Default / brand-primary |
-| **dataviz-2** | `--dataviz-2` | `bg-dataviz-2`, `text-dataviz-2` | #2E8B57 | Positive / green |
-| **dataviz-3** | `--dataviz-3` | `bg-dataviz-3`, `text-dataviz-3` | #E09F12 | Warning / amber |
-| **dataviz-4** | `--dataviz-4` | `bg-dataviz-4`, `text-dataviz-4` | #3A3542 | Brand-deep / dark plum |
-| **dataviz-5** | `--dataviz-5` | `bg-dataviz-5`, `text-dataviz-5` | #3A8A8F | Teal |
-| **dataviz-6** | `--dataviz-6` | `bg-dataviz-6`, `text-dataviz-6` | #B8AEC8 | Light purple |
-| **dataviz-7** | `--dataviz-7` | `bg-dataviz-7`, `text-dataviz-7` | #7E7590 | Mid purple |
-| **dataviz-8** | `--dataviz-8` | `bg-dataviz-8`, `text-dataviz-8` | #9A95A4 | Muted |
+| Token | Hex | Purpose |
+|-------|-----|---------|
+| `dataviz-1` | #6D657A | Default / brand |
+| `dataviz-2` | #2E8B57 | Positive / green |
+| `dataviz-3` | #E09F12 | Warning / amber |
+| `dataviz-4` | #3A3542 | Brand-deep / dark plum |
+| `dataviz-5` | #3A8A8F | Teal |
+| `dataviz-6` | #B8AEC8 | Light purple |
+| `dataviz-7` | #7E7590 | Mid purple |
+| `dataviz-8` | #9A95A4 | Muted |
 
-Debt groups always use negative-family colors (`#E5989B`, `#D4686C`, `#C44E52`, `#F0B4B6`) instead of the dataviz palette.
+Debt groups always use negative-family colors (#E5989B, #D4686C, #C44E52, #F0B4B6). **Never hardcode hex colors for chart groups.**
 
-**Never hardcode hex colors for chart groups.** Use `buildGroupColorMap()` and `getGroupColor()` from `src/lib/portfolio-utils.ts` to assign colors dynamically based on the category groups present in the data.
+### Token source of truth layers
 
-### Portfolio Utilities (`src/lib/portfolio-utils.ts`)
+1. UIKit CSS variables (hex) -> external `Uikitforbliss/src/styles/theme.css`
+2. Production CSS (HSL) -> `src/index.css`
+3. Tailwind mapping -> `tailwind.config.ts`
+
+When adding new semantic colors, update all three layers plus this file.
+
+## Component patterns
+
+- Use **shadcn/ui** components from `@/components/ui/`. Do not modify these directly -- customize via className props or wrapper components.
+- Use **TanStack Query** (`@tanstack/react-query`) for all server state. Never store server data in local state.
+- Always **invalidate relevant query caches** after mutations.
+- Use `useToast()` from `@/hooks/use-toast` for user notifications.
+- Use **React Router v6** for navigation.
+
+## Portfolio utilities (`src/lib/portfolio-utils.ts`)
 
 | Function | Purpose |
 |----------|---------|
-| `parseDecimal(value)` | Safe Prisma Decimal → number conversion. Use instead of `parseFloat(x as any)`. |
-| `getDisplayData(item, currency)` | Picks the correct financial summary (USD vs portfolio currency). |
-| `getGroupColor(group, isDebt, index)` | Returns hex color for a category group. |
-| `buildGroupColorMap(assetGroups, debtGroups)` | Builds a full `Record<string, string>` color map for all groups. |
-| `getGroupIcon(group, processingHint?)` | Returns a Lucide icon for a category group. |
+| `parseDecimal(value)` | Safe Prisma Decimal -> number. Use instead of `parseFloat(x as any)` |
+| `getDisplayData(item, currency)` | Picks USD vs portfolio currency financial summary |
+| `getGroupColor(group, isDebt, index)` | Returns hex color for a category group |
+| `buildGroupColorMap(assetGroups, debtGroups)` | Builds `Record<string, string>` color map for all groups |
+| `getGroupIcon(group, processingHint?)` | Returns Lucide icon for a category group |
 
-## UIKit Reference
+## Custom hooks (`src/hooks/`)
 
-The design system source of truth is at `Uikitforbliss/src/styles/theme.css`. When adding new semantic colors, add them to:
-1. `bliss-frontend/src/index.css` — CSS variables (HSL format)
-2. `bliss-frontend/tailwind.config.ts` — Tailwind color mapping
-3. This file — documentation table above
+All data fetching is done via custom hooks wrapping TanStack Query:
 
-## Component Patterns
+- `use-transactions.ts` -- Transaction CRUD + pagination
+- `use-analytics.ts` -- Financial analytics data
+- `use-portfolio-items.ts` -- Portfolio asset management
+- `use-portfolio-history.ts` -- Historical portfolio valuations
+- `use-plaid-actions.ts` -- Plaid link/sync operations
+- `use-plaid-review.ts` -- Plaid transaction review
+- `use-imports.ts` -- Smart import flow
+- `use-insights.ts` -- AI insights
+- `use-tenant-settings.ts` -- Tenant configuration
+- `use-tags.ts` -- Tag management
+- `use-tag-analytics.ts` -- Per-tag analytics
+- `use-equity-analysis.ts` -- Equity risk metrics
+- `use-dashboard-metrics.ts` -- Dashboard summary data
+- `use-dashboard-actions.ts` -- Dashboard quick actions
+- `use-notifications.ts` -- Notification center
+- `use-merchant-history.ts` -- Merchant name suggestions
 
-- Use shadcn/ui components from `@/components/ui/`
-- Use React Query (`@tanstack/react-query`) for server state
-- Use `useToast()` from `@/hooks/use-toast` for notifications
-- Always invalidate relevant React Query caches after mutations
+## Internationalization
+
+i18next with multiple locales. Translation files live in `src/i18n/`. Use the `useTranslation()` hook for all user-facing strings.
+
+## Testing
+
+**Framework:** Vitest with React Testing Library and MSW (Mock Service Worker).
+
+**Run tests:**
+```bash
+pnpm test:web
+```
+
+**Patterns:**
+- Component tests render with necessary providers (QueryClient, Router, Auth)
+- API calls mocked via MSW handlers
+- Playwright e2e tests in `e2e/` directory
+
+## Path aliases
+
+`@/*` maps to `./src/*` (configured in `vite.config.ts` and `tsconfig.json`). Use `@/components/ui/button`, `@/hooks/use-transactions`, etc.
+
+## Environment variables
+
+The only env var baked into the web bundle at build time is `NEXT_PUBLIC_API_URL` (the API layer URL). All other configuration is server-side.

@@ -73,6 +73,16 @@ next-env.d.ts
 # Vercel
 .vercel
 
+# Stale lockfiles from pre-monorepo (pnpm-lock.yaml at root is the only lockfile)
+apps/*/package-lock.json
+apps/*/yarn.lock
+
+# Temp upload files
+apps/api/tmp/
+
+# Playwright test artifacts
+**/test-results/
+
 # Misc
 *.pem
 *.local
