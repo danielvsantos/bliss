@@ -1,0 +1,31 @@
+{
+  "name": "@bliss/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./encryption": {
+      "require": "./dist/encryption.cjs",
+      "import": "./dist/encryption.js"
+    },
+    "./storage": {
+      "require": "./dist/storage/index.cjs",
+      "import": "./dist/storage/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/encryption.js src/storage/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage",
+    "dev": "tsup src/encryption.js src/storage/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage --watch"
+  },
+  "peerDependencies": {
+    "@google-cloud/storage": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@google-cloud/storage": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0"
+  }
+}

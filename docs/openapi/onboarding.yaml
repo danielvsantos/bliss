@@ -1,0 +1,153 @@
+openapi: 3.0.3
+info:
+  title: Bliss API Layer - Onboarding
+  description: |
+    Onboarding progress tracking endpoints. Manages the multi-step onboarding
+    flow (setup wizard) and post-setup checklist completion state.
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly JWT cookie set at sign-in.
+
+  schemas:
+    OnboardingProgress:
+      type: object
+      description: |
+        JSON object stored on the Tenant model tracking setup flow and
+        checklist completion.
+      properties:
+        checklist:
+          type: object
+          properties:
+            connectBank:
+              type: boolean
+              default: false
+            reviewTransactions:
+              type: boolean
+              default: false
+            setPortfolioCurrency:
+              type: boolean
+              default: false
+            exploreExpenses:
+              type: boolean
+              default: false
+            checkPnL:
+              type: boolean
+              default: false
+        setupFlow:
+          type: object
+          properties:
+            step1_profile:
+              type: boolean
+              default: false
+            step2_connect:
+              type: boolean
+              default: false
+        setupComplete:
+          type: boolean
+          default: false
+        checklistDismissed:
+          type: boolean
+          default: false
+
+    OnboardingProgressResponse:
+      type: object
+      properties:
+        onboardingProgress:
+          $ref: '#/components/schemas/OnboardingProgress'
+        onboardingCompletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when setupComplete was set to true.
+
+    CompleteStepRequest:
+      type: object
+      required:
+        - step
+      properties:
+        step:
+          type: string
+          description: |
+            The step to mark as complete. Valid values:
+            - Checklist: connectBank, reviewTransactions, setPortfolioCurrency, exploreExpenses, checkPnL
+            - Setup flow: step1_profile, step2_connect
+            - Special: setupComplete (sets onboardingCompletedAt), dismissChecklist
+          enum:
+            - connectBank
+            - reviewTransactions
+            - setPortfolioCurrency
+            - exploreExpenses
+            - checkPnL
+            - step1_profile
+            - step2_connect
+            - setupComplete
+            - dismissChecklist
+          example: "connectBank"
+        data:
+          type: object
+          nullable: true
+          description: Optional data associated with the step (reserved for future use).
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+security:
+  - CookieAuth: []
+
+paths:
+  /api/onboarding/progress:
+    get:
+      tags:
+        - Onboarding
+      summary: Get onboarding progress
+      description: |
+        Returns the tenant's current onboarding progress including checklist
+        completion state, setup flow progress, and completion timestamp.
+      responses:
+        '200':
+          description: Current onboarding progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingProgressResponse'
+        '401':
+          description: Unauthorized — missing or invalid JWT.
+
+    put:
+      tags:
+        - Onboarding
+      summary: Complete an onboarding step
+      description: |
+        Marks a specific onboarding step as complete. Updates the
+        onboardingProgress JSON on the Tenant model. The setupComplete step
+        additionally sets Tenant.onboardingCompletedAt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteStepRequest'
+      responses:
+        '200':
+          description: Updated onboarding progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingProgressResponse'
+        '400':
+          description: Bad Request — invalid step name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized — missing or invalid JWT.

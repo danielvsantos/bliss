@@ -1,0 +1,204 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # API: Unit Tests (Vitest, no infrastructure needed)
+  # setup/env.ts sets ENCRYPTION_SECRET + JWT_SECRET_CURRENT directly in code.
+  # ─────────────────────────────────────────────────────────────────────────────
+  api-unit:
+    name: API — Unit Tests
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'apps/api/') ||
+      contains(github.event.pull_request.changed_files, 'packages/shared/') ||
+      contains(github.event.pull_request.changed_files, 'prisma/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @bliss/shared build
+
+      - name: Run API unit tests
+        run: pnpm --filter @bliss/api test:unit
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # API: Integration Tests (Vitest + real Postgres)
+  #
+  # IMPORTANT — Prisma Accelerate vs direct connection:
+  #   postinstall runs "prisma generate --no-engine" (Accelerate client).
+  #   That client requires a prisma:// URL and throws on a direct postgresql://
+  #   URL. We regenerate with a full-engine client after pnpm install so that
+  #   tests can connect directly to the CI Postgres service.
+  # ─────────────────────────────────────────────────────────────────────────────
+  api-integration:
+    name: API — Integration Tests
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bliss_test
+      ENCRYPTION_SECRET: ci-test-secret-exactly-32-bytes!!
+      JWT_SECRET_CURRENT: ci-test-jwt-secret-for-integration
+      NODE_ENV: test
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bliss_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @bliss/shared build
+
+      - name: Regenerate Prisma client with full engine
+        run: pnpm --filter @bliss/api exec prisma generate --schema=../../prisma/schema.prisma
+
+      - name: Apply database migrations
+        run: pnpm --filter @bliss/api exec prisma migrate deploy --schema=../../prisma/schema.prisma
+
+      - name: Run API integration tests
+        run: pnpm --filter @bliss/api test:integration
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Backend: Unit Tests (Jest, no infrastructure needed)
+  # ENCRYPTION_SECRET must be set — encryption.js throws at import if missing.
+  # ─────────────────────────────────────────────────────────────────────────────
+  backend-unit:
+    name: Backend — Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @bliss/shared build
+
+      - name: Run backend unit tests
+        run: pnpm --filter @bliss/backend test:unit
+        env:
+          ENCRYPTION_SECRET: ci-test-secret-exactly-32-bytes!!
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Backend: Integration Tests (Jest + supertest + Postgres + Redis)
+  #
+  # Uses prisma db push (not migrate deploy) — the backend is a schema consumer,
+  # not the migration owner. db push creates all tables from schema.prisma
+  # directly without requiring a migrations/ folder in apps/backend/.
+  # ─────────────────────────────────────────────────────────────────────────────
+  backend-integration:
+    name: Backend — Integration Tests
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bliss_test
+      REDIS_URL: redis://localhost:6379
+      INTERNAL_API_KEY: ci-test-api-key-integration
+      ENCRYPTION_SECRET: ci-test-secret-exactly-32-bytes!!
+      NODE_ENV: test
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bliss_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @bliss/shared build
+
+      - name: Generate Prisma client
+        run: pnpm --filter @bliss/backend exec prisma generate --schema=../../prisma/schema.prisma
+
+      - name: Push schema to test database
+        run: pnpm --filter @bliss/backend exec prisma db push --schema=../../prisma/schema.prisma --accept-data-loss
+
+      - name: Run backend integration tests
+        run: pnpm --filter @bliss/backend test:integration

@@ -1,0 +1,235 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Transactions
+  version: 1.0.0
+  description: API for managing financial transactions.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+  schemas:
+    Transaction:
+      type: object
+      properties:
+        id: { type: integer }
+        transaction_date: { type: string, format: date-time }
+        description: { type: string }
+        credit: { type: number, format: float, nullable: true }
+        debit: { type: number, format: float, nullable: true }
+        currency: { type: string }
+        accountId: { type: integer }
+        categoryId: { type: integer }
+        ticker: { type: string, nullable: true }
+        assetQuantity: { type: number, format: float, nullable: true }
+        assetPrice: { type: number, format: float, nullable: true }
+        isin: { type: string, nullable: true, description: 'System-resolved ISIN (e.g. IE00BK5BQT80).' }
+        exchange: { type: string, nullable: true, description: 'ISO-10383 MIC code (e.g. XETR).' }
+        assetCurrency: { type: string, nullable: true, description: 'Currency the asset trades in (e.g. EUR).' }
+        source: { type: string, enum: [MANUAL, PLAID, CSV] }
+        # ... other fields
+
+    DebtTerms:
+      type: object
+      properties:
+        interestRate: { type: number, format: float }
+        termInMonths: { type: number, format: integer }
+        originationDate: { type: string, format: date-time }
+        initialBalance: { type: number, format: float }
+
+    TransactionCreateRequest:
+      type: object
+      required: [transaction_date, description, currency, accountId, categoryId]
+      properties:
+        transaction_date: { type: string, format: date-time }
+        description: { type: string }
+        credit: { type: number, format: float }
+        debit: { type: number, format: float }
+        currency: { type: string }
+        accountId: { type: integer }
+        categoryId: { type: integer }
+        ticker: { type: string, description: 'Investment ticker symbol.' }
+        assetQuantity: { type: number, format: float }
+        assetPrice: { type: number, format: float }
+        isin: { type: string, description: 'System-resolved ISIN.' }
+        exchange: { type: string, description: 'ISO-10383 MIC code.' }
+        assetCurrency: { type: string, description: 'Currency the asset trades in.' }
+        debtTerms: { $ref: '#/components/schemas/DebtTerms' }
+
+    TransactionUpdateRequest:
+      type: object
+      properties:
+        transaction_date: { type: string, format: date-time }
+        description: { type: string }
+        credit: { type: number, format: float }
+        debit: { type: number, format: float }
+        currency: { type: string }
+        accountId: { type: integer }
+        categoryId: { type: integer }
+        ticker: { type: string }
+        assetQuantity: { type: number, format: float }
+        assetPrice: { type: number, format: float }
+        isin: { type: string }
+        exchange: { type: string }
+        assetCurrency: { type: string }
+        debtTerms: { $ref: '#/components/schemas/DebtTerms' }
+
+    TransactionListResponse:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+        totalPages: { type: integer }
+        totals:
+          type: object
+          properties:
+            credit: { type: number, format: float }
+            debit: { type: number, format: float }
+            balance: { type: number, format: float }
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/transactions:
+    get:
+      summary: Get transactions
+      description: >
+        Retrieves a paginated list of transactions with filtering by date range,
+        account, category group, category, type, source, tags, and more.
+      operationId: getTransactions
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: sortBy
+          in: query
+          schema: { type: string, default: 'transaction_date' }
+        - name: sortOrder
+          in: query
+          schema: { type: string, enum: [asc, desc], default: 'desc' }
+        - name: startDate
+          in: query
+          description: >
+            Inclusive lower bound for transaction_date (ISO 8601 date string, e.g. 2024-01-01).
+            Filters transactions with transaction_date >= startDate.
+          schema: { type: string, format: date }
+        - name: endDate
+          in: query
+          description: >
+            Inclusive upper bound for transaction_date (ISO 8601 date string, e.g. 2024-12-31).
+            Filters transactions with transaction_date <= endDate 23:59:59.999Z.
+          schema: { type: string, format: date }
+        - name: year
+          in: query
+          schema: { type: integer }
+        - name: month
+          in: query
+          schema: { type: integer }
+        - name: quarter
+          in: query
+          schema: { type: string }
+        - name: categoryId
+          in: query
+          schema: { type: integer }
+        - name: accountId
+          in: query
+          schema: { type: integer }
+        - name: currencyCode
+          in: query
+          schema: { type: string }
+        - name: accountCountry
+          in: query
+          schema: { type: string }
+        - name: tags[]
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+        - name: group
+          in: query
+          description: Filter by category group name (e.g. "Essentials", "Lifestyle").
+          schema: { type: string }
+        - name: type
+          in: query
+          description: Filter by category type (Income, Expense, Transfer, Investment).
+          schema: { type: string }
+        - name: source
+          in: query
+          description: Filter by transaction source.
+          schema: { type: string, enum: [MANUAL, PLAID, CSV] }
+      responses:
+        '200':
+          description: A paginated list of transactions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListResponse'
+
+    post:
+      summary: Create a transaction
+      description: Creates a new transaction and handles associated portfolio item logic.
+      operationId: createTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionCreateRequest'
+      responses:
+        '201':
+          description: Transaction created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+
+  /api/transactions/{id}:
+    put:
+      summary: Update a transaction
+      description: Updates an existing transaction by its ID.
+      operationId: updateTransaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionUpdateRequest'
+      responses:
+        '200':
+          description: Transaction updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+
+    delete:
+      summary: Delete a transaction
+      description: Deletes an existing transaction by its ID.
+      operationId: deleteTransaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Transaction deleted successfully.

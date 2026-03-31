@@ -1,0 +1,117 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Users
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/users:
+    get:
+      summary: List users in the tenant
+      description: Fetches a list of all users associated with the authenticated user's tenant.
+      responses:
+        '200':
+          description: An array of user objects.
+    post:
+      summary: Invite a new user
+      description: >
+        Creates a new user within the tenant and sends an invitation.
+        Admin only — returns 403 Forbidden if the caller's role is not 'admin'.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+                relationshipType:
+                  type: string
+                  enum: [SELF, PARTNER, CHILD, OTHER_RELATIVE, FRIEND, COLLEAGUE, OTHER]
+                preferredLocale:
+                  type: string
+      responses:
+        '201':
+          description: The newly created user object.
+        '403':
+          description: Forbidden — caller does not have the 'admin' role.
+  /api/users/{id}:
+    get:
+      summary: Get a specific user
+      description: Fetches a user by their ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested user object.
+    put:
+      summary: Update a user
+      description: Updates the details of an existing user.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                relationshipType:
+                  type: string
+                  enum: [SELF, PARTNER, CHILD, OTHER_RELATIVE, FRIEND, COLLEAGUE, OTHER]
+                preferredLocale:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, member]
+                  description: >
+                    The user's role. Only admins may set or change this field.
+                    Non-admin callers who include this field receive 403 Forbidden.
+      responses:
+        '200':
+          description: The updated user object.
+        '403':
+          description: Forbidden — caller is not an admin and attempted to change the role field.
+    delete:
+      summary: Remove a user
+      description: >
+        Removes a user from the tenant. Admin only — returns 403 Forbidden if
+        the caller's role is not 'admin'. Also prevents self-deletion and deletion
+        of the last user in a tenant.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: User removed successfully.
+        '403':
+          description: Forbidden — caller does not have the 'admin' role.

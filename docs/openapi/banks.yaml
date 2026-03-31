@@ -1,0 +1,112 @@
+openapi: 3.0.3
+info:
+  title: Bliss API Layer - Banks
+  version: 1.1.0
+  description: >
+    Tenant-scoped bank management. All endpoints require JWT authentication.
+    Banks are globally shared records linked to tenants via the TenantBank join table.
+
+security:
+  - cookieAuth: []
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly session cookie set at sign-in.
+  schemas:
+    Bank:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        institutionId:
+          type: string
+          nullable: true
+          description: Plaid institution ID (ins_*) for auto-matching. Null for manual banks.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BankCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          description: Display name of the bank. Trimmed before storage.
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /api/banks:
+    get:
+      summary: List all banks
+      description: >
+        Returns the full global list of banks, ordered alphabetically by name.
+        Banks are reference data (like countries and currencies) — all users
+        see the same list. Tenant-specific bank selection is managed via the
+        TenantBank join table through the tenants API.
+      tags:
+        - Banks
+      responses:
+        '200':
+          description: A list of all available banks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Bank'
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create or link a bank
+      description: >
+        Creates a new bank or links an existing one to the tenant.
+        If a bank with the given name already exists globally, it is reused;
+        otherwise a new Bank record is created. A TenantBank link is upserted
+        in both cases. The operation is wrapped in a transaction with audit logging.
+      tags:
+        - Banks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankCreateRequest'
+      responses:
+        '201':
+          description: Bank created/linked successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bank'
+        '400':
+          description: Invalid input (name too short/long or missing).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

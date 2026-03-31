@@ -1,0 +1,255 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Tenants
+  version: 1.0.0
+
+components:
+  schemas:
+    Country:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 'US'
+        name:
+          type: string
+          example: 'United States'
+        isDefault:
+          type: boolean
+    Currency:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 'USD'
+        name:
+          type: string
+          example: 'United States Dollar'
+        symbol:
+          type: string
+          example: '$'
+        isDefault:
+          type: boolean
+    Bank:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: 'Chase Bank'
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: cuid
+          example: 'clq123abc0000defg456h'
+        name:
+          type: string
+          example: 'My Finance Tenant'
+        plan:
+          type: string
+          enum: [FREE, PRO, AI]
+          example: 'PRO'
+        createdAt:
+          type: string
+          format: date-time
+        countries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Country'
+        currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Currency'
+        banks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bank'
+        portfolioCurrency:
+          type: string
+          description: The currency used to display portfolio values. Defaults to USD. Must be one of the tenant's configured currencies.
+          example: 'EUR'
+        transactionYears:
+          type: array
+          items:
+            type: integer
+          description: "A list of unique years for which the tenant has transactions, sorted descending."
+          example: [2024, 2023, 2022, 2011, 2010]
+
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/tenants:
+    get:
+      summary: Get tenant information
+      description: >
+        Fetches the tenant record associated with the authenticated user.
+        If the `id` query parameter is provided, it fetches that specific tenant (access is restricted to the user's tenant).
+        If no `id` is provided, it returns an array containing the user's single tenant.
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The ID of the tenant to retrieve.
+      responses:
+        '200':
+          description: The user's tenant object, or an array containing it.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Tenant'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Tenant'
+        '404':
+          description: Tenant not found for the provided ID.
+    put:
+      summary: Update a tenant
+      description: Updates a tenant's configuration. The tenant to update is identified by the `id` query parameter.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the tenant to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                plan:
+                  type: string
+                  enum: [FREE, PRO, AI]
+                countries:
+                  type: array
+                  items:
+                    type: string
+                currencies:
+                  type: array
+                  items:
+                    type: string
+                bankIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: The updated tenant object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+  /api/tenants/settings:
+    get:
+      summary: Get tenant settings
+      description: >
+        Returns the authenticated user's tenant configuration including AI classification
+        thresholds, portfolio currency, and the Plaid history window.
+      responses:
+        '200':
+          description: Tenant settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolioCurrency:
+                    type: string
+                    example: 'EUR'
+                  autoPromoteThreshold:
+                    type: number
+                  reviewThreshold:
+                    type: number
+                  plaidHistoryDays:
+                    type: integer
+                    minimum: 1
+                    description: >
+                      Number of days of Plaid transaction history fetched when a new bank is
+                      connected (passed as days_requested in the link token) and enforced as a
+                      date cutoff on every subsequent resync. Seeded from PLAID_HISTORY_DAYS
+                      env var at tenant creation time.
+                    example: 1
+    put:
+      summary: Update tenant settings
+      description: >
+        Updates tenant settings. Only admin users can update settings.
+        portfolioCurrency must be one of the tenant's configured currencies.
+        plaidHistoryDays must be an integer >= 1.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                portfolioCurrency:
+                  type: string
+                  description: Must be a currency the tenant has configured.
+                  example: 'EUR'
+                autoPromoteThreshold:
+                  type: number
+                reviewThreshold:
+                  type: number
+                plaidHistoryDays:
+                  type: integer
+                  minimum: 1
+                  description: Days of Plaid history to fetch at link time and enforce on resyncs.
+                  example: 7
+      responses:
+        '200':
+          description: Updated settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolioCurrency:
+                    type: string
+                  autoPromoteThreshold:
+                    type: number
+                  reviewThreshold:
+                    type: number
+                  plaidHistoryDays:
+                    type: integer
+                    minimum: 1
+        '400':
+          description: >
+            Invalid input — portfolioCurrency not in tenant's currency list,
+            or plaidHistoryDays < 1.
+        '403':
+          description: Forbidden — admin role required.
+
+    delete:
+      summary: Delete a tenant
+      description: Deletes a tenant and all associated data, identified by the `id` query parameter. This is a destructive operation.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the tenant to delete.
+      responses:
+        '204':
+          description: Tenant deleted successfully.

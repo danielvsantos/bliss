@@ -1,0 +1,193 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Equity Analysis
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+  schemas:
+    EquityHolding:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: 'AAPL'
+        name:
+          type: string
+          example: 'Apple Inc.'
+        quantity:
+          type: number
+          example: 50
+        currentValue:
+          type: number
+          description: Market value in the portfolio currency.
+          example: 8750.00
+        currentValueUSD:
+          type: number
+          description: Market value in USD.
+          example: 8750.00
+        sector:
+          type: string
+          example: 'Technology'
+        industry:
+          type: string
+          example: 'Consumer Electronics'
+        country:
+          type: string
+          example: 'United States'
+        peRatio:
+          type: number
+          nullable: true
+          description: Computed price-to-earnings ratio.
+          example: 28.5
+        dividendYield:
+          type: number
+          nullable: true
+          description: Computed annualized dividend yield (decimal, e.g. 0.0055 = 0.55%).
+          example: 0.0055
+        trailingEps:
+          type: number
+          nullable: true
+          description: Trailing 4-quarter earnings per share.
+          example: 6.14
+        latestEpsActual:
+          type: number
+          nullable: true
+          example: 1.53
+        latestEpsSurprise:
+          type: number
+          nullable: true
+          example: 4.2
+        week52High:
+          type: number
+          nullable: true
+          example: 199.62
+        week52Low:
+          type: number
+          nullable: true
+          example: 155.98
+        averageVolume:
+          type: number
+          nullable: true
+          example: 54320000
+        logoUrl:
+          type: string
+          nullable: true
+        weight:
+          type: number
+          description: Holding weight within total equity value (0-1).
+          example: 0.058
+
+    EquityGroup:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Group name (sector, industry, or country).
+          example: 'Technology'
+        totalValue:
+          type: number
+          example: 75000.00
+        weight:
+          type: number
+          description: Group weight within total equity value (0-1).
+          example: 0.50
+        holdingsCount:
+          type: integer
+          example: 5
+        holdings:
+          type: array
+          items:
+            $ref: '#/components/schemas/EquityHolding'
+
+    EquityAnalysisSummary:
+      type: object
+      properties:
+        totalEquityValue:
+          type: number
+          example: 150000.00
+        holdingsCount:
+          type: integer
+          example: 12
+        weightedPeRatio:
+          type: number
+          nullable: true
+          description: Holdings-weighted average P/E ratio.
+          example: 22.5
+        weightedDividendYield:
+          type: number
+          nullable: true
+          description: Holdings-weighted average dividend yield (decimal).
+          example: 0.018
+
+    EquityAnalysisResponse:
+      type: object
+      properties:
+        portfolioCurrency:
+          type: string
+          example: 'USD'
+        summary:
+          $ref: '#/components/schemas/EquityAnalysisSummary'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/EquityGroup'
+
+paths:
+  /api/portfolio/equity-analysis:
+    get:
+      tags:
+        - Portfolio
+      summary: Get equity portfolio analysis
+      description: >
+        Returns stock-only portfolio composition enriched with fundamental data
+        from the SecurityMaster reference table. Holdings are grouped by the
+        requested dimension (sector, industry, or country) with weighted
+        aggregate metrics.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: groupBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [sector, industry, country]
+            default: sector
+          description: Dimension to group holdings by.
+      responses:
+        '200':
+          description: Equity analysis data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquityAnalysisResponse'
+        '400':
+          description: Invalid groupBy parameter.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'Invalid groupBy value. Must be one of: sector, industry, country'
+        '405':
+          description: Method not allowed.
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'Server Error'

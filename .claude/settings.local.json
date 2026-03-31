@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /Users/danielviana/Desktop/Bliss/bliss/apps/api/pages/api/*.js)"
+    ]
+  }
+}

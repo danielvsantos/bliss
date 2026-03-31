@@ -1,0 +1,354 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Category
+  version: 1.1.0
+  description: >
+    Tenant-scoped category management. All endpoints require JWT authentication.
+    Categories support a 3-level hierarchy: Type → Group → Category.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+  schemas:
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          description: User-defined display name (e.g. "Groceries").
+        group:
+          type: string
+          description: Broader grouping (e.g. "Eating In").
+        type:
+          type: string
+          description: >
+            High-level financial type. Must be one of the allowed types:
+            Income, Essentials, Lifestyle, Growth, Investments,
+            Asset, Debt, Transfers.
+        icon:
+          type: string
+          nullable: true
+          description: Optional emoji icon (e.g. "🛒"). User-editable.
+        processingHint:
+          type: string
+          nullable: true
+          readOnly: true
+          description: >
+            System-managed field directing backend workers. Never user-editable.
+            Values: API_STOCK, API_CRYPTO, AMORTIZING_LOAN, SIMPLE_LIABILITY,
+            CASH, MANUAL, TAX_DEDUCTIBLE.
+        portfolioItemKeyStrategy:
+          type: string
+          nullable: true
+          readOnly: true
+          description: >
+            System-managed. Controls portfolio item aggregation.
+            Values: TICKER, CATEGORY_NAME, CATEGORY_NAME_PLUS_DESCRIPTION, IGNORE, CURRENCY.
+        defaultCategoryCode:
+          type: string
+          nullable: true
+          readOnly: true
+          description: >
+            Stable SNAKE_UPPER_CASE identifier from defaultCategories.js.
+            Null for custom tenant categories. Set only at tenant creation.
+        tenantId:
+          type: string
+          readOnly: true
+        _count:
+          type: object
+          readOnly: true
+          properties:
+            transactions:
+              type: integer
+              description: Number of transactions tagged to this category.
+    CategoryCreateRequest:
+      type: object
+      required:
+        - name
+        - group
+        - type
+      properties:
+        name:
+          type: string
+          minLength: 1
+        group:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          description: Must be one of the 8 allowed category types.
+        icon:
+          type: string
+          description: Optional emoji icon.
+      description: >
+        System-managed fields (processingHint, portfolioItemKeyStrategy,
+        defaultCategoryCode) are silently ignored if sent.
+    CategoryUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        group:
+          type: string
+        type:
+          type: string
+        icon:
+          type: string
+      description: >
+        All fields are optional. System-managed fields (processingHint,
+        portfolioItemKeyStrategy, defaultCategoryCode) are explicitly
+        blocked — sending any returns 400 Bad Request.
+    CategoryList:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+        filters:
+          type: object
+          properties:
+            name:
+              type: string
+              nullable: true
+            type:
+              type: string
+              nullable: true
+            group:
+              type: string
+              nullable: true
+        sort:
+          type: object
+          properties:
+            field:
+              type: string
+            order:
+              type: string
+              enum: [asc, desc]
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/categories:
+    get:
+      summary: List categories
+      description: >
+        Retrieve a paginated, filterable list of categories for the tenant.
+        Includes _count.transactions for each category. When fetching by ID,
+        returns a single category object (also with _count).
+      operationId: getCategories
+      parameters:
+        - name: id
+          in: query
+          description: Category ID to fetch a single category.
+          schema:
+            type: integer
+        - name: name
+          in: query
+          description: Filter by category name (case-insensitive contains).
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Filter by category type.
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: Filter by category group.
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination.
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page (max 1000).
+          schema:
+            type: integer
+            default: 100
+        - name: sortBy
+          in: query
+          description: Sort field.
+          schema:
+            type: string
+            enum: [name, type, group]
+            default: name
+        - name: sortOrder
+          in: query
+          description: Sort direction.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+      responses:
+        '200':
+          description: A paginated list of categories (or single category when id is provided).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CategoryList'
+                  - $ref: '#/components/schemas/Category'
+        '400':
+          description: Invalid query parameters.
+        '401':
+          description: Authentication required.
+        '404':
+          description: Category not found (when fetching by id).
+    post:
+      summary: Create a category
+      description: >
+        Create a new custom category for the tenant. System-managed fields
+        (processingHint, portfolioItemKeyStrategy, defaultCategoryCode) are
+        silently ignored. The [name, tenantId] pair must be unique.
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreateRequest'
+      responses:
+        '201':
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: Missing required fields or invalid type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required.
+        '409':
+          description: A category with this name already exists for the tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/categories?id={id}:
+    put:
+      summary: Update a category
+      description: >
+        Update an existing category. Accepts name, group, type, and icon.
+        System-managed fields (processingHint, portfolioItemKeyStrategy,
+        defaultCategoryCode) are explicitly blocked — returns 400 if sent.
+      operationId: updateCategory
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: ID of the category to update.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryUpdateRequest'
+      responses:
+        '200':
+          description: Category updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: Invalid type, system-managed field sent, or validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required.
+        '404':
+          description: Category not found in this tenant.
+        '409':
+          description: Duplicate name conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a category
+      description: >
+        Delete a category by its ID. Deletion is blocked if the category
+        belongs to a system-critical group (non-null, non-MANUAL processingHint)
+        and is the last category in that group. When the category has dependent
+        records (transactions, PlaidTransactions, TransactionEmbeddings,
+        PortfolioItems), the `mergeInto` query parameter must be provided to
+        specify a target category for atomic reassignment before deletion.
+      operationId: deleteCategory
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: ID of the category to delete.
+          schema:
+            type: integer
+        - name: mergeInto
+          in: query
+          required: false
+          description: >
+            Target category ID to reassign all dependent records
+            (transactions, PlaidTransactions, TransactionEmbeddings,
+            PortfolioItems) to before deletion. Required when the category
+            has dependent records; returns 400 if omitted in that case.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Category deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  category:
+                    $ref: '#/components/schemas/Category'
+        '400':
+          description: Deletion rejected (system-critical group protection).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required.
+        '404':
+          description: Category not found in this tenant.

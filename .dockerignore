@@ -1,0 +1,50 @@
+# Dependencies — container installs its own via pnpm
+**/node_modules
+
+# Build outputs
+**/.next
+**/dist
+**/.turbo
+
+# Git history
+**/.git
+**/.gitignore
+
+# Environment files — never bake secrets into images
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs
+**/*.log
+**/npm-debug.log*
+
+# OS artifacts
+**/.DS_Store
+**/Thumbs.db
+
+# Editor
+**/.vscode
+**/.idea
+
+# Test artifacts
+**/coverage
+**/.nyc_output
+
+# Python virtual environments (backend ML experiments)
+**/venv
+**/bliss-python-env
+
+# Tests — not needed in production images
+**/__tests__
+**/e2e
+**/*.test.*
+**/*.spec.*
+
+# Stale lockfiles from pre-monorepo era
+apps/*/package-lock.json
+
+# Original repos — not needed in Docker build context
+bliss-finance-api/
+bliss-backend-service/
+bliss-frontend/

@@ -1,0 +1,417 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Portfolio
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+  schemas:
+    FinancialSummary:
+      type: object
+      description: Aggregated financial metrics for a portfolio item in a specific currency.
+      properties:
+        costBasis:
+          type: number
+        marketValue:
+          type: number
+        unrealizedPnL:
+          type: number
+        unrealizedPnLPercent:
+          type: number
+        realizedPnL:
+          type: number
+        totalInvested:
+          type: number
+
+    PortfolioItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: number
+        currency:
+          type: string
+        isin:
+          type: string
+          nullable: true
+          description: System-resolved ISIN (e.g. "IE00BK5BQT80").
+        exchange:
+          type: string
+          nullable: true
+          description: ISO-10383 MIC code (e.g. "XETR").
+        assetCurrency:
+          type: string
+          nullable: true
+          description: Currency the asset trades in (e.g. "EUR").
+        category:
+          type: object
+          properties:
+            name:
+              type: string
+            group:
+              type: string
+            type:
+              type: string
+            icon:
+              type: string
+            processingHint:
+              type: string
+        native:
+          $ref: '#/components/schemas/FinancialSummary'
+        usd:
+          $ref: '#/components/schemas/FinancialSummary'
+        portfolio:
+          $ref: '#/components/schemas/FinancialSummary'
+          description: Values in the tenant's configured portfolioCurrency.
+        debtTerms:
+          $ref: '#/components/schemas/DebtTerms'
+        manualValues:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              date:
+                type: string
+                format: date
+              value:
+                type: number
+              currency:
+                type: string
+
+    PortfolioItemsResponse:
+      type: object
+      properties:
+        portfolioCurrency:
+          type: string
+          description: The tenant's configured portfolio display currency.
+          example: 'EUR'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortfolioItem'
+
+    DebtTerms:
+      type: object
+      properties:
+        id:
+          type: integer
+        portfolioItemId:
+          type: integer
+        initialBalance:
+          type: number
+          description: The original loan principal amount.
+        interestRate:
+          type: number
+          description: Annual percentage rate (APR).
+        termInMonths:
+          type: integer
+          description: Total loan term in months.
+        originationDate:
+          type: string
+          format: date
+          description: The date the loan was originated.
+
+    DebtTermsInput:
+      type: object
+      required:
+        - initialBalance
+        - interestRate
+        - termInMonths
+        - originationDate
+      properties:
+        initialBalance:
+          type: number
+        interestRate:
+          type: number
+        termInMonths:
+          type: integer
+        originationDate:
+          type: string
+          format: date
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/portfolio/items:
+    get:
+      summary: Fetch real-time portfolio items
+      description: Retrieves a list of all portfolio items for the user, enriched with real-time market data where applicable.
+      parameters:
+        - name: assetType
+          in: query
+          description: Filter by the category type (e.g., 'Stock', 'Debt').
+          schema:
+            type: string
+        - name: source
+          in: query
+          description: Filter by the data source of the item.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Portfolio items with currency metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioItemsResponse'
+  /api/portfolio/items/{assetId}/manual-values:
+    get:
+      summary: List manual values for an asset
+      description: Retrieves all manual price entries for a given portfolio item.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: An array of manual value entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    date:
+                      type: string
+                      format: date
+                    value:
+                      type: number
+                    currency:
+                      type: string
+        '404':
+          description: Portfolio item not found.
+    post:
+      summary: Add a manual value to an asset
+      description: Adds a new manual price point for a portfolio item that is tracked manually.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - date
+                - value
+                - currency
+              properties:
+                date:
+                  type: string
+                  format: date
+                value:
+                  type: number
+                currency:
+                  type: string
+      responses:
+        '201':
+          description: The newly created manual value.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  date:
+                    type: string
+                    format: date
+                  value:
+                    type: number
+                  currency:
+                    type: string
+        '404':
+          description: Portfolio item not found.
+
+  /api/portfolio/items/{assetId}/manual-values/{valueId}:
+    delete:
+      summary: Delete a manual value entry
+      description: Removes a specific manual price entry from a portfolio item.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: valueId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Manual value deleted successfully.
+        '404':
+          description: Portfolio item or manual value not found.
+
+  /api/portfolio/items/{assetId}/debt-terms:
+    get:
+      summary: Get debt terms for a liability
+      description: Retrieves the loan/debt terms for a portfolio item classified as a liability.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The debt terms for the portfolio item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebtTerms'
+        '404':
+          description: Portfolio item or debt terms not found.
+    put:
+      summary: Create or update debt terms
+      description: Sets or updates the loan/debt terms for a portfolio item classified as a liability.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DebtTermsInput'
+      responses:
+        '200':
+          description: Debt terms saved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebtTerms'
+        '404':
+          description: Portfolio item not found.
+  /api/portfolio/holdings:
+    get:
+      summary: Fetch historical portfolio holdings
+      description: Retrieves a paginated list of daily portfolio holdings records.
+      parameters:
+        - name: ticker
+          in: query
+          description: Filter by asset symbol.
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: Filter by category name.
+          schema:
+            type: string
+        - name: categoryGroup
+          in: query
+          description: Filter by category group.
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: A paginated list of portfolio holdings.
+  /api/portfolio/history:
+    get:
+      summary: Fetch aggregated portfolio history
+      description: Retrieves aggregated historical data for performance charting.
+      parameters:
+        - name: from
+          in: query
+          description: Start date in ISO 8601 format.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: End date in ISO 8601 format.
+          schema:
+            type: string
+            format: date
+        - name: type
+          in: query
+          description: 'Filter by asset type (e.g., INVESTMENT, DEBT). Multiple values can be comma-separated.'
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: 'Filter by asset group (e.g., Equities, Real Estate). Multiple values can be comma-separated.'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A time-series of aggregated daily portfolio values with currency metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolioCurrency:
+                    type: string
+                    description: The tenant's configured portfolio display currency.
+                    example: 'EUR'
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                        totalUSD:
+                          type: number
+                          description: Total portfolio value in USD.
+                        totalPortfolioCurrency:
+                          type: number
+                          description: Total portfolio value in the tenant's portfolioCurrency.
+                        Investments:
+                          type: object
+                          properties:
+                            total:
+                              type: number
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: number
+                        Debt:
+                          type: object
+                          properties:
+                            total:
+                              type: number
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: number

@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: Bliss API Layer - Insights
+  description: |
+    AI-generated financial insights endpoints. Insights are produced by the
+    backend service via Google Gemini and stored in the Insight table. This API
+    serves, filters, and manages their dismissal state, and provides an
+    on-demand generation trigger.
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly JWT cookie set at sign-in.
+
+  schemas:
+    Insight:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Auto-incremented primary key.
+          example: 42
+        tenantId:
+          type: string
+          description: FK to the tenant that owns this insight.
+        batchId:
+          type: string
+          description: Groups insights from the same generation run.
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        date:
+          type: string
+          format: date-time
+          description: Generation date (midnight UTC).
+        lens:
+          type: string
+          description: The analysis lens that produced this insight.
+          enum:
+            - SPENDING_VELOCITY
+            - CATEGORY_CONCENTRATION
+            - INCOME_STABILITY
+            - SAVINGS_RATE
+            - PORTFOLIO_EXPOSURE
+            - DEBT_HEALTH
+            - NET_WORTH_TRAJECTORY
+          example: "SPENDING_VELOCITY"
+        title:
+          type: string
+          description: Short title (max 255 chars, 8 words max).
+          example: "Dining spend rose 23%"
+        body:
+          type: string
+          description: Detailed observation (2-4 sentences with specific numbers).
+          example: "Your dining category increased from R$620 to R$763 this month, a 23% rise."
+        severity:
+          type: string
+          enum: [POSITIVE, INFO, WARNING, CRITICAL]
+          description: Severity level of the insight.
+          example: "WARNING"
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Priority score (higher = more important).
+          example: 78
+        dataHash:
+          type: string
+          description: SHA-256 hash of the input data used for deduplication.
+        metadata:
+          type: object
+          nullable: true
+          description: Lens-specific data points used to generate this insight.
+        dismissed:
+          type: boolean
+          description: Whether the user has dismissed this insight.
+          default: false
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+
+    InsightListResponse:
+      type: object
+      properties:
+        insights:
+          type: array
+          items:
+            $ref: '#/components/schemas/Insight'
+        total:
+          type: integer
+          description: Total number of insights matching the filters.
+          example: 7
+        latestBatchDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            The createdAt of the most recent insight for this tenant.
+            Used by the frontend to detect when a new batch has been generated.
+
+    DismissInsightRequest:
+      type: object
+      required:
+        - insightId
+        - dismissed
+      properties:
+        insightId:
+          type: integer
+          description: The ID of the insight to dismiss or restore.
+          example: 42
+        dismissed:
+          type: boolean
+          description: Set to true to dismiss, false to restore.
+          example: true
+
+    GenerateInsightsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Insight generation triggered"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+security:
+  - CookieAuth: []
+
+paths:
+  /api/insights:
+    get:
+      tags:
+        - Insights
+      summary: List insights
+      description: |
+        Fetches the tenant's insights with optional filtering by lens, severity,
+        and dismissal state. Results are ordered by priority DESC, createdAt DESC.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Max results per page.
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          description: Pagination offset.
+          schema:
+            type: integer
+            default: 0
+        - name: lens
+          in: query
+          required: false
+          description: Filter by lens identifier.
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          description: Filter by severity level.
+          schema:
+            type: string
+            enum: [POSITIVE, INFO, WARNING, CRITICAL]
+        - name: includeDismissed
+          in: query
+          required: false
+          description: Include dismissed insights.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: List of insights matching the filters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightListResponse'
+        '401':
+          description: Unauthorized — missing or invalid JWT.
+
+    put:
+      tags:
+        - Insights
+      summary: Dismiss or restore an insight
+      description: |
+        Toggles the dismissed state of a specific insight. Validates that the
+        insight belongs to the authenticated user's tenant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DismissInsightRequest'
+      responses:
+        '200':
+          description: The updated insight object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Insight'
+        '403':
+          description: Forbidden — insight does not belong to the user's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized — missing or invalid JWT.
+
+    post:
+      tags:
+        - Insights
+      summary: Trigger insight generation
+      description: |
+        Triggers on-demand insight generation for the authenticated user's tenant.
+        Sends a fire-and-forget request to the backend service and returns 202
+        immediately. The frontend should poll GET /api/insights to detect when
+        the new batch is ready (via latestBatchDate change).
+      responses:
+        '202':
+          description: Generation job accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateInsightsResponse'
+        '401':
+          description: Unauthorized — missing or invalid JWT.
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

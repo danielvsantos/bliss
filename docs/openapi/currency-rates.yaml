@@ -1,0 +1,106 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Currency Rates
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+  schemas:
+    CurrencyRate:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        day:
+          type: integer
+        currencyFrom:
+          type: string
+        currencyTo:
+          type: string
+        value:
+          type: number
+        provider:
+          type: string
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/currency-rates:
+    get:
+      summary: Get currency rates
+      description: Retrieves a list of currency rates, scoped to the user's tenant.
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+        - name: month
+          in: query
+          schema:
+            type: integer
+        - name: day
+          in: query
+          schema:
+            type: integer
+        - name: currencyFrom
+          in: query
+          schema:
+            type: string
+        - name: currencyTo
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of currency rates.
+    post:
+      summary: Create or update a currency rate
+      description: Upserts a currency rate for a specific day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CurrencyRate'
+      responses:
+        '201':
+          description: The created or updated currency rate.
+  /api/currency-rates/{id}:
+    put:
+      summary: Update a currency rate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CurrencyRate'
+      responses:
+        '200':
+          description: The updated currency rate.
+    delete:
+      summary: Delete a currency rate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: The currency rate was deleted.

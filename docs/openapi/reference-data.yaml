@@ -1,0 +1,100 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Reference Data
+  version: 1.1.0
+  description: >
+    API for fetching reference data. Countries and currencies are global
+    (no auth required). Banks require authentication and are tenant-scoped
+    (see banks.yaml for full details).
+
+# Countries and currencies are public. Banks require auth (defined in banks.yaml).
+security: []
+
+paths:
+  /api/banks:
+    get:
+      summary: List all banks (requires auth)
+      description: >
+        Returns the full global list of banks, ordered alphabetically.
+        Banks are reference data; tenant-specific selection is managed
+        via the tenants API. See banks.yaml for POST documentation.
+      operationId: getBanks
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: A list of all available banks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Bank'
+        '401':
+          description: Authentication required.
+
+  /api/countries:
+    get:
+      summary: Get all countries
+      description: Retrieves a list of all available countries.
+      operationId: getCountries
+      responses:
+        '200':
+          description: A list of countries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Country'
+
+  /api/currencies:
+    get:
+      summary: Get all currencies
+      description: Retrieves a list of all available currencies.
+      operationId: getCurrencies
+      responses:
+        '200':
+          description: A list of currencies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Currency'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly session cookie set at sign-in.
+  schemas:
+    Bank:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    Country:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        emoji:
+          type: string
+
+    Currency:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        symbol:
+          type: string

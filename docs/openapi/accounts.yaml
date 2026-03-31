@@ -1,0 +1,173 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Accounts
+  version: 1.0.1
+  description: API for managing bank accounts within a tenant.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+  schemas:
+    Account:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        accountNumber:
+          type: string
+        bankId:
+          type: integer
+        currencyCode:
+          type: string
+        countryId:
+          type: string
+        ownerIds:
+          type: array
+          items:
+            type: string
+    AccountUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        accountNumber:
+          type: string
+        bankId:
+          type: integer
+        currencyCode:
+          type: string
+        countryId:
+          type: string
+        ownerIds:
+          type: array
+          items:
+            type: string
+    AccountList:
+      type: object
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/accounts:
+    get:
+      summary: Get accounts
+      description: Retrieves a list of accounts, with optional filtering and pagination.
+      operationId: getAccounts
+      parameters:
+        - name: id
+          in: query
+          description: Account ID to fetch a single account.
+          schema:
+            type: integer
+        - name: countryId
+          in: query
+          description: Filter by country ID.
+          schema:
+            type: string
+        - name: currencyCode
+          in: query
+          description: Filter by currency code.
+          schema:
+            type: string
+        - name: ownerId
+          in: query
+          description: Filter by owner's user ID.
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination.
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page.
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: A list of accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountList'
+    post:
+      summary: Create an account
+      description: Creates a new account.
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Account'
+      responses:
+        '201':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+
+  /api/accounts/{id}:
+    put:
+      summary: Update an account
+      description: Updates an existing account by its ID.
+      operationId: updateAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the account to update.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountUpdate'
+      responses:
+        '200':
+          description: Account updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+    delete:
+      summary: Delete an account
+      description: Deletes an account by its ID.
+      operationId: deleteAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the account to delete.
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Account deleted.

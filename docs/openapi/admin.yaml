@@ -1,0 +1,366 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Admin
+  version: 1.0.0
+  description: |
+    Internal admin endpoints for managing default categories and the GlobalEmbedding
+    cross-tenant classification table.
+
+    These endpoints are NOT user-facing — they are called by Anthropic/Bliss operations
+    staff to provision new categories, push metadata changes, and maintain embedding quality.
+
+    Auth: `x-admin-key` request header (value must match `ADMIN_API_KEY` env var).
+    No user session is required or checked.
+
+components:
+  securitySchemes:
+    adminKeyAuth:
+      type: apiKey
+      in: header
+      name: x-admin-key
+      description: >
+        Static admin API key set in the ADMIN_API_KEY environment variable.
+        Must be provided on every request. Returns 401 if missing or incorrect.
+
+  schemas:
+    DefaultCategoryListItem:
+      type: object
+      description: A default category with live database statistics.
+      properties:
+        code:
+          type: string
+          description: SNAKE_UPPER_CASE identifier shared across all tenant rows (e.g. "GROCERIES").
+          example: GROCERIES
+        name:
+          type: string
+          description: Human-readable display name.
+          example: Groceries
+        group:
+          type: string
+          description: Top-level grouping used for UI display and analytics.
+          example: Food & Drink
+        type:
+          type: string
+          description: Broad transaction type (e.g. "Essentials", "Income").
+          example: Essentials
+        icon:
+          type: string
+          nullable: true
+          description: Emoji icon for this category. Null if not set.
+          example: 🛒
+        processingHint:
+          type: string
+          nullable: true
+          description: |
+            System-managed hint used internally by the classification pipeline.
+            Cannot be changed via this API (400 if attempted). Examples: SALARY, INVESTMENT.
+          example: null
+        portfolioItemKeyStrategy:
+          type: string
+          enum: [TICKER, CATEGORY_NAME, CATEGORY_NAME_PLUS_DESCRIPTION, IGNORE, CURRENCY]
+          description: |
+            Controls how portfolio items are keyed when transactions in this category
+            are linked to the portfolio. IGNORE = no portfolio link.
+          example: IGNORE
+        tenantCount:
+          type: integer
+          description: Number of tenant Category rows that currently have this defaultCategoryCode.
+          example: 12
+        globalEmbeddingCount:
+          type: integer
+          description: |
+            Number of GlobalEmbedding rows for this code. These are real transaction
+            descriptions confirmed by actual users against a default category. Used for
+            cross-tenant Tier 2b (VECTOR_MATCH_GLOBAL) classification.
+          example: 47
+
+    DefaultCategoryProvisionRequest:
+      type: object
+      required:
+        - code
+        - name
+        - group
+        - type
+      properties:
+        code:
+          type: string
+          description: SNAKE_UPPER_CASE identifier. Must be unique. Regex `/^[A-Z0-9_]+$/`.
+          example: PET_INSURANCE
+        name:
+          type: string
+          description: Human-readable display name.
+          example: Pet Insurance
+        group:
+          type: string
+          description: Top-level UI grouping.
+          example: Subscriptions
+        type:
+          type: string
+          description: Broad transaction type.
+          example: Living Expenses
+        icon:
+          type: string
+          nullable: true
+          description: Optional emoji icon.
+          example: 🐾
+        processingHint:
+          type: string
+          nullable: true
+          description: |
+            Optional system-managed processing hint. Rarely needed; check existing
+            categories before using. Cannot be changed once set via PUT.
+        portfolioItemKeyStrategy:
+          type: string
+          nullable: true
+          enum: [TICKER, CATEGORY_NAME, CATEGORY_NAME_PLUS_DESCRIPTION, IGNORE, CURRENCY]
+          description: Defaults to IGNORE if not provided.
+
+    DefaultCategoryUpdateRequest:
+      type: object
+      description: |
+        All fields are optional — only provided fields are updated.
+        At least one field must be present. processingHint is blocked (400).
+      properties:
+        name:
+          type: string
+          description: New display name, pushed to all tenant Category rows.
+        group:
+          type: string
+          description: New group, pushed to all tenant Category rows.
+        type:
+          type: string
+          description: New type, pushed to all tenant Category rows.
+        icon:
+          type: string
+          description: New emoji icon, pushed to all tenant Category rows.
+        portfolioItemKeyStrategy:
+          type: string
+          enum: [TICKER, CATEGORY_NAME, CATEGORY_NAME_PLUS_DESCRIPTION, IGNORE, CURRENCY]
+          description: New portfolio strategy, pushed to all tenant Category rows.
+        newCode:
+          type: string
+          description: |
+            Rename this code to a new SNAKE_UPPER_CASE value. Propagates to:
+            - All tenant Category rows (defaultCategoryCode field)
+            - All GlobalEmbedding rows for this code
+            Must not conflict with an existing code (409 if taken).
+
+security:
+  - adminKeyAuth: []
+
+paths:
+  /api/admin/default-categories:
+    get:
+      summary: List default categories with live stats
+      description: |
+        Returns all categories defined in `defaultCategories.js` enriched with live
+        database statistics: how many tenant rows use this code, and how many
+        GlobalEmbedding rows exist for cross-tenant classification.
+
+        Useful for auditing category coverage and embedding density before a
+        regenerate-embeddings run.
+      tags:
+        - Admin — Default Categories
+      responses:
+        '200':
+          description: Array of default categories with stats.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DefaultCategoryListItem'
+        '401':
+          description: Unauthorized — missing or incorrect x-admin-key.
+        '500':
+          description: Internal Server Error.
+
+    post:
+      summary: Provision a new default category to all existing tenants
+      description: |
+        Creates one Category row per existing tenant with the provided code/name/group/type.
+        Uses `skipDuplicates: true` so it is safe to re-run — already-provisioned tenants
+        are skipped silently.
+
+        Returns 409 if any Category row with this code already exists (use PUT to update).
+
+        **Important:** This endpoint does NOT update `defaultCategories.js`. You must
+        also add the new entry to that file manually so future signups receive it.
+      tags:
+        - Admin — Default Categories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefaultCategoryProvisionRequest'
+            example:
+              code: PET_INSURANCE
+              name: Pet Insurance
+              group: Subscriptions
+              type: Living Expenses
+              icon: 🐾
+      responses:
+        '201':
+          description: Category provisioned successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provisioned:
+                    type: integer
+                    description: Number of tenant rows created.
+                    example: 8
+                  note:
+                    type: string
+                    example: "Remember to add this category to defaultCategories.js so future signups also receive it."
+        '400':
+          description: |
+            Bad Request. Possible reasons:
+            - Missing required fields (code, name, group, type)
+            - code is not SNAKE_UPPER_CASE
+            - portfolioItemKeyStrategy is not a valid enum value
+        '401':
+          description: Unauthorized.
+        '409':
+          description: Conflict — a category with this code already exists.
+        '500':
+          description: Internal Server Error.
+
+  /api/admin/default-categories/{code}:
+    put:
+      summary: Update a default category across all tenants
+      description: |
+        Pushes metadata changes (name, group, type, icon, portfolioItemKeyStrategy)
+        to ALL tenant Category rows that share this defaultCategoryCode.
+
+        Optionally renames the code itself (`newCode`). A rename also propagates to all
+        GlobalEmbedding rows for this code so cross-tenant classification stays consistent.
+
+        **Protected field:** `processingHint` cannot be updated via this API (400 if included).
+        It is managed by the system — any change would require a code change.
+
+        **Important:** After updating, also update `defaultCategories.js` manually so new
+        signups receive the corrected values.
+      tags:
+        - Admin — Default Categories
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The current SNAKE_UPPER_CASE category code to update.
+          example: GROCERIES
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefaultCategoryUpdateRequest'
+            examples:
+              update_icon:
+                summary: Update icon only
+                value:
+                  icon: 🥦
+              rename_code:
+                summary: Rename code
+                value:
+                  newCode: GROCERIES_V2
+              update_multiple:
+                summary: Update name and icon
+                value:
+                  name: Grocery Stores
+                  icon: 🛒
+      responses:
+        '200':
+          description: Update applied successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updatedTenantCategories:
+                    type: integer
+                    description: Number of tenant Category rows updated.
+                    example: 12
+                  globalEmbeddingsRenamed:
+                    type: integer
+                    description: Number of GlobalEmbedding rows renamed (only non-zero when newCode was provided).
+                    example: 0
+                  renamedTo:
+                    type: string
+                    description: The new code value. Only present when a rename was performed.
+                    example: GROCERIES_V2
+                  note:
+                    type: string
+                    example: "Remember to update defaultCategories.js to keep new signups consistent."
+        '400':
+          description: |
+            Bad Request. Possible reasons:
+            - No fields provided
+            - processingHint included (immutable)
+            - newCode is not SNAKE_UPPER_CASE
+            - portfolioItemKeyStrategy is not a valid enum value
+        '401':
+          description: Unauthorized.
+        '404':
+          description: No categories found with this code.
+        '409':
+          description: Conflict — newCode is already taken by another category.
+        '500':
+          description: Internal Server Error.
+
+  /api/admin/default-categories/{code}/regenerate-embeddings:
+    post:
+      summary: Regenerate Gemini embeddings for a category
+      description: |
+        Re-generates the Gemini embedding vectors for ALL existing GlobalEmbedding rows
+        under this code. This updates the `embedding` vector column in place — no rows
+        are created or deleted.
+
+        **ONLY updates existing rows.** GlobalEmbedding rows are only created by the
+        classification pipeline when real users confirm seeds against a default category.
+        This endpoint never creates new rows — it only refreshes existing vectors.
+
+        **Use cases:**
+        - After a Gemini model upgrade (refresh all vectors with the new model output)
+        - After a code rename (verify renamed rows still classify correctly)
+        - Periodic quality refresh
+
+        Processing is sequential to avoid rate-limiting the Gemini API. The response is
+        synchronous — it waits for all rows to complete before returning.
+      tags:
+        - Admin — Default Categories
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SNAKE_UPPER_CASE category code whose embeddings should be refreshed.
+          example: RESTAURANTS
+      responses:
+        '200':
+          description: Regeneration complete (regardless of per-row failures).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  regenerated:
+                    type: integer
+                    description: Number of rows successfully refreshed.
+                    example: 23
+                  failed:
+                    type: integer
+                    description: Number of rows that failed (Gemini API errors). Check server logs for details.
+                    example: 0
+                  message:
+                    type: string
+                    description: Optional message (e.g. "No GlobalEmbedding rows found for code 'X'.").
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error (outer error, not per-row failures).

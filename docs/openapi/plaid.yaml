@@ -1,0 +1,1366 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Plaid Integration
+  version: 2.0.0
+  description: |
+    Full lifecycle management of Plaid bank connections: link token creation,
+    public token exchange, account selection, incremental sync, token rotation,
+    soft disconnect (Pause Sync), reconnect, webhook handling, transaction review,
+    sync logs, and admin hard delete.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+
+  schemas:
+    PlaidItemResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Internal CUID of the PlaidItem.
+        itemId:
+          type: string
+          description: Plaid's own item_id.
+        status:
+          type: string
+          enum: [PENDING_SELECTION, ACTIVE, LOGIN_REQUIRED, ERROR, REVOKED]
+          description: |
+            Current connection health status:
+            - PENDING_SELECTION — token exchanged, awaiting account selection.
+            - ACTIVE — healthy, syncing normally.
+            - LOGIN_REQUIRED — re-authentication needed at the bank.
+            - ERROR — non-auth Plaid error.
+            - REVOKED — user paused sync (soft disconnect).
+        errorCode:
+          type: string
+          nullable: true
+        lastSync:
+          type: string
+          format: date-time
+          nullable: true
+        institutionName:
+          type: string
+        institutionId:
+          type: string
+          nullable: true
+        bankId:
+          type: integer
+          nullable: true
+        consentExpiration:
+          type: string
+          format: date-time
+          nullable: true
+        environment:
+          type: string
+          enum: [sandbox, development, production]
+        createdAt:
+          type: string
+          format: date-time
+        historicalSyncComplete:
+          type: boolean
+          description: Set to true when a WEBHOOK_HISTORICAL_UPDATE sync completes — the full 2-year Plaid backfill is done.
+          default: false
+        earliestTransactionDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: The oldest transaction date seen across all sync batches. Updated monotonically (only moves earlier, never later).
+        accounts:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              plaidAccountId:
+                type: string
+              name:
+                type: string
+              mask:
+                type: string
+              type:
+                type: string
+              subtype:
+                type: string
+
+    PlaidTransactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        plaidTransactionId:
+          type: string
+        plaidItemId:
+          type: string
+        amount:
+          type: number
+          description: Positive = debit (money leaving), negative = credit (money entering).
+        currencyCode:
+          type: string
+        date:
+          type: string
+          format: date
+        name:
+          type: string
+          description: Plaid's transaction name.
+        merchantName:
+          type: string
+          nullable: true
+        suggestedCategoryId:
+          type: integer
+          nullable: true
+        suggestedCategoryName:
+          type: string
+          nullable: true
+        aiConfidence:
+          type: number
+          format: float
+          nullable: true
+        classificationSource:
+          type: string
+          enum: [EXACT_MATCH, VECTOR_MATCH, VECTOR_MATCH_GLOBAL, LLM, USER_OVERRIDE]
+          nullable: true
+          description: |
+            Which classification tier produced the suggested category:
+            - EXACT_MATCH — in-memory cache hit (fastest, highest confidence)
+            - VECTOR_MATCH — tenant-scoped pgvector cosine similarity
+            - VECTOR_MATCH_GLOBAL — cross-tenant pgvector cosine similarity (score discounted by 0.92)
+            - LLM — Gemini classification
+            - USER_OVERRIDE — user manually selected or confirmed a category
+        classificationReasoning:
+          type: string
+          nullable: true
+          description: Free-text reasoning from the Gemini LLM. Null for EXACT_MATCH and VECTOR_MATCH.
+        seedHeld:
+          type: boolean
+          default: false
+          description: |
+            True while this transaction is held for the Quick Seed interview modal.
+            Set to true by Phase 1 of the sync worker when confidence < autoPromoteThreshold
+            and source ≠ EXACT_MATCH. Cleared (false) when the user confirms or excludes
+            the seed via POST /api/plaid/transactions/confirm-seeds. Excluded seeds are
+            also moved to promotionStatus=CLASSIFIED (pending review queue).
+        promotionStatus:
+          type: string
+          enum: [PENDING, CLASSIFIED, PROMOTED, SKIPPED]
+        requiresEnrichment:
+          type: boolean
+          description: True for investment transactions that need ticker/qty/price before promotion.
+        enrichmentType:
+          type: string
+          nullable: true
+          enum: [INVESTMENT]
+        accountName:
+          type: string
+          nullable: true
+        institutionName:
+          type: string
+          nullable: true
+        category:
+          type: object
+          nullable: true
+          description: Raw Plaid personal_finance_category JSON.
+
+    SeedItem:
+      type: object
+      description: |
+        A grouped seed item for the Quick Seed interview modal.
+        Represents all PlaidTransactions with the same normalised description that were
+        held back during Phase 1 (seedHeld=true) because confidence < autoPromoteThreshold.
+      properties:
+        description:
+          type: string
+          description: Display name — merchantName if available, otherwise raw transaction name.
+          example: Netflix
+        normalizedDescription:
+          type: string
+          description: Lowercased, trimmed, whitespace-collapsed key used for grouping and matching in confirm-seeds.
+          example: netflix
+        rawName:
+          type: string
+          description: Original Plaid transaction name.
+          example: NETFLIX.COM
+        count:
+          type: integer
+          description: Number of PlaidTransactions sharing this normalised description.
+          example: 3
+        suggestedCategoryId:
+          type: integer
+          nullable: true
+          description: AI-suggested category ID from Phase 1.
+        suggestedCategoryName:
+          type: string
+          nullable: true
+        suggestedCategory:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            group: { type: string }
+            type: { type: string }
+        aiConfidence:
+          type: number
+          format: float
+          nullable: true
+          description: Classification confidence (0–1) from Phase 1.
+          example: 0.92
+        classificationSource:
+          type: string
+          nullable: true
+          enum: [VECTOR_MATCH, VECTOR_MATCH_GLOBAL, LLM]
+          description: Which tier produced the suggestion. EXACT_MATCH is never held for the interview.
+        classificationReasoning:
+          type: string
+          nullable: true
+          description: Free-text reasoning from the LLM. Null for VECTOR_MATCH/VECTOR_MATCH_GLOBAL.
+        plaidHint:
+          type: string
+          nullable: true
+          description: Plaid personal_finance_category.primary hint, included for context.
+          example: FOOD_AND_DRINK
+
+    PlaidSyncLogResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        plaidItemId:
+          type: string
+        type:
+          type: string
+          enum: [INITIAL_SYNC, SYNC_UPDATE]
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+        details:
+          type: object
+          nullable: true
+          description: '{ added, modified, removed, batches } on success; { error, added, modified, removed } on failure.'
+        createdAt:
+          type: string
+          format: date-time
+
+paths:
+
+  # ─────────────────────────────────────────────────────────────
+  # 1. Link Token
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/create-link-token:
+    post:
+      summary: Create a Link Token
+      description: |
+        Generates a temporary `link_token` to initialize Plaid Link on the frontend.
+        When `plaidItemId` is provided, opens Link in **update mode** for re-authentication
+        or reconnecting a paused (REVOKED) account.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plaidItemId:
+                  type: string
+                  description: When provided, creates a link token scoped to that existing Item (update mode for re-auth or reconnect). Omit for a new connection.
+      responses:
+        '200':
+          description: Link token created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  link_token:
+                    type: string
+                    example: "link-sandbox-12345"
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Error
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Public Token Exchange
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/exchange-public-token:
+    post:
+      summary: Exchange Public Token
+      description: |
+        Completes the Plaid Link OAuth flow. Exchanges the temporary `public_token` returned
+        by the client SDK for a permanent `access_token`. The `accessToken` is encrypted
+        (AES-256-GCM) before being stored in `PlaidItem`.
+
+        - Optimistic Bank Linking: automatically matches `institutionId` with existing Bank records.
+        - Auto-Creation: if the Bank does not exist, creates it from Plaid metadata.
+        - New items start with `status: 'PENDING_SELECTION'` — no sync until account selection is complete.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - public_token
+                - institutionId
+                - institutionName
+              properties:
+                public_token:
+                  type: string
+                  description: The public token from Plaid Link onSuccess.
+                  example: "public-sandbox-abc123"
+                institutionId:
+                  type: string
+                  description: Plaid institution ID from Link metadata.
+                  example: "ins_12345"
+                institutionName:
+                  type: string
+                  description: Human-readable institution name from Link metadata.
+                  example: "Chase"
+                bankName:
+                  type: string
+                  description: Optional custom name for the bank if not found in the existing bank list.
+      responses:
+        '200':
+          description: Token exchanged and PlaidItem created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plaidItemId:
+                    type: string
+                    description: The internal CUID of the created PlaidItem.
+                    example: "clq123abc0000defg456h"
+        '400':
+          description: Invalid input or missing token.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Error
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. Account Selection & Sync Start
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/sync-accounts:
+    post:
+      summary: Select accounts and start initial sync
+      description: |
+        Allows the user to select which sub-accounts (checking, savings, credit card) to import
+        from the linked Item. Creates `Account` and `PlaidAccount` records, sets
+        `PlaidItem.status = 'ACTIVE'`, and emits `PLAID_INITIAL_SYNC` to trigger ingestion.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - plaidItemId
+                - selectedAccounts
+              properties:
+                plaidItemId:
+                  type: string
+                  description: The PlaidItem to activate.
+                selectedAccounts:
+                  type: array
+                  description: Accounts selected by the user in the account selection modal.
+                  items:
+                    type: object
+                    required:
+                      - plaidAccountId
+                      - name
+                      - type
+                    properties:
+                      plaidAccountId:
+                        type: string
+                      name:
+                        type: string
+                      mask:
+                        type: string
+                        nullable: true
+                      type:
+                        type: string
+                        example: "depository"
+                      subtype:
+                        type: string
+                        example: "checking"
+                accountNames:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Optional map of plaidAccountId → custom display name.
+      responses:
+        '200':
+          description: Accounts created and sync started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plaidItemId:
+                    type: string
+                  accounts:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Invalid input
+        '403':
+          description: Access denied
+        '404':
+          description: Item not found
+        '500':
+          description: Server Error
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. PlaidItem Management
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/items:
+    get:
+      summary: List PlaidItems for the authenticated tenant
+      description: Returns all PlaidItem records with status, account data, and metadata.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of PlaidItems.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlaidItemResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Error
+
+    patch:
+      summary: Reset PlaidItem status to ACTIVE after reconnect
+      description: |
+        Resets the `PlaidItem` status after successful re-authentication via Plaid Link update
+        mode. Only `{ status: 'ACTIVE' }` is accepted. Clears `errorCode` and fire-and-forgets
+        a `PLAID_SYNC_UPDATES` event (source: `RECONNECT_SYNC`) to catch up on missed transactions.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The PlaidItem ID to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [ACTIVE]
+                  description: Only resetting to ACTIVE is permitted.
+      responses:
+        '200':
+          description: Status reset. Reconnect sync triggered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  errorCode:
+                    type: string
+                    nullable: true
+                  lastSync:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  institutionName:
+                    type: string
+        '400':
+          description: Invalid status value or missing id.
+        '403':
+          description: Forbidden — item does not belong to this tenant.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Error
+
+  # ─────────────────────────────────────────────────────────────
+  # 5. Token Rotation
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/rotate-token:
+    post:
+      summary: Rotate a Plaid access token
+      description: |
+        Invalidates the current Plaid access token for a PlaidItem and replaces it with a new
+        one via `plaidClient.itemAccessTokenInvalidate()`. The new token is encrypted at rest.
+        Only `ACTIVE` items may be rotated. Writes an AuditLog entry.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the PlaidItem whose token should be rotated.
+      responses:
+        '200':
+          description: Token rotated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Access token rotated successfully'
+        '400':
+          description: Bad Request — item is not ACTIVE or missing ID.
+        '403':
+          description: Forbidden — PlaidItem does not belong to the authenticated tenant.
+        '404':
+          description: Not Found — no PlaidItem found for the given ID.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 6. Manual Resync
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/resync:
+    post:
+      summary: Trigger a manual incremental sync
+      description: |
+        Triggers a manual incremental sync without waiting for the next Plaid webhook.
+        Only `ACTIVE` items can be resynced — returns 400 if status is anything else.
+        Emits `PLAID_SYNC_UPDATES` with `source: 'MANUAL_RESYNC'`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The PlaidItem ID to resync.
+      responses:
+        '200':
+          description: Sync triggered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Sync triggered'
+        '400':
+          description: Item is not ACTIVE or missing ID.
+        '403':
+          description: Forbidden.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 7. Soft Disconnect (Pause Sync)
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/disconnect:
+    post:
+      summary: Pause sync for a Plaid connection (soft disconnect)
+      description: |
+        Pauses syncing for a Plaid connection by setting `PlaidItem.status = 'REVOKED'`
+        **without** calling `plaidClient.itemRemove()`. This is intentional — `item/remove`
+        is a permanent, irreversible Plaid operation that prevents reconnection via update
+        mode. By only updating the local status, the `accessToken` remains valid so the user
+        can reconnect at any time via "Reconnect Bank".
+
+        Shown to users as **"Pause Sync"** to set correct expectations.
+
+        **See also — Admin Hard Delete**: A permanent, irreversible delete is available at
+        `DELETE /api/plaid/items/hard-delete` (admin-only, `X-Admin-Key` protected). It calls
+        `plaidClient.itemRemove()`, unlinks accounts, and deletes all Plaid staging data.
+        Not exposed in the UI — internal tooling only.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The PlaidItem ID to disconnect.
+      responses:
+        '200':
+          description: Connection paused.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Connection disconnected'
+        '403':
+          description: Forbidden.
+        '404':
+          description: Item not found.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 8. Sync Logs
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/sync-logs:
+    get:
+      summary: Get sync logs for a PlaidItem
+      description: |
+        Returns recent `PlaidSyncLog` records for a given PlaidItem. Powers the Sync Logs
+        table in the Accounts detail panel. Validates tenant ownership before returning data.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: plaidItemId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The PlaidItem ID to fetch logs for.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+          description: Maximum number of logs to return.
+      responses:
+        '200':
+          description: Array of sync log records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlaidSyncLogResponse'
+        '400':
+          description: Missing plaidItemId.
+        '403':
+          description: Forbidden — item does not belong to this tenant.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 9. Webhook Handler
+  # ─────────────────────────────────────────────────────────────
+  /api/webhooks/plaid:
+    post:
+      summary: Plaid webhook receiver
+      description: |
+        Public endpoint for Plaid to push real-time events. **Not JWT-protected** — Plaid
+        calls this directly from their servers, not from a browser.
+
+        **Signature Verification**:
+        - Production: verifies the `plaid-verification-jwt` header using `jose.compactVerify()`
+          against Plaid's public JWK (fetched via `webhookVerificationKeyGet`, cached in-memory
+          by `kid`). The `iat` claim is validated to prevent replay attacks (5-minute max age).
+          Requests failing verification receive 401.
+        - Development/Sandbox: verification is skipped so sandbox webhooks can be tested without
+          an HTTPS-reachable URL. A warning is logged.
+
+        **Response strategy**: Returns `200 { received: true }` immediately before async
+        processing — Plaid retries on non-2xx, so fast acknowledgement is critical.
+
+        **Events handled**:
+        - `TRANSACTIONS.SYNC_UPDATES_AVAILABLE` → emits `PLAID_SYNC_UPDATES` if item is ACTIVE.
+        - `TRANSACTIONS.HISTORICAL_UPDATE` → emits `PLAID_SYNC_UPDATES`.
+        - `ITEM.ERROR` → updates `PlaidItem.status` + `errorCode`.
+        - `ITEM.LOGIN_REQUIRED` → sets `PlaidItem.status = 'LOGIN_REQUIRED'`.
+        - `ITEM.USER_PERMISSION_REVOKED` → sets `PlaidItem.status = 'REVOKED'`.
+        - `ITEM.WEBHOOK_UPDATE_ACKNOWLEDGED` → no-op (logged only).
+
+        Register `https://{domain}/api/webhooks/plaid` in the Plaid dashboard under
+        Team Settings → Webhooks.
+      security: []
+      parameters:
+        - name: plaid-verification-jwt
+          in: header
+          required: false
+          schema:
+            type: string
+          description: ES256 JWT signature from Plaid (required and verified in production).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                webhook_type:
+                  type: string
+                  example: "TRANSACTIONS"
+                webhook_code:
+                  type: string
+                  example: "SYNC_UPDATES_AVAILABLE"
+                item_id:
+                  type: string
+                  description: Plaid's item_id (not the internal PlaidItem CUID).
+                error:
+                  type: object
+                  nullable: true
+                  description: Present for ITEM.ERROR events.
+      responses:
+        '200':
+          description: Webhook received (always returned immediately before async processing).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                    example: true
+        '401':
+          description: Invalid webhook signature (production only).
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 10. Transaction Review — List
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/transactions:
+    get:
+      summary: List PlaidTransactions for review
+      description: |
+        Returns paginated `PlaidTransaction` records for the authenticated tenant, enriched
+        with category names, account names, and institution names.
+        Default filter: `promotionStatus: 'CLASSIFIED'`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: plaidItemId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by specific Plaid connection.
+        - name: promotionStatus
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [CLASSIFIED, PENDING, PROMOTED, SKIPPED, ALL]
+          description: Filter by promotion status. Defaults to CLASSIFIED.
+        - name: minConfidence
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+        - name: maxConfidence
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+          description: Maximum records per page (max 500). The transaction review page fetches up to 500 to enable in-browser grouping and description-matching.
+      responses:
+        '200':
+          description: Paginated list of PlaidTransactions with summary counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlaidTransactionResponse'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+                  summary:
+                    type: object
+                    properties:
+                      classified:
+                        type: integer
+                      pending:
+                        type: integer
+                      promoted:
+                        type: integer
+                      skipped:
+                        type: integer
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 11. Transaction Review — Single Actions
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/transactions/{id}:
+    put:
+      summary: Promote, skip, re-queue, or override category for a PlaidTransaction
+      description: |
+        Handles four distinct actions depending on the request body:
+
+        **Category Override** (`{ suggestedCategoryId }` only):
+        Updates `suggestedCategoryId`, sets `classificationSource: 'USER_OVERRIDE'` and
+        `aiConfidence: 1.0`. No Transaction record created. Fires POST /api/feedback.
+
+        **Skip** (`{ promotionStatus: 'SKIPPED' }`):
+        Sets `promotionStatus: 'SKIPPED'`. Transaction will not appear in future review queues.
+
+        **Re-queue** (`{ promotionStatus: 'CLASSIFIED' }` from a SKIPPED record):
+        Transitions SKIPPED → CLASSIFIED. Guard: only allowed from SKIPPED (not PROMOTED).
+
+        **Promote** (`{ promotionStatus: 'PROMOTED' }`):
+        Creates a `Transaction` record atomically and marks the PlaidTransaction as promoted.
+        Accepts optional `details`, `ticker`, `assetQuantity`, `assetPrice` for investment enrichment.
+        Emits `TRANSACTIONS_IMPORTED`. Fires POST /api/feedback after commit.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The PlaidTransaction ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                promotionStatus:
+                  type: string
+                  enum: [PROMOTED, SKIPPED, CLASSIFIED]
+                  description: |
+                    PROMOTED — creates a Transaction record.
+                    SKIPPED — removes from review queue.
+                    CLASSIFIED — re-queues a previously SKIPPED transaction.
+                suggestedCategoryId:
+                  type: integer
+                  nullable: true
+                  description: Category override (for category-only update or required on promote).
+                details:
+                  type: string
+                  nullable: true
+                  description: Optional override for Transaction.details (defaults to plaidTx.name).
+                ticker:
+                  type: string
+                  nullable: true
+                  description: Investment enrichment — ticker symbol (e.g. VFIAX). Required if category is investment type.
+                assetQuantity:
+                  type: number
+                  nullable: true
+                  description: Investment enrichment — number of units.
+                assetPrice:
+                  type: number
+                  nullable: true
+                  description: Investment enrichment — price per unit at time of transaction.
+                isin:
+                  type: string
+                  nullable: true
+                  description: System-resolved ISIN (e.g. IE00BK5BQT80).
+                exchange:
+                  type: string
+                  nullable: true
+                  description: ISO-10383 MIC code (e.g. XETR).
+                assetCurrency:
+                  type: string
+                  nullable: true
+                  description: Currency the asset trades in (e.g. EUR).
+      responses:
+        '200':
+          description: Action applied successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaidTransactionResponse'
+        '400':
+          description: Invalid transition or missing required fields (e.g. missing suggestedCategoryId on promote).
+        '403':
+          description: Forbidden — transaction does not belong to this tenant.
+        '404':
+          description: PlaidTransaction not found.
+        '409':
+          description: Conflict — transaction is already PROMOTED and cannot be re-actioned.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 12. Transaction Review — Bulk Promote
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/transactions/bulk-promote:
+    post:
+      summary: Bulk-promote classified Plaid transactions
+      description: |
+        Promotes `CLASSIFIED` PlaidTransactions in a single batch operation.
+        Transactions with `requiresEnrichment: true` are always excluded — they must be
+        promoted individually via the deep-dive drawer.
+
+        **Confidence gate bypass**: When `transactionIds` is provided, `minConfidence` is
+        ignored entirely — the user has explicitly selected those rows.
+
+        **Category override**: When `overrideCategoryId` is set, every promoted transaction
+        receives that category, regardless of its existing `suggestedCategoryId`.
+        Sets `classificationSource: 'USER_OVERRIDE'` and `aiConfidence: 1.0` on the staging row.
+        The `suggestedCategoryId: not null` filter is relaxed when this param is provided.
+
+        **Performance**: Uses a single batch dedup query (one `findMany` for all external IDs
+        before the loop) and `Promise.all` within batches of 100 for parallel DB execution.
+
+        Emits one consolidated `TRANSACTIONS_IMPORTED` event covering all promoted transactions.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minConfidence:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.8
+                  description: Minimum AI confidence required for promotion. Ignored when transactionIds is provided.
+                transactionIds:
+                  type: array
+                  items:
+                    type: string
+                  nullable: true
+                  description: |
+                    Specific PlaidTransaction IDs to promote. When provided, bypasses minConfidence
+                    entirely. Used by the "Promote all N" description-matching dialogs on the review page.
+                plaidItemId:
+                  type: string
+                  nullable: true
+                  description: Filter to transactions from a single Plaid connection. Must belong to the authenticated tenant.
+                categoryId:
+                  type: integer
+                  nullable: true
+                  description: Filter to transactions whose suggestedCategoryId matches this value.
+                overrideCategoryId:
+                  type: integer
+                  nullable: true
+                  description: |
+                    When set, every promoted transaction receives this category regardless of its
+                    existing suggestedCategoryId. Sets classificationSource to USER_OVERRIDE and
+                    aiConfidence to 1.0 on the PlaidTransaction. Validated to belong to the tenant.
+      responses:
+        '200':
+          description: Promotion complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  promoted:
+                    type: integer
+                    description: Number of transactions successfully promoted.
+                  skipped:
+                    type: integer
+                    description: Already-promoted, dedup-skipped, no-linked-account, or investment-enrichment-required records.
+                  errors:
+                    type: integer
+                    description: Count of per-row failures (batch continues on individual errors).
+        '400':
+          description: Invalid overrideCategoryId (not found or does not belong to tenant).
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Error
+
+  # ─────────────────────────────────────────────────────────────
+  # 12b. Transaction Review — Bulk Re-Queue
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/transactions/bulk-requeue:
+    post:
+      summary: Bulk re-queue skipped Plaid transactions
+      description: |
+        Moves all `SKIPPED` PlaidTransactions back to `CLASSIFIED` so they reappear in the
+        review queue. Optionally scoped to a single Plaid connection via `plaidItemId`.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plaidItemId:
+                  type: string
+                  nullable: true
+                  description: Optional filter — only re-queue skipped transactions from this Plaid connection. Must belong to the authenticated tenant.
+      responses:
+        '200':
+          description: Re-queue complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+                    description: Number of PlaidTransactions transitioned from SKIPPED to CLASSIFIED.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 13. Admin Hard Delete
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/items/hard-delete:
+    delete:
+      summary: Permanently delete a Plaid connection (admin only)
+      description: |
+        Permanently and irreversibly destroys a Plaid connection and all associated staging data.
+        **Not exposed to end-users** — for internal tooling / support workflows only.
+
+        **Authentication**: `X-Admin-Key` header checked against the `ADMIN_API_KEY` environment
+        variable. Returns 401 if missing, wrong, or if `ADMIN_API_KEY` is not set.
+        This endpoint is intentionally **not** protected by JWT.
+
+        **Execution order**:
+        1. Calls `plaidClient.itemRemove()` to revoke the access token at Plaid's side.
+           Tolerates `ITEM_NOT_FOUND` (already removed at Plaid — continues with local cleanup).
+           Aborts with 502 on any other Plaid error.
+        2. Nullifies `Account.plaidAccountId` and `Account.plaidItemId` for every local
+           Account linked to this PlaidItem (accounts are preserved, just unlinked).
+        3. Deletes the PlaidItem record. PlaidTransaction and PlaidSyncLog cascade-delete
+           automatically (`onDelete: Cascade`).
+
+        **Intentionally preserves**: `Transaction` records (real promoted financial data).
+
+        **Why admin-only?** `plaidClient.itemRemove()` is permanent and irreversible — once
+        called, reconnection via Plaid Link update mode is impossible. The standard user-facing
+        path remains `POST /api/plaid/disconnect` (soft disconnect / Pause Sync).
+      security: []
+      parameters:
+        - name: X-Admin-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Admin API key. Must match the ADMIN_API_KEY environment variable.
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Our internal PlaidItem cuid. Provide either this or itemId.
+        - name: itemId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Plaid's external item_id. Provide either this or id.
+      responses:
+        '200':
+          description: PlaidItem permanently deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    example: true
+                  plaidItemId:
+                    type: string
+                  institutionName:
+                    type: string
+                    nullable: true
+                  tenantId:
+                    type: string
+                  summary:
+                    type: object
+                    properties:
+                      accountsUnlinked:
+                        type: integer
+                        description: Number of Account records unlinked (plaidItemId/plaidAccountId set to null).
+                      plaidTransactionsDeleted:
+                        type: integer
+                        description: Number of PlaidTransaction staging records cascade-deleted.
+                      syncLogsDeleted:
+                        type: integer
+                        description: Number of PlaidSyncLog records cascade-deleted.
+                      transactionsPreserved:
+                        type: boolean
+                        example: true
+                        description: Always true — Transaction records are never deleted by this endpoint.
+                      plaidTokenRevoked:
+                        type: boolean
+                        description: True if plaidClient.itemRemove() succeeded; false if item was already gone on Plaid's side.
+        '400':
+          description: Neither id nor itemId was provided.
+        '401':
+          description: Missing or invalid X-Admin-Key header.
+        '404':
+          description: No PlaidItem found for the given id or itemId.
+        '502':
+          description: Unexpected Plaid API error during itemRemove (local data is untouched).
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # 14. Merchant History
+  # ─────────────────────────────────────────────────────────────
+  /api/transactions/merchant-history:
+    get:
+      summary: Get merchant transaction history
+      description: |
+        Returns recent `Transaction` records for the same merchant/description. Powers the
+        Merchant History section in the Transaction Review deep-dive drawer.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The transaction description / merchant name to look up.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Maximum number of records to return.
+      responses:
+        '200':
+          description: Array of recent transactions for this merchant.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    date:
+                      type: string
+                      format: date
+                    amount:
+                      type: number
+                    currencyCode:
+                      type: string
+                    categoryName:
+                      type: string
+                      nullable: true
+                    source:
+                      type: string
+                      enum: [MANUAL, PLAID, CSV]
+        '400':
+          description: Missing description parameter.
+        '401':
+          description: Unauthorized.
+        '500':
+          description: Internal Server Error.
+
+  # ─────────────────────────────────────────────────────────────
+  # Quick Seed Interview
+  # ─────────────────────────────────────────────────────────────
+  /api/plaid/transactions/seeds:
+    get:
+      summary: Get Quick Seed interview items
+      description: |
+        Returns the top N distinct transaction descriptions (by frequency) that were
+        held back during Phase 1 of the initial Plaid sync with `seedHeld=true`.
+
+        These are items the classification pipeline was not confident enough to
+        auto-promote — they need a quick user confirmation before becoming live
+        transactions.
+
+        Covers all classification sources held below `autoPromoteThreshold`:
+          - `LLM` — Gemini-classified, below threshold
+          - `VECTOR_MATCH` — tenant-scoped vector match, below threshold
+          - `VECTOR_MATCH_GLOBAL` — cross-tenant vector match, discounted score below threshold
+
+        `EXACT_MATCH` and any result **at or above** `autoPromoteThreshold` are never
+        held — they are processed immediately without user review.
+
+        Results are grouped by normalised description and sorted by frequency DESC,
+        so the most common merchants appear first.
+      tags:
+        - Plaid Transactions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: plaidItemId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The PlaidItem ID to fetch seed items for.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 15
+            maximum: 50
+          description: Maximum number of distinct seed descriptions to return.
+      responses:
+        '200':
+          description: |
+            Array of seed items. Empty array means all descriptions were auto-classified
+            (all Tier 1/2 hits) — the interview can be skipped.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SeedItem'
+        '400':
+          description: Bad Request — plaidItemId is required.
+        '401':
+          description: Unauthorized.
+        '404':
+          description: PlaidItem not found or does not belong to this tenant.
+        '500':
+          description: Internal Server Error.
+
+  /api/plaid/transactions/confirm-seeds:
+    post:
+      summary: Confirm Quick Seed interview results
+      description: |
+        Processes the user's category selections from the Quick Seed interview modal.
+
+        For each seed in the `seeds` array:
+          1. Fires `POST /api/feedback` (fire-and-forget) to update the Tier 1 in-memory
+             cache and the Tier 2 vector index for this description.
+          2. Finds all `CLASSIFIED` PlaidTransactions matching the normalised description
+             and promotes them to Transaction rows with `classificationSource=USER_OVERRIDE`.
+          3. Finds all `seedHeld=true` PlaidTransactions (Phase 1 hold-back) and promotes
+             them the same way.
+          4. Corrects any already-PROMOTED rows for this description (updates their category
+             in case the auto-promote used a different suggestion).
+
+        After all seeds are processed, any PlaidTransactions that still have `seedHeld=true`
+        (descriptions the user excluded via the X toggle) are released to the pending review
+        queue: `seedHeld=false`, `promotionStatus=CLASSIFIED`. Their AI suggestion
+        (`suggestedCategoryId`, `aiConfidence`) remains intact for the review UI.
+
+        Finally, fires a `TRANSACTIONS_IMPORTED` event so analytics and portfolio
+        caches are recalculated.
+      tags:
+        - Plaid Transactions
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - plaidItemId
+                - seeds
+              properties:
+                plaidItemId:
+                  type: string
+                  description: The PlaidItem ID these seeds belong to.
+                seeds:
+                  type: array
+                  description: |
+                    The user's confirmed category selections. Excluded seeds (X toggle)
+                    are simply omitted — the backend releases any remaining seedHeld rows
+                    automatically after processing.
+                  items:
+                    type: object
+                    required:
+                      - description
+                      - confirmedCategoryId
+                    properties:
+                      description:
+                        type: string
+                        description: Display name (merchantName or raw name) — used for feedback.
+                      rawName:
+                        type: string
+                        description: Original Plaid transaction name — used to match PlaidTransaction rows.
+                      confirmedCategoryId:
+                        type: integer
+                        description: The confirmed (or overridden) category ID. Must belong to this tenant.
+      responses:
+        '200':
+          description: Seeds confirmed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  confirmed:
+                    type: integer
+                    description: Total number of PlaidTransaction rows confirmed (matched + promoted).
+                  promoted:
+                    type: integer
+                    description: Number of PlaidTransaction rows actually promoted to Transaction rows.
+        '400':
+          description: Bad Request — missing plaidItemId or seeds array.
+        '401':
+          description: Unauthorized.
+        '404':
+          description: PlaidItem not found or does not belong to this tenant.
+        '500':
+          description: Internal Server Error.

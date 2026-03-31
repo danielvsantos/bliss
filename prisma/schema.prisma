@@ -1,0 +1,833 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE
+  PRO
+  AI
+}
+
+enum ValueSource {
+  Manual
+  Synced
+  AI_Estimated
+  API_ALPHAVANTAGE
+}
+
+enum RelationshipType {
+  SELF
+  PARTNER
+  CHILD
+  OTHER_RELATIVE
+  FRIEND
+  COLLEAGUE
+  OTHER
+  OTHER2
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+
+  // AI classification thresholds (tenant-wide business rules).
+  // Default values here MUST stay in sync with DEFAULT_AUTO_PROMOTE_THRESHOLD and
+  // DEFAULT_REVIEW_THRESHOLD in bliss-backend-service/src/config/classificationConfig.js
+  autoPromoteThreshold  Float  @default(0.90)  // Auto-promote if confidence >= this
+  reviewThreshold       Float  @default(0.70)  // Hold for seed interview if confidence < this
+  portfolioCurrency     String @default("USD") // Tenant's preferred portfolio display currency
+
+  // Plaid history window. Seeded from PLAID_HISTORY_DAYS env var at tenant creation;
+  // editable per-tenant via PUT /api/tenants/settings.
+  // Controls both days_requested in the link token and the resync date cutoff.
+  // Sync with DEFAULT_PLAID_HISTORY_DAYS in bliss-backend-service/src/config/classificationConfig.js
+  plaidHistoryDays      Int    @default(1)     // Days of Plaid history fetched at link + resync
+
+  users       User[]
+  countries   TenantCountry[]
+  currencies  TenantCurrency[]
+  tenantBanks TenantBank[]
+  categories  Category[]
+  cashFlowsDaily      CashFlowCacheDaily[]
+  analyticsCacheDaily AnalyticsCacheDaily[]
+  accounts            Account[]
+  transactions        Transaction[]
+  tags                Tag[]
+  portfolioItems      PortfolioItem[]
+  manualAssetValues   ManualAssetValue[]
+  analyticsCacheMonthly    AnalyticsCacheMonthly[]
+  tagAnalyticsCacheMonthly TagAnalyticsCacheMonthly[]
+  plaidItems          PlaidItem[]
+  transactionEmbeddings TransactionEmbedding[]
+  stagedImports       StagedImport[]
+  importAdapters      ImportAdapter[]
+  insights            Insight[]
+
+  // Onboarding state
+  onboardingProgress    Json?       // { checklist: {...}, setupFlow: {...} }
+  onboardingCompletedAt DateTime?   // null = onboarding not finished
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+
+  // Authentication fields
+  passwordHash String?
+  passwordSalt String?
+  provider     String?
+  providerId   String?
+
+  role              String            @default("member")
+
+  name              String?
+  profilePictureUrl String?
+  birthDate         DateTime?
+  relationshipType  RelationshipType?
+  preferredLocale   String?
+
+  accountOwnerships AccountOwner[]
+  plaidItems        PlaidItem[]
+
+  // Notification center
+  lastNotificationSeenAt DateTime?  // When user last opened notification center
+
+  @@index([email])
+  @@index([provider, providerId])
+}
+
+model Account {
+  id            Int            @id @default(autoincrement())
+  name          String
+  accountNumber String
+  bankId        Int
+  countryId     String
+  currencyCode  String
+  tenantId      String
+  transactions  Transaction[]
+  owners        AccountOwner[]
+
+  // Plaid Connection
+  plaidAccountId String?   // Plaid's account_id
+  plaidItemId    String?
+  mask           String?   // Last 4 digits
+  type           String?   // depository, credit, investment, loan
+  subtype        String?   // checking, savings, cd
+
+  plaidItem      PlaidItem? @relation(fields: [plaidItemId], references: [id])
+
+  bank     Bank     @relation(fields: [bankId], references: [id])
+  country  Country  @relation(fields: [countryId], references: [id])
+  currency Currency @relation(fields: [currencyCode], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([name])
+  @@index([bankId])
+  @@index([countryId])
+  @@index([currencyCode])
+  @@index([tenantId])
+}
+
+model PlaidItem {
+  id                String    @id @default(cuid())
+  tenantId          String
+  userId            String
+  itemId            String    @unique // Plaid's item_id
+  accessToken       String    // Encrypted access token
+  institutionId     String?   // Plaid's ins_id: "ins_12345"
+  institutionName   String?   // Cached name (e.g., "Chase")
+  bankId            Int?      // Optional automatic link to internal Bank model
+  status            String    @default("ACTIVE") // ACTIVE, LOGIN_REQUIRED, PENDING_SELECTION, ERROR
+  errorCode         String?   // Last webhook error code
+  consentExpiration DateTime? // When re-auth is needed
+  nextCursor        String?   // For /transactions/sync pagination
+  lastSync          DateTime? // Timestamp of last successful sync
+  historicalSyncComplete    Boolean    @default(false)
+  earliestTransactionDate   DateTime?
+  seedReady                 Boolean    @default(false)  // true when Phase 1 seed classification is done
+  environment       String?   // sandbox, development, production
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bank    Bank?   @relation(fields: [bankId], references: [id])
+  accounts Account[]
+  transactions PlaidTransaction[]
+  syncLogs PlaidSyncLog[]
+
+  @@index([tenantId])
+}
+
+model PlaidSyncLog {
+  id          String    @id @default(cuid())
+  plaidItemId String
+  type        String    // INITIAL_SYNC, SYNC_UPDATE, BALANCE_UPDATE, ERROR
+  status      String    // SUCCESS, FAILED
+  details     Json?     // { added: N, modified: N, removed: N }
+  createdAt   DateTime  @default(now())
+
+  plaidItem PlaidItem @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+
+  @@index([plaidItemId, createdAt])
+}
+
+model PlaidTransaction {
+  id                String   @id @default(cuid()) // Internal ID
+  plaidItemId       String
+  plaidAccountId    String // [NEW] Link to specific account
+  plaidTransactionId String   @unique // Plaid's transaction_id
+  
+  // Raw Data Dump
+  amount            Decimal  @db.Decimal(18, 8) 
+  date              DateTime @db.Date 
+  authorizedDate    DateTime? @db.Date
+  name              String   // Raw name/description
+  merchantName      String?
+  paymentChannel    String?
+  isoCurrencyCode   String?
+  pending           Boolean  @default(false)
+  category          Json?    // Store raw category array/object
+  
+  // [NEW] Sync Workflow Fields
+  syncType          String   @default("ADDED") // ADDED, MODIFIED, REMOVED
+  pendingTransactionId String? // [NEW] Link to original pending transaction
+  
+  // Processing Metadata
+  processed         Boolean  @default(false)
+  processingError   String?
+  matchedTransactionId Int?  // ID of the created Transaction (if processed)
+
+  // [NEW] Full Raw Payload (Encrypted)
+  rawJson           String?  // [ENCRYPTED] Store complete Plaid payload for future-proofing
+
+  // AI Classification Fields (Sprint 2)
+  suggestedCategoryId    Int?       // AI-resolved category
+  aiConfidence           Float?     // 0.0 - 1.0
+  classificationSource   String?    // 'PLAID_MAPPED', 'EXACT_MATCH', 'VECTOR_SEARCH', 'LLM'
+  classificationReasoning String?   // LLM reasoning text (Sprint 12)
+  promotionStatus        String     @default("PENDING")  // PENDING, CLASSIFIED, PROMOTED, SKIPPED
+
+  // Investment Enrichment (Sprint 12)
+  requiresEnrichment     Boolean    @default(false)
+  enrichmentType         String?    // "INVESTMENT", "TRANSFER", etc.
+
+  // Quick Seed Hold-Back
+  seedHeld               Boolean    @default(false)  // true = Phase 1 LLM seed, not yet confirmed by user
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  plaidItem PlaidItem @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+
+  @@index([plaidItemId])
+  @@index([processed])
+  @@index([promotionStatus])
+}
+
+model AccountOwner {
+  accountId Int
+  userId    String
+
+  account Account @relation(fields: [accountId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@id([accountId, userId])
+}
+
+model Category {
+  id              Int              @id @default(autoincrement())
+  name            String
+  group           String
+  type            String
+  tenantId        String
+  icon            String?
+  processingHint  String? // Can be 'API_STOCK', 'AMORTIZING_LOAN', 'RECURRING', etc.
+  portfolioItemKeyStrategy PortfolioItemKeyStrategy @default(IGNORE)
+  defaultCategoryCode String?                      // Sprint B: stable code for default categories (null for custom)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+  portfolioItems PortfolioItem[]
+  embeddings     TransactionEmbedding[]
+  tagAnalyticsCache TagAnalyticsCacheMonthly[]
+
+  @@unique([name, tenantId])
+  @@index([group])
+  @@index([type])
+  @@index([tenantId])
+}
+
+enum PortfolioItemKeyStrategy {
+  TICKER
+  CATEGORY_NAME
+  CATEGORY_NAME_PLUS_DESCRIPTION
+  IGNORE
+  CURRENCY
+}
+
+model Transaction {
+  id               Int              @id @default(autoincrement())
+  transaction_date DateTime
+  year             Int
+  quarter          String
+  month            Int
+  day              Int
+  categoryId       Int
+  description      String
+  details          String?
+  credit           Decimal?         @db.Decimal(18, 8)
+  debit            Decimal?         @db.Decimal(18, 8)
+  currency         String
+  accountId        Int
+  assetQuantity    Decimal?         @db.Decimal(18, 8)
+  assetPrice       Decimal?         @db.Decimal(18, 8)
+  ticker           String?
+  isin             String?          // System-resolved ISIN, e.g. "IE00BK5BQT80"
+  exchange         String?          // ISO-10383 MIC code, e.g. "XETR"
+  assetCurrency    String?          // Currency the asset trades in, e.g. "USD" for AAPL
+  tags             TransactionTag[]
+  userId           String?
+  tenantId         String
+  
+  // [NEW] Source Tracking
+  source           String   @default("MANUAL") // MANUAL, PLAID, CSV
+  externalId       String?  @unique // Plaid transaction_id or CSV row hash
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  account  Account  @relation(fields: [accountId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  portfolioItemId Int?
+  portfolioItem   PortfolioItem? @relation(fields: [portfolioItemId], references: [id], onDelete: SetNull)
+  embedding       TransactionEmbedding?
+
+  @@index([year])
+  @@index([month])
+  @@index([tenantId])
+  @@index([portfolioItemId])
+}
+
+model TransactionTag {
+  transactionId Int
+  tagId         Int
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  tag         Tag         @relation(fields: [tagId], references: [id])
+
+  @@id([transactionId, tagId])
+}
+
+model Tag {
+  id        Int       @id @default(autoincrement())
+  name      String
+  tenantId  String
+  color     String?
+  emoji     String?
+  budget    Decimal?  @db.Decimal(18, 2)
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+
+  transactions      TransactionTag[]
+  tagAnalyticsCache TagAnalyticsCacheMonthly[]
+  tenant            Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+}
+
+
+model AssetPrice {
+  id        Int      @id @default(autoincrement())
+  symbol    String
+  assetType String
+  day       DateTime @db.Date
+  price     Decimal  @db.Decimal(18, 8)
+  currency  String
+  exchange  String   @default("")  // ISO-10383 MIC code; empty for backward compat
+  noData    Boolean  @default(false) // true = TwelveData confirmed no data for this date (e.g. holiday/gap)
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, assetType, day, currency, exchange])
+}
+
+model CurrencyRate {
+  id           Int      @id @default(autoincrement())
+  year         Int
+  month        Int
+  day          Int
+  currencyFrom String
+  currencyTo   String
+  value        Decimal  @db.Decimal(18, 8)
+  provider     String?
+  updatedAt    DateTime @default(now())
+
+  @@unique([year, month, day, currencyFrom, currencyTo], name: "year_month_day_currencyFrom_currencyTo")
+}
+
+model PortfolioItem {
+  id          Int      @id @default(autoincrement())
+  tenantId    String
+  categoryId  Int
+  symbol      String
+  currency    String
+  source      String
+  isin          String?  // System-resolved ISIN
+  exchange      String?  // ISO-10383 MIC code
+  assetCurrency String?  // Currency the asset trades in
+  costBasis   Decimal  @default(0) @db.Decimal(18, 8)
+  realizedPnL Decimal  @default(0) @db.Decimal(18, 8)
+  quantity    Decimal  @default(0) @db.Decimal(18, 8)
+  currentValue Decimal @default(0) @db.Decimal(18, 8)
+  totalInvested Decimal? @db.Decimal(18, 8)
+
+  costBasisInUSD    Decimal? @db.Decimal(18, 8)
+  currentValueInUSD Decimal? @db.Decimal(18, 8)
+  realizedPnLInUSD  Decimal? @db.Decimal(18, 8)
+  totalInvestedInUSD Decimal? @db.Decimal(18, 8)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category         Category               @relation(fields: [categoryId], references: [id])
+  transactions     Transaction[]
+  valueHistory     PortfolioValueHistory[]
+  manualValues     ManualAssetValue[]
+  holdings         PortfolioHolding[]
+  debtTerms        DebtTerms?
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, symbol])
+  @@index([tenantId])
+}
+
+model PortfolioValueHistory {
+  id             Int            @id @default(autoincrement())
+  assetId        Int
+  asset          PortfolioItem @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  date           DateTime
+  nativeValue    Decimal        @db.Decimal(18, 8)
+  nativeCurrency String
+  valueInUSD     Decimal        @db.Decimal(18, 8)
+  source         String
+  notes          String?
+  createdAt      DateTime       @default(now())
+
+  @@unique([assetId, date, source])
+}
+
+model ManualAssetValue {
+  id        String   @id @default(cuid())
+  date      DateTime
+  value     Decimal  @db.Decimal(18, 8)
+  currency  String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assetId Int
+  asset   PortfolioItem @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([tenantId])
+}
+
+model PortfolioHolding {
+  id               Int      @id @default(autoincrement())
+  portfolioItemId Int
+  date             DateTime @db.Date
+  quantity         Decimal  @db.Decimal(18, 8)
+  totalValue       Decimal  @db.Decimal(18, 8)
+  costBasis        Decimal  @db.Decimal(18, 8)
+
+  asset PortfolioItem @relation(fields: [portfolioItemId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioItemId, date])
+}
+
+model DebtTerms {
+  id              Int            @id @default(autoincrement())
+  assetId         Int            @unique
+  asset           PortfolioItem @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  interestRate    Decimal        @db.Decimal(9, 5)
+  termInMonths    Int?
+  originationDate DateTime
+  initialBalance  Decimal        @db.Decimal(18, 8)
+}
+
+model AnalyticsCacheMonthly {
+  id        Int      @id @default(autoincrement())
+  year      Int
+  month     Int
+  currency  String
+  country   String
+  type      String
+  group     String
+  credit    Decimal  @db.Decimal(18, 2)
+  debit     Decimal  @db.Decimal(18, 2)
+  balance   Decimal  @db.Decimal(18, 2)
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, year, month, currency, country, type, group], name: "tenant_year_month_currency_country_type_group")
+  @@index([tenantId])
+}
+
+model Insight {
+  id        String   @id @default(cuid())
+  tenantId  String
+  batchId   String              // Groups insights from same generation run
+  date      DateTime @db.Date   // Batch run date
+  lens      String              // SPENDING_VELOCITY | CATEGORY_CONCENTRATION | INCOME_STABILITY | etc.
+  title     String
+  body      String   @db.Text   // Insight body text
+  severity  String   @default("INFO")  // INFO | WARNING | POSITIVE | CRITICAL
+  priority  Int      @default(50)      // 1-100, higher = more important
+  dataHash  String?             // SHA-256 of input data — skip generation if unchanged
+  metadata  Json?               // { dataPoints: {...} }
+  dismissed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([tenantId, batchId])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  table     String
+  userId    String
+  recordId  String
+  tenantId  String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model Country {
+  id        String          @id // ISO 3166-1 alpha-3 code (e.g. "ESP")
+  iso2      String?         @unique // ISO 3166-1 alpha-2 code used by Plaid (e.g. "ES")
+  name      String
+  emoji     String? // Optional emoji flag
+  tenants   TenantCountry[]
+  accounts  Account[] // Accounts in this country
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model Currency {
+  id        String           @id // ISO 4217 code
+  name      String
+  symbol    String?
+  tenants   TenantCurrency[]
+  accounts  Account[] // Accounts using this currency
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model TenantCountry {
+  tenantId  String
+  countryId String
+  isDefault Boolean  @default(false)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  country   Country  @relation(fields: [countryId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([tenantId, countryId])
+  @@index([countryId])
+  @@index([tenantId])
+}
+
+model TenantCurrency {
+  tenantId   String
+  currencyId String
+  isDefault  Boolean  @default(false)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  currency   Currency @relation(fields: [currencyId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@id([tenantId, currencyId])
+  @@index([currencyId])
+  @@index([tenantId])
+}
+
+// Metadata table for Banks (not tenant-specific)
+model Bank {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  institutionId String? @unique // [NEW] Plaid's ins_id for auto-matching
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relation back to Account (Optional but good practice)
+  accounts    Account[]
+  tenantBanks TenantBank[]
+  plaidItems  PlaidItem[]
+}
+
+// New Join Table for Tenant <-> Bank (Many-to-Many)
+model TenantBank {
+  tenantId  String
+  bankId    Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  bank      Bank     @relation(fields: [bankId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([tenantId, bankId])
+  @@index([bankId])
+  @@index([tenantId])
+}
+
+model CashFlowCacheDaily {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @db.Date
+  currency  String
+  netFlow   Decimal  @db.Decimal(18, 2) // The net change in balance for this day
+  balance   Decimal  @db.Decimal(18, 2) // The final, end-of-day native balance
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([date, currency, tenantId])
+  @@index([tenantId])
+}
+
+model AnalyticsCacheDaily {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @db.Date
+  currency  String // The currency this view is presented in (e.g., USD)
+  country   String
+  type      String
+  group     String
+  credit    Decimal  @db.Decimal(18, 2)
+  debit     Decimal  @db.Decimal(18, 2)
+  balance   Decimal  @db.Decimal(18, 2)
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([date, currency, country, type, group, tenantId], name: "daily_analytics_uc")
+  @@index([tenantId])
+}
+
+// ─── Sprint 2: AI Foundation Models ────────────────────────────────────────────
+
+model TransactionEmbedding {
+  id            Int       @id @default(autoincrement())
+  transactionId Int?      @unique          // Optional — null for pre-commit staged rows
+  tenantId      String
+  description   String                     // SHA-256 hash of normalized description (never stores plaintext)
+  categoryId    Int                        // The confirmed category at time of embedding
+  confidence    Float                      // Confidence score at time of assignment
+  source        String                     // 'USER_CONFIRMED', 'AI_CLASSIFIED'
+  // embedding column managed via raw SQL migration: vector(768)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  category      Category     @relation(fields: [categoryId], references: [id])
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, description])        // Primary upsert key for description-centric embeddings
+  @@index([tenantId])
+  @@index([categoryId])
+}
+
+// ─── Sprint B: Global Cross-Tenant Embeddings ──────────────────────────────────
+
+model GlobalEmbedding {
+  id                   Int      @id @default(autoincrement())
+  description          String   @unique          // SHA-256 hash of normalized description (never stores plaintext)
+  defaultCategoryCode  String                   // matches Category.defaultCategoryCode (string ref, no FK)
+  // embedding column managed via raw SQL migration: vector(768)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([defaultCategoryCode])
+}
+
+model ImportAdapter {
+  id              Int      @id @default(autoincrement())
+  name            String   // "Chase Checking CSV", "Nubank CSV"
+  matchSignature  Json     // { headers: [...], patterns: {...} }
+  columnMapping   Json     // Maps source columns to Bliss fields
+  dateFormat      String?  // "MM/DD/YYYY"
+  amountStrategy  String   // 'SINGLE_SIGNED', 'DEBIT_CREDIT_COLUMNS', 'AMOUNT_WITH_TYPE'
+  currencyDefault String?  // Default currency if not in file
+  skipRows        Int      @default(0)
+  tenantId        String?  // null = global, non-null = tenant-specific
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model StagedImport {
+  id              String   @id @default(cuid())
+  tenantId        String
+  userId          String
+  accountId       Int?     // Target account selected by user during upload
+  status          String   @default("PROCESSING") // PROCESSING, READY, COMMITTED, CANCELLED, ERROR
+  fileName        String
+  adapterName     String?
+  totalRows           Int      @default(0)
+  progress            Int      @default(0)  // 0-100 processing percentage
+  errorCount          Int      @default(0)
+  autoConfirmedCount  Int      @default(0)  // Rows auto-confirmed by EXACT_MATCH threshold
+  updateCount         Int      @default(0)  // Rows targeting existing transactions for update
+  seedReady           Boolean  @default(false) // true when Phase 1 seed classification is done
+  errorDetails        Json?    // Validation errors
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  rows            StagedImportRow[]
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model StagedImportRow {
+  id                    String   @id @default(cuid())
+  stagedImportId        String
+  rowNumber             Int
+  rawData               Json     // Original CSV row
+  // Normalized fields (what will become a Transaction)
+  transactionDate       DateTime?
+  description           String?
+  debit                 Decimal? @db.Decimal(18, 8)
+  credit                Decimal? @db.Decimal(18, 8)
+  currency              String?
+  accountId             Int?
+  // AI classification results
+  suggestedCategoryId   Int?
+  confidence            Float?   // 0.0 - 1.0
+  classificationSource  String?  // 'EXACT_MATCH', 'VECTOR_SEARCH', 'LLM', 'PLAID_MAPPED', 'USER_OVERRIDE'
+  // User-provided details (optional, saved to Transaction.details on commit)
+  details               String?
+  // Investment enrichment (Sprint 12 — parity with PlaidTransaction)
+  requiresEnrichment    Boolean? @default(false)
+  enrichmentType        String?  // "INVESTMENT"
+  ticker                String?
+  assetQuantity         Decimal? @db.Decimal(18, 8)
+  assetPrice            Decimal? @db.Decimal(18, 8)
+  // Ticker resolution metadata (Sprint 14)
+  isin                  String?  // System-resolved ISIN, e.g. "IE00BK5BQT80"
+  exchange              String?  // ISO-10383 MIC code, e.g. "XETR"
+  assetCurrency         String?  // Currency the asset trades in, e.g. "EUR"
+  // Tags (parsed from CSV, e.g. ["Japan 2026", "Business"])
+  tags                  Json?
+  // Update support (Sprint 17 — CSV round-trip)
+  updateTargetId        Int?     // FK to Transaction.id — non-null means this row is an update, not a create
+  updateDiff            Json?    // Computed diff between CSV values and existing transaction (only changed fields)
+  // Row status
+  status                String   @default("PENDING") // PENDING, CONFIRMED, SKIPPED, DUPLICATE, ERROR
+  duplicateOfId         Int?     // If DUPLICATE, the existing Transaction.id it matches
+  errorMessage          String?
+  createdAt             DateTime @default(now())
+
+  stagedImport          StagedImport @relation(fields: [stagedImportId], references: [id], onDelete: Cascade)
+
+  @@index([stagedImportId])
+}
+
+model TagAnalyticsCacheMonthly {
+  id           Int      @id @default(autoincrement())
+  tagId        Int
+  year         Int
+  month        Int
+  currency     String
+  country      String
+  type         String
+  group        String
+  categoryId   Int
+  categoryName String
+  credit       Decimal  @db.Decimal(18, 2)
+  debit        Decimal  @db.Decimal(18, 2)
+  balance      Decimal  @db.Decimal(18, 2)
+  tenantId     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, tenantId, year, month, currency, country, type, group, categoryId], name: "tag_tenant_year_month_currency_country_type_group_cat")
+  @@index([tenantId])
+  @@index([tagId])
+}
+
+model SecurityMaster {
+  id                     Int       @id @default(autoincrement())
+  symbol                 String    @unique
+
+  // ── Profile fields (from Twelve Data /profile — 10 credits) ──
+  name                   String?
+  sector                 String?
+  industry               String?
+  country                String?
+  exchange               String?
+  currency               String?
+  isin                   String?
+  description            String?   @db.Text
+  logoUrl                String?
+  assetType              String?                  // "Common Stock", "ETF", etc.
+  ceo                    String?
+  employees              Int?
+  website                String?
+
+  // ── Computed fundamental fields (derived from /earnings + /dividends + /quote) ──
+  trailingEps            Decimal?  @db.Decimal(12, 4)   // sum of last 4 quarters eps_actual
+  peRatio                Decimal?  @db.Decimal(12, 4)   // currentPrice / trailingEps
+  annualizedDividend     Decimal?  @db.Decimal(12, 4)   // sum of last 4 quarterly dividends
+  dividendYield          Decimal?  @db.Decimal(8, 6)    // annualizedDividend / currentPrice
+  latestEpsActual        Decimal?  @db.Decimal(12, 4)   // most recent quarter eps_actual
+  latestEpsSurprise      Decimal?  @db.Decimal(8, 4)    // most recent quarter surprise_prc
+
+  // ── Quote-derived fields (from /quote — 1 credit) ──
+  week52High             Decimal?  @db.Decimal(18, 4)
+  week52Low              Decimal?  @db.Decimal(18, 4)
+  averageVolume          Decimal?  @db.Decimal(18, 0)
+
+  // ── Meta ──
+  lastProfileUpdate      DateTime?
+  lastFundamentalsUpdate DateTime?                      // covers earnings + dividends + quote refresh
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([sector])
+  @@index([industry])
+  @@index([country])
+  @@index([assetType])
+}
+

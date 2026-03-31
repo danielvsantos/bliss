@@ -1,0 +1,126 @@
+openapi: 3.0.3
+info:
+  title: Bliss API Layer - Notifications
+  description: |
+    Notification summary endpoints. Aggregates actionable signals from existing
+    tables (no dedicated notification table) and provides read-tracking via
+    User.lastNotificationSeenAt.
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly JWT cookie set at sign-in.
+
+  schemas:
+    NotificationSignal:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Signal type identifier.
+          enum:
+            - PENDING_REVIEW
+            - PLAID_ACTION_REQUIRED
+            - ONBOARDING_INCOMPLETE
+            - NEW_INSIGHTS
+          example: "PENDING_REVIEW"
+        count:
+          type: integer
+          description: Number of items in this signal.
+          example: 3
+        label:
+          type: string
+          description: Human-readable label for display.
+          example: "transactions awaiting review"
+        href:
+          type: string
+          description: Frontend route to navigate to.
+          example: "/agents/review"
+        severity:
+          type: string
+          description: Color hint for the frontend.
+          enum: [positive, warning, info]
+          example: "warning"
+        isNew:
+          type: boolean
+          description: |
+            Whether this signal contributes to totalUnseen. Actionable signals
+            (PENDING_REVIEW, PLAID_ACTION_REQUIRED) are always true. Onboarding
+            is always false. Insights are true if created after lastSeenAt.
+          example: true
+
+    NotificationSummaryResponse:
+      type: object
+      properties:
+        totalUnseen:
+          type: integer
+          description: Sum of counts for signals where isNew is true.
+          example: 5
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the user last opened the notification center.
+        signals:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationSignal'
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+security:
+  - CookieAuth: []
+
+paths:
+  /api/notifications/summary:
+    get:
+      tags:
+        - Notifications
+      summary: Get notification summary
+      description: |
+        Aggregates 4 signal types from existing tables in parallel:
+        - PENDING_REVIEW: PlaidTransaction (CLASSIFIED) + StagedImportRow (PENDING)
+        - PLAID_ACTION_REQUIRED: PlaidItem (LOGIN_REQUIRED/ERROR)
+        - ONBOARDING_INCOMPLETE: Tenant.onboardingProgress
+        - NEW_INSIGHTS: Insight (created after lastSeenAt, not dismissed)
+
+        No dedicated notification table is used.
+      responses:
+        '200':
+          description: Aggregated notification summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSummaryResponse'
+        '401':
+          description: Unauthorized — missing or invalid JWT.
+
+    put:
+      tags:
+        - Notifications
+      summary: Mark notifications as seen
+      description: |
+        Updates User.lastNotificationSeenAt to the current timestamp.
+        Used by the frontend to reset the unseen badge count when the
+        notification popover is opened.
+      responses:
+        '200':
+          description: Notifications marked as seen.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: Unauthorized — missing or invalid JWT.

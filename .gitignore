@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+.pnp
+.pnp.*
+.pnpm-debug.log*
+
+# Environment variables — never commit secrets
+.env*
+!.env.example
+!.env.test
+gcloud-credentials.json
+gcloud-service.json
+**/gcloud-*.json
+
+# Python virtual environments
+venv/
+**/venv/
+**/*-python-env/
+__pycache__/
+
+# Next.js
+apps/api/.next/
+apps/api/out/
+
+# Vite / Frontend build
+apps/web/dist/
+apps/web/dist-ssr/
+
+# Production builds
+build/
+dist/
+
+# Testing & coverage
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+*.pid
+*.pid.lock
+dump.rdb
+
+# Prisma
+.prisma/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
+# Misc
+*.pem
+*.local

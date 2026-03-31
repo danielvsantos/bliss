@@ -1,0 +1,635 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Smart Import
+  version: 1.0.0
+  description: |
+    API endpoints for the intelligent CSV import pipeline (Sprint 4+).
+    The smart import flow: detect adapter → upload CSV → poll for staged transactions → review & commit.
+    Sprint 8 adds vector similarity suggestions (`GET /api/imports/similar`) and deferred embedding
+    generation at commit time.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+
+  schemas:
+    Adapter:
+      type: object
+      description: A CSV adapter configuration that maps bank-specific column formats to Bliss fields.
+      properties:
+        id:
+          type: string
+          example: 'clx...'
+        name:
+          type: string
+          example: 'Chase Checking'
+        bankName:
+          type: string
+          example: 'Chase'
+        columnMappings:
+          type: object
+          description: Maps Bliss field names to source CSV column names.
+          additionalProperties:
+            type: string
+          example:
+            date: 'Transaction Date'
+            description: 'Description'
+            amount: 'Amount'
+            debit: 'Debit'
+            credit: 'Credit'
+
+    StagedImport:
+      type: object
+      description: A batch of transactions staged for review after smart import processing.
+      properties:
+        id:
+          type: string
+          example: 'clx...'
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, STAGED, COMMITTED, CANCELLED, FAILED]
+          description: The current processing status of this import batch.
+        fileName:
+          type: string
+          example: 'chase_checking_jan2025.csv'
+        totalRows:
+          type: integer
+        processedRows:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/StagedRow'
+
+    StagedRow:
+      type: object
+      description: A single transaction row staged for review.
+      properties:
+        id:
+          type: string
+          example: 'clx...'
+        status:
+          type: string
+          enum: [PENDING, DUPLICATE, POTENTIAL_DUPLICATE, OVERRIDDEN]
+          description: The deduplication and review status of this row.
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        amount:
+          type: number
+        credit:
+          type: number
+          nullable: true
+        debit:
+          type: number
+          nullable: true
+        currency:
+          type: string
+          example: 'USD'
+        suggestedCategoryId:
+          type: integer
+          nullable: true
+          description: AI-suggested category ID.
+        suggestedCategoryName:
+          type: string
+          nullable: true
+        classificationSource:
+          type: string
+          nullable: true
+          enum: [EXACT_MATCH, VECTOR_MATCH, LLM, USER_OVERRIDE]
+          description: Which classification tier produced the suggested category.
+        confidence:
+          type: number
+          nullable: true
+          description: AI classification confidence (0–1).
+        overrideData:
+          type: object
+          nullable: true
+          description: User-supplied overrides for this row (e.g., corrected category).
+        tags:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Optional array of tag name strings (e.g. ["Japan 2026", "Business"]). Tags are auto-created and linked at commit time.
+
+    SimilarTransactionResult:
+      type: object
+      description: A single result from the vector similarity search.
+      properties:
+        id:
+          type: string
+          description: The TransactionEmbedding record ID.
+        transactionId:
+          type: integer
+          nullable: true
+          description: |
+            The confirmed Transaction ID this embedding was generated from.
+            Null for embeddings created before transactionId tracking was added.
+        description:
+          type: string
+          description: The normalised transaction description that was previously classified.
+          example: "Netflix subscription"
+        categoryId:
+          type: integer
+          description: The confirmed category ID.
+          example: 42
+        categoryName:
+          type: string
+          description: The human-readable category name.
+          example: "Streaming Services"
+        similarity:
+          type: number
+          format: float
+          description: Cosine similarity score (0.0–1.0). Higher = more similar.
+          example: 0.93
+        source:
+          type: string
+          enum: [USER_CONFIRMED, AUTO_CONFIRMED, GLOBAL]
+          description: |
+            How this embedding was recorded:
+            - USER_CONFIRMED — user manually confirmed the category
+            - AUTO_CONFIRMED — auto-promoted by the classification pipeline
+            - GLOBAL — cross-tenant GlobalEmbedding entry
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/imports/detect-adapter:
+    post:
+      summary: Detect CSV adapter from column headers
+      description: |
+        Analyzes the first row (headers) of a CSV file to identify the most likely adapter
+        configuration to use for parsing. Returns the best match and confidence score.
+      tags:
+        - Smart Import
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - headers
+              properties:
+                headers:
+                  type: array
+                  items:
+                    type: string
+                  description: The column header names from the CSV file.
+                  example: ['Transaction Date', 'Post Date', 'Description', 'Amount', 'Type']
+      responses:
+        '200':
+          description: Detection result with best-matched adapter.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  adapter:
+                    $ref: '#/components/schemas/Adapter'
+                    nullable: true
+                    description: The best-matching adapter, or null if none found.
+                  confidence:
+                    type: number
+                    description: Match confidence score (0–1).
+                  suggestions:
+                    type: array
+                    description: Other potential adapter matches.
+                    items:
+                      $ref: '#/components/schemas/Adapter'
+        '400':
+          description: Bad Request — missing or invalid headers.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /api/imports/adapters:
+    get:
+      summary: List all adapters for the tenant
+      description: Returns all CSV adapter configurations available to the authenticated tenant.
+      tags:
+        - Smart Import
+      responses:
+        '200':
+          description: Array of adapter configurations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Adapter'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+    post:
+      summary: Create a new adapter
+      description: Creates a new CSV adapter configuration for the authenticated tenant.
+      tags:
+        - Smart Import
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - columnMappings
+              properties:
+                name:
+                  type: string
+                bankName:
+                  type: string
+                columnMappings:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '201':
+          description: Adapter created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Adapter'
+        '400':
+          description: Bad Request — missing required fields.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /api/imports/adapters/{id}:
+    put:
+      summary: Update an existing adapter
+      description: |
+        Updates the name, bankName, or columnMappings of an existing CSV adapter.
+        Only the fields provided in the request body are changed — omitted fields
+        are left untouched. Only the tenant that owns the adapter can update it.
+      tags:
+        - Smart Import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The adapter ID to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: At least one field must be provided.
+              properties:
+                name:
+                  type: string
+                bankName:
+                  type: string
+                columnMappings:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '200':
+          description: Adapter updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Adapter'
+        '400':
+          description: Bad Request — no valid fields to update.
+        '401':
+          description: Unauthorized
+        '403':
+          description: Access denied — this adapter belongs to another tenant.
+        '404':
+          description: Adapter not found.
+        '500':
+          description: Internal Server Error
+    delete:
+      summary: Delete an adapter
+      description: |
+        Permanently deletes a CSV adapter configuration. Only the tenant that owns
+        the adapter can delete it. This operation cannot be undone.
+      tags:
+        - Smart Import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The adapter ID to delete.
+      responses:
+        '204':
+          description: Adapter deleted successfully (no content).
+        '401':
+          description: Unauthorized
+        '403':
+          description: Access denied — this adapter belongs to another tenant.
+        '404':
+          description: Adapter not found.
+        '500':
+          description: Internal Server Error
+
+  /api/imports/upload:
+    post:
+      summary: Upload a CSV file to start a smart import
+      description: |
+        Accepts a multipart/form-data CSV file upload. Creates a StagedImport record immediately
+        (returns its ID) and enqueues a `SMART_IMPORT_REQUESTED` event for background processing.
+        Poll `GET /api/imports/{id}` to check processing status.
+      tags:
+        - Smart Import
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - adapterId
+                - accountId
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The CSV file to import.
+                adapterId:
+                  type: string
+                  description: The adapter configuration ID to use for parsing.
+                accountId:
+                  type: integer
+                  description: The target account ID to associate transactions with.
+      responses:
+        '202':
+          description: Upload accepted, processing started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stagedImportId:
+                    type: string
+                    description: The ID of the created StagedImport batch. Use this to poll for status.
+                  message:
+                    type: string
+                    example: 'Import started. Check status at /api/imports/{stagedImportId}'
+        '400':
+          description: Bad Request — missing file, adapterId, or accountId.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /api/imports/pending:
+    get:
+      summary: List pending/staged imports
+      description: Returns all StagedImport batches for the authenticated tenant that are in PENDING, PROCESSING, or STAGED status.
+      tags:
+        - Smart Import
+      responses:
+        '200':
+          description: Array of pending staged import batches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StagedImport'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /api/imports/{id}:
+    get:
+      summary: Get a staged import batch
+      description: Returns the full details of a StagedImport, including all staged rows, their AI classification, and deduplication status.
+      tags:
+        - Smart Import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The StagedImport ID.
+      responses:
+        '200':
+          description: The staged import batch with all rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedImport'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Access denied — this import belongs to another tenant.
+        '404':
+          description: Staged import not found.
+        '500':
+          description: Internal Server Error
+    post:
+      summary: Commit or cancel a staged import
+      description: |
+        Finalises the import. Action must be either `commit` or `cancel`.
+        - `commit`: Promotes all CONFIRMED rows to permanent Transaction records. For rows with
+          tags, auto-creates Tag records (find-or-create by name) and links them via TransactionTag.
+          After writing transactions, fires non-blocking feedback for each committed LLM/USER_OVERRIDE
+          row to build the pgvector embedding index (Tier 2 classification for future imports).
+        - `cancel`: Marks the batch as cancelled, discarding all staged rows. No embeddings
+          are generated for cancelled imports.
+      tags:
+        - Smart Import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The StagedImport ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum: [commit, cancel]
+      responses:
+        '200':
+          description: Action completed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  committed:
+                    type: integer
+                    description: Number of transactions committed (only for commit action).
+                  skipped:
+                    type: integer
+                    description: Number of rows skipped as duplicates.
+                  message:
+                    type: string
+        '400':
+          description: Bad Request — invalid action or import not in STAGED status.
+        '401':
+          description: Unauthorized
+        '403':
+          description: Access denied.
+        '404':
+          description: Staged import not found.
+        '500':
+          description: Internal Server Error
+
+  /api/imports/{id}/rows/{rowId}:
+    put:
+      summary: Override a staged row
+      description: |
+        Allows the user to override the AI-suggested category, description, or amount for
+        a specific staged row before committing. Sets the row status to OVERRIDDEN.
+      tags:
+        - Smart Import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The StagedImport ID.
+        - name: rowId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The StagedRow ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Fields to override. Only provided fields will be updated.
+              properties:
+                categoryId:
+                  type: integer
+                  description: User-selected category to override the AI suggestion.
+                description:
+                  type: string
+                  description: Override for the transaction description.
+                amount:
+                  type: number
+                  description: Override for the transaction amount.
+                ticker:
+                  type: string
+                  description: Investment enrichment — ticker symbol.
+                assetQuantity:
+                  type: number
+                  description: Investment enrichment — number of units.
+                assetPrice:
+                  type: number
+                  description: Investment enrichment — price per unit.
+                isin:
+                  type: string
+                  description: System-resolved ISIN (e.g. IE00BK5BQT80).
+                exchange:
+                  type: string
+                  description: ISO-10383 MIC code (e.g. XETR).
+                assetCurrency:
+                  type: string
+                  description: Currency the asset trades in (e.g. EUR).
+                tags:
+                  type: array
+                  nullable: true
+                  items:
+                    type: string
+                  description: Array of tag name strings (e.g. ["Japan 2026"]). Pass null to clear.
+                status:
+                  type: string
+                  enum: [PENDING, OVERRIDDEN]
+                  description: Can be used to un-skip a DUPLICATE row by setting to PENDING.
+      responses:
+        '200':
+          description: Row updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedRow'
+        '400':
+          description: Bad Request — invalid override data.
+        '401':
+          description: Unauthorized
+        '403':
+          description: Access denied.
+        '404':
+          description: Staged import or row not found.
+        '500':
+          description: Internal Server Error
+
+  /api/imports/similar:
+    get:
+      summary: Find semantically similar previously-classified transactions
+      description: |
+        Accepts a raw transaction description, proxies to the backend service to generate
+        a 768-dim embedding via Gemini, and returns the top-5 most semantically similar
+        previously-classified transactions for the authenticated tenant.
+
+        Intended to power "did you mean?" category suggestions in the import review UI.
+        Only entries with cosine similarity ≥ 0.70 are returned.
+      tags:
+        - Smart Import
+      parameters:
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The raw transaction description to find similar entries for.
+          example: "Netflix subscription"
+      responses:
+        '200':
+          description: Array of similar transactions, sorted by similarity descending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SimilarTransactionResult'
+                  query:
+                    type: string
+                    description: The description that was searched.
+                  threshold:
+                    type: number
+                    description: The similarity threshold applied (default 0.70).
+        '400':
+          description: Bad Request — missing description parameter.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error (e.g. Gemini API unavailable)

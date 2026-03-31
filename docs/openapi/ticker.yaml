@@ -1,0 +1,86 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Ticker Search
+  version: 1.0.0
+  description: >
+    Ticker symbol search and profile resolution. All searches route to Twelve Data.
+    Crypto searches filter and deduplicate results for digital currencies.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+
+  schemas:
+    TickerSearchResult:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: 'VWCE.DEX'
+        name:
+          type: string
+          example: 'Vanguard FTSE All-World UCITS ETF'
+        exchange:
+          type: string
+          example: 'XETRA'
+        country:
+          type: string
+          example: 'Germany'
+        currency:
+          type: string
+          example: 'EUR'
+        type:
+          type: string
+          example: 'ETF'
+        mic_code:
+          type: string
+          example: 'XETR'
+
+paths:
+  /api/ticker/search:
+    get:
+      summary: Search for ticker symbols
+      description: >
+        Searches for symbols matching the query string via Twelve Data.
+        When type=crypto, filters and deduplicates results for digital currencies.
+        Returns up to 10 results. Useful for autocomplete in enrichment forms.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Search term (ticker symbol or company name)
+          example: 'VWCE'
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [stock, crypto]
+          description: >
+            Asset type to search. 'crypto' filters for digital currency results,
+            anything else (or omitted) returns all Twelve Data symbol results.
+          example: 'crypto'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TickerSearchResult'
+        '400':
+          description: Missing q query parameter
+        '401':
+          description: Unauthorized

@@ -1,0 +1,72 @@
+# ─── Stage 1: Install all dependencies ───────────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+# All workspace package.json stubs must be present so pnpm resolves peers
+# consistently with the lockfile (e.g. typescript optional peer of prisma).
+COPY apps/api/package.json ./apps/api/
+COPY apps/backend/package.json ./apps/backend/
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared/package.json ./packages/shared/
+
+# Schema must be present before install (needed for explicit prisma generate in builder stage).
+COPY prisma ./prisma
+
+RUN pnpm install --frozen-lockfile
+
+# ─── Stage 2: Build @bliss/shared ────────────────────────────────────────────
+FROM deps AS shared-build
+COPY packages/shared/src ./packages/shared/src
+RUN pnpm --filter @bliss/shared build
+
+# ─── Stage 3: Build Next.js app ───────────────────────────────────────────────
+FROM shared-build AS builder
+COPY apps/api ./apps/api
+
+WORKDIR /app/apps/api
+
+# Generate Prisma client with query engine for direct DB access
+RUN pnpm exec prisma generate --schema=../../prisma/schema.prisma
+
+# Build Next.js standalone output
+RUN ./node_modules/.bin/next build
+
+# ─── Stage 4: Production image ───────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy standalone server
+COPY --from=builder --chown=nextjs:nodejs /app/apps/api/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/api/.next/static ./apps/api/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/api/public ./apps/api/public
+
+# Copy prisma schema and migrations (needed for migrate deploy at startup)
+COPY --from=builder /app/prisma ./prisma
+
+# Copy pnpm virtual store (includes generated Prisma client)
+COPY --from=builder /app/node_modules/.pnpm ./node_modules/.pnpm
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+RUN mkdir -p /app/data/uploads && chown nextjs:nodejs /app/data/uploads
+
+USER nextjs
+EXPOSE 3000
+
+# Copy seed script (runs after migrations to populate reference data)
+COPY --from=builder /app/prisma/seed.js ./prisma/seed.js
+
+# Copy wait script
+COPY --chown=nextjs:nodejs docker/wait-for-db.sh ./wait-for-db.sh
+
+# Wait for Postgres, run migrations, seed reference data, then start the server
+CMD ["sh", "-c", "sh wait-for-db.sh && node node_modules/prisma/build/index.js migrate deploy --schema=prisma/schema.prisma && node prisma/seed.js && node apps/api/server.js"]

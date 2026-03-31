@@ -1,0 +1,64 @@
+# ─── Stage 1: Install all dependencies ───────────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+# All workspace package.json stubs must be present so pnpm resolves peers
+# consistently with the lockfile (e.g. typescript optional peer of prisma).
+# Without these, any pnpm command run later (e.g. triggered by prisma generate)
+# detects missing workspace members and fails.
+COPY apps/api/package.json ./apps/api/
+COPY apps/backend/package.json ./apps/backend/
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared/package.json ./packages/shared/
+
+# Schema must be present before install so Prisma can download the correct
+# engine binary for Alpine (linux-musl) during its own postinstall script.
+COPY prisma ./prisma
+
+# Tell Prisma which native engine binary to fetch for Alpine Linux (musl libc)
+ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
+
+# Allow postinstall scripts so Prisma downloads its engine binary
+RUN pnpm install --frozen-lockfile
+
+# ─── Stage 2: Build @bliss/shared ────────────────────────────────────────────
+FROM deps AS shared-build
+COPY packages/shared/src ./packages/shared/src
+RUN pnpm --filter @bliss/shared build
+
+# ─── Stage 3: Generate Prisma client ─────────────────────────────────────────
+FROM shared-build AS builder
+COPY apps/backend ./apps/backend
+
+WORKDIR /app/apps/backend
+RUN pnpm exec prisma generate --schema=../../prisma/schema.prisma
+
+# ─── Stage 4: Production image ───────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 backendjs
+
+# Copy application code and shared package output
+COPY --from=builder --chown=backendjs:nodejs /app/apps/backend ./apps/backend
+COPY --from=builder --chown=backendjs:nodejs /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/backend/node_modules ./apps/backend/node_modules
+
+# Prisma schema (needed for any runtime schema references)
+COPY --from=builder /app/prisma ./prisma
+
+RUN mkdir -p /app/data/uploads && chown backendjs:nodejs /app/data/uploads
+
+USER backendjs
+
+WORKDIR /app/apps/backend
+EXPOSE 3001
+
+CMD ["node", "src/index.js"]

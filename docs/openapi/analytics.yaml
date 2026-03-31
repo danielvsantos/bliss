@@ -1,0 +1,117 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Analytics
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/analytics:
+    get:
+      summary: Fetch analytics data
+      description: Retrieves pre-calculated analytics data from the cache, with flexible filtering and grouping options.
+      parameters:
+        - name: currency
+          in: query
+          description: The currency to view the analytics in.
+          schema:
+            type: string
+            default: 'USD'
+        - name: countries
+          in: query
+          description: An array of country IDs to filter by.
+          schema:
+            type: array
+            items:
+              type: string
+        - name: view
+          in: query
+          description: The time-based view for the analytics data.
+          schema:
+            type: string
+            enum: ['year', 'month', 'quarter']
+            default: 'year'
+        - name: years
+          in: query
+          description: An array of years to filter by (used with 'year' view).
+          schema:
+            type: array
+            items:
+              type: integer
+        - name: startMonth
+          in: query
+          description: The start month for a date range (e.g., '2023-01'). Used with 'month' view.
+          schema:
+            type: string
+        - name: endMonth
+          in: query
+          description: The end month for a date range (e.g., '2023-03'). Used with 'month' view.
+          schema:
+            type: string
+        - name: startQuarter
+          in: query
+          description: The start quarter for a date range (e.g., '2023-Q1'). Used with 'quarter' view.
+          schema:
+            type: string
+        - name: endQuarter
+          in: query
+          description: The end quarter for a date range (e.g., '2023-Q2'). Used with 'quarter' view.
+          schema:
+            type: string
+        - name: types
+          in: query
+          description: An array of category types to filter by (e.g., 'Expense').
+          schema:
+            type: array
+            items:
+              type: string
+        - name: groups
+          in: query
+          description: An array of category groups to filter by.
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currency:
+                    type: string
+                  view:
+                    type: string
+                  data:
+                    type: object
+                    # The structure of the data object is dynamic based on the view
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            credit:
+                              type: number
+                            debit:
+                              type: number
+                            balance:
+                              type: number
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error

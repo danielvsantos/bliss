@@ -1,0 +1,467 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Authentication
+  version: 1.0.0
+  description: API endpoints for user authentication, registration, and session management.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly cookie set by /api/auth/signin, /api/auth/signup, and
+        /api/auth/google-token. Automatically sent by the browser on all
+        credentialed requests (withCredentials: true).
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 'clx...'
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        profilePictureUrl:
+          type: string
+          format: uri
+          nullable: true
+        role:
+          type: string
+          enum: [admin, member]
+          default: member
+          description: >
+            The user's role within their tenant. 'admin' is assigned to the tenant owner
+            (created via sign-up or first-time Google OAuth). 'member' is assigned to all
+            invited users by default. Only admins may change a user's role.
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 'clx...'
+        name:
+          type: string
+        plan:
+          type: string
+          enum: [FREE, PRO, AI]
+        createdAt:
+          type: string
+          format: date-time
+
+    SignUpRequest:
+      type: object
+      required:
+        - email
+        - password
+        - tenantName
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        name:
+          type: string
+        tenantName:
+          type: string
+        countries:
+          type: array
+          items:
+            type: string
+            example: 'USA'
+        currencies:
+          type: array
+          items:
+            type: string
+            example: 'USD'
+        bankIds:
+          type: array
+          items:
+            type: integer
+            example: 1
+
+    SignInRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+        - confirmPassword
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          description: The user's current password.
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          description: The new password (minimum 8 characters).
+        confirmPassword:
+          type: string
+          format: password
+          description: Must match newPassword exactly.
+
+    AuthSuccessResponse:
+      type: object
+      description: >
+        Returned by /api/auth/signup and /api/auth/signin on success.
+        The JWT is delivered exclusively via the Set-Cookie response header
+        (HttpOnly cookie named `token`). It is NOT included in the response body.
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+
+    GoogleOAuthCallbackResponse:
+      type: object
+      description: >
+        Delivered as a browser redirect (not JSON). The JWT is set as an HttpOnly cookie
+        (Set-Cookie: token=<jwt>; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/) before the
+        redirect is issued. The redirect URL contains only the isNew flag:
+        ${FRONTEND_URL}/auth/callback?isNew=<bool>.
+      properties:
+        isNew:
+          type: boolean
+          description: >
+            `true` if the user account was just created (first-time Google user);
+            `false` for returning users or existing accounts linked to Google.
+
+# Apply Bearer Auth to all paths in this file by default
+security:
+  - cookieAuth: []
+
+paths:
+  /api/auth/signup:
+    post:
+      summary: Register a new user and tenant
+      tags:
+        - Authentication
+      # This endpoint is public, so we override the global security
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '201':
+          description: Signup successful
+          headers:
+            Set-Cookie:
+              description: >
+                HttpOnly session cookie. Format: token=<jwt>; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/.
+                In production also includes Secure; Domain=<COOKIE_DOMAIN>.
+              schema:
+                type: string
+                example: 'token=eyJhbGci...; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Bad Request (e.g., missing fields, invalid email)
+        '409':
+          description: Conflict (user with this email already exists)
+        '500':
+          description: Internal Server Error
+
+  /api/auth/signin:
+    post:
+      summary: Sign in an existing user
+      tags:
+        - Authentication
+      # This endpoint is public, so we override the global security
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        '200':
+          description: Signin successful
+          headers:
+            Set-Cookie:
+              description: >
+                HttpOnly session cookie. Format: token=<jwt>; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/.
+                In production also includes Secure; Domain=<COOKIE_DOMAIN>.
+              schema:
+                type: string
+                example: 'token=eyJhbGci...; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Bad Request (e.g., missing fields, invalid email)
+        '401':
+          description: Unauthorized (invalid credentials)
+        '500':
+          description: Internal Server Error
+
+  /api/auth/session:
+    get:
+      summary: Get current user session
+      tags:
+        - Authentication
+      description: |
+        Validates the session by reading the `token` HttpOnly cookie from the request.
+        Does NOT accept an Authorization: Bearer header.
+        Also checks the JWT denylist (Redis) via the `jti` claim — returns 401 if the
+        token has been server-side revoked.
+      # This endpoint is protected and will use the global security definition
+      responses:
+        '200':
+          description: Session is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized (token is missing, invalid, or expired)
+        '404':
+          description: Not Found (user associated with token not found)
+        '500':
+          description: Internal Server Error
+
+  /api/auth/signout:
+    post:
+      summary: Sign out the current user (stateful token revocation)
+      tags:
+        - Authentication
+      description: |
+        Actively revokes the caller's JWT server-side and clears the session cookie.
+
+        Flow:
+        1. Reads and verifies the `token` cookie (requires a valid session).
+        2. Extracts the `jti` claim from the decoded payload.
+        3. Calls addToDenylist(jti, remainingTtl) — token is immediately invalid in Redis.
+        4. Calls clearAuthCookie(res) — sets Set-Cookie: token=; Max-Age=0.
+
+        Authentication required. Calling without a valid cookie returns 401.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Signed out. Cookie cleared and token revoked.
+          headers:
+            Set-Cookie:
+              description: Clears the session cookie (token=; Max-Age=0; Path=/).
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Signed out successfully'
+        '401':
+          description: Unauthorized (cookie absent, token invalid, or already revoked)
+        '500':
+          description: Internal Server Error
+
+  /api/auth/change-password:
+    put:
+      summary: Change the authenticated user's password
+      tags:
+        - Authentication
+      description: |
+        Allows a credential-based user to update their password. The user must
+        provide their current password for verification before the new password
+        is accepted.
+
+        **Not available for OAuth-only accounts** (users who signed up via Google
+        and have no stored password hash).
+
+        **Rate limit**: 3 attempts per 15-minute window.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Password updated successfully'
+        '400':
+          description: >
+            Bad Request — missing fields, new password shorter than 8 characters,
+            passwords do not match, or account does not support password change
+            (OAuth-only).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'New password must be at least 8 characters'
+        '401':
+          description: Unauthorized — current password is incorrect or session is invalid.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'Current password is incorrect'
+        '405':
+          description: Method Not Allowed (only PUT is accepted)
+        '429':
+          description: Too Many Requests — rate limit exceeded (3 attempts per 15 min)
+        '500':
+          description: Internal Server Error
+
+  /api/auth/csrf:
+    get:
+      summary: Retrieve CSRF token for NextAuth OAuth initiation
+      tags:
+        - Authentication (Google OAuth)
+      description: |
+        Returns a `csrfToken` string and sets the `next-auth.csrf-token` cookie on the API
+        domain. This token is required before calling `POST /api/auth/signin/google`.
+
+        Clients **must** pass `credentials: 'include'` (or equivalent) so the CSRF cookie is
+        set cross-origin. This endpoint is served by the NextAuth v4 catch-all handler
+        (`pages/api/auth/[...nextauth].js`) with a permissive `Access-Control-Allow-Origin`
+        header pointing at `FRONTEND_URL`.
+      security: []
+      responses:
+        '200':
+          description: CSRF token retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - csrfToken
+                properties:
+                  csrfToken:
+                    type: string
+                    description: One-time CSRF token to be included in the OAuth form POST.
+                    example: 'a3f8c2d1e4b7...'
+
+  /api/auth/signin/google:
+    post:
+      summary: Initiate Google OAuth sign-in or sign-up
+      tags:
+        - Authentication (Google OAuth)
+      description: |
+        NextAuth v4 OAuth initiation endpoint. **Must be called as a form POST** (not JSON).
+        The frontend constructs an HTML `<form>` element, appends hidden `csrfToken` and
+        `callbackUrl` inputs, and calls `form.submit()` — this is the correct NextAuth v4
+        pattern for OAuth from a separate (cross-origin) frontend.
+
+        On success the browser is redirected to Google's consent screen. After the user
+        grants consent, Google redirects back to `/api/auth/callback/google` (handled
+        internally by NextAuth), which then redirects to `callbackUrl`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - csrfToken
+                - callbackUrl
+              properties:
+                csrfToken:
+                  type: string
+                  description: CSRF token obtained from `GET /api/auth/csrf`.
+                callbackUrl:
+                  type: string
+                  format: uri
+                  description: >
+                    URL that NextAuth will redirect to after a successful Google callback.
+                    Must be same-origin as `NEXTAUTH_URL` (i.e. on the API domain).
+                    Should be set to `${NEXT_PUBLIC_API_URL}/api/auth/google-token`.
+                  example: 'http://localhost:3000/api/auth/google-token'
+      responses:
+        '302':
+          description: Browser redirect to Google OAuth consent screen.
+        '403':
+          description: Invalid or missing CSRF token.
+
+  /api/auth/google-token:
+    get:
+      summary: Exchange NextAuth Google session for a custom application JWT
+      tags:
+        - Authentication (Google OAuth)
+      description: |
+        **Internal bridge endpoint** — called exclusively by NextAuth as the `callbackUrl`
+        after a successful Google OAuth flow. Not intended to be called directly by the
+        frontend.
+
+        **Flow:**
+        1. Reads the signed NextAuth JWT from the request cookie using `getToken({ req, secret })`.
+        2. Validates the token and extracts `token.id` (the application user ID).
+        3. Looks up the user record in the database (`prisma.user.findUnique`).
+        4. Issues a **custom application JWT** (`{ userId, email, tenantId, jti }`, 24 h expiry,
+           signed with `JWT_SECRET`). Assigns role: 'admin' for new tenant owners.
+        5. Calls setAuthCookie(res, token) — JWT delivered as an HttpOnly cookie.
+        6. Reads the `isNew` flag propagated through the NextAuth JWT callbacks.
+        7. Redirects to `${FRONTEND_URL}/auth/callback?isNew=<bool>`.
+           The token is NOT in the redirect URL.
+
+        On any failure (no NextAuth token, user not found in DB, exception), the browser is
+        redirected to `${FRONTEND_URL}/auth?error=oauth_failed`. Exceptions are captured by
+        Sentry.
+      security: []
+      responses:
+        '302':
+          description: |
+            Browser redirect. Two possible destinations:
+            - **Success**: `${FRONTEND_URL}/auth/callback?isNew=<bool>` (JWT in Set-Cookie header, not URL)
+            - **Failure**: `${FRONTEND_URL}/auth?error=oauth_failed`
+          headers:
+            Location:
+              description: Redirect target URL (success or error path).
+              schema:
+                type: string
+                format: uri
