@@ -1,0 +1,10 @@
+transactiondate,description,debit,credit,account,category,currency,details,ticker,assetquantity,assetprice,tags
+2024-01-15,Whole Foods Market,45.23,,My Checking,Groceries,USD,Weekly grocery run,,,,
+2024-01-20,Direct Deposit,,3500.00,My Checking,Salary,USD,Monthly paycheck,,,,
+2024-02-01,Schwab - Buy AAPL,1000.00,,Brokerage,Stocks,USD,,AAPL,5,200.00,
+2024-02-05,Credit Card Payment,500.00,,My Checking,Credit Card Payment,USD,,,,,
+2024-02-10,Netflix Subscription,15.99,,My Checking,Subscriptions,USD,,,,,
+2024-02-15,Freelance Income,,2500.00,My Checking,Freelance,USD,February project,,,,
+2024-03-01,JAL Flight to Tokyo,850.00,,My Checking,Travel Transport,USD,Round trip,,,,Japan 2026
+2024-03-02,Hotel Shinjuku,320.00,,My Checking,Accommodation,USD,3 nights,,,,Japan 2026
+2024-03-03,Sushi Ginza,45.00,,My Checking,Restaurants,USD,,,,,Japan 2026
