@@ -45,8 +45,8 @@ export function validateEnv() {
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
     warnings.push('Plaid credentials not set — Plaid integration will be unavailable');
   }
-  if (!process.env.GEMINI_API_KEY) {
-    warnings.push('GEMINI_API_KEY not set — AI classification will be unavailable');
+  if (!process.env.REDIS_URL) {
+    warnings.push('REDIS_URL not set — JWT denylist is disabled (tokens cannot be revoked)');
   }
   if (!process.env.SENTRY_DSN) {
     warnings.push('SENTRY_DSN not set — error tracking will be disabled');
