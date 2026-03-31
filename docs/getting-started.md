@@ -79,6 +79,10 @@ docker compose up --build   # starts all services
 
 Open [http://localhost:8080](http://localhost:8080). The database is auto-migrated and seeded on first boot.
 
+**Database GUI:** Adminer is included in the Docker Compose stack. Open [http://localhost:8888](http://localhost:8888) to browse your PostgreSQL database. Log in with system **PostgreSQL**, server **postgres**, username **bliss**, and the `POSTGRES_PASSWORD` from your `.env` file.
+
+**Data persistence:** Your data is stored in Docker named volumes (`postgres_data`, `redis_data`, `uploads_data`). It survives `docker compose stop` and `docker compose down`. Only `docker compose down -v` destroys volumes and resets all data.
+
 ---
 
 ## 3. Local Development (Without Docker)
@@ -242,3 +246,18 @@ pnpm exec prisma migrate reset --schema=prisma/schema.prisma
 ```
 
 > WARNING: This destroys all data in the database and re-runs all migrations and the seed script.
+
+---
+
+## 11. CLAUDE.md — AI-Assisted Development
+
+The codebase includes `CLAUDE.md` files that serve as structured context for AI coding tools (Claude Code, Copilot, Cursor, etc.) and as onboarding references for new developers. Each file documents the architecture, conventions, and critical rules for its scope:
+
+| File | Scope |
+|------|-------|
+| [`CLAUDE.md`](../CLAUDE.md) | Project-wide architecture, module systems, design tokens, worker reference |
+| [`apps/api/CLAUDE.md`](../apps/api/CLAUDE.md) | API layer — route patterns, auth flow, Prisma client, path aliases, testing |
+| [`apps/backend/CLAUDE.md`](../apps/backend/CLAUDE.md) | Backend — CJS conventions, worker structure, services, queue patterns |
+| [`apps/web/CLAUDE.md`](../apps/web/CLAUDE.md) | Frontend — component patterns, design tokens, hooks, TanStack Query conventions |
+
+These files are the fastest way to understand how each service works and what rules to follow when making changes.
