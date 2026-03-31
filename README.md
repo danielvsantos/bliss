@@ -1,9 +1,6 @@
 <p align="center">
-  <img src="apps/api/assets/logobliss.png" alt="Bliss Finance" width="120" />
+  <img src="apps/api/assets/logobliss.png" alt="Bliss Finance" width="1000" />
 </p>
-
-<h1 align="center">Bliss Finance</h1>
-
 <p align="center">
   <strong>The open-source financial control panel for global professionals.</strong><br>
   Multi-currency wealth tracking, AI-powered transaction classification, and portfolio management — unified in one calm, powerful interface.
