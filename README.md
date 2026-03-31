@@ -52,12 +52,14 @@ Bliss uses a three-tier classification waterfall that learns from your behavior 
 
 Every time you correct a classification, the system learns immediately — your override updates the cache and generates a new embedding, so the same merchant is auto-classified next time. Configurable confidence thresholds let you control the balance between automation and manual review.
 
-### Multi-Currency, Multi-Country Wealth View
+### Multi-Currency, Multi-Country P&L
 
-- **Track accounts across countries** — USD checking in New York, EUR savings in Barcelona, BRL investments in Sao Paulo
-- **Unified P&L in your currency** — See your true global net worth converted to a single display currency with historical exchange rates
-- **Per-account country and currency tagging** — Every account knows its jurisdiction for accurate reporting
-- **Automatic rate fetching** — Daily exchange rates via market data providers
+**Your personal income statement, across borders and currencies.** Bliss organizes your finances using the same structure as a corporate P&L — Income flows down through Essentials, Lifestyle, and Growth spending to produce Gross Profit, Operating Profit, and Net Profit figures. This isn't a pie chart of "where your money went." It's a structured view of whether your financial life is actually profitable.
+
+- **115+ pre-built categories across 9 types** — A ready-made chart of accounts (Income, Essentials, Lifestyle, Growth, Ventures, Investments, Debt, Transfers, Assets) so classification works from day one
+- **Automatic currency normalization** — Transactions in EUR, USD, BRL, or any currency are converted to your chosen display currency using historical exchange rates from the transaction date
+- **Drill down by year, quarter, or month** — Expand any P&L section to see group-level breakdowns, compare periods side by side, and spot trends
+- **Filter by country** — See your full global P&L or isolate a single country's financial activity
 
 ### Portfolio & Investment Tracking
 
