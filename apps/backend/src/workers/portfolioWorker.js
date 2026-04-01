@@ -2,7 +2,7 @@ const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
-const { PORTFOLIO_QUEUE_NAME } = require('../queues/portfolioQueue');
+const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue } = require('../queues/portfolioQueue');
 const prisma = require('../../prisma/prisma');
 
 const recalculatePortfolioItem = require('./portfolio-handlers/recalculate-portfolio-item');
@@ -142,6 +142,73 @@ const processPortfolioJob = async (job) => {
                 await Promise.all(processingPromises);
                 return { success: true, processed: items.length };
             }
+            case 'revalue-all-tenants': {
+                const startTime = Date.now();
+
+                // Find all tenants that have at least one portfolio item
+                const tenants = await prisma.tenant.findMany({
+                    where: {
+                        portfolioItems: { some: {} },
+                    },
+                    select: { id: true },
+                });
+
+                logger.info(`[NightlyRevaluation] Found ${tenants.length} tenants with portfolio items`);
+
+                let enqueued = 0;
+                let errors = 0;
+                const queue = getPortfolioQueue();
+
+                const today = new Date().toISOString().split('T')[0];
+
+                for (const tenant of tenants) {
+                    try {
+                        // Use date-scoped jobIds to deduplicate with any staleness-triggered
+                        // revaluation that may already be queued or running for this tenant.
+                        const dedupePrefix = `nightly-revalue-${tenant.id}-${today}`;
+
+                        // Enqueue valuation jobs for this tenant.
+                        // NOTE: We intentionally skip `process-cash-holdings` here because
+                        // cash holdings haven't changed (no new transactions). That job
+                        // emits CASH_HOLDINGS_PROCESSED which cascades into a full analytics
+                        // rebuild + a second valuation run — all unnecessary. The
+                        // `value-all-assets` job already handles cash assets via its
+                        // forward-fill logic in the valuation engine.
+                        await queue.add('value-all-assets', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-valuation` });
+                        await queue.add('process-simple-liability', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-liability` });
+                        await queue.add('process-amortizing-loan', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-amortizing` });
+
+                        enqueued++;
+                        logger.info(`[NightlyRevaluation] Enqueued revaluation jobs for tenant ${tenant.id}`);
+                    } catch (error) {
+                        errors++;
+                        logger.error(`[NightlyRevaluation] Failed to enqueue for tenant ${tenant.id}:`, {
+                            error: error.message,
+                        });
+                        Sentry.withScope((scope) => {
+                            scope.setTag('worker', 'portfolioWorker');
+                            scope.setTag('jobName', 'revalue-all-tenants');
+                            scope.setExtra('tenantId', tenant.id);
+                            Sentry.captureException(error);
+                        });
+                    }
+
+                    // 1-second delay between tenants to avoid flooding the queue
+                    if (tenants.indexOf(tenant) < tenants.length - 1) {
+                        await new Promise((r) => setTimeout(r, 1000));
+                    }
+                }
+
+                const duration = Date.now() - startTime;
+                logger.info('[NightlyRevaluation] Complete:', {
+                    jobId: job.id,
+                    totalTenants: tenants.length,
+                    enqueued,
+                    errors,
+                    duration: `${duration}ms`,
+                });
+                return { success: true, totalTenants: tenants.length, enqueued, errors, duration };
+            }
             default:
                 logger.warn(`Unknown portfolio job name: ${name}`);
                 break;
@@ -167,6 +234,17 @@ const startPortfolioWorker = () => {
         // BullMQ v5 auto-renews at lockDuration / 2 (every 150s).
         lockDuration: 300_000,  // 5 minutes
     });
+
+    // Register the nightly revaluation job (4 AM UTC — after securityMaster at 3 AM refreshes prices)
+    getPortfolioQueue().add(
+        'revalue-all-tenants',
+        {},
+        {
+            repeat: { pattern: '0 4 * * *' }, // Daily at 4 AM UTC
+            jobId: 'nightly-portfolio-revaluation',
+        }
+    );
+    logger.info('Registered nightly portfolio revaluation cron (4 AM UTC)');
 
     // Add event listeners for logging
     worker.on('completed', (job, result) => {
