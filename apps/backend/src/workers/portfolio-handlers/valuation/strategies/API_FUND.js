@@ -67,6 +67,38 @@ const getPrice = async (portfolioItem, targetDate, priceCaches) => {
         if (priceCaches._consecutiveApiFailures === MAX_CONSECUTIVE_API_FAILURES) {
             logger.warn(`[API_FUND] ${MAX_CONSECUTIVE_API_FAILURES} consecutive API failures for ${portfolioItem.symbol} — skipping further API calls for this run.`);
         }
+
+        // Save a noData sentinel so we don't call the API again for this date on
+        // future valuation runs (matching API_STOCK behaviour). Without this,
+        // holiday/weekend dates keep incrementing _consecutiveApiFailures across
+        // runs until the counter reaches MAX_CONSECUTIVE_API_FAILURES and blocks
+        // ALL subsequent API calls — including valid trading days.
+        try {
+            await prisma.assetPrice.upsert({
+                where: {
+                    symbol_assetType_day_currency_exchange: {
+                        symbol: portfolioItem.symbol,
+                        assetType: 'API_FUND',
+                        day: targetDate,
+                        currency: portfolioItem.currency || '',
+                        exchange: portfolioItem.exchange || '',
+                    },
+                },
+                create: {
+                    symbol: portfolioItem.symbol,
+                    assetType: 'API_FUND',
+                    day: targetDate,
+                    price: new Decimal(0),
+                    currency: portfolioItem.currency || '',
+                    exchange: portfolioItem.exchange || '',
+                    noData: true,
+                },
+                update: { noData: true },
+            });
+        } catch (err) {
+            logger.warn(`[API_FUND] Failed to save no-data sentinel for ${portfolioItem.symbol} on ${targetDateStr}: ${err.message}`);
+        }
+        dbPriceMap.set(targetDateStr, { noData: true });
     }
 
     // --- Stage 3: Look-Back on Pre-Fetched DB Data ---
@@ -76,7 +108,9 @@ const getPrice = async (portfolioItem, targetDate, priceCaches) => {
         const priorDateStr = priorDate.toISOString().split('T')[0];
 
         if (dbPriceMap.has(priorDateStr)) {
-            const lastKnownPrice = { price: dbPriceMap.get(priorDateStr).price, source: 'DB:AssetPrice:ForwardFill' };
+            const record = dbPriceMap.get(priorDateStr);
+            if (record.noData) continue; // skip no-data sentinels in lookback
+            const lastKnownPrice = { price: record.price, source: 'DB:AssetPrice:ForwardFill' };
             forwardPriceCache.set(targetDateStr, lastKnownPrice);
             return lastKnownPrice;
         }

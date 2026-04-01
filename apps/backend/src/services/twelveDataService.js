@@ -93,7 +93,7 @@ async function getHistoricalPrice(symbol, date, { micCode } = {}) {
     const url = `${BASE_URL}/time_series`;
 
     await acquireValuationSlot();
-    logger.info(`[TwelveData] Fetching historical price for ${symbol}`, { startDate: startStr, endDate });
+    logger.info(`[TwelveData] Fetching historical price for ${symbol}`, { startDate: startStr, endDate, micCode: micCode || 'none' });
 
     try {
         const response = await axios.get(url, {
@@ -102,6 +102,33 @@ async function getHistoricalPrice(symbol, date, { micCode } = {}) {
         });
 
         if (response.data.status === 'error') {
+            // If the call failed WITH a mic_code, retry WITHOUT it. The mic_code
+            // might not match TwelveData's internal exchange mapping for ETFs/funds
+            // (e.g., mic_code "XNAS" for a fund that TwelveData indexes differently).
+            if (micCode) {
+                logger.info(`[TwelveData] Retrying ${symbol} without mic_code (was: ${micCode})`);
+                await acquireValuationSlot();
+                const retryResponse = await axios.get(url, {
+                    timeout: 10000,
+                    params: { symbol, interval: '1day', start_date: startStr, end_date: endDate, apikey: TWELVE_DATA_API_KEY },
+                });
+
+                if (retryResponse.data.status === 'error') {
+                    logger.warn(`[TwelveData] API error for ${symbol} (retry without mic_code): ${retryResponse.data.message}`);
+                    return null;
+                }
+
+                const retryValues = retryResponse.data.values;
+                if (!retryValues || retryValues.length === 0) {
+                    logger.warn(`[TwelveData] No time series data for ${symbol} around ${endDate} (retry without mic_code).`);
+                    return null;
+                }
+
+                const retryPrice = parseFloat(retryValues[0].close);
+                logger.info(`[TwelveData] Price for ${symbol} on ${retryValues[0].datetime}: ${retryPrice} (resolved without mic_code)`);
+                return { price: new Decimal(retryPrice), source: 'API:TwelveData' };
+            }
+
             logger.warn(`[TwelveData] API error for ${symbol}: ${response.data.message}`);
             return null;
         }

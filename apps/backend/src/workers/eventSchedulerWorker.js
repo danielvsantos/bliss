@@ -313,6 +313,38 @@ const processEventJob = async (job) => {
                 break;
             }
 
+            case 'PORTFOLIO_STALE_REVALUATION': {
+                const { tenantId: staleTenantId } = data;
+                if (!staleTenantId) {
+                    logger.warn('PORTFOLIO_STALE_REVALUATION event is missing tenantId.');
+                    return;
+                }
+                // Debounce with a 30-minute window per tenant to prevent rapid re-triggers
+                // (e.g., user refreshing the portfolio page multiple times)
+                // NOTE: We intentionally skip `process-cash-holdings` here. Cash holdings
+                // haven't changed (no new transactions), and that job emits
+                // CASH_HOLDINGS_PROCESSED which cascades into a full analytics rebuild +
+                // a second valuation run. The `value-all-assets` job already handles cash
+                // assets via its forward-fill logic in the valuation engine.
+                // Use a date-scoped jobId so BullMQ deduplicates within the same day.
+                // This prevents the infinite-rebuild loop where `value-all-assets` deletes
+                // all history (triggering another staleness check) before it finishes rebuilding.
+                const today = new Date().toISOString().split('T')[0];
+                const dedupePrefix = `stale-revalue-${staleTenantId}-${today}`;
+
+                logger.info(`[Event] Portfolio history stale for tenant ${staleTenantId}. Scheduling on-demand revaluation (dedupe: ${dedupePrefix}).`);
+                await scheduleDebouncedJob(
+                    getPortfolioQueue(),
+                    'value-all-assets',
+                    { tenantId: staleTenantId, needsRevaluation: [true] },
+                    'needsRevaluation',
+                    1800 // 30 minutes
+                );
+                await getPortfolioQueue().add('process-simple-liability', { tenantId: staleTenantId }, { jobId: `${dedupePrefix}-liability` });
+                await getPortfolioQueue().add('process-amortizing-loan', { tenantId: staleTenantId }, { jobId: `${dedupePrefix}-amortizing` });
+                break;
+            }
+
             case 'TENANT_CURRENCY_SETTINGS_UPDATED': {
                 const { tenantId } = data;
                 if (!tenantId) {

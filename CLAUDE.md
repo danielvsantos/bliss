@@ -137,14 +137,14 @@ bliss/
 
 Transaction classification flows through tiers until one succeeds:
 
-1. **Exact Match** -- O(1) in-memory description cache per tenant. Confidence: `1.0`
+1. **Exact Match** -- O(1) in-memory cache per tenant, backed by the `DescriptionMapping` table (SHA-256 hash → categoryId). Confidence: `1.0`
 2. **Vector Match (tenant)** -- pgvector cosine similarity on `TransactionEmbedding` (768-dim, Gemini embeddings). Threshold: `reviewThreshold` (default 0.70)
 3. **Vector Match (global)** -- Cross-tenant `GlobalEmbedding` table, discounted by `0.92x`
 4. **LLM** -- Gemini 2.0 Flash, temperature 0.1, confidence hard-capped at `0.85`
 
 Thresholds are per-tenant (`Tenant.autoPromoteThreshold`, `Tenant.reviewThreshold`). Config constants live in `apps/backend/src/config/classificationConfig.js` and must stay in sync with Prisma schema defaults.
 
-**Feedback loop:** User corrections update the exact-match cache immediately, then asynchronously generate/upsert embeddings.
+**Feedback loop:** User corrections update the in-memory cache + `DescriptionMapping` table immediately (via `addDescriptionEntry()` write-through), then asynchronously generate/upsert embeddings.
 
 ### Portfolio processing pipeline
 
@@ -161,6 +161,8 @@ Key patterns:
 - USD is the intermediary currency for all cross-rate conversions
 - FIFO with historical FX rates: each buy lot records the buy-date rate
 - Price fetching uses a 4-stage waterfall: memory cache -> live API -> 7-day DB lookback -> manual value fallback
+
+**Nightly revaluation:** A `revalue-all-tenants` BullMQ cron runs at 4 AM UTC (after securityMaster refreshes prices at 3 AM). It enqueues per-tenant `value-all-assets`, `process-simple-liability`, and `process-amortizing-loan` jobs. `process-cash-holdings` is intentionally excluded — it would cascade into a full analytics rebuild via `CASH_HOLDINGS_PROCESSED`, and `value-all-assets` already handles cash via forward-fill. This prevents history gaps when no transactions occur for days. The `GET /api/portfolio/history` endpoint also has an on-access staleness check that fires a `PORTFOLIO_STALE_REVALUATION` event as a fallback for self-hosters.
 
 ### Smart import (CSV/XLSX)
 
@@ -215,10 +217,12 @@ Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
 | `commitWorker` | smart-import | 1 | Batch commit staged rows to transactions |
 | `plaidSyncWorker` | plaid-sync | 3 | Incremental Plaid transaction fetch |
 | `plaidProcessorWorker` | plaid-processor | 5 | Classify and persist Plaid transactions |
-| `portfolioWorker` | portfolio | 1 | FIFO lots, PnL, valuation, cash holdings |
+| `portfolioWorker` | portfolio | 5 | FIFO lots, PnL, valuation, cash holdings, **nightly revaluation (4 AM UTC)** |
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
-| `insightGeneratorWorker` | insights | 1 | AI financial insights generation |
-| `securityMasterWorker` | security-master | 1 | Nightly stock fundamentals refresh |
+| `insightGeneratorWorker` | insights | 1 | AI financial insights generation (cron 6 AM UTC) |
+| `securityMasterWorker` | security-master | 1 | Nightly stock fundamentals refresh (cron 3 AM UTC) |
+
+**Nightly schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> insightGenerator (6 AM, AI insights).
 
 All workers report failures to Sentry with structured context (worker name, job name, tenantId, attempt count). Graceful shutdown: close workers before Redis disconnect.
 
