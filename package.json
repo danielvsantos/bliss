@@ -14,6 +14,8 @@
     "test:api": "pnpm --filter @bliss/api test",
     "test:backend": "pnpm --filter @bliss/backend test",
     "test:web": "pnpm --filter @bliss/web test",
+    "dev:docs": "pnpm --filter @bliss/docs dev",
+    "build:docs": "pnpm --filter @bliss/docs build",
     "postinstall": "prisma generate --schema=prisma/schema.prisma"
   },
   "engines": {

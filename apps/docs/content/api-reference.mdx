@@ -1,0 +1,14 @@
+import dynamic from 'next/dynamic'
+
+export const ApiReference = dynamic(
+  () => import('../components/ApiReference').then((m) => m.ApiReference),
+  { ssr: false, loading: () => <div style={{ padding: '40px', textAlign: 'center', color: 'hsl(260 6% 61%)' }}>Loading API Reference...</div> }
+)
+
+# API Reference
+
+Bliss exposes a comprehensive REST API through the Next.js API layer and internal backend endpoints. Select a specification below to explore endpoints, request/response schemas, and authentication requirements.
+
+All public API endpoints require a valid JWT token sent as an HttpOnly cookie or via the `Authorization: Bearer <token>` header. The backend internal API uses `INTERNAL_API_KEY` header authentication for service-to-service communication.
+
+<ApiReference />
