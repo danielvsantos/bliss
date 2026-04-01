@@ -35,6 +35,26 @@ Triggered by a manual transaction change (e.g., `MANUAL_TRANSACTION_MODIFIED` ev
 3.  **`value-portfolio-items`**: Updates valuations if needed
 
 
+#### Nightly Revaluation (Scheduled)
+Triggered by the `revalue-all-tenants` BullMQ repeatable job at **4 AM UTC daily**.
+
+This ensures portfolio history has no gaps even when no transactions occur for days. Without it, the history chart would show a cliff/drop because the last few days would have no `PortfolioValueHistory` records.
+
+1.  **Orchestrator**: The `revalue-all-tenants` job queries all tenants with portfolio items and enqueues per-tenant valuation jobs with a 1-second delay between tenants.
+2.  **Per-tenant jobs**: For each tenant, 3 jobs are enqueued:
+    - `value-all-assets` (investments, assets, and cash — via forward-fill in the valuation engine)
+    - `process-simple-liability` (simple debts)
+    - `process-amortizing-loan` (amortizing loans)
+
+**Important:** `process-cash-holdings` is intentionally excluded. Cash holdings haven't changed (no new transactions), and that job emits `CASH_HOLDINGS_PROCESSED` which cascades into a full analytics rebuild + a second valuation run. The `value-all-assets` job already handles cash assets via its forward-fill logic.
+3.  **Idempotency**: The valuation engine deletes and rebuilds all history, so running it multiple times is safe.
+
+**Schedule chain**: securityMasterWorker (3 AM, refreshes prices) -> portfolioWorker (4 AM, revaluation) -> insightGeneratorWorker (6 AM, AI insights).
+
+#### On-Access Staleness Check (Fallback)
+The `GET /api/portfolio/history` endpoint checks if the most recent `PortfolioValueHistory` record is before today. If stale, it fires a `PORTFOLIO_STALE_REVALUATION` event (debounced at 30 minutes per tenant) to trigger revaluation. The response returns existing data immediately; the next fetch gets fresh data. This covers self-hosters where the nightly cron may not be running reliably.
+
+
 ## 6.2. Data Integrity Constraints
 
 The following unique constraints protect against duplicate records from concurrent job execution (the portfolio worker runs with `concurrency: 5`):

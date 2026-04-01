@@ -121,6 +121,14 @@ This endpoint provides aggregated historical data, primarily for use in the perf
 
 The endpoint fetches daily records from the `PortfolioValueHistory` table, aggregates the `valueInUSD` for each day based on the asset's category `type`, and returns a time-series array.
 
+#### Staleness Check (Background Revaluation Trigger)
+
+Before processing the main query, the endpoint checks if the most recent `PortfolioValueHistory` record for the tenant is before today's date. If stale, it fires a `PORTFOLIO_STALE_REVALUATION` event (via `produceEvent()`) in a fire-and-forget fashion. The response returns existing data immediately without waiting for revaluation; the next page load/refetch will have fresh data.
+
+This check is non-blocking: errors are caught silently and never delay the GET response. The backend debounces the event at 30 minutes per tenant to prevent rapid re-triggers from multiple page refreshes.
+
+**Purpose:** This serves as a fallback for self-hosters who may not have the nightly cron job running reliably. In typical deployments, the nightly `revalue-all-tenants` job (4 AM UTC) keeps history current and this check is a no-op.
+
 ### 6.4.2. Query Parameters
 
 | Parameter | Type     | Description                           | Default          |
