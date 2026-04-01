@@ -5,7 +5,10 @@ import { cors } from '../../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
 import { withAuth } from '../../../../utils/withAuth.js';
-import { computeTransactionHash, buildDuplicateHashSet } from '../../../../utils/transactionHash.js';
+// Hash-based dedup removed from single-promote — plaidProcessorWorker already
+// performed dedup at classification time. The externalId check (line ~176) is
+// sufficient for the promote path. This avoids a costly buildDuplicateHashSet
+// query on every promote action.
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -193,30 +196,10 @@ export default withAuth(async function handler(req, res) {
         return res.status(StatusCodes.OK).json(updated);
       }
 
-      // Hash-based dedup: catch duplicates from manual entry or CSV import
+      // Determine debit/credit from Plaid amount
       const plaidAmount = Number(plaidTx.amount);
       const absAmount = Math.abs(plaidAmount);
       const txDate = new Date(plaidTx.date);
-      const candidateHash = computeTransactionHash(
-        txDate,
-        plaidTx.merchantName || plaidTx.name,
-        absAmount,
-        localAccount.id,
-      );
-      const hashSet = await buildDuplicateHashSet(user.tenantId, localAccount.id, txDate, txDate);
-      if (hashSet.has(candidateHash)) {
-        // Mark as DUPLICATE so it doesn't keep appearing for review
-        await prisma.plaidTransaction.update({
-          where: { id },
-          data: { promotionStatus: 'DUPLICATE', processed: true },
-        });
-        return res.status(StatusCodes.CONFLICT).json({
-          error: 'A matching transaction already exists (duplicate detected by content hash).',
-          duplicate: true,
-        });
-      }
-
-      // Determine debit/credit from Plaid amount (plaidAmount, absAmount, txDate already computed above)
       const isDebit = plaidAmount > 0;
 
       // Build the transaction date parts

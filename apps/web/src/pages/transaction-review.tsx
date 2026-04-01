@@ -673,6 +673,12 @@ export default function TransactionReviewPage() {
         item.promotionStatus === 'SKIPPED';
 
       if (item.source === 'plaid' && item.originalPlaidTx) {
+        // Clear category filter if this is the last item in the filtered group
+        // (mirrors the same guard in handlePlaidPromote)
+        if (!isAlreadyProcessed && plaidCategoryFilter != null && plaidTransactions.length <= 1) {
+          setPlaidCategoryFilter(null);
+        }
+
         const payload: Record<string, unknown> = {};
         if (!isAlreadyProcessed) payload.promotionStatus = 'PROMOTED';
         if (categoryId && categoryId !== item.categoryId) {
@@ -738,7 +744,7 @@ export default function TransactionReviewPage() {
         setSelectedItem(null);
       }
     },
-    [updatePlaidTx, updateImportRow, selectedImportId, toast],
+    [updatePlaidTx, updateImportRow, selectedImportId, toast, plaidCategoryFilter, plaidTransactions.length],
   );
 
   // Interceptor: before saving, check if there are other CLASSIFIED Plaid transactions
