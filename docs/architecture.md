@@ -263,8 +263,8 @@ using a three-tier waterfall. Each tier is progressively more expensive:
   Transaction Description
           |
      [Tier 1: EXACT_MATCH]
-     In-memory Map keyed by (tenantId, normalizedDescription)
-     O(1) lookup, zero latency
+     In-memory Map backed by DescriptionMapping table
+     Keyed by SHA-256(normalize(description)), O(1) lookup
           |
      confidence >= autoPromoteThreshold? --YES--> classified
           |                                       source: EXACT_MATCH
@@ -291,8 +291,9 @@ using a three-tier waterfall. Each tier is progressively more expensive:
 
 When a user overrides a classification (corrects a category), the system:
 
-1. **Immediately** updates the in-memory exact-match cache (Tier 1), so the
-   next identical description is classified instantly.
+1. **Immediately** updates the in-memory exact-match cache and the `DescriptionMapping`
+   table (write-through via `addDescriptionEntry()`), so the next identical
+   description is classified instantly.
 2. **Asynchronously** generates a new embedding via Gemini and upserts it into
    `TransactionEmbedding` (Tier 2), so similar descriptions benefit from the
    correction.
@@ -363,7 +364,7 @@ the Next.js API config. Temp files are cleaned up after upload completes.
     |     plaid-webhook
     |
     +-- Cache (ephemeral)
-          Description cache entries
+          Description cache (in-memory, backed by DescriptionMapping table)
           Rate limit counters
 ```
 
@@ -381,6 +382,20 @@ the Next.js API config. Temp files are cleaned up after upload completes.
 | importWorker              | import             | 1           | Legacy CSV import (kept for backward compat)       |
 | insightsWorker            | insights           | 1           | Generate AI financial insights                     |
 | plaidWebhookWorker        | plaid-webhook      | 3           | Process Plaid webhook payloads                     |
+
+### Scheduled Jobs (Nightly Cron)
+
+Three workers register BullMQ repeatable jobs that run on a nightly schedule:
+
+| Job | Worker | Cron (UTC) | Purpose |
+| --- | ------ | ---------- | ------- |
+| `refresh-all-fundamentals` | securityMasterWorker | `0 3 * * *` (3 AM) | Refresh stock prices, profiles, earnings, dividends |
+| `revalue-all-tenants` | portfolioWorker | `0 4 * * *` (4 AM) | Enqueue per-tenant portfolio revaluation (investments, cash, debts) |
+| `generate-all-insights` | insightGeneratorWorker | `0 6 * * *` (6 AM) | Generate AI financial insights for all tenants |
+
+The schedule chain is intentional: fresh prices (3 AM) feed into revaluation (4 AM), which feeds into insights (6 AM). The portfolio revaluation ensures history has no gaps even when no transactions occur for days.
+
+**On-access fallback:** The `GET /api/portfolio/history` endpoint also checks if the most recent history record is before today. If stale, it fires a `PORTFOLIO_STALE_REVALUATION` event to trigger revaluation for that tenant. This covers self-hosters where the nightly job may not be running reliably.
 
 ### Queue Patterns
 

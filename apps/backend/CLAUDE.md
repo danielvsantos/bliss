@@ -61,6 +61,7 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 | `TRANSACTIONS_IMPORTED`, `MANUAL_TRANSACTION_MODIFIED` | portfolio | portfolioWorker |
 | `PORTFOLIO_CHANGES_PROCESSED` | analytics | analyticsWorker |
 | `TAG_ASSIGNMENT_MODIFIED` | analytics | analyticsWorker |
+| `PORTFOLIO_STALE_REVALUATION` | portfolio | portfolioWorker (debounced 30min) |
 
 **Critical:** `originalScope` and `portfolioItemIds` must be threaded through the entire pipeline from event source to final worker. Dropping these breaks scoped (incremental) updates.
 
@@ -73,7 +74,7 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 | `commitWorker` | smart-import | 1 | default | `commit-smart-import` |
 | `plaidSyncWorker` | plaid-sync | 3 | default | `plaid-sync-job` |
 | `plaidProcessorWorker` | plaid-processor | 5 | default | `process-plaid-transactions` |
-| `portfolioWorker` | portfolio | 1 | default | `process-portfolio-changes`, `recalculate-portfolio-items`, `value-portfolio-items`, `value-all-assets` |
+| `portfolioWorker` | portfolio | 5 | 300s | `process-portfolio-changes`, `recalculate-portfolio-items`, `value-portfolio-items`, `value-all-assets`, `revalue-all-tenants` (cron 4AM UTC) |
 | `analyticsWorker` | analytics | 1 | default | `full-rebuild-analytics`, `scoped-update-analytics` |
 | `insightGeneratorWorker` | insights | 1 | 600s | `generate-all-insights` (cron 6AM UTC), `generate-tenant-insights` |
 | `securityMasterWorker` | security-master | 1 | 1800s | `refresh-all-fundamentals` (cron 3AM UTC), `refresh-single-symbol` |
@@ -161,7 +162,7 @@ These defaults must stay in sync with `Tenant.autoPromoteThreshold` and `Tenant.
 
 | Utility | Strategy | Key details |
 |---------|----------|-------------|
-| `descriptionCache.js` | In-memory, O(1) | Per-tenant map of normalized description -> categoryId. 10-min refresh, 25k entries cap |
+| `descriptionCache.js` | In-memory + DB write-through, O(1) | Per-tenant map of SHA-256(description) -> categoryId, backed by `DescriptionMapping` table. 10-min refresh, 25k entries cap |
 | `categoryCache.js` | In-memory | Per-tenant category list. 5-min refresh, 500 tenants cap |
 | Adapter cache | Redis | 5-min TTL, invalidated on adapter changes |
 

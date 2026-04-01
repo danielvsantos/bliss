@@ -5,6 +5,7 @@ import { cors } from '../../../utils/cors.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { batchFetchRates } from '../../../utils/currencyConversion.js';
+import { produceEvent } from '../../../utils/produceEvent.js';
 
 export default withAuth(async function handler(req, res) {
   // Apply rate limiting
@@ -96,6 +97,38 @@ async function handleGet(req, res) {
   const { from, to, type, group, resolution: resolutionParam } = req.query;
   const user = req.user;
   const tenantId = user.tenantId;
+
+  // --- Staleness check: trigger background revaluation if history is outdated ---
+  // This ensures portfolio history stays current even for self-hosters without
+  // reliable nightly cron infrastructure. The response returns existing data
+  // immediately; the next fetch will have fresh data.
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const latestRecord = await prisma.portfolioValueHistory.findFirst({
+      where: { asset: { tenantId } },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+
+    // Only fire the staleness event when we have history AND it's outdated.
+    // If latestRecord is null, either the user has no portfolio items at all
+    // (nothing to revalue) or a rebuild is in progress (the valuation engine
+    // deletes all history before recreating it). In both cases, firing another
+    // event would be wasteful or trigger an infinite rebuild loop.
+    if (latestRecord) {
+      const latestDateStr = latestRecord.date.toISOString().split('T')[0];
+      if (latestDateStr < todayStr) {
+        // Fire-and-forget: trigger revaluation via backend event
+        produceEvent({
+          type: 'PORTFOLIO_STALE_REVALUATION',
+          tenantId,
+        }).catch(() => {}); // Swallow errors — this is non-critical
+      }
+    }
+  } catch (err) {
+    // Non-critical: don't fail the GET request over a staleness check
+    console.warn('Failed staleness check for portfolio history:', err.message);
+  }
 
   if (from && isNaN(new Date(from).getTime())) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid "from" date format.' });
