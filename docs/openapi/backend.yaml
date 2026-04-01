@@ -1,0 +1,931 @@
+openapi: 3.0.3
+info:
+  title: Bliss Backend Service
+  description: |
+    API documentation for the Bliss Backend Service, which handles asynchronous processing
+    via an event-driven architecture.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Internal API key for service-to-service authentication.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: A short error message.
+        message:
+          type: string
+          description: A more detailed error message, often available in development.
+
+    SimilarTransactionResult:
+      type: object
+      description: A single result from the vector similarity search.
+      properties:
+        description:
+          type: string
+          description: The normalised transaction description that was previously classified.
+          example: "Netflix monthly subscription"
+        categoryId:
+          type: integer
+          description: The category ID the description was classified into.
+          example: 42
+        categoryName:
+          type: string
+          description: The human-readable category name.
+          example: "Streaming Services"
+        similarity:
+          type: number
+          format: float
+          description: Cosine similarity score between 0.0 and 1.0. Higher is more similar.
+          example: 0.94
+        source:
+          type: string
+          description: How this embedding was created (e.g. USER_CONFIRMED).
+          example: "USER_CONFIRMED"
+
+    EventAcceptedResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Event accepted"
+
+    EventPayloadBase:
+      type: object
+      required:
+        - tenantId
+      properties:
+        tenantId:
+          type: string
+          description: The Prisma-generated CUID of the tenant originating this event.
+          example: "clq123abc0000defg456h"
+        userId:
+          type: string
+          description: The Prisma-generated CUID of the user who triggered this event (optional for system events).
+          example: "clr987xyz0000uvwq321j"
+
+    # --- Per-event data payloads ---
+    TransactionImportRequestedData:
+      description: Payload for the legacy dumb-import pipeline.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          required:
+            - tempFilePath
+            - accountId
+          properties:
+            tempFilePath:
+              type: string
+              description: GCS object path of the uploaded CSV file.
+              example: "uploads/tenant_abc/upload_12345.csv"
+            accountId:
+              type: integer
+              description: The target account ID for imported transactions.
+            adapterId:
+              type: string
+              description: The import adapter configuration ID.
+
+    SmartImportRequestedData:
+      description: Payload for the smart (AI-powered) import pipeline.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          required:
+            - stagedImportId
+            - tempFilePath
+            - accountId
+            - adapterId
+          properties:
+            stagedImportId:
+              type: string
+              description: The StagedImport record ID to update during processing.
+            tempFilePath:
+              type: string
+              description: GCS object path of the uploaded CSV file.
+            accountId:
+              type: integer
+            adapterId:
+              type: string
+
+    TransactionsImportedData:
+      description: Emitted after the import worker successfully creates transactions. Triggers portfolio recalculation.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          properties:
+            accountIds:
+              type: array
+              items:
+                type: integer
+              description: Account IDs whose transactions were imported (used to scope portfolio updates).
+            source:
+              type: string
+              enum: [import, plaid, manual]
+              description: Origin of the imported transactions.
+
+    ManualTransactionData:
+      description: Payload for manual transaction creation/modification events.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          required:
+            - transactionId
+          properties:
+            transactionId:
+              type: integer
+              description: The ID of the created or modified transaction.
+
+    ManualPortfolioPriceUpdatedData:
+      description: Emitted when a manual price value is added to a portfolio item.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          required:
+            - portfolioItemId
+          properties:
+            portfolioItemId:
+              type: integer
+              description: The ID of the portfolio item whose price was updated.
+
+    PlaidSyncData:
+      description: Payload for Plaid initial sync and incremental update events.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          required:
+            - plaidItemId
+          properties:
+            plaidItemId:
+              type: string
+              description: The PlaidItem ID to sync.
+            source:
+              type: string
+              enum:
+                - MANUAL_RESYNC
+                - WEBHOOK_SYNC_UPDATES_AVAILABLE
+                - WEBHOOK_HISTORICAL_UPDATE
+                - RECONNECT_SYNC
+              description: |
+                Identifies what triggered this sync job.
+                - `MANUAL_RESYNC` — user clicked "Resync Now" in the Account Management page.
+                - `WEBHOOK_SYNC_UPDATES_AVAILABLE` — Plaid webhook: `TRANSACTIONS.SYNC_UPDATES_AVAILABLE`.
+                - `WEBHOOK_HISTORICAL_UPDATE` — Plaid webhook: `TRANSACTIONS.HISTORICAL_UPDATE` (full history now available).
+                - `RECONNECT_SYNC` — triggered automatically after a user reconnects a previously paused (REVOKED) account via `PATCH /api/plaid/items`.
+              example: WEBHOOK_SYNC_UPDATES_AVAILABLE
+
+    TagAssignmentModifiedData:
+      description: Emitted when tags are added to or removed from a transaction. Triggers a scoped analytics recalculation to update TagAnalyticsCacheMonthly.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+        - type: object
+          properties:
+            transactionScopes:
+              type: array
+              description: Scopes identifying the affected time/currency/country dimensions for the modified transaction.
+              items:
+                type: object
+                properties:
+                  year:
+                    type: integer
+                    example: 2026
+                  month:
+                    type: integer
+                    example: 3
+                  currency:
+                    type: string
+                    example: "USD"
+                  country:
+                    type: string
+                    example: "US"
+
+    TenantCurrencySettingsUpdatedData:
+      description: Emitted when a tenant changes their active currency settings. Triggers a full portfolio rebuild.
+      allOf:
+        - $ref: '#/components/schemas/EventPayloadBase'
+
+    SecurityMasterRecord:
+      type: object
+      description: A global (non-tenant) record containing stock fundamental data.
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+          example: 'AAPL'
+        name:
+          type: string
+          example: 'Apple Inc.'
+        sector:
+          type: string
+          example: 'Technology'
+        industry:
+          type: string
+          example: 'Consumer Electronics'
+        country:
+          type: string
+          example: 'United States'
+        exchange:
+          type: string
+          example: 'NASDAQ'
+        currency:
+          type: string
+          example: 'USD'
+        isin:
+          type: string
+          example: 'US0378331005'
+        assetType:
+          type: string
+          example: 'Common Stock'
+        peRatio:
+          type: number
+          description: 'Computed: currentPrice / trailing 4Q EPS'
+          example: 28.5
+        dividendYield:
+          type: number
+          description: 'Computed: annualized dividend / currentPrice'
+          example: 0.0055
+        trailingEps:
+          type: number
+          example: 6.14
+        annualizedDividend:
+          type: number
+          example: 0.96
+        latestEpsActual:
+          type: number
+          example: 1.53
+        latestEpsSurprise:
+          type: number
+          example: 4.2
+        week52High:
+          type: number
+          example: 199.62
+        week52Low:
+          type: number
+          example: 155.98
+        averageVolume:
+          type: number
+          example: 54320000
+        lastProfileUpdate:
+          type: string
+          format: date-time
+        lastFundamentalsUpdate:
+          type: string
+          format: date-time
+
+security:
+  - ApiKeyAuth: [] # Apply API Key auth globally
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns 200 OK if the service is running.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+
+  /api/events:
+    post:
+      tags:
+        - Events
+      summary: Enqueue an event for processing
+      description: |
+        Receives a business event from another service and enqueues it in the `eventsQueue`.
+        The `eventSchedulerWorker` will then pick up this event and orchestrate the necessary
+        background jobs (e.g., analytics recalculation, portfolio processing).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+              properties:
+                type:
+                  type: string
+                  description: |
+                    The type of the event being sent. The `eventSchedulerWorker` routes each
+                    type to its corresponding BullMQ job(s):
+                    - `TRANSACTION_IMPORT_REQUESTED` → importWorker (legacy dumb import)
+                    - `SMART_IMPORT_REQUESTED` → smartImportWorker (AI-powered import)
+                    - `SMART_IMPORT_COMMIT` → smartImportWorker/commitWorker (async transaction commit)
+                    - `TRANSACTIONS_IMPORTED` → portfolioWorker (portfolio recalculation)
+                    - `MANUAL_TRANSACTION_CREATED` / `MANUAL_TRANSACTION_MODIFIED` → portfolioWorker
+                    - `MANUAL_PORTFOLIO_PRICE_UPDATED` → portfolioWorker (single item refresh)
+                    - `PLAID_INITIAL_SYNC` / `PLAID_SYNC_UPDATES` → plaidSyncWorker (ingestion); emits `PLAID_SYNC_COMPLETE` internally → plaidProcessorWorker (classification + promotion)
+                    - `PLAID_SYNC_COMPLETE` → plaidProcessorWorker (internal; emitted by plaidSyncWorker after ingestion completes)
+                    - `PORTFOLIO_CHANGES_PROCESSED` → analyticsWorker
+                    - `CASH_HOLDINGS_PROCESSED` → analyticsWorker
+                    - `ANALYTICS_RECALCULATION_COMPLETE` → (terminal — logs only)
+                    - `TENANT_CURRENCY_SETTINGS_UPDATED` → full portfolio rebuild
+                    - `TAG_ASSIGNMENT_MODIFIED` → analyticsWorker (scoped update, repopulates TagAnalyticsCacheMonthly)
+                  enum:
+                    - "SMART_IMPORT_REQUESTED"
+                    - "SMART_IMPORT_COMMIT"
+                    - "TRANSACTIONS_IMPORTED"
+                    - "MANUAL_TRANSACTION_CREATED"
+                    - "MANUAL_TRANSACTION_MODIFIED"
+                    - "MANUAL_PORTFOLIO_PRICE_UPDATED"
+                    - "PLAID_INITIAL_SYNC"
+                    - "PLAID_SYNC_UPDATES"
+                    - "PORTFOLIO_CHANGES_PROCESSED"
+                    - "CASH_HOLDINGS_PROCESSED"
+                    - "ANALYTICS_RECALCULATION_COMPLETE"
+                    - "TENANT_CURRENCY_SETTINGS_UPDATED"
+                    - "TAG_ASSIGNMENT_MODIFIED"
+                  example: "TRANSACTIONS_IMPORTED"
+                data:
+                  type: object
+                  description: |
+                    The event payload. Structure varies by event type. All payloads include
+                    `tenantId` (required) and optionally `userId`. See the per-event schemas in
+                    components for full field definitions.
+                  required:
+                    - tenantId
+                  properties:
+                    tenantId:
+                      type: string
+                      example: "clq123abc0000defg456h"
+                    userId:
+                      type: string
+                      example: "clr987xyz0000uvwq321j"
+                  additionalProperties: true
+                  example:
+                    tenantId: "clq123abc0000defg456h"
+                    userId: "clr987xyz0000uvwq321j"
+                    accountIds: [1, 2, 3]
+                    source: "import"
+      responses:
+        '202':
+          description: Event was successfully accepted and enqueued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventAcceptedResponse'
+        '400':
+          description: Bad Request - Event type is missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+            description: Unauthorized - API key is missing or invalid.
+        '500':
+          description: Internal Server Error - Failed to enqueue the event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/pricing/prices:
+    get:
+      tags:
+        - Pricing
+      summary: Get latest asset price
+      description: Fetches the latest known price for a given asset symbol from the most appropriate source (live API or database fallback).
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          description: The asset's ticker or symbol (e.g., 'AAPL', 'bitcoin').
+          schema:
+            type: string
+        - name: assetType
+          in: query
+          required: true
+          description: The type of the asset (e.g., 'Equity', 'Crypto').
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The latest price data for the asset.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  price:
+                    type: number
+                  source:
+                    type: string
+        '400':
+          description: Bad Request - Missing required parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not Found - A price for the given symbol could not be found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/feedback:
+    post:
+      tags:
+        - Feedback
+      summary: Record a category correction and build the vector index
+      description: |
+        Called by `bliss-finance-api` when a user confirms or overrides a transaction
+        category, and by workers after auto-promote/commit.
+
+        Two effects:
+        1. **Immediate**: Updates the in-memory description cache so future identical
+           descriptions are classified via EXACT_MATCH instead of falling through to LLM.
+        2. **Fire-and-forget**: Generates a 768-dim embedding via Gemini and upserts a
+           `TransactionEmbedding` row, building the vector index for Tier 2 (VECTOR_MATCH)
+           classification. The upsert key is `(tenantId, description)` — calling this
+           endpoint multiple times for the same description is safe (idempotent).
+
+        This is an internal service-to-service endpoint protected by API key auth.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - categoryId
+                - tenantId
+              properties:
+                description:
+                  type: string
+                  description: The raw transaction description that was corrected.
+                  example: "AMAZON PRIME*AB12CD345"
+                categoryId:
+                  type: integer
+                  description: The corrected (user-confirmed) category ID.
+                  example: 5
+                tenantId:
+                  type: string
+                  description: The tenant whose description cache and vector index should be updated.
+                  example: "clq123abc0000defg456h"
+                transactionId:
+                  type: integer
+                  nullable: true
+                  description: |
+                    Optional. The ID of the committed `Transaction` record. When provided, the
+                    resulting `TransactionEmbedding` row is linked to this transaction via FK.
+                    Omit (or pass null) when calling from the CSV commit endpoint, since
+                    `createMany` does not return individual IDs.
+                  example: 1042
+      responses:
+        '200':
+          description: Feedback recorded and cache updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Feedback recorded"
+        '400':
+          description: Missing or invalid fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/similar:
+    get:
+      tags:
+        - Similarity
+      summary: Find semantically similar previously-classified transactions
+      description: |
+        Accepts a raw transaction description, generates a 768-dim embedding via Gemini,
+        and returns the top-N most similar entries from the `TransactionEmbedding` table
+        for the given tenant, ordered by cosine similarity (descending).
+
+        This powers the "did you mean?" suggestion UI in the Smart Import review screen
+        and can be used by any surface that wants semantic category suggestions.
+
+        Results are filtered to entries whose similarity meets or exceeds the `threshold`
+        parameter. Only entries with a non-null `embedding` column are considered.
+
+        This is an internal service-to-service endpoint protected by API key auth.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: description
+          in: query
+          required: true
+          description: The raw transaction description to search for similar entries.
+          schema:
+            type: string
+          example: "Netflix subscription"
+        - name: tenantId
+          in: query
+          required: true
+          description: The tenant whose TransactionEmbedding records to search.
+          schema:
+            type: string
+          example: "clq123abc0000defg456h"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results to return. Defaults to 5.
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 20
+        - name: threshold
+          in: query
+          required: false
+          description: Minimum cosine similarity score (0.0–1.0). Results below this are excluded. Defaults to 0.70.
+          schema:
+            type: number
+            format: float
+            default: 0.70
+            minimum: 0.0
+            maximum: 1.0
+      responses:
+        '200':
+          description: Array of similar transaction embeddings, sorted by similarity descending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SimilarTransactionResult'
+                  query:
+                    type: string
+                    description: The description that was searched.
+                  threshold:
+                    type: number
+                    description: The threshold applied.
+        '400':
+          description: Missing required query parameters (description or tenantId).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error (e.g. Gemini API unavailable).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ticker/search:
+    get:
+      tags:
+        - Ticker
+      summary: Search for ticker symbols
+      description: |
+        Searches for ticker symbols by name or symbol via Twelve Data.
+        When `type=crypto`, filters and deduplicates results for digital currencies.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query string (symbol or company name).
+          schema:
+            type: string
+          example: "AAPL"
+        - name: type
+          in: query
+          required: false
+          description: Asset type filter. Pass `crypto` to filter for digital currency results.
+          schema:
+            type: string
+          example: "crypto"
+      responses:
+        '200':
+          description: Search results matching the query.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                          example: "AAPL"
+                        name:
+                          type: string
+                          example: "Apple Inc"
+                        exchange:
+                          type: string
+                          example: "NASDAQ"
+                        country:
+                          type: string
+                          example: "United States"
+                        currency:
+                          type: string
+                          example: "USD"
+                        type:
+                          type: string
+                          example: "Common Stock"
+                        mic_code:
+                          type: string
+                          example: "XNAS"
+        '400':
+          description: Bad Request - Missing required `q` query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ticker/profile:
+    get:
+      tags:
+        - Ticker
+      summary: Get ticker profile information
+      description: Returns profile information for a given ticker symbol (ISIN, exchange, sector, etc.).
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          description: The ticker symbol to look up.
+          schema:
+            type: string
+          example: "AAPL"
+      responses:
+        '200':
+          description: Profile data for the requested symbol.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isin:
+                    type: string
+                    example: "US0378331005"
+                  exchange:
+                    type: string
+                    example: "NASDAQ"
+                  name:
+                    type: string
+                    example: "Apple Inc"
+                  currency:
+                    type: string
+                    example: "USD"
+                  sector:
+                    type: string
+                    example: "Technology"
+                  type:
+                    type: string
+                    example: "Common Stock"
+        '404':
+          description: Not Found - Symbol could not be found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/insights/generate:
+    post:
+      tags:
+        - Insights
+      summary: Trigger insight generation for a tenant
+      description: |
+        Internal endpoint called by `bliss-finance-api` to trigger on-demand
+        insight generation. Enqueues a `generate-tenant-insights` job on the
+        BullMQ insights queue. The job is processed asynchronously by the
+        `insightGeneratorWorker`.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+              properties:
+                tenantId:
+                  type: string
+                  description: The tenant ID to generate insights for.
+                  example: "clq123abc0000defg456h"
+      responses:
+        '202':
+          description: Insight generation job enqueued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Insight generation job enqueued"
+        '400':
+          description: Bad Request — tenantId is missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized — API key is missing or invalid.
+        '500':
+          description: Internal Server Error — failed to enqueue job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/admin/regenerate-embedding:
+    post:
+      tags:
+        - Admin
+      summary: Regenerate a transaction embedding
+      description: |
+        Regenerates the embedding vector for a given description and default category code.
+        Useful for backfilling or correcting embeddings in the vector index.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - defaultCategoryCode
+              properties:
+                description:
+                  type: string
+                  description: The transaction description to generate an embedding for.
+                  example: "AMAZON PRIME*AB12CD345"
+                defaultCategoryCode:
+                  type: string
+                  description: The default category code to associate with the embedding.
+                  example: "shopping"
+      responses:
+        '200':
+          description: Embedding regenerated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '400':
+          description: Bad Request - Missing required fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/security-master:
+    get:
+      tags:
+        - SecurityMaster
+      summary: Lookup a SecurityMaster record by symbol
+      description: Returns the full SecurityMaster record for a given stock symbol.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The stock ticker symbol (e.g. AAPL).
+          example: 'AAPL'
+      responses:
+        '200':
+          description: SecurityMaster record found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityMasterRecord'
+        '400':
+          description: Missing symbol parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Symbol not found in SecurityMaster.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/security-master/bulk:
+    get:
+      tags:
+        - SecurityMaster
+      summary: Batch lookup SecurityMaster records
+      description: Returns SecurityMaster records for multiple stock symbols.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: symbols
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Comma-separated stock ticker symbols.
+          example: 'AAPL,MSFT,GOOG'
+      responses:
+        '200':
+          description: Array of SecurityMaster records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SecurityMasterRecord'
+        '400':
+          description: Missing symbols parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/security-master/refresh:
+    post:
+      tags:
+        - SecurityMaster
+      summary: Enqueue on-demand refresh for a symbol
+      description: Enqueues a background job to refresh profile and fundamentals for the given symbol.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - symbol
+              properties:
+                symbol:
+                  type: string
+                  description: The stock ticker symbol to refresh.
+                  example: 'AAPL'
+      responses:
+        '202':
+          description: Refresh job enqueued successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Refresh job enqueued for AAPL'
+                  jobId:
+                    type: string
+        '400':
+          description: Missing symbol in request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
