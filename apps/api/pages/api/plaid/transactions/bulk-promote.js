@@ -7,6 +7,9 @@ import { produceEvent } from '../../../../utils/produceEvent.js';
 import { withAuth } from '../../../../utils/withAuth.js';
 import { computeTransactionHash, buildDuplicateHashSet } from '../../../../utils/transactionHash.js';
 
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
+
 // Max concurrent simple updates (non-transactional) — safe for connection pool
 const UPDATE_CONCURRENCY = 10;
 
@@ -130,9 +133,14 @@ export default withAuth(async function handler(req, res) {
       const localId = accountMap.get(plaidTx.plaidAccountId);
       if (localId) uniqueLocalAccountIds.add(localId);
     }
+    // Compute date range from eligible transactions to narrow dedup query
+    const allDates = eligibleTransactions.map(t => new Date(t.date)).filter(d => !isNaN(d.getTime()));
+    const minDate = allDates.length > 0 ? new Date(Math.min(...allDates.map(d => d.getTime()))) : null;
+    const maxDate = allDates.length > 0 ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
+
     const hashSetByAccountId = new Map();
     for (const accountId of uniqueLocalAccountIds) {
-      hashSetByAccountId.set(accountId, await buildDuplicateHashSet(user.tenantId, accountId));
+      hashSetByAccountId.set(accountId, await buildDuplicateHashSet(user.tenantId, accountId, minDate, maxDate));
     }
 
     // ── Phase 2: Classify each transaction (no DB writes) ─────────────────
@@ -290,6 +298,23 @@ export default withAuth(async function handler(req, res) {
         console.error(`Bulk promote batch create error: ${err.message}`);
         Sentry.captureException(err);
         errors += toCreate.length;
+      }
+    }
+
+    // ── Phase 3d: Fire-and-forget feedback for promoted transactions ────
+    // Updates the DescriptionMapping table and embedding indexes so future
+    // classifications benefit from these confirmed description→category pairs.
+    if (toCreate.length > 0) {
+      for (const { plaidTx } of toCreate) {
+        const desc = plaidTx.merchantName || plaidTx.name;
+        const catId = overrideCategoryId ?? plaidTx.suggestedCategoryId;
+        if (desc && catId) {
+          fetch(`${BACKEND_URL}/api/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
+            body: JSON.stringify({ description: desc, categoryId: catId, tenantId: user.tenantId }),
+          }).catch(() => {}); // Non-fatal
+        }
       }
     }
 

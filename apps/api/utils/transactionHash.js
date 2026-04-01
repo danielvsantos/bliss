@@ -26,25 +26,40 @@ export function computeTransactionHash(date, description, amount, accountId) {
 
 /**
  * Build an in-memory Set of transaction hashes for O(1) duplicate detection.
- * Queries existing transactions within a date window for the given account.
+ * Queries existing transactions within a narrow date window for the given account.
+ *
+ * Since the hash includes the date, only transactions with matching dates can
+ * ever collide. A 1-day buffer on each side handles timezone edge cases.
  *
  * @param {string} tenantId
  * @param {number} accountId
- * @param {Date|null} minDate — Optional: expand window below the default 90 days
+ * @param {Date|null} minDate — Earliest date in the import batch (or null for 90-day default)
+ * @param {Date|null} maxDate — Latest date in the import batch (or null for no upper bound)
  * @returns {Promise<Set<string>>}
  */
-export async function buildDuplicateHashSet(tenantId, accountId, minDate = null) {
+export async function buildDuplicateHashSet(tenantId, accountId, minDate = null, maxDate = null) {
+    // ── Compute date floor ────────────────────────────────────────────────────
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
     let dateFloor = ninetyDaysAgo;
     if (minDate && minDate < ninetyDaysAgo) {
         dateFloor = new Date(minDate);
-        dateFloor.setDate(dateFloor.getDate() - 30);
+        dateFloor.setDate(dateFloor.getDate() - 1); // 1-day buffer for timezone edge cases
     }
 
+    // ── Compute date ceiling ──────────────────────────────────────────────────
+    let dateCeiling = null;
+    if (maxDate) {
+        dateCeiling = new Date(maxDate);
+        dateCeiling.setDate(dateCeiling.getDate() + 1); // 1-day buffer
+    }
+
+    const dateFilter = { gte: dateFloor };
+    if (dateCeiling) dateFilter.lte = dateCeiling;
+
     const existingTxs = await prisma.transaction.findMany({
-        where: { accountId, tenantId, transaction_date: { gte: dateFloor } },
+        where: { accountId, tenantId, transaction_date: dateFilter },
         select: { transaction_date: true, description: true, credit: true, debit: true, accountId: true },
     });
 

@@ -203,7 +203,7 @@ export default withAuth(async function handler(req, res) {
         absAmount,
         localAccount.id,
       );
-      const hashSet = await buildDuplicateHashSet(user.tenantId, localAccount.id, txDate);
+      const hashSet = await buildDuplicateHashSet(user.tenantId, localAccount.id, txDate, txDate);
       if (hashSet.has(candidateHash)) {
         // Mark as DUPLICATE so it doesn't keep appearing for review
         await prisma.plaidTransaction.update({
