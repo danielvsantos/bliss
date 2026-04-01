@@ -362,9 +362,14 @@ const startPlaidProcessorWorker = () => {
                 const localAccount = accountByPlaidAccountId.get(row.plaidAccountId);
                 if (localAccount) uniqueAccountIds.add(localAccount.id);
             }
+            // Compute date range from pending transactions to narrow dedup query
+            const plaidDates = allPending.map(p => new Date(p.date)).filter(d => !isNaN(d.getTime()));
+            const plaidMinDate = plaidDates.length > 0 ? new Date(Math.min(...plaidDates.map(d => d.getTime()))) : null;
+            const plaidMaxDate = plaidDates.length > 0 ? new Date(Math.max(...plaidDates.map(d => d.getTime()))) : null;
+
             const hashSetByAccountId = new Map();
             for (const accountId of uniqueAccountIds) {
-                hashSetByAccountId.set(accountId, await buildDuplicateHashSet(tenantId, accountId));
+                hashSetByAccountId.set(accountId, await buildDuplicateHashSet(tenantId, accountId, plaidMinDate, plaidMaxDate));
             }
 
             const ctx = {

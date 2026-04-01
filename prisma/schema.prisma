@@ -66,6 +66,7 @@ model Tenant {
   tagAnalyticsCacheMonthly TagAnalyticsCacheMonthly[]
   plaidItems          PlaidItem[]
   transactionEmbeddings TransactionEmbedding[]
+  descriptionMappings   DescriptionMapping[]
   stagedImports       StagedImport[]
   importAdapters      ImportAdapter[]
   insights            Insight[]
@@ -261,6 +262,7 @@ model Category {
   transactions    Transaction[]
   portfolioItems PortfolioItem[]
   embeddings     TransactionEmbedding[]
+  descriptionMappings DescriptionMapping[]
   tagAnalyticsCache TagAnalyticsCacheMonthly[]
 
   @@unique([name, tenantId])
@@ -829,5 +831,31 @@ model SecurityMaster {
   @@index([industry])
   @@index([country])
   @@index([assetType])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DESCRIPTION MAPPING — Hash-based exact-match lookup table
+//
+// Stores SHA-256(normalize(description)) → categoryId per tenant.
+// Replaces the expensive full Transaction table scan for building the
+// description→category in-memory cache. The hash is one-way, so encrypted
+// Transaction.description fields are never exposed.
+//
+// Write-through: upserted on every recordFeedback(), addDescriptionEntry(),
+// and transaction commit. Read on cache warm (buildLookupForTenant).
+// ═══════════════════════════════════════════════════════════════════════════════
+model DescriptionMapping {
+  id              Int      @id @default(autoincrement())
+  tenantId        String
+  descriptionHash String   // SHA-256 hex of normalize(description) via computeDescriptionHash()
+  categoryId      Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([tenantId, descriptionHash])
+  @@index([tenantId])
 }
 

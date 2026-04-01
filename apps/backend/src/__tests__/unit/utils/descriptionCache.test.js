@@ -1,10 +1,9 @@
 // Mock prisma before requiring the module under test
+const mockUpsert = jest.fn().mockResolvedValue({});
 jest.mock('../../../../prisma/prisma', () => ({
-  transaction: {
+  descriptionMapping: {
     findMany: jest.fn().mockResolvedValue([]),
-  },
-  plaidTransaction: {
-    findMany: jest.fn().mockResolvedValue([]),
+    upsert: mockUpsert,
   },
 }));
 
@@ -14,16 +13,20 @@ jest.mock('../../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
+const prisma = require('../../../../prisma/prisma');
 const {
   lookupDescription,
   warmDescriptionCache,
   addDescriptionEntry,
   invalidateDescriptionCache,
 } = require('../../../utils/descriptionCache');
+const { computeDescriptionHash } = require('../../../utils/descriptionHash');
 
 describe('descriptionCache', () => {
   beforeEach(async () => {
-    // Warm the cache for tenant '1' with an empty DB (prisma returns [])
+    jest.clearAllMocks();
+    mockUpsert.mockResolvedValue({});
+    prisma.descriptionMapping.findMany.mockResolvedValue([]);
     await invalidateDescriptionCache('1');
     await invalidateDescriptionCache('2');
   });
@@ -63,6 +66,46 @@ describe('descriptionCache', () => {
     it('is a no-op when categoryId is falsy', async () => {
       await warmDescriptionCache('1');
       expect(() => addDescriptionEntry('Coffee', null, '1')).not.toThrow();
+    });
+
+    it('upserts to DescriptionMapping table (fire-and-forget)', async () => {
+      await warmDescriptionCache('1');
+      addDescriptionEntry('Netflix', 3, '1');
+
+      expect(prisma.descriptionMapping.upsert).toHaveBeenCalledWith({
+        where: {
+          tenantId_descriptionHash: {
+            tenantId: '1',
+            descriptionHash: computeDescriptionHash('Netflix'),
+          },
+        },
+        update: { categoryId: 3 },
+        create: {
+          tenantId: '1',
+          descriptionHash: computeDescriptionHash('Netflix'),
+          categoryId: 3,
+        },
+      });
+    });
+
+    it('swallows upsert errors without throwing', async () => {
+      mockUpsert.mockRejectedValueOnce(new Error('DB connection lost'));
+      await warmDescriptionCache('1');
+      // Should not throw
+      expect(() => addDescriptionEntry('Coffee', 5, '1')).not.toThrow();
+    });
+  });
+
+  describe('buildLookupForTenant()', () => {
+    it('builds cache from DescriptionMapping table', async () => {
+      const hash = computeDescriptionHash('Netflix');
+      prisma.descriptionMapping.findMany.mockResolvedValueOnce([
+        { descriptionHash: hash, categoryId: 3 },
+      ]);
+
+      await warmDescriptionCache('1');
+      const result = await lookupDescription('Netflix', '1');
+      expect(result).toBe(3);
     });
   });
 
