@@ -137,7 +137,12 @@ See [docs/architecture.md](docs/architecture.md) for the full deep dive.
 
 ## Security & Privacy
 
-All sensitive API keys and Plaid access tokens are encrypted at rest using AES-256-GCM. Because Bliss is self-hosted, your transaction data never leaves your infrastructure.
+Even though Bliss is self-hosted, it encrypts sensitive data at rest — because self-hosted doesn't mean risk-free. Database credentials leak, backups end up in the wrong place, and old disks get recycled. Bliss protects against all of these scenarios.
+
+- **AES-256-GCM encryption at rest** — Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database. Even if the database is compromised, sensitive fields remain unreadable without the encryption key.
+- **Financial data is uniquely sensitive** — Merchant names, payment recipients, and salary sources can enable identity theft and financial fraud. Bliss treats this data with the seriousness it deserves.
+- **Your data never leaves your infrastructure** — No telemetry, no cloud sync, no third-party analytics. Every byte stays on your hardware.
+- **One-way hashing for performance indexes** — Classification lookup tables use SHA-256 hashes instead of plaintext, so the system stays fast without exposing encrypted data.
 
 ---
 

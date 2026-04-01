@@ -46,25 +46,42 @@ describe('adapterEngine', () => {
     it('parses YYYY-MM-DD correctly', () => {
       const { date, hasTime } = parseDate('2024-03-15');
       expect(date).toBeTruthy();
-      expect(date.getFullYear()).toBe(2024);
-      expect(date.getMonth()).toBe(2); // March = index 2
-      expect(date.getDate()).toBe(15);
+      expect(date.getUTCFullYear()).toBe(2024);
+      expect(date.getUTCMonth()).toBe(2); // March = index 2
+      expect(date.getUTCDate()).toBe(15);
       expect(hasTime).toBe(false);
     });
 
     it('parses DD/MM/YYYY when day > 12 unambiguously', () => {
       const { date } = parseDate('25/01/2024');
       expect(date).toBeTruthy();
-      expect(date.getDate()).toBe(25);
-      expect(date.getMonth()).toBe(0); // January
-      expect(date.getFullYear()).toBe(2024);
+      expect(date.getUTCDate()).toBe(25);
+      expect(date.getUTCMonth()).toBe(0); // January
+      expect(date.getUTCFullYear()).toBe(2024);
     });
 
     it('resolves a 2-digit year to the 21st century (2000 + year)', () => {
       const { date } = parseDate('15/06/24');
       expect(date).toBeTruthy();
-      expect(date.getFullYear()).toBe(2024);
-      expect(date.getDate()).toBe(15);
+      expect(date.getUTCFullYear()).toBe(2024);
+      expect(date.getUTCDate()).toBe(15);
+    });
+
+    it('parses YYYY-MM-DD as UTC midnight (no timezone shift)', () => {
+      const { date } = parseDate('2010-11-12');
+      expect(date).toBeTruthy();
+      expect(date.toISOString()).toBe('2010-11-12T00:00:00.000Z');
+      expect(date.getUTCFullYear()).toBe(2010);
+      expect(date.getUTCMonth()).toBe(10); // November = index 10
+      expect(date.getUTCDate()).toBe(12);
+    });
+
+    it('parses DD/MM/YYYY as UTC midnight (no timezone shift)', () => {
+      const { date } = parseDate('25/01/2024');
+      expect(date).toBeTruthy();
+      expect(date.toISOString()).toBe('2024-01-25T00:00:00.000Z');
+      expect(date.getUTCDate()).toBe(25);
+      expect(date.getUTCMonth()).toBe(0); // January
     });
   });
 

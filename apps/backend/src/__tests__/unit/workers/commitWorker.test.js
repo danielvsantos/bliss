@@ -43,6 +43,10 @@ jest.mock('../../../services/categorizationService', () => ({
   recordFeedback: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../utils/descriptionCache', () => ({
+  addDescriptionEntry: jest.fn(),
+}));
+
 jest.mock('../../../queues/eventsQueue', () => ({
   enqueueEvent: jest.fn().mockResolvedValue(undefined),
 }));
@@ -53,6 +57,7 @@ const Sentry = require('@sentry/node');
 const { computeTransactionHash } = require('../../../utils/transactionHash');
 const { resolveTagsByName } = require('../../../utils/tagUtils');
 const categorizationService = require('../../../services/categorizationService');
+const { addDescriptionEntry } = require('../../../utils/descriptionCache');
 const { enqueueEvent } = require('../../../queues/eventsQueue');
 
 const { processCommitJob } = require('../../../workers/commitWorker');
@@ -111,6 +116,7 @@ describe('commitWorker — processCommitJob', () => {
       (date, desc, amount, accountId) => `hash-${desc}-${amount}-${accountId}`
     );
     categorizationService.recordFeedback.mockResolvedValue(undefined);
+    addDescriptionEntry.mockReset();
     resolveTagsByName.mockResolvedValue([]);
     enqueueEvent.mockResolvedValue(undefined);
   });
@@ -562,5 +568,38 @@ describe('commitWorker — processCommitJob', () => {
     // Verify the rowWhere query includes both statuses
     const countCall = prisma.stagedImportRow.count.mock.calls[0][0];
     expect(countCall.where.status).toEqual({ in: ['CONFIRMED', 'POTENTIAL_DUPLICATE'] });
+  });
+
+  // ─── DescriptionMapping write-through ──────────────────────────────────
+
+  it('calls addDescriptionEntry for ALL committed rows regardless of classificationSource', async () => {
+    const exactRow = makeRow({ id: 'row-exact', classificationSource: 'EXACT_MATCH', description: 'Coffee Shop', suggestedCategoryId: 10 });
+    const vectorRow = makeRow({ id: 'row-vector', classificationSource: 'VECTOR_MATCH', description: 'AMZN Purchase', suggestedCategoryId: 20 });
+    const llmRow = makeRow({ id: 'row-llm', classificationSource: 'LLM', description: 'New Merchant', suggestedCategoryId: 30 });
+
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({
+      id: 'si-1', tenantId: 'tenant-1', status: 'COMMITTING',
+    });
+    prisma.stagedImportRow.findMany
+      .mockResolvedValueOnce([exactRow, vectorRow, llmRow])
+      .mockResolvedValueOnce([]);
+    prisma.stagedImportRow.count
+      .mockResolvedValueOnce(3)  // totalConfirmed
+      .mockResolvedValueOnce(0); // remainingCount
+    prisma.transaction.createMany.mockResolvedValueOnce({ count: 3 });
+    prisma.transaction.findMany.mockResolvedValueOnce([
+      { id: 1, externalId: `hash-Coffee Shop-50-1` },
+      { id: 2, externalId: `hash-AMZN Purchase-50-1` },
+      { id: 3, externalId: `hash-New Merchant-50-1` },
+    ]);
+
+    const job = makeJob();
+    await processCommitJob(job);
+
+    // addDescriptionEntry should be called for ALL 3 rows (not just LLM/USER_OVERRIDE)
+    expect(addDescriptionEntry).toHaveBeenCalledTimes(3);
+    expect(addDescriptionEntry).toHaveBeenCalledWith('Coffee Shop', 10, 'tenant-1');
+    expect(addDescriptionEntry).toHaveBeenCalledWith('AMZN Purchase', 20, 'tenant-1');
+    expect(addDescriptionEntry).toHaveBeenCalledWith('New Merchant', 30, 'tenant-1');
   });
 });

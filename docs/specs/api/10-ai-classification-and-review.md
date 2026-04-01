@@ -143,13 +143,13 @@ The AI classification pipeline runs a three-tier waterfall: Exact Match → Vect
 
 | Source | Description | Confidence range |
 |---|---|---|
-| `EXACT_MATCH` | Description found in the tenant's in-memory description cache | Always `1.0` |
+| `EXACT_MATCH` | Description hash found in the tenant's `DescriptionMapping` table (loaded into in-memory cache) | Always `1.0` |
 | `VECTOR_MATCH` | Tenant-scoped pgvector cosine similarity match | `0.70–1.00` |
 | `VECTOR_MATCH_GLOBAL` | Cross-tenant pgvector match against GlobalEmbedding (score × 0.92 discount) | `0.64–0.92` |
 | `LLM` | Classified by the Google Gemini LLM | `0.00–0.85` (hard-capped) |
 | `USER_OVERRIDE` | User manually changed the category (or auto-confirmed at `autoPromoteThreshold`) | `1.0` |
 
-When a transaction is confirmed (promoted, committed, or overridden), a fire-and-forget `POST /api/feedback` call is sent to the backend service, which updates both the in-memory cache and the pgvector embedding index. This means future semantically-similar transactions will be classified by VECTOR_MATCH instead of falling through to LLM.
+When a transaction is confirmed (promoted, committed, or overridden), a fire-and-forget `POST /api/feedback` call is sent to the backend service, which updates the in-memory cache, the `DescriptionMapping` table (write-through), and the pgvector embedding index. This means future identical descriptions hit EXACT_MATCH instantly, and semantically-similar transactions are classified by VECTOR_MATCH instead of falling through to LLM.
 
 ---
 

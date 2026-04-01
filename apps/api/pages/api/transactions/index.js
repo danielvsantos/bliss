@@ -464,6 +464,20 @@ async function handlePost(req, res) {
       categoryGroup: category?.group,
     });
 
+    // Fire-and-forget feedback for the description→category mapping.
+    // Teaches the classification system from manually created transactions.
+    if (transactionData.description && transactionData.categoryId) {
+      fetch(`${BACKEND_URL}/api/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
+        body: JSON.stringify({
+          description: transactionData.description,
+          categoryId: parseInt(transactionData.categoryId, 10),
+          tenantId,
+        }),
+      }).catch(() => {}); // Non-fatal
+    }
+
     // Emit TAG_ASSIGNMENT_MODIFIED if tags were set on creation
     if (resolvedTagIds.length > 0) {
       await produceEvent({

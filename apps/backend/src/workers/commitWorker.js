@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { computeTransactionHash } = require('../utils/transactionHash');
 const { resolveTagsByName } = require('../utils/tagUtils');
 const categorizationService = require('../services/categorizationService');
+const { addDescriptionEntry } = require('../utils/descriptionCache');
 const { enqueueEvent } = require('../queues/eventsQueue');
 
 const COMMIT_BATCH_SIZE = 200;
@@ -374,6 +375,15 @@ const processCommitJob = async (job) => {
                             )
                     )
                 ).catch(() => {});
+            }
+
+            // 4e-bis. Write DescriptionMapping for ALL committed rows (fire-and-forget).
+            // recordFeedback above only covers LLM/USER_OVERRIDE rows. EXACT_MATCH and
+            // VECTOR_MATCH rows also need mappings for descriptions not yet in the table.
+            for (const row of batch) {
+                if (row.description && row.suggestedCategoryId) {
+                    addDescriptionEntry(row.description, row.suggestedCategoryId, tenantId);
+                }
             }
 
             // 4f. Accumulate data for the downstream TRANSACTIONS_IMPORTED event

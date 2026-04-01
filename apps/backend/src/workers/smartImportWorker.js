@@ -318,15 +318,18 @@ const processSmartImportJob = async (job) => {
         // ── Step 5: Build duplicate detection hash Set ────────────────────────────
         // Skip for update-only imports (no dedup needed)
         let csvMinDate = null;
-        if (isNativeAdapter && !isUpdateOnly) {
+        let csvMaxDate = null;
+        if (!isUpdateOnly) {
             const csvDates = normalizedRows.map(r => r.date).filter(Boolean);
             if (csvDates.length > 0) {
-                csvMinDate = new Date(Math.min(...csvDates.map(d => d.getTime())));
+                const timestamps = csvDates.map(d => (d instanceof Date ? d : new Date(d)).getTime());
+                csvMinDate = new Date(Math.min(...timestamps));
+                csvMaxDate = new Date(Math.max(...timestamps));
             }
         }
 
         const duplicateHashSet = (accountId && !isUpdateOnly)
-            ? await buildDuplicateHashSet(tenantId, accountId, csvMinDate)
+            ? await buildDuplicateHashSet(tenantId, accountId, csvMinDate, csvMaxDate)
             : new Set();
 
         const perAccountHashCache = new Map();
@@ -498,7 +501,7 @@ const processSmartImportJob = async (job) => {
                     if (!perAccountHashCache.has(resolvedAccountId)) {
                         perAccountHashCache.set(
                             resolvedAccountId,
-                            await buildDuplicateHashSet(tenantId, resolvedAccountId, csvMinDate),
+                            await buildDuplicateHashSet(tenantId, resolvedAccountId, csvMinDate, csvMaxDate),
                         );
                     }
                     const acctHashSet = perAccountHashCache.get(resolvedAccountId);

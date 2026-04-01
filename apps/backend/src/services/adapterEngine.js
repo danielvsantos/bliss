@@ -164,6 +164,13 @@ function parseDate(dateStr, format) {
   // Auto-detect: try ISO / JS native first
   const native = new Date(trimmed);
   if (!isNaN(native.getTime())) {
+    // When the string has no time component, normalize to UTC midnight.
+    // new Date("11/12/2010") parses as local time, shifting the UTC date by ±1 day
+    // depending on the server timezone. Force UTC to match the hash computation.
+    if (!hasTimeInString) {
+      const utcNormalized = new Date(Date.UTC(native.getFullYear(), native.getMonth(), native.getDate()));
+      return { date: utcNormalized, hasTime: false };
+    }
     return { date: native, hasTime: hasTimeInString };
   }
 
@@ -195,7 +202,7 @@ function parseDate(dateStr, format) {
       year = year || parseInt(p2, 10);
     }
 
-    const fallback = new Date(year, month, day);
+    const fallback = new Date(Date.UTC(year, month, day));
     if (!isNaN(fallback.getTime())) {
       return { date: fallback, hasTime: false };
     }
@@ -251,7 +258,7 @@ function parseDateWithFormat(str, format) {
     seconds = parseInt(tp[2], 10) || 0;
   }
 
-  const date = new Date(year, month, day, hours, minutes, seconds);
+  const date = new Date(Date.UTC(year, month, day, hours, minutes, seconds));
   return isNaN(date.getTime()) ? null : date;
 }
 

@@ -14,15 +14,17 @@ The pipeline is implemented in `src/services/` and called directly by `plaidProc
 
 ### Tier 1 — Exact Match (`descriptionCache.js`)
 
-The first tier is an O(1) in-memory lookup built from the tenant's existing classified transactions.
+The first tier is an O(1) in-memory lookup built from the `DescriptionMapping` table — a hash-keyed lookup table that maps `SHA-256(normalize(description))` to `categoryId` per tenant. This avoids scanning the full `Transaction` table (which has encrypted descriptions requiring per-row decryption).
 
 **Workflow**:
-1. On first use, `getDescriptionCache(tenantId)` queries all `Transaction` records for the tenant and builds a `Map<normalizedDescription, categoryId>`.
-2. The incoming transaction description is normalised (lowercased, trimmed) and looked up.
+1. On first use, `buildLookupForTenant(tenantId)` queries `DescriptionMapping` and builds a `Map<descriptionHash, categoryId>`.
+2. The incoming transaction description is hashed via `computeDescriptionHash()` (normalize + SHA-256) and looked up.
 3. On a **hit**: returns `{ categoryId, confidence: EXACT_MATCH_CONFIDENCE, source: 'EXACT_MATCH' }`. No API call needed. `EXACT_MATCH_CONFIDENCE = 1.0` (from `classificationConfig.js`) — full confidence for exact description matches.
 4. On a **miss**: falls through to Tier 2.
 
-**Cache invalidation**: The cache is per-tenant, loaded lazily, and held in memory for the lifetime of the worker process. A new transaction classification updates the cache immediately via `addDescriptionEntry()`.
+**Cache population**: The `DescriptionMapping` table is maintained via write-through — every `addDescriptionEntry()` call updates the in-memory cache AND upserts a row in the table (fire-and-forget). Sources: `recordFeedback()`, `commitWorker` (all committed rows), `bulk-promote`, and manual transaction creation.
+
+**Cache refresh**: 10-minute staleness check triggers a reload from `DescriptionMapping`. Per-tenant, 25k entry safety cap.
 
 ---
 
@@ -99,11 +101,11 @@ Provides a tenant-scoped, in-memory cache of `Category` records.
 
 Provides an O(1) description → categoryId lookup per tenant.
 
-- Built from all `Transaction` records with a non-null `categoryId`.
-- Key: `normalizedDescription` (lowercase, trimmed).
+- Built from the `DescriptionMapping` table (hash-keyed, no encryption overhead).
+- Key: `SHA-256(normalize(description))` via `computeDescriptionHash()` from `descriptionHash.js`.
 - Updated immediately on every new classification so future identical descriptions hit Tier 1.
 
-**`addDescriptionEntry(description, categoryId, tenantId)`** — Immediately writes a new description→categoryId mapping to the in-memory cache without waiting for the next DB rebuild. Called by `recordFeedback()` whenever a user overrides a category, ensuring the correction takes effect for the next classification in the same worker process lifetime.
+**`addDescriptionEntry(description, categoryId, tenantId)`** — Writes a description→categoryId mapping to both the in-memory cache (immediate) and the `DescriptionMapping` table (fire-and-forget upsert). Called by `recordFeedback()` on user overrides, by `commitWorker` for all committed rows, and by the bulk-promote and manual transaction create endpoints via `POST /api/feedback`.
 
 ### `categorizationService.js`
 
@@ -294,4 +296,6 @@ All tuning constants for the four-tier waterfall live in `src/config/classificat
 
 ## 10.11. Encryption Key Caching
 
-Both `geminiService.js` and `descriptionCache.js` access encrypted transaction data. The PBKDF2 key derivation used for AES-256-GCM decryption is computationally expensive. Both services cache derived keys in an LRU cache keyed by tenant to avoid re-deriving the key on every decrypted field access.
+`geminiService.js` accesses encrypted transaction data. The PBKDF2 key derivation used for AES-256-GCM decryption is computationally expensive. The encryption module caches derived keys in an LRU cache to avoid re-deriving the key on every decrypted field access.
+
+`descriptionCache.js` no longer accesses encrypted data directly — it reads from the `DescriptionMapping` table which stores SHA-256 hashes (not encrypted descriptions). This eliminates the decryption overhead that previously made cache warming expensive for large tenants.
