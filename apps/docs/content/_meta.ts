@@ -1,15 +1,19 @@
 export default {
   index: {
-    title: 'Home',
-    type: 'page',
-    display: 'hidden',
+    title: 'Overview',
     theme: {
       layout: 'full',
+      toc: false,
     },
   },
   'getting-started': 'Getting Started',
   architecture: 'Architecture',
   configuration: 'Configuration',
-  'api-reference': 'API Reference',
+  'api-reference': {
+    title: 'API Reference',
+    theme: {
+      toc: false,
+    },
+  },
   specs: 'Specifications',
 };

@@ -1,88 +1,39 @@
-# Bliss Finance
+# Documentation Overview
 
-## Open-Source Wealth Intelligence Platform
-
-Bliss is a multi-currency personal wealth intelligence platform. It ingests bank transactions (Plaid or CSV), classifies them with a 4-tier AI pipeline, tracks investment portfolios with real-time pricing, and generates AI-powered financial insights.
-
-<div className="mt-8 flex gap-4">
-  <a href="/docs/getting-started" className="inline-flex items-center px-6 py-3 rounded-lg font-medium text-primary-foreground" style={{ backgroundColor: 'hsl(263 11% 23%)' }}>
-    Get Started
-  </a>
-  <a href="https://github.com/danielviana/bliss" className="inline-flex items-center px-6 py-3 rounded-lg font-medium border" style={{ borderColor: 'hsl(214 31% 91%)', color: 'hsl(263 11% 23%)' }}>
-    View on GitHub
-  </a>
-</div>
+Welcome to the Bliss Finance documentation. Use the sidebar to navigate through the different sections, or jump directly to a topic below.
 
 ---
 
-## Why Bliss?
+## Getting Started
 
-<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-  <div className="glass-card p-6">
-    <h3 className="text-lg font-semibold mb-2" style={{ color: 'hsl(263 11% 23%)' }}>4-Tier AI Classification</h3>
-    <span className="text-sm block" style={{ color: 'hsl(260 6% 61%)' }}>
-      Exact match, vector similarity (pgvector), cross-tenant global embeddings, and LLM fallback.
-      Learns from every user correction.
-    </span>
-  </div>
-  <div className="glass-card p-6">
-    <h3 className="text-lg font-semibold mb-2" style={{ color: 'hsl(263 11% 23%)' }}>Multi-Currency Portfolio</h3>
-    <span className="text-sm block" style={{ color: 'hsl(260 6% 61%)' }}>
-      FIFO lot tracking with historical FX rates. Real-time pricing via Twelve Data and Finnhub.
-      Stocks, crypto, funds, and fixed-income in one view.
-    </span>
-  </div>
-  <div className="glass-card p-6">
-    <h3 className="text-lg font-semibold mb-2" style={{ color: 'hsl(263 11% 23%)' }}>Event-Driven Architecture</h3>
-    <span className="text-sm block" style={{ color: 'hsl(260 6% 61%)' }}>
-      BullMQ workers process classification, portfolio valuation, analytics aggregation, and AI insights generation asynchronously.
-    </span>
-  </div>
-</div>
+New to Bliss? Start here to set up the platform locally with Docker or from source.
+
+**[Getting Started](/docs/getting-started)**
 
 ---
 
-## Architecture at a Glance
+## Core Documentation
 
-```
-Browser (React SPA) → Nginx (:8080)
-  ├→ Next.js API (:3000)  — Auth, REST, Prisma ORM
-  └→ Express Backend (:3001) — BullMQ workers, AI pipelines, Portfolio engine
-  Both services ↓
-  PostgreSQL 16 (pgvector) ← Redis 7 (queues + cache)
-```
-
-<div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-  <div className="glass-card p-6">
-    <h3 className="text-lg font-semibold mb-3" style={{ color: 'hsl(263 11% 23%)' }}>Tech Stack</h3>
-    <ul className="space-y-1 text-sm" style={{ color: 'hsl(260 6% 61%)' }}>
-      <li>Next.js 15 API layer (Pages Router, ESM)</li>
-      <li>Express + BullMQ backend (CJS)</li>
-      <li>React 18 + Vite SPA (shadcn/ui, TanStack Query)</li>
-      <li>PostgreSQL 16 with pgvector</li>
-      <li>Redis 7 for job queues and caching</li>
-      <li>Prisma 6 ORM with encrypted fields</li>
-    </ul>
-  </div>
-  <div className="glass-card p-6">
-    <h3 className="text-lg font-semibold mb-3" style={{ color: 'hsl(263 11% 23%)' }}>Key Subsystems</h3>
-    <ul className="space-y-1 text-sm" style={{ color: 'hsl(260 6% 61%)' }}>
-      <li>AI Classification Pipeline (4-tier waterfall)</li>
-      <li>Portfolio Processing (FIFO lots, multi-currency PnL)</li>
-      <li>Smart Import (CSV/XLSX with adapter detection)</li>
-      <li>Plaid Integration (sync + classification)</li>
-      <li>Analytics Engine (spending + tag aggregation)</li>
-      <li>Insights Engine (7 financial lenses, AI-powered)</li>
-    </ul>
-  </div>
-</div>
+- **[Architecture](/docs/architecture)** — System design, service communication, database schema, and security model
+- **[Configuration](/docs/configuration)** — Environment variables, deployment options, and integration setup
+- **[API Reference](/docs/api-reference)** — Interactive OpenAPI documentation for all 21 endpoints
 
 ---
 
-## Explore the Documentation
+## Specifications
 
-- **[Getting Started](/docs/getting-started)** — Set up Bliss locally with Docker or from source
-- **[Architecture](/docs/architecture)** — Deep dive into the system design
-- **[Configuration](/docs/configuration)** — Environment variables and deployment options
-- **[API Reference](/docs/api-reference)** — Interactive OpenAPI documentation
-- **[Specifications](/docs/specs)** — Detailed functional specs for every subsystem
+Detailed implementation specs organized by feature, covering all three layers of the stack.
+
+**[Browse Specifications](/docs/specs)**
+
+---
+
+## Quick Links
+
+| Topic | Description |
+|-------|-------------|
+| [AI Classification](/docs/specs/ai-classification-and-review) | 4-tier waterfall: exact match, vector similarity, global embeddings, LLM |
+| [Portfolio Processing](/docs/specs/portfolio) | FIFO lots, multi-currency PnL, nightly revaluation |
+| [Smart Import](/docs/specs/smart-import) | CSV/XLSX ingestion with adapter detection and dedup |
+| [Plaid Integration](/docs/specs/plaid-integration) | Two-worker sync with encrypted payloads |
+| [Analytics Engine](/docs/specs/analytics) | Spending and tag aggregation pipeline |
