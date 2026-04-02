@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,8 +5,6 @@
 @layer base {
   :root {
     /* ── Bliss Design Tokens ───────────────────────────── */
-    --font-size: 16px;
-    --font-family-base: 'Urbanist', sans-serif;
 
     /* Canvas */
     --background: 0 0% 98%;
@@ -80,6 +76,12 @@
     --background: 260 25% 12%;
     --foreground: 262 25% 95%;
 
+    --brand-primary: 263 12% 64%;
+    --brand-deep: 262 25% 95%;
+
+    --border-color: 255 23% 20%;
+    --muted-fg: 258 8% 50%;
+
     --card: 257 18% 17%;
     --card-foreground: 262 25% 95%;
 
@@ -117,63 +119,11 @@
   }
 }
 
-@layer base {
-  * {
-    box-sizing: border-box;
-  }
+/* ── Nextra typography — only brand color overrides ───── */
 
-  html {
-    font-size: var(--font-size);
-    font-family: var(--font-family-base);
-  }
-
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: var(--font-family-base);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-}
-
-/* ── Nextra typography overrides ───────────────────────── */
-
-/* Override Nextra prose styles to match Bliss design system */
-.nextra-content {
-  font-family: 'Urbanist', sans-serif;
-  font-size: 0.9375rem;
-  line-height: 1.6;
-}
-
-.nextra-content h1 {
-  font-size: 2rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.03em;
-  color: hsl(var(--brand-deep));
-}
-
+.nextra-content h1,
 .nextra-content h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.3;
   color: hsl(var(--brand-deep));
-}
-
-.nextra-content h3 {
-  font-size: 1.125rem;
-  font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
-  color: hsl(var(--foreground));
-}
-
-.nextra-content h4 {
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.5;
-  letter-spacing: 0.01em;
-  color: hsl(var(--foreground));
 }
 
 /* ── Glass Card ────────────────────────────────────────── */
@@ -193,6 +143,7 @@
 
 .dark .glass-card {
   background: rgba(42, 37, 54, 0.68);
+  border-color: hsl(var(--border-color));
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.1),
     0 4px 12px rgba(0, 0, 0, 0.15),

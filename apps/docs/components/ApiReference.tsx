@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { ApiReferenceReact } from '@scalar/api-reference-react';
 
 const SPECS = [
@@ -28,55 +27,26 @@ const SPECS = [
 ];
 
 export function ApiReference() {
-  const [activeSpec, setActiveSpec] = useState(SPECS[0].id);
-  const current = SPECS.find((s) => s.id === activeSpec)!;
-
   return (
-    <div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '24px' }}>
-        {SPECS.map((spec) => (
-          <button
-            key={spec.id}
-            onClick={() => setActiveSpec(spec.id)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: activeSpec === spec.id ? 600 : 400,
-              fontFamily: 'Urbanist, sans-serif',
-              border: '1px solid',
-              borderColor: activeSpec === spec.id ? 'hsl(263 11% 23%)' : 'hsl(214 31% 91%)',
-              backgroundColor: activeSpec === spec.id ? 'hsl(263 11% 23%)' : 'transparent',
-              color: activeSpec === spec.id ? '#fff' : 'hsl(263 11% 23%)',
-              cursor: 'pointer',
-              transition: 'all 150ms ease',
-            }}
-          >
-            {spec.label}
-          </button>
-        ))}
-      </div>
-
-      <div
-        style={{
-          border: '1px solid hsl(214 31% 91%)',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          minHeight: '600px',
+    <div
+      style={{
+        border: '1px solid hsl(214 31% 91%)',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        minHeight: '600px',
+      }}
+    >
+      <ApiReferenceReact
+        configuration={{
+          sources: SPECS.map((s) => ({
+            url: `/openapi/${s.file}`,
+            title: s.label,
+            slug: s.id,
+          })),
+          hideModels: false,
+          hideDownloadButton: false,
         }}
-      >
-        <ApiReferenceReact
-          key={current.id}
-          configuration={{
-            spec: {
-              url: `/openapi/${current.file}`,
-            },
-            hideModels: false,
-            hideDownloadButton: false,
-            theme: 'default',
-          }}
-        />
-      </div>
+      />
     </div>
   );
 }
