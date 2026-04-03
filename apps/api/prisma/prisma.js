@@ -128,10 +128,15 @@ const prisma = new PrismaClient().$extends({
           if (data.transaction_date && new Date(data.transaction_date) > new Date()) {
             throw new Error('Transaction date cannot be in the future.');
           }
+          const hasCreditField = 'credit' in data;
+          const hasDebitField = 'debit' in data;
           if (data.credit && data.debit) {
             throw new Error('Transaction cannot have both credit and debit amounts.');
           }
-          if (!data.credit && !data.debit) {
+          if (operation === 'create' && !data.credit && !data.debit) {
+            throw new Error('Transaction must have either a credit or debit amount.');
+          }
+          if (operation === 'update' && (hasCreditField || hasDebitField) && !data.credit && !data.debit) {
             throw new Error('Transaction must have either a credit or debit amount.');
           }
         }

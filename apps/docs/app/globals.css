@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Bliss Design Tokens ───────────────────────────── */
+
+    /* Canvas */
+    --background: 0 0% 98%;
+    --foreground: 260 25% 12%;
+
+    /* Brand */
+    --brand-primary: 263 9% 43%;
+    --brand-deep: 263 11% 23%;
+
+    /* Accents */
+    --positive: 147 50% 36%;
+    --negative: 359 58% 75%;
+    --warning: 36 77% 50%;
+
+    /* Borders */
+    --border-color: 214 31% 91%;
+
+    /* Muted text */
+    --muted-fg: 260 6% 61%;
+
+    /* Card / Glass */
+    --card: 0 0% 100%;
+    --card-foreground: 260 25% 12%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 25% 12%;
+
+    /* Buttons */
+    --primary: 263 11% 23%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 100%;
+    --secondary-foreground: 263 11% 23%;
+
+    /* Misc */
+    --muted: 265 24% 95%;
+    --muted-foreground: 260 6% 61%;
+    --accent: 264 26% 93%;
+    --accent-foreground: 263 11% 23%;
+    --destructive: 359 58% 75%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 31% 91%;
+    --input: 214 31% 91%;
+    --input-background: 264 22% 96%;
+    --ring: 263 9% 43%;
+    --ring-offset: 0 0% 98%;
+
+    /* Charts */
+    --chart-1: 263 9% 43%;
+    --chart-2: 147 50% 36%;
+    --chart-3: 359 58% 75%;
+    --chart-4: 256 12% 64%;
+    --chart-5: 263 11% 23%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar */
+    --sidebar-background: 264 22% 96%;
+    --sidebar-foreground: 263 11% 23%;
+    --sidebar-primary: 263 11% 23%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 264 26% 93%;
+    --sidebar-accent-foreground: 263 11% 23%;
+    --sidebar-border: 214 31% 91%;
+    --sidebar-ring: 263 9% 43%;
+  }
+
+  .dark {
+    --background: 260 25% 12%;
+    --foreground: 262 25% 95%;
+
+    --brand-primary: 263 12% 64%;
+    --brand-deep: 262 25% 95%;
+
+    --border-color: 255 23% 20%;
+    --muted-fg: 258 8% 50%;
+
+    --card: 257 18% 17%;
+    --card-foreground: 262 25% 95%;
+
+    --popover: 257 18% 17%;
+    --popover-foreground: 262 25% 95%;
+
+    --primary: 262 25% 95%;
+    --primary-foreground: 263 11% 23%;
+
+    --secondary: 257 18% 17%;
+    --secondary-foreground: 262 25% 95%;
+
+    --muted: 255 23% 20%;
+    --muted-foreground: 258 8% 50%;
+
+    --accent: 255 23% 20%;
+    --accent-foreground: 262 25% 95%;
+
+    --destructive: 359 58% 75%;
+    --destructive-foreground: 260 25% 12%;
+
+    --border: 255 23% 20%;
+    --input: 255 23% 20%;
+    --ring: 260 6% 61%;
+    --ring-offset: 260 25% 12%;
+
+    --sidebar-background: 257 18% 17%;
+    --sidebar-foreground: 262 25% 95%;
+    --sidebar-primary: 262 25% 95%;
+    --sidebar-primary-foreground: 263 11% 23%;
+    --sidebar-accent: 255 23% 20%;
+    --sidebar-accent-foreground: 262 25% 95%;
+    --sidebar-border: 255 23% 20%;
+    --sidebar-ring: 260 6% 61%;
+  }
+}
+
+/* ── Nextra typography — only brand color overrides ───── */
+
+.nextra-content h1,
+.nextra-content h2 {
+  color: hsl(var(--brand-deep));
+}
+
+/* ── Glass Card ────────────────────────────────────────── */
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 2px rgba(58, 53, 66, 0.04),
+    0 4px 12px rgba(58, 53, 66, 0.06),
+    0 16px 40px rgba(58, 53, 66, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.dark .glass-card {
+  background: rgba(42, 37, 54, 0.68);
+  border-color: hsl(var(--border-color));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 16px 40px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ── Scalar API Reference isolation ──────────────────── */
+
+.scalar-wrapper {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 600px;
+}
+
+.scalar-wrapper *,
+.scalar-wrapper *::before,
+.scalar-wrapper *::after {
+  font-family: inherit;
+}
+
+/* ── Nextra theme color overrides ──────────────────────── */
+
+:root {
+  --nextra-primary-hue: 263deg;
+  --nextra-primary-saturation: 9%;
+}

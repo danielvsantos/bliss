@@ -104,6 +104,12 @@ services:
       PLAID_ENV: ${PLAID_ENV:-sandbox}
       # Optional: Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Optional: Market data
+      STOCK_PROVIDER: ${STOCK_PROVIDER:-TWELVE_DATA}
+      TWELVE_DATA_API_KEY: ${TWELVE_DATA_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      # Optional: Currency rates
+      CURRENCYLAYER_API_KEY: ${CURRENCYLAYER_API_KEY:-}
     volumes:
       - uploads_data:/app/data/uploads
     depends_on:

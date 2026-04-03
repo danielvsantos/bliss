@@ -16,15 +16,6 @@ export const config = {
   },
 };
 
-// Initialize storage adapter (local filesystem or GCS based on STORAGE_BACKEND env var)
-let storage;
-try {
-  storage = createStorageAdapter();
-} catch (error) {
-  console.error('Failed to initialize storage adapter:', error);
-  Sentry.captureException(error);
-}
-
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
     rateLimiters.importsUpload(req, res, (result) => {
@@ -40,12 +31,18 @@ export default withAuth(async function handler(req, res) {
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
 
+  // Initialize storage adapter lazily (inside handler so it fires at request time,
+  // not at module load / bundle analysis time — required for @google-cloud/storage on Vercel)
+  let storage;
+  try {
+    storage = createStorageAdapter();
+  } catch (error) {
+    Sentry.captureException(error);
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Storage service is not configured.' });
+  }
+
   try {
     const user = req.user;
-
-    if (!storage) {
-      return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Storage service is not configured.' });
-    }
 
     const ALLOWED_MIME_TYPES = [
       'text/csv',

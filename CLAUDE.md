@@ -140,7 +140,7 @@ Transaction classification flows through tiers until one succeeds:
 1. **Exact Match** -- O(1) in-memory cache per tenant, backed by the `DescriptionMapping` table (SHA-256 hash → categoryId). Confidence: `1.0`
 2. **Vector Match (tenant)** -- pgvector cosine similarity on `TransactionEmbedding` (768-dim, Gemini embeddings). Threshold: `reviewThreshold` (default 0.70)
 3. **Vector Match (global)** -- Cross-tenant `GlobalEmbedding` table, discounted by `0.92x`
-4. **LLM** -- Gemini 2.0 Flash, temperature 0.1, confidence hard-capped at `0.85`
+4. **LLM** -- Gemini 3.0 Flash, temperature 0.1, confidence hard-capped at `0.85`
 
 Thresholds are per-tenant (`Tenant.autoPromoteThreshold`, `Tenant.reviewThreshold`). Config constants live in `apps/backend/src/config/classificationConfig.js` and must stay in sync with Prisma schema defaults.
 
@@ -236,6 +236,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`
 - AI: `GEMINI_API_KEY`
 - Market data: `TWELVE_DATA_API_KEY` or `FINNHUB_API_KEY` (set `STOCK_PROVIDER`)
+- Currency rates: `CURRENCYLAYER_API_KEY`
 - Observability: `SENTRY_DSN`
 
 See `.env.example` for the full reference.

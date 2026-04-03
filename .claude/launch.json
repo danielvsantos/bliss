@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "docs",
+      "runtimeExecutable": "/usr/local/bin/pnpm",
+      "runtimeArgs": ["--filter", "@bliss/docs", "dev"],
+      "port": 3002,
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  ]
+}
