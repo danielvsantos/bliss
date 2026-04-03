@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(wc -l /Users/danielviana/Desktop/Bliss/bliss/apps/api/pages/api/*.js)"
+      "Bash(wc -l /Users/danielviana/Desktop/Bliss/bliss/apps/api/pages/api/*.js)",
+      "Bash(find /Users/danielviana/Desktop/bliss/node_modules/.pnpm -path */next-themes/package.json -maxdepth 4)",
+      "Bash(pnpm install:*)",
+      "Bash(export PATH=\"/usr/local/bin:$PATH\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(export PATH=\"/usr/local/bin:$HOME/.nvm/versions/node/v18.20.8/bin:$PATH\")",
+      "Bash(npm view:*)",
+      "Bash(find /Users/danielviana/Desktop/bliss/node_modules/.pnpm -path *@scalar+api-reference-react@0.9* -name *.d.ts -maxdepth 6)",
+      "Bash(node scripts/sync-docs.mjs)",
+      "Bash(lsof -ti:3002)",
+      "Bash(xargs kill:*)",
+      "Bash(rm -f .git/index.lock)",
+      "Bash(git add:*)",
+      "Bash(grep -r \"scalar\\\\|Scalar\" /Users/danielviana/Desktop/bliss/apps/docs --include=*.tsx --include=*.ts --include=*.css)",
+      "Bash(find /Users/danielviana/Desktop/bliss -type f \\\\\\(-name *.png -o -name *.jpg -o -name *.jpeg -o -name *.webp -o -name *.svg \\\\\\))",
+      "Bash(docker compose:*)"
     ]
   }
 }

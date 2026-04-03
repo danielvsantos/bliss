@@ -7,6 +7,7 @@ export default {
     },
   },
   'getting-started': 'Getting Started',
+  guides: 'Guides',
   architecture: 'Architecture',
   configuration: 'Configuration',
   'api-reference': {

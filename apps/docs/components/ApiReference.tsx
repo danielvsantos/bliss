@@ -1,5 +1,6 @@
 'use client';
 
+import '@scalar/api-reference-react/style.css';
 import { ApiReferenceReact } from '@scalar/api-reference-react';
 
 const SPECS = [
@@ -28,14 +29,7 @@ const SPECS = [
 
 export function ApiReference() {
   return (
-    <div
-      style={{
-        border: '1px solid hsl(214 31% 91%)',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        minHeight: '600px',
-      }}
-    >
+    <div className="scalar-wrapper">
       <ApiReferenceReact
         configuration={{
           sources: SPECS.map((s) => ({

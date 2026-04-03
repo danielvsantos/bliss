@@ -7,7 +7,8 @@
  * Runs automatically via `predev` and `prebuild` npm hooks.
  *
  * What it does:
- *   1. Copies docs/architecture.md, getting-started.md, configuration.md → content/
+ *   1. Copies docs/architecture.md, configuration.md → content/
+ *      (getting-started.md is maintained directly in content/)
  *   2. Copies docs/specs/{api,backend,frontend}/*.md → content/specs/{feature}/{layer}.md
  *      grouped by feature (matching numeric prefix across layers)
  *   3. Generates _meta.ts sidebar files for feature-based navigation
@@ -245,7 +246,8 @@ cleanDir(PUBLIC_OPENAPI);
 mkdirSync(CONTENT_DIR, { recursive: true });
 
 // 2. Copy top-level foundation docs
-const foundationDocs = ['architecture.md', 'getting-started.md', 'configuration.md'];
+// getting-started.md is maintained directly in content/ (not synced from docs/)
+const foundationDocs = ['architecture.md', 'configuration.md'];
 
 for (const file of foundationDocs) {
   const srcPath = join(DOCS_DIR, file);
