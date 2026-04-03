@@ -140,7 +140,7 @@ Transaction classification flows through tiers until one succeeds:
 1. **Exact Match** -- O(1) in-memory description cache per tenant. Confidence: `1.0`
 2. **Vector Match (tenant)** -- pgvector cosine similarity on `TransactionEmbedding` (768-dim, Gemini embeddings). Threshold: `reviewThreshold` (default 0.70)
 3. **Vector Match (global)** -- Cross-tenant `GlobalEmbedding` table, discounted by `0.92x`
-4. **LLM** -- Gemini 2.0 Flash, temperature 0.1, confidence hard-capped at `0.85`
+4. **LLM** -- Gemini 3.0 Flash, temperature 0.1, confidence hard-capped at `0.85`
 
 Thresholds are per-tenant (`Tenant.autoPromoteThreshold`, `Tenant.reviewThreshold`). Config constants live in `apps/backend/src/config/classificationConfig.js` and must stay in sync with Prisma schema defaults.
 

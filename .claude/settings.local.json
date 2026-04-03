@@ -16,7 +16,8 @@
       "Bash(git add:*)",
       "Bash(grep -r \"scalar\\\\|Scalar\" /Users/danielviana/Desktop/bliss/apps/docs --include=*.tsx --include=*.ts --include=*.css)",
       "Bash(find /Users/danielviana/Desktop/bliss -type f \\\\\\(-name *.png -o -name *.jpg -o -name *.jpeg -o -name *.webp -o -name *.svg \\\\\\))",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\")"
     ]
   }
 }
