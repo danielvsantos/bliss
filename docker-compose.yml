@@ -6,7 +6,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: bliss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: bliss
     ports:
       - "5432:5432"
@@ -20,11 +20,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +41,7 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://bliss:${POSTGRES_PASSWORD}@postgres:5432/bliss
+      DATABASE_URL: postgresql://bliss:${POSTGRES_PASSWORD:-changeme}@postgres:5432/bliss
       JWT_SECRET_CURRENT: ${JWT_SECRET_CURRENT}
       JWT_SECRET_PREVIOUS: ${JWT_SECRET_PREVIOUS:-}
       ENCRYPTION_SECRET: ${ENCRYPTION_SECRET}
@@ -84,8 +84,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://bliss:${POSTGRES_PASSWORD}@postgres:5432/bliss
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URL: postgresql://bliss:${POSTGRES_PASSWORD:-changeme}@postgres:5432/bliss
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
       REDIS_SKIP_TLS_CHECK: "true"
       ENCRYPTION_SECRET: ${ENCRYPTION_SECRET}
       ENCRYPTION_SECRET_PREVIOUS: ${ENCRYPTION_SECRET_PREVIOUS:-}
