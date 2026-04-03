@@ -12,7 +12,7 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 const EMBEDDING_MODEL = 'gemini-embedding-001';  // 3072-dim by default; outputDimensionality: 768 applied at call time
-const CLASSIFICATION_MODEL = 'gemini-2.0-flash';  // Fast + cheap for high-volume classification
+const CLASSIFICATION_MODEL = 'gemini-3-flash-preview';  // Fast + cheap for high-volume classification
 const INSIGHT_MODEL = process.env.INSIGHT_MODEL || 'gemini-3.1-pro-preview';  // Quality prose, low volume (one call per tenant per day)
 
 // ─── Rate-limit / retry config ────────────────────────────────────────────────
