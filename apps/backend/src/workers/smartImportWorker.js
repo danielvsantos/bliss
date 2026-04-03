@@ -26,13 +26,6 @@ const {
 
 const ROW_BATCH_SIZE = 20;
 const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'MANUAL']);
-// Initialize storage adapter (local filesystem or GCS based on STORAGE_BACKEND env var)
-let storage;
-try {
-    storage = createStorageAdapter();
-} catch (error) {
-    logger.error('Failed to initialize storage adapter for Smart Import Worker:', error);
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DUPLICATE DETECTION — imported from utils/transactionHash.js
@@ -225,6 +218,17 @@ function computeUpdateDiff(csvRow, existingTx, resolvedCategoryId, categoryById)
 const processSmartImportJob = async (job) => {
     const { tenantId, userId, accountId, adapterId, fileStorageKey, stagedImportId } = job.data;
 
+    // Initialize storage lazily so @google-cloud/storage is only required at job
+    // execution time, not at module load time (avoids startup failure when the
+    // package is present in node_modules but not yet resolvable during boot).
+    let storage;
+    try {
+        storage = createStorageAdapter();
+    } catch (error) {
+        logger.error('Failed to initialize storage adapter for Smart Import Worker:', error);
+        throw new Error('Storage service is not configured.');
+    }
+
     // p-limit is ESM-only; dynamic import works inside async CJS functions
     const { default: pLimit } = await import('p-limit');
 
@@ -234,10 +238,6 @@ const processSmartImportJob = async (job) => {
     });
     const autoPromoteThreshold = tenant?.autoPromoteThreshold ?? DEFAULT_AUTO_PROMOTE_THRESHOLD;
     const reviewThreshold = tenant?.reviewThreshold ?? DEFAULT_REVIEW_THRESHOLD;
-
-    if (!storage) {
-        throw new Error('Storage service is not configured.');
-    }
 
     logger.info(`Processing smart import job for tenant ${tenantId}`, {
         adapterId, accountId, stagedImportId, file: fileStorageKey,
