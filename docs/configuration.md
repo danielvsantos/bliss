@@ -102,6 +102,14 @@ Stock price fetching is disabled when no provider API key is set.
 | `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Required when `STOCK_PROVIDER=TWELVE_DATA`. |
 | `FINNHUB_API_KEY` | No | -- | API key for Finnhub. Required when `STOCK_PROVIDER=FINNHUB`. |
 
+## Currency Rates (optional)
+
+Automatic historical exchange rate fetching is disabled when the API key is not set. Rates can still be entered manually via the UI.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `CURRENCYLAYER_API_KEY` | No | -- | API key for [CurrencyLayer](https://currencylayer.com/). Used by portfolio processing and analytics to fetch historical FX rates. |
+
 ## Observability (optional)
 
 Error tracking and performance monitoring via Sentry. Leave all three unset to disable.

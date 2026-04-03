@@ -232,6 +232,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`
 - AI: `GEMINI_API_KEY`
 - Market data: `TWELVE_DATA_API_KEY` or `FINNHUB_API_KEY` (set `STOCK_PROVIDER`)
+- Currency rates: `CURRENCYLAYER_API_KEY`
 - Observability: `SENTRY_DSN`
 
 See `.env.example` for the full reference.
