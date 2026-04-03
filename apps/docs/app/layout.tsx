@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: '%s — Bliss Finance',
   },
   description:
-    'Multi-currency personal wealth intelligence platform with AI-powered transaction classification, portfolio tracking, and financial insights.',
+    'Self hosted multi-currency personal wealth intelligence platform with AI-powered transaction classification, portfolio tracking, and financial insights.',
   icons: {
     icon: '/favicon.ico',
   },

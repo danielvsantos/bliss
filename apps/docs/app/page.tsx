@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTheme } from 'next-themes';
 
 function ThemeToggle() {
@@ -30,79 +31,40 @@ function ThemeToggle() {
 
 const FEATURES = [
   {
-    title: '4-Tier AI Classification',
-    description:
-      'Exact match, vector similarity (pgvector), cross-tenant global embeddings, and LLM fallback. Learns from every user correction.',
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22" />
-        <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93" />
-        <path d="M8.56 13a8 8 0 0 0-2.3 3.5" />
-        <path d="M15.44 13a8 8 0 0 1 2.3 3.5" />
-      </svg>
-    ),
+    title: 'Expense Tracking',
+    description: 'AI-classified transactions with category breakdowns, monthly trends, and top expense analysis across all currencies.',
+    screenshot: '/images/expenses.png',
+    link: '/docs/specs/analytics',
   },
   {
-    title: 'Multi-Currency Portfolio',
-    description:
-      'FIFO lot tracking with historical FX rates. Real-time pricing via Twelve Data and Finnhub. Stocks, crypto, funds, and fixed-income.',
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" />
-        <polyline points="16,7 22,7 22,13" />
-      </svg>
-    ),
+    title: 'Portfolio Holdings',
+    description: 'FIFO lot tracking with historical FX rates, real-time pricing, and asset allocation across stocks, ETFs, crypto, and real estate.',
+    screenshot: '/images/portfolio.png',
+    link: '/docs/specs/portfolio',
   },
   {
-    title: 'Event-Driven Architecture',
-    description:
-      'BullMQ workers process classification, portfolio valuation, analytics aggregation, and AI insights generation asynchronously.',
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-      </svg>
-    ),
+    title: 'Smart Import',
+    description: 'CSV/XLSX ingestion with adapter detection, SHA-256 deduplication, 4-tier AI classification, and staged review before commit.',
+    screenshot: '/images/smartimport.png',
+    link: '/docs/specs/smart-import',
   },
   {
-    title: 'Smart Import Pipeline',
-    description:
-      'CSV/XLSX ingestion with adapter detection, SHA-256 deduplication, AI classification, and batch commit with tag resolution.',
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="12" y1="18" x2="12" y2="12" />
-        <polyline points="9 15 12 12 15 15" />
-      </svg>
-    ),
+    title: 'AI Insights',
+    description: '7 financial lenses analyze your data daily: spending velocity, income stability, savings rate, portfolio concentration, and more.',
+    screenshot: '/images/insights.png',
+    link: '/docs/specs/ai-insights',
   },
   {
-    title: 'Plaid Integration',
-    description:
-      'Two-worker sync system with cursor-based pagination, hash-based dedup, encrypted raw payloads, and automatic classification.',
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="2" y="4" width="20" height="16" rx="2" />
-        <path d="M2 10h20" />
-        <path d="M6 14h4" />
-      </svg>
-    ),
+    title: 'Account Management',
+    description: 'Master-detail accounts with Plaid connection health, sync logs, token rotation, and multi-bank support across 10+ countries.',
+    screenshot: '/images/accountspagewithplaid.png',
+    link: '/docs/specs/account-management',
   },
   {
-    title: 'Financial Insights Engine',
-    description:
-      '7 financial lenses powered by AI: spending velocity, category concentration, income stability, savings rate, portfolio exposure, and more.',
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M2 20h20" />
-        <path d="M5 20V10" />
-        <path d="M9 20V4" />
-        <path d="M13 20v-8" />
-        <path d="M17 20V8" />
-        <path d="M21 20v-5" />
-      </svg>
-    ),
+    title: 'Transaction Review',
+    description: 'Deep-dive drawer with AI analysis, investment enrichment, merchant history, and one-click category corrections that train the model.',
+    screenshot: '/images/transactionreviewdrawer.png',
+    link: '/docs/specs/ai-classification-and-review',
   },
 ];
 
@@ -219,53 +181,67 @@ export default function HomePage() {
 
       {/* ── Hero ───────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
-        <div className="max-w-6xl mx-auto px-6 pt-24 pb-20 md:pt-32 md:pb-28">
-          <div className="max-w-3xl">
-            <div
-              className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-6"
-              style={{
-                backgroundColor: 'hsl(var(--accent))',
-                color: 'hsl(var(--brand-primary))',
-              }}
-            >
-              Open Source
+        <div className="max-w-6xl mx-auto px-6 pt-20 pb-16 md:pt-28 md:pb-24">
+          <div className="flex flex-col md:flex-row items-center gap-10 md:gap-16">
+            {/* Left: text */}
+            <div className="flex-1 text-center md:text-left">
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-6"
+                style={{
+                  backgroundColor: 'hsl(var(--accent))',
+                  color: 'hsl(var(--brand-primary))',
+                }}
+              >
+                Open Source
+              </div>
+              <h1
+                className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight"
+                style={{ color: 'hsl(var(--brand-deep))' }}
+              >
+                Open-Source Wealth Management{' '}
+                <span style={{ color: 'hsl(var(--brand-primary))' }}>for a Multi-Currency World</span>
+              </h1>
+              <p
+                className="mt-6 text-lg md:text-xl leading-relaxed max-w-2xl"
+                style={{ color: 'hsl(var(--muted-foreground))' }}
+              >
+                AI-powered transaction classification, real-time portfolio tracking, and event-driven analytics.
+                Built for self-hosting. Designed for global finances.
+              </p>
+              <div className="mt-10 flex flex-wrap gap-4 justify-center md:justify-start">
+                <Link
+                  href="/docs/getting-started"
+                  className="inline-flex items-center px-7 py-3.5 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
+                  style={{
+                    backgroundColor: 'hsl(var(--brand-deep))',
+                    color: 'hsl(var(--primary-foreground))',
+                  }}
+                >
+                  Get Started
+                </Link>
+                <Link
+                  href="/docs"
+                  className="inline-flex items-center px-7 py-3.5 rounded-xl font-semibold text-sm transition-all hover:opacity-80"
+                  style={{
+                    border: '1px solid hsl(var(--border))',
+                    color: 'hsl(var(--foreground))',
+                  }}
+                >
+                  Explore Docs
+                </Link>
+              </div>
             </div>
-            <h1
-              className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight"
-              style={{ color: 'hsl(var(--brand-deep))' }}
-            >
-              Wealth Intelligence,{' '}
-              <span style={{ color: 'hsl(var(--brand-primary))' }}>Engineered</span>
-            </h1>
-            <p
-              className="mt-6 text-lg md:text-xl leading-relaxed max-w-2xl"
-              style={{ color: 'hsl(var(--muted-foreground))' }}
-            >
-              A multi-currency personal finance platform with AI-powered transaction
-              classification, real-time portfolio tracking, and event-driven analytics.
-              Built for self-hosting.
-            </p>
-            <div className="mt-10 flex flex-wrap gap-4">
-              <Link
-                href="/docs/getting-started"
-                className="inline-flex items-center px-7 py-3.5 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
-                style={{
-                  backgroundColor: 'hsl(var(--brand-deep))',
-                  color: 'hsl(var(--primary-foreground))',
-                }}
-              >
-                Get Started
-              </Link>
-              <Link
-                href="/docs"
-                className="inline-flex items-center px-7 py-3.5 rounded-xl font-semibold text-sm transition-all hover:opacity-80"
-                style={{
-                  border: '1px solid hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-              >
-                Explore Documentation
-              </Link>
+
+            {/* Right: mascot */}
+            <div className="flex-shrink-0 w-64 md:w-80">
+              <Image
+                src="/images/auth-mascot.png"
+                alt="Bliss capybara mascot in a turtleneck, seated in a mid-century chair beside currency coins"
+                width={400}
+                height={400}
+                className="w-full h-auto"
+                priority
+              />
             </div>
           </div>
         </div>
@@ -275,6 +251,54 @@ export default function HomePage() {
           className="absolute -top-40 -right-40 w-96 h-96 rounded-full opacity-20 blur-3xl pointer-events-none"
           style={{ backgroundColor: 'hsl(var(--brand-primary))' }}
         />
+      </section>
+
+      {/* ── Features with Screenshots ─────────────────────── */}
+      <section
+        className="py-16 md:py-20"
+        style={{ borderTop: '1px solid hsl(var(--border))' }}
+      >
+        <div className="max-w-6xl mx-auto px-6">
+          <h2
+            className="text-2xl md:text-3xl font-bold tracking-tight mb-4"
+            style={{ color: 'hsl(var(--brand-deep))' }}
+          >
+            Built for Serious Finance Tracking
+          </h2>
+          <p className="text-base mb-12 max-w-2xl" style={{ color: 'hsl(var(--muted-foreground))' }}>
+            Every feature is production-grade, multi-currency aware, and designed to learn from your data.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {FEATURES.map((feature) => (
+              <Link
+                key={feature.title}
+                href={feature.link}
+                className="glass-card overflow-hidden group hover:shadow-lg transition-shadow"
+              >
+                <div className="aspect-video overflow-hidden" style={{ backgroundColor: 'hsl(var(--muted))' }}>
+                  <Image
+                    src={feature.screenshot}
+                    alt={feature.title}
+                    width={600}
+                    height={340}
+                    className="w-full h-full object-cover object-top group-hover:scale-[1.02] transition-transform duration-300"
+                  />
+                </div>
+                <div className="p-5">
+                  <h3
+                    className="text-base font-semibold mb-2"
+                    style={{ color: 'hsl(var(--brand-deep))' }}
+                  >
+                    {feature.title}
+                  </h3>
+                  <p className="text-sm leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                    {feature.description}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* ── Architecture at a Glance ───────────────────────── */}
@@ -306,48 +330,6 @@ export default function HomePage() {
               ├─► PostgreSQL 16 (pgvector)
               └─► Redis 7 (queues + cache)`}
             </pre>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Features ───────────────────────────────────────── */}
-      <section
-        className="py-16 md:py-20"
-        style={{ borderTop: '1px solid hsl(var(--border))' }}
-      >
-        <div className="max-w-6xl mx-auto px-6">
-          <h2
-            className="text-2xl md:text-3xl font-bold tracking-tight mb-4"
-            style={{ color: 'hsl(var(--brand-deep))' }}
-          >
-            Key Subsystems
-          </h2>
-          <p className="text-base mb-10 max-w-2xl" style={{ color: 'hsl(var(--muted-foreground))' }}>
-            Production-grade features designed for reliability, performance, and extensibility.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {FEATURES.map((feature) => (
-              <div key={feature.title} className="glass-card p-6">
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-                  style={{
-                    backgroundColor: 'hsl(var(--accent))',
-                    color: 'hsl(var(--brand-primary))',
-                  }}
-                >
-                  {feature.icon}
-                </div>
-                <h3
-                  className="text-base font-semibold mb-2"
-                  style={{ color: 'hsl(var(--brand-deep))' }}
-                >
-                  {feature.title}
-                </h3>
-                <p className="text-sm leading-relaxed" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {feature.description}
-                </p>
-              </div>
-            ))}
           </div>
         </div>
       </section>
