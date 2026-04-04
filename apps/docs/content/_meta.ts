@@ -10,11 +10,11 @@ export default {
   guides: 'Guides',
   architecture: 'Architecture',
   configuration: 'Configuration',
+  specifications: 'Specifications',
   'api-reference': {
     title: 'API Reference',
     theme: {
       toc: false,
     },
   },
-  specs: 'Specifications',
 };

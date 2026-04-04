@@ -10,6 +10,21 @@ const logo = (
   </span>
 );
 
+const navbarExtra = (
+  <a
+    href="https://app.blissfinance.co/auth?origin=docs-site"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-90 max-md:hidden"
+    style={{
+      backgroundColor: 'hsl(263 11% 23%)',
+      color: '#fff',
+    }}
+  >
+    Live Demo
+  </a>
+);
+
 export default async function DocsLayout({
   children,
 }: {
@@ -21,7 +36,9 @@ export default async function DocsLayout({
         <Navbar
           logo={logo}
           projectLink="https://github.com/danielvsantos/bliss"
-        />
+        >
+          {navbarExtra}
+        </Navbar>
       }
       pageMap={await getPageMap('/docs')}
       docsRepositoryBase="https://github.com/danielvsantos/bliss/tree/main/apps/docs"

@@ -1,0 +1,26 @@
+import dynamic from 'next/dynamic'
+
+export const SpecificationsGrid = dynamic(
+  () => import('../components/SpecificationsGrid').then((m) => m.SpecificationsGrid),
+  { ssr: false, loading: () => <div style={{ padding: '40px', textAlign: 'center', color: 'hsl(260 6% 61%)' }}>Loading specifications...</div> }
+)
+
+# Specifications
+
+Bliss uses **spec-driven development** — every feature is fully documented before and during implementation. Each spec describes the data models, business rules, API contracts, and UI behavior for a specific feature across up to three layers.
+
+| Layer | Scope | Stack |
+|-------|-------|-------|
+| **API** | REST endpoints, auth, validation, Prisma queries | Next.js 15, Pages Router, ESM |
+| **Backend** | Workers, queues, pipelines, external integrations | Express, BullMQ, CJS |
+| **Frontend** | Pages, components, hooks, state management | React 18, Vite, shadcn/ui |
+
+Specs live in the repository at [`docs/specs/`](https://github.com/danielvsantos/bliss/tree/main/docs/specs) and are the source of truth for all coding agents and contributors.
+
+---
+
+## Feature Specifications
+
+Each card below links directly to the spec files on GitHub. Click a layer badge to view the full specification for that layer.
+
+<SpecificationsGrid />

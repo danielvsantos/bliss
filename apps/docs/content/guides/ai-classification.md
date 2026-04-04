@@ -57,4 +57,4 @@ Once classified, your transactions power the expense tracking dashboard with cat
 ## Next steps
 
 - [Importing transactions](/docs/guides/importing-transactions) — the review flow where you train the AI
-- Explore the [AI Classification spec](/docs/specs/ai-classification-and-review) for full technical details
+- Explore the [AI Classification spec](/docs/specifications) for full technical details

@@ -34,37 +34,37 @@ const FEATURES = [
     title: 'Expense Tracking',
     description: 'AI-classified transactions with category breakdowns, monthly trends, and top expense analysis across all currencies.',
     screenshot: '/images/expenses.png',
-    link: '/docs/specs/analytics',
+    link: '/docs/specifications',
   },
   {
     title: 'Portfolio Holdings',
     description: 'FIFO lot tracking with historical FX rates, real-time pricing, and asset allocation across stocks, ETFs, crypto, and real estate.',
     screenshot: '/images/portfolio.png',
-    link: '/docs/specs/portfolio',
+    link: '/docs/specifications',
   },
   {
     title: 'Smart Import',
     description: 'CSV/XLSX ingestion with adapter detection, SHA-256 deduplication, 4-tier AI classification, and staged review before commit.',
     screenshot: '/images/smartimport.png',
-    link: '/docs/specs/smart-import',
+    link: '/docs/specifications',
   },
   {
     title: 'AI Insights',
     description: '7 financial lenses analyze your data daily: spending velocity, income stability, savings rate, portfolio concentration, and more.',
     screenshot: '/images/insights.png',
-    link: '/docs/specs/ai-insights',
+    link: '/docs/specifications',
   },
   {
     title: 'Account Management',
     description: 'Master-detail accounts with Plaid connection health, sync logs, token rotation, and multi-bank support across 10+ countries.',
     screenshot: '/images/accountspagewithplaid.png',
-    link: '/docs/specs/account-management',
+    link: '/docs/specifications',
   },
   {
     title: 'Transaction Review',
     description: 'Deep-dive drawer with AI analysis, investment enrichment, merchant history, and one-click category corrections that train the model.',
     screenshot: '/images/transactionreviewdrawer.png',
-    link: '/docs/specs/ai-classification-and-review',
+    link: '/docs/specifications',
   },
 ];
 
@@ -88,7 +88,7 @@ export default function HomePage() {
         color: 'hsl(var(--foreground))',
       }}
     >
-      {/* ── Navbar ─────────────────────────────────────────── */}
+      {/* ── Navbar — matches Nextra docs header ─────────── */}
       <nav
         className="sticky top-0 z-50"
         style={{
@@ -107,7 +107,7 @@ export default function HomePage() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-5">
             <Link
               href="/docs"
               className="text-sm font-medium hover:opacity-80 transition-opacity"
@@ -126,10 +126,10 @@ export default function HomePage() {
               href="https://app.blissfinance.co/auth?origin=docs-site"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all hover:opacity-90"
+              className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-90"
               style={{
                 backgroundColor: 'hsl(var(--brand-deep))',
-                color: 'hsl(var(--primary-foreground))',
+                color: '#fff',
               }}
             >
               Live Demo
@@ -138,15 +138,16 @@ export default function HomePage() {
               href="https://github.com/danielvsantos/bliss"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium hover:opacity-80 transition-opacity"
+              className="hover:opacity-80 transition-opacity"
               style={{ color: 'hsl(var(--foreground))' }}
+              aria-label="GitHub"
             >
-              GitHub
+              <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
             </a>
             <ThemeToggle />
           </div>
 
-          {/* Mobile hamburger */}
+          {/* Mobile */}
           <div className="flex md:hidden items-center gap-2">
             <ThemeToggle />
             <button
@@ -166,7 +167,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Mobile dropdown */}
         {mobileMenuOpen && (
           <div
             className="md:hidden px-6 pb-4 flex flex-col gap-3"
@@ -178,22 +178,10 @@ export default function HomePage() {
             <Link href="/docs/api-reference" className="text-sm font-medium py-1" style={{ color: 'hsl(var(--foreground))' }}>
               API Reference
             </Link>
-            <a
-              href="https://app.blissfinance.co/auth?origin=docs-site"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm font-medium py-1"
-              style={{ color: 'hsl(var(--brand-primary))' }}
-            >
+            <a href="https://app.blissfinance.co/auth?origin=docs-site" target="_blank" rel="noopener noreferrer" className="text-sm font-medium py-1" style={{ color: 'hsl(var(--brand-primary))' }}>
               Live Demo
             </a>
-            <a
-              href="https://github.com/danielvsantos/bliss"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm font-medium py-1"
-              style={{ color: 'hsl(var(--foreground))' }}
-            >
+            <a href="https://github.com/danielvsantos/bliss" target="_blank" rel="noopener noreferrer" className="text-sm font-medium py-1" style={{ color: 'hsl(var(--foreground))' }}>
               GitHub
             </a>
           </div>
@@ -358,7 +346,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <Link
-                href="/docs/specs/analytics"
+                href="/docs/specifications"
                 className="inline-flex items-center gap-1 text-sm font-medium hover:opacity-80 transition-opacity"
                 style={{ color: 'hsl(var(--brand-primary))' }}
               >

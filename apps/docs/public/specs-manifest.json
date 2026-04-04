@@ -1,0 +1,205 @@
+[
+  {
+    "slug": "design-system",
+    "title": "Design System",
+    "description": "Color tokens, typography, component patterns, and the Bliss UIKit",
+    "order": 0,
+    "layers": {
+      "frontend": "docs/specs/frontend/00-design-system.md"
+    }
+  },
+  {
+    "slug": "user-identity",
+    "title": "User Identity & Auth",
+    "description": "Registration, sign-in, JWT sessions, Google OAuth, RBAC roles",
+    "order": 1,
+    "layers": {
+      "api": "docs/specs/api/01-user-identity.md",
+      "frontend": "docs/specs/frontend/01-user-identity.md"
+    }
+  },
+  {
+    "slug": "accounts-and-categories",
+    "title": "Accounts & Categories",
+    "description": "Multi-bank account management, category hierarchy, account owners",
+    "order": 2,
+    "layers": {
+      "api": "docs/specs/api/02-accounts-and-categories.md",
+      "frontend": "docs/specs/frontend/02-accounts-and-categories.md"
+    }
+  },
+  {
+    "slug": "reference-data",
+    "title": "Reference Data",
+    "description": "Countries, currencies, banks, and tenant configuration metadata",
+    "order": 3,
+    "layers": {
+      "api": "docs/specs/api/03-reference-data-management.md",
+      "frontend": "docs/specs/frontend/03-reference-data-management.md"
+    }
+  },
+  {
+    "slug": "transactions",
+    "title": "Transactions",
+    "description": "CRUD operations, filtering, bulk actions, and encrypted storage",
+    "order": 4,
+    "layers": {
+      "api": "docs/specs/api/04-transactions.md",
+      "frontend": "docs/specs/frontend/04-transactions.md"
+    }
+  },
+  {
+    "slug": "analytics",
+    "title": "Analytics",
+    "description": "Spending aggregation, P&L, tag analytics, and monthly caches",
+    "order": 5,
+    "layers": {
+      "api": "docs/specs/api/05-analytics-api.md",
+      "backend": "docs/specs/backend/05-analytics.md",
+      "frontend": "docs/specs/frontend/05-analytics.md"
+    }
+  },
+  {
+    "slug": "portfolio",
+    "title": "Portfolio",
+    "description": "FIFO lot tracking, real-time pricing, FX conversion, and valuations",
+    "order": 6,
+    "layers": {
+      "api": "docs/specs/api/06-portfolio-api.md",
+      "backend": "docs/specs/backend/06-portfolio-processing.md",
+      "frontend": "docs/specs/frontend/06-portfolio-management.md"
+    }
+  },
+  {
+    "slug": "cash-holdings",
+    "title": "Cash Holdings",
+    "description": "Cash position tracking with forward-fill valuation",
+    "order": 7,
+    "layers": {
+      "backend": "docs/specs/backend/07-cash-holdings.md"
+    }
+  },
+  {
+    "slug": "plaid-integration",
+    "title": "Plaid Integration",
+    "description": "Bank sync, two-worker pipeline, token rotation, and sync logs",
+    "order": 8,
+    "layers": {
+      "api": "docs/specs/api/08-plaid-integration.md",
+      "backend": "docs/specs/backend/08-plaid-integration.md",
+      "frontend": "docs/specs/frontend/08-plaid-integration.md"
+    }
+  },
+  {
+    "slug": "smart-import",
+    "title": "Smart Import",
+    "description": "CSV/XLSX ingestion, adapter detection, dedup, and staged review",
+    "order": 9,
+    "layers": {
+      "api": "docs/specs/api/09-smart-import-api.md",
+      "backend": "docs/specs/backend/09-smart-import.md",
+      "frontend": "docs/specs/frontend/09-smart-import-ui.md"
+    }
+  },
+  {
+    "slug": "ai-classification",
+    "title": "AI Classification & Review",
+    "description": "4-tier classification waterfall, vector search, feedback loop",
+    "order": 10,
+    "layers": {
+      "api": "docs/specs/api/10-ai-classification-and-review.md",
+      "backend": "docs/specs/backend/10-ai-classification-and-review.md",
+      "frontend": "docs/specs/frontend/10-ai-classification-and-review.md"
+    }
+  },
+  {
+    "slug": "admin",
+    "title": "Admin API",
+    "description": "Internal admin endpoints for category provisioning",
+    "order": 11,
+    "layers": {
+      "api": "docs/specs/api/11-admin-api.md",
+      "backend": "docs/specs/backend/11-admin-api.md"
+    }
+  },
+  {
+    "slug": "deployment",
+    "title": "Deployment Architecture",
+    "description": "Docker Compose, START_MODE, scaling strategy",
+    "order": 12,
+    "layers": {
+      "backend": "docs/specs/backend/12-deployment-architecture.md"
+    }
+  },
+  {
+    "slug": "testing",
+    "title": "Testing & Observability",
+    "description": "Vitest + Jest suites, Sentry integration, CI/CD pipeline",
+    "order": 13,
+    "layers": {
+      "api": "docs/specs/api/13-automated-testing-and-error-logging.md",
+      "backend": "docs/specs/backend/13-automated-testing-and-error-logging.md",
+      "frontend": "docs/specs/frontend/13-automated-testing-and-error-logging.md"
+    }
+  },
+  {
+    "slug": "notifications",
+    "title": "Notification Center",
+    "description": "In-app notification system with read/unread tracking",
+    "order": 14,
+    "layers": {
+      "api": "docs/specs/api/14-notification-center.md",
+      "frontend": "docs/specs/frontend/14-notification-center.md"
+    }
+  },
+  {
+    "slug": "insights",
+    "title": "Insights Engine",
+    "description": "AI-generated financial insights across 7 analysis lenses",
+    "order": 15,
+    "layers": {
+      "api": "docs/specs/api/15-insights.md",
+      "backend": "docs/specs/backend/15-insights-engine.md",
+      "frontend": "docs/specs/frontend/15-insights.md"
+    }
+  },
+  {
+    "slug": "dashboard-actions",
+    "title": "Dashboard Actions",
+    "description": "Dashboard widgets, quick actions, and onboarding checklist",
+    "order": 16,
+    "layers": {
+      "frontend": "docs/specs/frontend/16-dashboard-actions.md"
+    }
+  },
+  {
+    "slug": "tag-analytics",
+    "title": "Tag Analytics",
+    "description": "Multi-tag transaction analysis with dedicated cache tables",
+    "order": 18,
+    "layers": {
+      "api": "docs/specs/api/18-tag-analytics.md",
+      "backend": "docs/specs/backend/18-tag-analytics.md",
+      "frontend": "docs/specs/frontend/18-tag-analytics.md"
+    }
+  },
+  {
+    "slug": "security-master",
+    "title": "Security Master",
+    "description": "Nightly stock fundamentals refresh from market data providers",
+    "order": 19,
+    "layers": {
+      "api": "docs/specs/api/19-security-master-api.md",
+      "backend": "docs/specs/backend/19-security-master.md"
+    }
+  },
+  {
+    "slug": "equity-analysis",
+    "title": "Equity Analysis",
+    "description": "Equity deep-dive with fundamentals, earnings, and dividends",
+    "order": 20,
+    "layers": {
+      "frontend": "docs/specs/frontend/19-equity-analysis.md"
+    }
+  }
+]
