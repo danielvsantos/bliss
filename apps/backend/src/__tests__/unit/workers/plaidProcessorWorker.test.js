@@ -104,15 +104,7 @@ jest.mock('../../../config/classificationConfig', () => ({
   PHASE2_CONCURRENCY: 3,
 }));
 
-// p-limit is ESM-only and uses dynamic import() in the worker.
-// We need to mock it at the module level so the dynamic import resolves.
-jest.mock('p-limit', () => ({
-  __esModule: true,
-  default: (concurrency) => {
-    // Return a function that just calls the passed function directly
-    return (fn) => fn();
-  },
-}));
+// p-limit is ESM-only; remapped to a CJS shim via jest.config.js moduleNameMapper.
 
 // ─── Import ─────────────────────────────────────────────────────────────────
 
@@ -259,10 +251,7 @@ describe('buildFrequencyMap()', () => {
 
 // ─── Worker pipeline tests ──────────────────────────────────────────────────
 
-// Pipeline tests skipped: plaidProcessorWorker uses dynamic import('p-limit')
-// which is ESM-only and incompatible with Jest CJS mode.
-// Helper functions (normalizeDescription, buildFrequencyMap) are tested above.
-describe.skip('plaidProcessorWorker pipeline', () => {
+describe('plaidProcessorWorker pipeline', () => {
   beforeAll(() => {
     startPlaidProcessorWorker();
   });

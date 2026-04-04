@@ -16,4 +16,7 @@ module.exports = {
     global: { branches: 60, functions: 70, lines: 70 },
   },
   verbose: true,
+  moduleNameMapper: {
+    '^p-limit$': '<rootDir>/src/__tests__/setup/p-limit-shim.js',
+  },
 };
