@@ -220,7 +220,11 @@ export type TenantUpdateRequest = {
 
 export type UserCreateRequest = {
   email: string;
+  password: string;
   name?: string;
+  role?: string;
+  relationshipType?: string;
+  preferredLocale?: string;
 };
 
 export type UserUpdateRequest = {

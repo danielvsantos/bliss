@@ -32,6 +32,7 @@ const mockIsRevoked = vi.mocked(isRevoked);
 const mockCors = vi.mocked(cors);
 
 const TEST_USER = { id: 1, tenantId: 'tenant-1', email: 'test@example.com', role: 'USER' };
+const VIEWER_USER = { id: 2, tenantId: 'tenant-1', email: 'viewer@example.com', role: 'viewer' };
 const VALID_TOKEN = 'valid.jwt.token';
 
 function makeReq(overrides: Record<string, unknown> = {}) {
@@ -139,6 +140,80 @@ describe('withAuth()', () => {
 
     expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  describe('viewer role (read-only)', () => {
+    beforeEach(() => {
+      (mockPrisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(VIEWER_USER);
+    });
+
+    it('allows GET requests for viewer role', async () => {
+      const handler = vi.fn().mockResolvedValue(undefined);
+      const req = makeReq({ cookies: { token: VALID_TOKEN }, method: 'GET' });
+      const res = makeRes();
+
+      await withAuth(handler)(req, res);
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(req.user).toEqual(VIEWER_USER);
+    });
+
+    it('blocks POST requests for viewer role with 403', async () => {
+      const handler = vi.fn();
+      const req = makeReq({ cookies: { token: VALID_TOKEN }, method: 'POST' });
+      const res = makeRes();
+
+      await withAuth(handler)(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Viewer accounts are read-only' });
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('blocks PUT requests for viewer role with 403', async () => {
+      const handler = vi.fn();
+      const req = makeReq({ cookies: { token: VALID_TOKEN }, method: 'PUT' });
+      const res = makeRes();
+
+      await withAuth(handler)(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('blocks DELETE requests for viewer role with 403', async () => {
+      const handler = vi.fn();
+      const req = makeReq({ cookies: { token: VALID_TOKEN }, method: 'DELETE' });
+      const res = makeRes();
+
+      await withAuth(handler)(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('blocks PATCH requests for viewer role with 403', async () => {
+      const handler = vi.fn();
+      const req = makeReq({ cookies: { token: VALID_TOKEN }, method: 'PATCH' });
+      const res = makeRes();
+
+      await withAuth(handler)(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('does not block non-GET requests for non-viewer roles', async () => {
+      (mockPrisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(TEST_USER);
+      const handler = vi.fn().mockResolvedValue(undefined);
+      const req = makeReq({ cookies: { token: VALID_TOKEN }, method: 'POST' });
+      const res = makeRes();
+
+      await withAuth(handler)(req, res);
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(req.user).toEqual(TEST_USER);
+    });
   });
 
   describe('optional mode', () => {

@@ -59,7 +59,8 @@ import {
   UserCog,
   Filter,
   ChevronDown,
-  X
+  X,
+  Eye
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
@@ -102,7 +103,9 @@ export default function UserManagementPage() {
   
   const [newUser, setNewUser] = useState<UserCreateRequest>({
     email: "",
+    password: "",
     name: "",
+    role: "member",
     relationshipType: RelationshipType.FRIEND,
     preferredLocale: "en-US",
   });
@@ -156,28 +159,30 @@ export default function UserManagementPage() {
         ...users,
         {
           ...response,
-          status: "pending",
+          status: "active",
         }
       ]);
-      
+
       toast({
-        title: "Invitation sent",
-        description: `An invitation has been sent to ${newUser.email}`,
+        title: "User created",
+        description: `User ${newUser.name || newUser.email} has been created successfully`,
       });
-      
+
       // Reset and close dialog
       setShowAddUserDialog(false);
       setNewUser({
         email: "",
+        password: "",
         name: "",
+        role: "member",
         relationshipType: RelationshipType.FRIEND,
         preferredLocale: "en-US",
       });
     } catch (error) {
-      console.error("Error sending invitation:", error);
+      console.error("Error creating user:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong when sending the invitation",
+        description: error instanceof Error ? error.message : "Something went wrong when creating the user",
         variant: "destructive",
       });
     }
@@ -299,6 +304,7 @@ export default function UserManagementPage() {
         return "bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10";
       case "admin":
         return "bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10";
+      case "viewer":
       case "readonly":
         return "bg-muted text-muted-foreground hover:bg-muted";
       default:
@@ -341,14 +347,14 @@ export default function UserManagementPage() {
             <DialogTrigger asChild>
               <Button>
                 <UserPlus className="mr-2 h-4 w-4" />
-                Invite User
+                Create User
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Invite a New User</DialogTitle>
+                <DialogTitle>Create a New User</DialogTitle>
                 <DialogDescription>
-                  Invite someone to join your account. An email invitation will be sent.
+                  Create a new user account with login credentials.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-6 py-4">
@@ -362,7 +368,7 @@ export default function UserManagementPage() {
                       onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
                     <Input
@@ -373,9 +379,45 @@ export default function UserManagementPage() {
                       onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                     />
                   </div>
-                  
 
-                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="Set a password (min 6 characters)"
+                      value={newUser.password}
+                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="create-role">Role</Label>
+                    <Select
+                      value={newUser.role || "member"}
+                      onValueChange={(value) => setNewUser({ ...newUser, role: value })}
+                    >
+                      <SelectTrigger id="create-role">
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">
+                          <div className="flex items-center gap-2">
+                            <Shield className="h-4 w-4" />
+                            Admin
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="viewer">
+                          <div className="flex items-center gap-2">
+                            <Eye className="h-4 w-4" />
+                            Viewer (read-only)
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="locale">Preferred Language</Label>
                     <Select
@@ -399,9 +441,9 @@ export default function UserManagementPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" onClick={handleAddUser} disabled={!newUser.name || !newUser.email}>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Send Invitation
+                <Button type="submit" onClick={handleAddUser} disabled={!newUser.email || !newUser.password || newUser.password.length < 6}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Create User
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -510,6 +552,12 @@ export default function UserManagementPage() {
                               </div>
                             </SelectItem>
                             <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="viewer">
+                              <div className="flex items-center gap-2">
+                                <Eye className="h-4 w-4" />
+                                Viewer (read-only)
+                              </div>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

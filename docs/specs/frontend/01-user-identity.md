@@ -254,10 +254,18 @@ Two separate APIs are used:
 
 ### Responsibilities (`users.tsx` - User Management):
 -   **User Lifecycle Management**: Provides a full suite of CRUD (Create, Read, Update, Delete) operations for users within a tenant.
--   **Role Display**: The user table includes a **Role** column showing each user's role as a colour-coded badge (purple for `admin`, green for `member`).
--   **Invite User**: Calls `api.createUser` to send an email invitation.
--   **Edit User**: Calls `api.updateUser` to modify a user's details. The edit dialog includes a **Role** `<Select>` field (`Admin` / `Member`). The `role` value is included in the `handleUpdateUser` payload. Only admins may change another user's role.
+-   **Role Display**: The user table includes a **Role** column showing each user's role as a colour-coded badge (purple for `admin`/`owner`, muted for `viewer`/`readonly`, default muted for `member`).
+-   **Create User**: Opens a dialog with fields for **Name**, **Email**, **Password** (min 6 characters), **Role** (Admin / Member / Viewer), and **Preferred Language**. Calls `api.createUser` to create the user with login credentials. The "Create User" button is disabled until a valid email and password (6+ characters) are provided. The user can sign in immediately after creation.
+-   **Edit User**: Calls `api.updateUser` to modify a user's details. The edit dialog includes a **Role** `<Select>` field (`Admin` / `Member` / `Viewer`). The `role` value is included in the `handleUpdateUser` payload. Only admins may change another user's role.
 -   **Remove User**: Calls `api.deleteUser` to remove a user's access to the tenant.
+
+### Role Options:
+
+| Role | Icon | Label | Description |
+|------|------|-------|-------------|
+| `admin` | `Shield` | Admin | Full access to all features and settings |
+| `member` | — | Member | Standard access to financial operations |
+| `viewer` | `Eye` | Viewer (read-only) | Browse-only access; all write operations blocked server-side |
 
 ---
 

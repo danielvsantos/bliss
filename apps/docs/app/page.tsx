@@ -123,7 +123,19 @@ export default function HomePage() {
               API Reference
             </Link>
             <a
-              href="https://github.com/danielviana/bliss"
+              href="https://app.blissfinance.co/auth?origin=docs-site"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all hover:opacity-90"
+              style={{
+                backgroundColor: 'hsl(var(--brand-deep))',
+                color: 'hsl(var(--primary-foreground))',
+              }}
+            >
+              Live Demo
+            </a>
+            <a
+              href="https://github.com/danielvsantos/bliss"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium hover:opacity-80 transition-opacity"
@@ -167,7 +179,16 @@ export default function HomePage() {
               API Reference
             </Link>
             <a
-              href="https://github.com/danielviana/bliss"
+              href="https://app.blissfinance.co/auth?origin=docs-site"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium py-1"
+              style={{ color: 'hsl(var(--brand-primary))' }}
+            >
+              Live Demo
+            </a>
+            <a
+              href="https://github.com/danielvsantos/bliss"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium py-1"
@@ -301,6 +322,65 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── P&L Showcase ────────────────────────────────────── */}
+      <section
+        className="py-16 md:py-20"
+        style={{ borderTop: '1px solid hsl(var(--border))' }}
+      >
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+            <div>
+              <h2
+                className="text-2xl md:text-3xl font-bold tracking-tight mb-4"
+                style={{ color: 'hsl(var(--brand-deep))' }}
+              >
+                Multi-Currency P&L
+              </h2>
+              <p className="text-base leading-relaxed mb-6" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                A complete profit &amp; loss view across all your accounts, currencies, and countries.
+                Bliss automatically converts every transaction to your portfolio currency using
+                historical FX rates, giving you a unified financial picture.
+              </p>
+              <ul className="space-y-3 mb-8">
+                {[
+                  'Category-level breakdown with group aggregation',
+                  'Multi-country, multi-currency consolidation',
+                  'Monthly and yearly comparisons with trend analysis',
+                  'Investment income and expense separation',
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-3 text-sm" style={{ color: 'hsl(var(--foreground))' }}>
+                    <span
+                      className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: 'hsl(var(--brand-primary))' }}
+                    />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/docs/specs/analytics"
+                className="inline-flex items-center gap-1 text-sm font-medium hover:opacity-80 transition-opacity"
+                style={{ color: 'hsl(var(--brand-primary))' }}
+              >
+                View analytics specs
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+            <div className="glass-card overflow-hidden">
+              <Image
+                src="/images/pnl.png"
+                alt="Bliss Finance P&L report showing category breakdowns, income vs expenses, and multi-currency consolidation"
+                width={700}
+                height={500}
+                className="w-full h-auto"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Architecture at a Glance ───────────────────────── */}
       <section
         className="py-16 md:py-20"
@@ -314,21 +394,47 @@ export default function HomePage() {
             Architecture at a Glance
           </h2>
           <p className="text-base mb-10 max-w-2xl" style={{ color: 'hsl(var(--muted-foreground))' }}>
-            Three services behind a single .env file. Browser talks to the API, API delegates heavy work to the backend via BullMQ.
+            Three services behind a single .env file. The SPA talks to the API via REST, and the API delegates heavy work to the backend through an event-driven pipeline.
           </p>
-          <div className="glass-card p-6 md:p-8 overflow-x-auto">
+
+          {/* Desktop: diagram image (white bg for dark mode compat) */}
+          <div className="hidden md:block glass-card p-4 overflow-hidden" style={{ backgroundColor: '#fff' }}>
+            <Image
+              src="/images/blissarchitecture.jpg"
+              alt="Bliss Finance architecture diagram: React SPA served by Nginx, Next.js API with NextAuth, Express backend with 10 BullMQ workers, PostgreSQL with pgvector, Redis for cache and job queues, and third-party services"
+              width={1100}
+              height={700}
+              className="w-full h-auto"
+            />
+          </div>
+
+          {/* Mobile: ASCII fallback */}
+          <div className="md:hidden glass-card p-6 overflow-x-auto">
             <pre
-              className="text-sm leading-relaxed font-mono"
+              className="text-xs leading-relaxed font-mono"
               style={{ color: 'hsl(var(--foreground))' }}
             >
-{`Browser (React 18 + Vite)
-  │
-  └─► Nginx (:8080)
-        ├─► Next.js API (:3000)     Auth, REST, Prisma ORM
-        └─► Express Backend (:3001)  BullMQ workers, AI pipelines
-              │
-              ├─► PostgreSQL 16 (pgvector)
-              └─► Redis 7 (queues + cache)`}
+{`Nginx (:8080)
+├── React SPA (Vite + shadcn)
+│   └─► REST APIs (JWT in HttpOnly Cookie)
+│
+└── Next.js API (:3000)
+    ├── NextAuth, >60 endpoints
+    ├─► PostgreSQL 16 + pgvector
+    │   AES-256-GCM encryption
+    │   768-dim embeddings
+    │
+    └─► Express Backend (:3001)
+        Internal REST (API key auth)
+        Event-driven pipeline
+        10 BullMQ Workers
+        │
+        ├─► Redis (cache + job queues)
+        ├─► Gemini (AI classification)
+        ├─► Plaid (bank sync)
+        ├─► TwelveData (stock prices)
+        ├─► CurrencyLayer (FX rates)
+        └─► Sentry (observability)`}
             </pre>
           </div>
         </div>
@@ -405,7 +511,7 @@ export default function HomePage() {
               Docs
             </Link>
             <a
-              href="https://github.com/danielviana/bliss"
+              href="https://github.com/danielvsantos/bliss"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm hover:opacity-80 transition-opacity"

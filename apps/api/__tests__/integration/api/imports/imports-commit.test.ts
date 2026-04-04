@@ -204,7 +204,7 @@ describe('POST ?action=commit', () => {
     expect(mockProduceEvent).toHaveBeenCalledWith({
       type: 'SMART_IMPORT_COMMIT',
       tenantId: 'test-tenant-123',
-      userId: 1,
+      userId: 'admin@test.com',
       stagedImportId: 'import-1',
     });
   });
@@ -232,7 +232,7 @@ describe('POST ?action=commit', () => {
     expect(mockProduceEvent).toHaveBeenCalledWith({
       type: 'SMART_IMPORT_COMMIT',
       tenantId: 'test-tenant-123',
-      userId: 1,
+      userId: 'admin@test.com',
       stagedImportId: 'import-1',
       rowIds: ['row-1', 'row-2'],
     });

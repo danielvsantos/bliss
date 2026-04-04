@@ -151,6 +151,17 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* ── API Reference page — full-width content, hide TOC column ── */
+
+.nextra-content:has(.scalar-wrapper) {
+  max-width: 100%;
+}
+
+/* Hide the TOC nav when the page contains the Scalar API reference */
+:has(.scalar-wrapper) > .nextra-toc {
+  display: none !important;
+}
+
 /* ── Scalar API Reference isolation ──────────────────── */
 
 .scalar-wrapper {

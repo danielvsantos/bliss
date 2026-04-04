@@ -22,11 +22,11 @@ export default withAuth(async function handler(req, res) {
   try {
     const fullUser = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, email: true, name: true, profilePictureUrl: true, provider: true, tenant: true }
+      select: { id: true, email: true, name: true, profilePictureUrl: true, provider: true, role: true, tenant: true }
     });
     if (!fullUser) return res.status(404).json({ error: 'User not found' });
     return res.status(200).json({
-      user: { id: fullUser.id, email: fullUser.email, name: fullUser.name, tenant: fullUser.tenant, profilePictureUrl: fullUser.profilePictureUrl, provider: fullUser.provider }
+      user: { id: fullUser.id, email: fullUser.email, name: fullUser.name, role: fullUser.role, tenant: fullUser.tenant, profilePictureUrl: fullUser.profilePictureUrl, provider: fullUser.provider }
     });
   } catch (error) {
     console.error('Session check error:', error);

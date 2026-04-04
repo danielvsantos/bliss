@@ -13,6 +13,8 @@ packages/*/node_modules/
 gcloud-credentials.json
 gcloud-service.json
 **/gcloud-*.json
+data
+
 
 # Python virtual environments
 venv/

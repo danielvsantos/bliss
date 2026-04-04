@@ -101,6 +101,11 @@ export function withAuth(handler, { optional = false, requireRole } = {}) {
         return res.status(StatusCodes.UNAUTHORIZED).json({ error: 'User not found' });
       }
 
+      // Viewer role: read-only access (block all non-GET requests)
+      if (user.role === 'viewer' && req.method !== 'GET') {
+        return res.status(StatusCodes.FORBIDDEN).json({ error: 'Viewer accounts are read-only' });
+      }
+
       // Role-based access control check
       if (requireRole && user.role !== requireRole) {
         return res.status(StatusCodes.FORBIDDEN).json({ error: 'Insufficient permissions' });

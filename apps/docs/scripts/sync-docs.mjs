@@ -246,8 +246,7 @@ cleanDir(PUBLIC_OPENAPI);
 mkdirSync(CONTENT_DIR, { recursive: true });
 
 // 2. Copy top-level foundation docs
-// getting-started.md is maintained directly in content/ (not synced from docs/)
-const foundationDocs = ['architecture.md', 'configuration.md'];
+const foundationDocs = ['getting-started.md', 'architecture.md', 'configuration.md'];
 
 for (const file of foundationDocs) {
   const srcPath = join(DOCS_DIR, file);

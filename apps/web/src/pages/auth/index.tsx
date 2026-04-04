@@ -201,7 +201,7 @@ function OrSeparator() {
    SIGN IN FORM
 ══════════════════════════════════════════════════════ */
 
-function SignInForm() {
+function SignInForm({ demoMode = false }: { demoMode?: boolean }) {
   const { t } = useTranslation();
   const { signIn } = useAuth();
   const navigate = useNavigate();
@@ -210,7 +210,9 @@ function SignInForm() {
 
   const form = useForm({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: demoMode
+      ? { email: "daniel@blissfinance.co", password: "bliss1234" }
+      : { email: "", password: "" },
   });
 
   const onSubmit = async (values: z.infer<typeof loginSchema>) => {
@@ -478,94 +480,128 @@ function SignUpForm() {
    AUTH CARD
 ══════════════════════════════════════════════════════ */
 
+function useDemoMode(): boolean {
+  const [isDemo, setIsDemo] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setIsDemo(params.get("origin") === "docs-site");
+  }, []);
+  return isDemo;
+}
+
 function AuthCard() {
   const { t } = useTranslation();
   const { signInWithGoogle } = useAuth();
   const [tab, setTab] = useState("signin");
+  const isDemo = useDemoMode();
 
   return (
     <Card
       className="w-full border"
       style={{ maxWidth: 420, padding: "28px 32px 32px", gap: 0 }}
     >
-      {/* Tabs */}
-      <div className="flex justify-center" style={{ marginBottom: 24 }}>
-        <AuthTabs activeTab={tab} onTabChange={setTab} />
-      </div>
+      {/* Demo mode banner */}
+      {isDemo && (
+        <div
+          className="text-center rounded-lg"
+          style={{
+            padding: "10px 16px",
+            marginBottom: 16,
+            backgroundColor: "hsl(var(--accent))",
+            color: "hsl(var(--brand-deep))",
+            fontSize: "0.8125rem",
+            fontWeight: 500,
+            lineHeight: 1.5,
+          }}
+        >
+          {t("Welcome to the Bliss demo. Click Sign In to explore.")}
+        </div>
+      )}
 
-      {/* Google OAuth */}
-      <GoogleButton
-        label={
-          tab === "signin"
-            ? t("Sign in with Google")
-            : t("Sign up with Google")
-        }
-        onClick={signInWithGoogle}
-      />
+      {/* Tabs — hidden in demo mode */}
+      {!isDemo && (
+        <div className="flex justify-center" style={{ marginBottom: 24 }}>
+          <AuthTabs activeTab={tab} onTabChange={setTab} />
+        </div>
+      )}
 
-      {/* Divider */}
-      <OrSeparator />
+      {/* Google OAuth — hidden in demo mode */}
+      {!isDemo && (
+        <>
+          <GoogleButton
+            label={
+              tab === "signin"
+                ? t("Sign in with Google")
+                : t("Sign up with Google")
+            }
+            onClick={signInWithGoogle}
+          />
+          <OrSeparator />
+        </>
+      )}
 
-      {/* Form */}
-      {tab === "signin" ? <SignInForm /> : <SignUpForm />}
+      {/* Form — always show signin in demo mode */}
+      {(isDemo || tab === "signin") ? <SignInForm demoMode={isDemo} /> : <SignUpForm />}
 
-      {/* Switch prompt */}
-      <p
-        className="text-center text-muted-foreground"
-        style={{ marginTop: 20, marginBottom: 0, fontSize: "0.8125rem", lineHeight: 1.6 }}
-      >
-        {tab === "signin" ? (
-          <>
-            {t("Don't have an account?")}{" "}
-            <button
-              type="button"
-              onClick={() => setTab("signup")}
-              style={{
-                all: "unset",
-                cursor: "pointer",
-                color: "hsl(var(--brand-primary))",
-                fontWeight: 500,
-                transition: "color 0.13s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.color =
-                  "hsl(var(--brand-deep))";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.color =
-                  "hsl(var(--brand-primary))";
-              }}
-            >
-              {t("Create one")}
-            </button>
-          </>
-        ) : (
-          <>
-            {t("Already have an account?")}{" "}
-            <button
-              type="button"
-              onClick={() => setTab("signin")}
-              style={{
-                all: "unset",
-                cursor: "pointer",
-                color: "hsl(var(--brand-primary))",
-                fontWeight: 500,
-                transition: "color 0.13s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.color =
-                  "hsl(var(--brand-deep))";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.color =
-                  "hsl(var(--brand-primary))";
-              }}
-            >
-              {t("Sign in")}
-            </button>
-          </>
-        )}
-      </p>
+      {/* Switch prompt — hidden in demo mode */}
+      {!isDemo && (
+        <p
+          className="text-center text-muted-foreground"
+          style={{ marginTop: 20, marginBottom: 0, fontSize: "0.8125rem", lineHeight: 1.6 }}
+        >
+          {tab === "signin" ? (
+            <>
+              {t("Don't have an account?")}{" "}
+              <button
+                type="button"
+                onClick={() => setTab("signup")}
+                style={{
+                  all: "unset",
+                  cursor: "pointer",
+                  color: "hsl(var(--brand-primary))",
+                  fontWeight: 500,
+                  transition: "color 0.13s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.color =
+                    "hsl(var(--brand-deep))";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.color =
+                    "hsl(var(--brand-primary))";
+                }}
+              >
+                {t("Create one")}
+              </button>
+            </>
+          ) : (
+            <>
+              {t("Already have an account?")}{" "}
+              <button
+                type="button"
+                onClick={() => setTab("signin")}
+                style={{
+                  all: "unset",
+                  cursor: "pointer",
+                  color: "hsl(var(--brand-primary))",
+                  fontWeight: 500,
+                  transition: "color 0.13s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.color =
+                    "hsl(var(--brand-deep))";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.color =
+                    "hsl(var(--brand-primary))";
+                }}
+              >
+                {t("Sign in")}
+              </button>
+            </>
+          )}
+        </p>
+      )}
     </Card>
   );
 }

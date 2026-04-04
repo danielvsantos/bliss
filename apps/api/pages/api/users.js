@@ -5,6 +5,7 @@ import { RelationshipType } from '@prisma/client'; // Import the enum
 import { cors } from '../../utils/cors.js';
 import { rateLimiters } from '../../utils/rateLimit.js';
 import { withAuth } from '../../utils/withAuth.js';
+import { AuthService } from '../../services/auth.service.js';
 
 export default withAuth(async function handler(req, res) {
 
@@ -86,7 +87,7 @@ async function handlePost(req, res, user) {
   }
 
   const tenantId = user.tenantId;
-  const { email, name, profilePictureUrl, birthDate, relationshipType, preferredLocale } = req.body;
+  const { email, password, name, profilePictureUrl, birthDate, relationshipType, preferredLocale, role } = req.body;
 
   // --- Basic Validation ---
   if (!email) {
@@ -97,9 +98,17 @@ async function handlePost(req, res, user) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format.' });
       return;
   }
+  if (!password || password.length < 6) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: 'Password is required and must be at least 6 characters.' });
+    return;
+  }
   if (name && (name.length < 1 || name.length > 100)) { // Allow name length 1
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'User name must be between 1 and 100 characters.'});
       return;
+  }
+  if (role && !['admin', 'member', 'viewer'].includes(role)) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid role. Must be "admin", "member", or "viewer".' });
+    return;
   }
   if (relationshipType && !Object.values(RelationshipType).includes(relationshipType)) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid relationshipType provided.', validTypes: Object.values(RelationshipType) });
@@ -136,12 +145,19 @@ async function handlePost(req, res, user) {
         return;
     }
 
+    // Hash password
+    const { hash: passwordHash, salt: passwordSalt } = await AuthService.hashPassword(password);
+
     // Create new user - the encryption middleware will handle email encryption
     const newUser = await prisma.user.create({
       data: {
         email,
         tenantId,
+        passwordHash,
+        passwordSalt,
+        provider: 'credentials',
         name: name || null,
+        role: role || 'member',
         profilePictureUrl: profilePictureUrl || null,
         birthDate: validBirthDate || null,
         relationshipType: relationshipType || null,
@@ -218,8 +234,8 @@ async function handlePut(req, res, user) {
       res.status(StatusCodes.FORBIDDEN).json({ error: 'Only admins can change user roles.' });
       return;
     }
-    if (!['admin', 'member'].includes(role)) {
-      res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid role. Must be "admin" or "member".' });
+    if (!['admin', 'member', 'viewer'].includes(role)) {
+      res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid role. Must be "admin", "member", or "viewer".' });
       return;
     }
   }

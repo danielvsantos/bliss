@@ -209,7 +209,7 @@ async function handleCommit(req, res, user, stagedImportId) {
     await produceEvent({
       type: 'SMART_IMPORT_COMMIT',
       tenantId: user.tenantId,
-      userId: user.id,
+      userId: user.email,
       stagedImportId,
       ...(isPartialCommit && { rowIds }),
     });

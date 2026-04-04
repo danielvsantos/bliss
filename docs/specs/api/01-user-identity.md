@@ -70,7 +70,7 @@ This service class centralizes the core logic for user authentication and manage
     - The `isNew` flag is used downstream to route the user to `/onboarding` (new) or `/` (returning) after the OAuth flow completes.
 
 ### Role Assignment:
-- **`createUser(data, role = 'member')`**: Accepts an optional `role` parameter (default `'member'`). `signup.js` passes `role: 'admin'` since signup always creates a tenant owner. Invited users (via `POST /api/users`) use the default `'member'` role.
+- **`createUser(data, role = 'member')`**: Accepts an optional `role` parameter (default `'member'`). `signup.js` passes `role: 'admin'` since signup always creates a tenant owner. Users created via `POST /api/users` can be assigned any role (`'admin'`, `'member'`, or `'viewer'`), defaulting to `'member'`.
 - **`findOrCreateGoogleUser` (updated)**: Now passes `role: 'admin'` when creating a new `User` + `Tenant` pair (first-time Google sign-in). Existing users retain their current role.
 
 ### Security Note:
@@ -388,9 +388,26 @@ While the `signup` endpoint handles the initial creation, the ongoing management
 
 ### `pages/api/users.js` - User Management
 - **`GET /api/users`**: Fetches all users in the tenant (or a single user by ID). Returns the `role` field on each user object.
-- **`POST /api/users`** *(Admin only)*: Creates a new user (invitation). Returns `403 Forbidden` if `req.user.role !== 'admin'`.
-- **`PUT /api/users?id={id}`**: Updates user details. Accepts an optional `role` field (`'admin'` or `'member'`). Only admins may set the `role` field; non-admins receive `403`.
+- **`POST /api/users`** *(Admin only)*: Creates a new user with login credentials. Returns `403 Forbidden` if `req.user.role !== 'admin'`.
+  - **Required fields**: `email` (valid format), `password` (min 6 characters).
+  - **Optional fields**: `name`, `role` (`'admin'`, `'member'`, or `'viewer'`; defaults to `'member'`), `relationshipType`, `preferredLocale`, `profilePictureUrl`, `birthDate`.
+  - Hashes the password via `AuthService.hashPassword()` (PBKDF2-SHA512) before storage.
+  - Sets `provider: 'credentials'` so the user can sign in immediately.
+  - Returns `409 Conflict` if a user with the same email already exists in the tenant.
+- **`PUT /api/users?id={id}`**: Updates user details. Accepts an optional `role` field (`'admin'`, `'member'`, or `'viewer'`). Only admins may set the `role` field; non-admins receive `403`.
 - **`DELETE /api/users?id={id}`** *(Admin only)*: Removes a user. Returns `403` if not admin. Prevents self-deletion and deletion of the last user in a tenant.
+
+### Role-Based Access Control
+
+Three user roles with increasing restrictions:
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | Full access. Can create/edit/delete users, change roles, modify tenant settings. |
+| `member` | Standard access. Can perform all financial operations (transactions, imports, portfolio). Cannot manage other users' roles. |
+| `viewer` | **Read-only access.** All non-GET requests are blocked at the `withAuth` middleware level with `403 Forbidden: "Viewer accounts are read-only"`. Intended for demo accounts and external stakeholders who need visibility without write access. |
+
+The viewer role enforcement is implemented as a blanket check in `withAuth.js` — it runs before any route-specific logic, ensuring no write operation can bypass it regardless of the endpoint.
 
 ### `pages/api/tenants/settings.js` - Tenant Settings *(Admin only)*
 - **`GET /api/tenants/settings`**: Returns tenant-level settings including `autoPromoteThreshold`, `reviewThreshold`, and `portfolioCurrency`.

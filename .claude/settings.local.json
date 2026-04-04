@@ -17,7 +17,10 @@
       "Bash(grep -r \"scalar\\\\|Scalar\" /Users/danielviana/Desktop/bliss/apps/docs --include=*.tsx --include=*.ts --include=*.css)",
       "Bash(find /Users/danielviana/Desktop/bliss -type f \\\\\\(-name *.png -o -name *.jpg -o -name *.jpeg -o -name *.webp -o -name *.svg \\\\\\))",
       "Bash(docker compose:*)",
-      "Bash(export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\")"
+      "Bash(export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\")",
+      "Bash(grep -r \"role.*=.*admin\\\\|role.*=.*member\\\\|ROLES\\\\|Role.*enum\" /Users/danielviana/Desktop/bliss/apps/api --include=*.ts --include=*.js)",
+      "Bash(npx vitest:*)",
+      "Bash(npx --package vitest vitest run --config apps/api/vitest.config.ts apps/api/__tests__/unit/middleware/withAuth.test.ts)"
     ]
   }
 }

@@ -396,6 +396,8 @@ async function handleDelete(req, res, user) {
         await prisma.portfolioItem.deleteMany({ where: { tenantId: id } });
 
         // Now it's safe to delete Accounts and Categories
+        // DescriptionMapping references categoryId (RESTRICT) — must be deleted first
+        await prisma.descriptionMapping.deleteMany({ where: { tenantId: id } });
         await prisma.account.deleteMany({ where: { tenantId: id } });
         await prisma.category.deleteMany({ where: { tenantId: id } });
 

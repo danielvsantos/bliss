@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useCompleteOnboardingStep } from "@/hooks/use-onboarding-progress";
 import { usePlaidTransactions } from "@/hooks/use-plaid-review";
 import { usePendingImports } from "@/hooks/use-imports";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Map page paths to checklist step keys
 const PAGE_TO_CHECKLIST: Record<string, string> = {
@@ -23,6 +24,8 @@ export function AppShell({ children }: AppShellProps) {
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const location = useLocation();
+  const { user } = useAuth();
+  const isViewer = user?.role === "viewer";
   const completeStep = useCompleteOnboardingStep();
   const trackedPaths = useRef(new Set<string>());
 
@@ -73,6 +76,15 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main content area */}
       <div className="flex flex-col flex-1 overflow-hidden">
+        {isViewer && (
+          <div className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium bg-brand-primary/10 text-brand-primary border-b border-brand-primary/20">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            You have view-only access to this account. You can navigate and explore, but cannot perform actions.
+          </div>
+        )}
         <Header
           sidebarOpen={sidebarOpen}
           onSidebarToggle={toggleSidebar}

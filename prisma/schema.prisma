@@ -853,7 +853,7 @@ model DescriptionMapping {
   updatedAt       DateTime @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, descriptionHash])
   @@index([tenantId])
