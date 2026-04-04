@@ -327,7 +327,7 @@ mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
 
 **Denylist graceful degradation** — `utils/denylist.js` returns `false` when `REDIS_URL` is not set, meaning Redis is not required for finance-api tests.
 
-**Teardown order** — `AuditLog` and `User` do not have `onDelete: Cascade` on their Tenant relation. The `teardownTenant` helper explicitly deletes them before deleting the Tenant.
+**Teardown order** — `User` does not have `onDelete: Cascade` on its Tenant relation. The `teardownTenant` helper explicitly deletes users before deleting the Tenant.
 
 ---
 

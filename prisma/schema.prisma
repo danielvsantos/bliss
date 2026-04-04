@@ -55,8 +55,6 @@ model Tenant {
   currencies  TenantCurrency[]
   tenantBanks TenantBank[]
   categories  Category[]
-  cashFlowsDaily      CashFlowCacheDaily[]
-  analyticsCacheDaily AnalyticsCacheDaily[]
   accounts            Account[]
   transactions        Transaction[]
   tags                Tag[]
@@ -514,17 +512,6 @@ model Insight {
   @@index([tenantId, batchId])
 }
 
-model AuditLog {
-  id        Int      @id @default(autoincrement())
-  action    String
-  table     String
-  userId    String
-  recordId  String
-  tenantId  String
-  details   String?
-  createdAt DateTime @default(now())
-}
-
 model Country {
   id        String          @id // ISO 3166-1 alpha-3 code (e.g. "ESP")
   iso2      String?         @unique // ISO 3166-1 alpha-2 code used by Plaid (e.g. "ES")
@@ -599,42 +586,6 @@ model TenantBank {
 
   @@id([tenantId, bankId])
   @@index([bankId])
-  @@index([tenantId])
-}
-
-model CashFlowCacheDaily {
-  id        Int      @id @default(autoincrement())
-  date      DateTime @db.Date
-  currency  String
-  netFlow   Decimal  @db.Decimal(18, 2) // The net change in balance for this day
-  balance   Decimal  @db.Decimal(18, 2) // The final, end-of-day native balance
-  tenantId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([date, currency, tenantId])
-  @@index([tenantId])
-}
-
-model AnalyticsCacheDaily {
-  id        Int      @id @default(autoincrement())
-  date      DateTime @db.Date
-  currency  String // The currency this view is presented in (e.g., USD)
-  country   String
-  type      String
-  group     String
-  credit    Decimal  @db.Decimal(18, 2)
-  debit     Decimal  @db.Decimal(18, 2)
-  balance   Decimal  @db.Decimal(18, 2)
-  tenantId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([date, currency, country, type, group, tenantId], name: "daily_analytics_uc")
   @@index([tenantId])
 }
 

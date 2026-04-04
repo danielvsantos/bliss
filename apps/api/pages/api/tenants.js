@@ -403,10 +403,7 @@ async function handleDelete(req, res, user) {
 
         // Step 4: Delete other tenant-scoped data
         await prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId: id } });
-        await prisma.analyticsCacheDaily.deleteMany({ where: { tenantId: id } });
-        await prisma.cashFlowCacheDaily.deleteMany({ where: { tenantId: id } });
         await prisma.insight.deleteMany({ where: { tenantId: id } });
-        await prisma.auditLog.deleteMany({ where: { tenantId: id } });
 
         // Step 5: Delete direct tenant relations
         await prisma.tenantCountry.deleteMany({ where: { tenantId: id } });

@@ -34,15 +34,7 @@ async function resolveTagsByName(tagNames, tenantId, userId) {
                         color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
                     },
                 });
-                await prisma.auditLog.create({
-                    data: {
-                        userId,
-                        action: 'CREATE',
-                        table: 'Tag',
-                        recordId: tag.id.toString(),
-                        tenantId,
-                    },
-                });
+
             } catch (e) {
                 // Race condition: another concurrent request created the same tag
                 if (e.code === 'P2002') {

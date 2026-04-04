@@ -104,16 +104,6 @@ async function handlePost(req, res) {
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          userId: userEmail,
-          action: 'CREATE',
-          table: 'ManualAssetValue',
-          recordId: newValue.id.toString(),
-          tenantId,
-        },
-      });
-
       return newValue;
     });
 

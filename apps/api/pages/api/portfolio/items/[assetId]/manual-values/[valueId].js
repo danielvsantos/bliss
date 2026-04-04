@@ -64,16 +64,6 @@ async function handlePut(req, res) {
           },
         });
   
-        await prisma.auditLog.create({
-          data: {
-            userId: userEmail,
-            action: 'UPDATE',
-            table: 'ManualAssetValue',
-            recordId: updatedValue.id.toString(),
-            tenantId,
-          },
-        });
-  
         return updatedValue;
       });
   
@@ -108,15 +98,6 @@ async function handlePut(req, res) {
           where: { id: valueId },
         });
   
-        await prisma.auditLog.create({
-          data: {
-            userId: userEmail,
-            action: 'DELETE',
-            table: 'ManualAssetValue',
-            recordId: valueId.toString(),
-            tenantId,
-          },
-        });
       });
   
       await produceEvent({

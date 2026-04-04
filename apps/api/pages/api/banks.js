@@ -94,17 +94,6 @@ async function handlePost(req, res, user, tenantId) {
         },
       });
 
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          userId: user.email,
-          action: 'CREATE',
-          table: 'Bank',
-          recordId: bank.id.toString(),
-          tenantId,
-        },
-      });
-
       return bank;
     });
 

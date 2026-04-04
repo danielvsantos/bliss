@@ -78,13 +78,10 @@ async function main() {
     plaidTransactionCount,
     tagCount,
     analyticsCacheMonthlyCount,
-    analyticsCacheDailyCount,
-    cashFlowCacheDailyCount,
     stagedImportCount,
     importAdapterCount,
     embeddingCount,
     insightCount,
-    auditLogCount,
   ] = await Promise.all([
     prisma.user.count({ where: { tenantId } }),
     prisma.account.count({ where: { tenantId } }),
@@ -95,21 +92,18 @@ async function main() {
     prisma.plaidTransaction.count({ where: { plaidItem: { tenantId } } }),
     prisma.tag.count({ where: { tenantId } }),
     prisma.analyticsCacheMonthly.count({ where: { tenantId } }),
-    prisma.analyticsCacheDaily.count({ where: { tenantId } }),
-    prisma.cashFlowCacheDaily.count({ where: { tenantId } }),
     prisma.stagedImport.count({ where: { tenantId } }),
     prisma.importAdapter.count({ where: { tenantId } }),
     prisma.transactionEmbedding.count({ where: { tenantId } }),
     prisma.insight.count({ where: { tenantId } }),
-    prisma.auditLog.count({ where: { tenantId } }),
   ]);
 
   const total =
     userCount + accountCount + transactionCount + categoryCount +
     portfolioItemCount + plaidItemCount + plaidTransactionCount + tagCount +
-    analyticsCacheMonthlyCount + analyticsCacheDailyCount + cashFlowCacheDailyCount +
+    analyticsCacheMonthlyCount +
     stagedImportCount + importAdapterCount +
-    embeddingCount + insightCount + auditLogCount + 1; // +1 for the Tenant itself
+    embeddingCount + insightCount + 1; // +1 for the Tenant itself
 
   console.log('── Records that will be permanently deleted ─────────────');
   console.log(`  Users                   ${fmt(userCount)}`);
@@ -121,13 +115,10 @@ async function main() {
   console.log(`  Plaid Transactions      ${fmt(plaidTransactionCount)}`);
   console.log(`  Tags                    ${fmt(tagCount)}`);
   console.log(`  Analytics Cache (mo.)   ${fmt(analyticsCacheMonthlyCount)}`);
-  console.log(`  Analytics Cache (day)   ${fmt(analyticsCacheDailyCount)}`);
-  console.log(`  CashFlow Cache (day)    ${fmt(cashFlowCacheDailyCount)}`);
   console.log(`  Staged Imports          ${fmt(stagedImportCount)}`);
   console.log(`  Import Adapters         ${fmt(importAdapterCount)}`);
   console.log(`  Embeddings              ${fmt(embeddingCount)}`);
   console.log(`  Insights                ${fmt(insightCount)}`);
-  console.log(`  Audit Logs              ${fmt(auditLogCount)}`);
   console.log(`  ─────────────────────────────────────`);
   console.log(`  Total                   ${fmt(total)}`);
   console.log('─────────────────────────────────────────────────────────\n');
@@ -231,21 +222,9 @@ async function main() {
   const anl = await prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId } });
   done(anl.count);
 
-  step('AnalyticsCacheDaily');
-  const acd = await prisma.analyticsCacheDaily.deleteMany({ where: { tenantId } });
-  done(acd.count);
-
-  step('CashFlowCacheDaily');
-  const cfd = await prisma.cashFlowCacheDaily.deleteMany({ where: { tenantId } });
-  done(cfd.count);
-
   step('Insight');
   const ins = await prisma.insight.deleteMany({ where: { tenantId } });
   done(ins.count);
-
-  step('AuditLog');
-  const al = await prisma.auditLog.deleteMany({ where: { tenantId } });
-  done(al.count);
 
   // Tenant relations
   step('TenantCountry');

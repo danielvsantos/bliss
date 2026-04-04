@@ -165,17 +165,6 @@ async function handlePost(req, res, user) {
       }
     });
 
-    // Audit Log - use unencrypted email for audit log
-    await prisma.auditLog.create({
-      data: {
-        userId: user.email, // Use the original unencrypted email
-        action: "CREATE",
-        table: "User",
-        recordId: newUser.id,
-        tenantId: tenantId,
-      },
-    });
-
     res.status(StatusCodes.CREATED).json(newUser);
     return;
 
@@ -273,17 +262,6 @@ async function handlePut(req, res, user) {
       data: updateData
     });
 
-    // Audit Log
-    await prisma.auditLog.create({
-      data: {
-        userId: user.email,
-        action: "UPDATE",
-        table: "User",
-        recordId: updatedUser.id,
-        tenantId: tenantId,
-      },
-    });
-
     res.status(StatusCodes.OK).json(updatedUser);
     return;
 
@@ -355,18 +333,7 @@ async function handleDelete(req, res, user) {
             where: { userId: String(id) }
         });
 
-        // 2. Create Audit Log BEFORE deleting the user record
-        await prisma.auditLog.create({
-            data: {
-                userId: user.email,
-                action: "DELETE",
-                table: "User",
-                recordId: String(id),
-                tenantId: tenantId,
-            },
-        });
-
-        // 3. Delete the user
+        // 2. Delete the user
         await prisma.user.delete({
             where: { id: String(id) }
         });

@@ -148,16 +148,6 @@ async function handlePost(req, res) {
         }
       });
 
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.email,
-          action: "CREATE",
-          table: "Tag",
-          recordId: newTag.id.toString(),
-          tenantId: req.user.tenantId
-        },
-      });
-
       return newTag;
     });
 
@@ -231,16 +221,6 @@ async function handlePut(req, res) {
         data: updateData
       });
 
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.email,
-          action: "UPDATE",
-          table: "Tag",
-          recordId: tagId.toString(),
-          tenantId: req.user.tenantId
-        },
-      });
-
       return updatedTag;
     });
 
@@ -300,15 +280,6 @@ async function handleDelete(req, res) {
         where: { id: tagId }
       });
 
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.email,
-          action: "DELETE",
-          table: "Tag",
-          recordId: tagId.toString(),
-          tenantId: req.user.tenantId
-        },
-      });
     });
 
     res.status(StatusCodes.NO_CONTENT).end();

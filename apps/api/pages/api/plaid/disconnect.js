@@ -77,17 +77,6 @@ export default withAuth(async function handler(req, res) {
       },
     });
 
-    // Audit log
-    await prisma.auditLog.create({
-      data: {
-        userId: user.email,
-        action: 'UPDATE',
-        table: 'PlaidItem',
-        recordId: id,
-        tenantId: user.tenantId,
-      },
-    });
-
     return res.status(StatusCodes.OK).json({ message: 'Connection disconnected' });
   } catch (error) {
     Sentry.captureException(error);

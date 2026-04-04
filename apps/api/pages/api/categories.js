@@ -182,16 +182,6 @@ async function handlePost(req, res, session, tenantId) {
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          userId: session.email,
-          action: "CREATE",
-          table: "Category",
-          recordId: newCategory.id.toString(),
-          tenantId
-        },
-      });
-
       return newCategory;
     });
 
@@ -249,16 +239,6 @@ async function handlePut(req, res, session, tenantId) {
       const updatedCategory = await prisma.category.update({
         where: { id: categoryId },
         data: { name, group, type, icon }
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          userId: session.email,
-          action: "UPDATE",
-          table: "Category",
-          recordId: updatedCategory.id.toString(),
-          tenantId
-        },
       });
 
       return updatedCategory;
@@ -370,16 +350,6 @@ async function handleDelete(req, res, session, tenantId) {
 
       const deletedCategory = await prisma.category.delete({
         where: { id: categoryId },
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          userId: session.email,
-          action: "DELETE",
-          table: "Category",
-          recordId: categoryId.toString(),
-          tenantId,
-        },
       });
 
       return deletedCategory;

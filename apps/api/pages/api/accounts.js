@@ -239,16 +239,6 @@ async function handlePost(req, res, user) {
       }
     });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: user.email,
-        action: "CREATE",
-        table: "Account",
-        recordId: newAccount.id.toString(),
-        tenantId
-      },
-    });
-
     return newAccount;
   });
 
@@ -393,16 +383,6 @@ async function handlePut(req, res, user) {
       }
     });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: user.email,
-        action: "UPDATE",
-        table: "Account",
-        recordId: accountId.toString(), // Use accountId variable
-        tenantId
-      },
-    });
-
     return updatedAccount;
   });
 
@@ -454,16 +434,6 @@ async function handleDelete(req, res, user) {
       where: { id: accountId }
     });
 
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        userId: user.email,
-        action: "DELETE",
-        table: "Account",
-        recordId: id.toString(),
-        tenantId
-      },
-    });
   });
 
   res.status(StatusCodes.NO_CONTENT).end();

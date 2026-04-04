@@ -95,23 +95,6 @@ const prisma = new PrismaClient().$extends({
           }
         }
 
-        // AuditLog validation
-        if (model === 'AuditLog' && (operation === 'create' || operation === 'update')) {
-          const data = args.data;
-          const validActions = ['CREATE', 'UPDATE', 'DELETE'];
-          if (!data.action || !validActions.includes(data.action)) {
-            throw new Error('Invalid audit log action. Must be CREATE, UPDATE, or DELETE.');
-          }
-          if (!data.table || data.table.length < 1 || data.table.length > 50) {
-            throw new Error('Table name must be between 1 and 50 characters.');
-          }
-          if (!data.recordId || data.recordId.length > 100) {
-            throw new Error('Record ID must be provided and not exceed 100 characters.');
-          }
-          if (!data.userId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.userId)) {
-            throw new Error('Invalid user ID format (must be an email).');
-          }
-        }
 
         // Transaction validation
         if (model === 'Transaction' && (operation === 'create' || operation === 'update')) {

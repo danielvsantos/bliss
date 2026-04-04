@@ -193,17 +193,6 @@ export default async function handler(req, res) {
         skipDuplicates: true,
       });
 
-      // Create audit log
-      await tx.auditLog.create({
-        data: {
-          userId: email, // Use unencrypted email for audit log
-          action: "CREATE",
-          table: "Tenant",
-          recordId: tenant.id.toString(),
-          tenantId: tenant.id
-        }
-      });
-
       // Generate JWT token with a unique ID for revocation support
       const token = jwt.sign(
         {

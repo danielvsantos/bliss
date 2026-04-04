@@ -107,17 +107,6 @@ async function handlePost(req, res) {
         },
       });
 
-      // --- Auditing ---
-      await prisma.auditLog.create({
-        data: {
-          userId: userEmail,
-          action: "CREATE",
-          table: "DebtTerms",
-          recordId: upsertedDebtTerms.id.toString(),
-          tenantId,
-        },
-      });
-
       return upsertedDebtTerms;
     });
 
@@ -207,17 +196,6 @@ async function handlePut(req, res) {
                     id: existingDebtTerms.id,
                 },
                 data: debtTermsData,
-            });
-
-            // --- Auditing ---
-            await prisma.auditLog.create({
-                data: {
-                    userId: userEmail,
-                    action: "UPDATE",
-                    table: "DebtTerms",
-                    recordId: updatedDebtTerms.id.toString(),
-                    tenantId,
-                },
             });
 
             return updatedDebtTerms;

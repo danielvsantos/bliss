@@ -235,16 +235,6 @@ async function handlePost(req, res) {
       }
     });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.email,
-        action: "CREATE",
-        table: "CurrencyRate",
-        recordId: newCurrencyRate.id.toString(),
-        tenantId
-      },
-    });
-
     res.status(StatusCodes.CREATED).json(newCurrencyRate);
     return;
   } catch (error) {
@@ -319,16 +309,6 @@ async function handlePut(req, res) {
       }
     });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.email,
-        action: "UPDATE",
-        table: "CurrencyRate",
-        recordId: updated.id.toString(),
-        tenantId
-      },
-    });
-
     res.status(StatusCodes.OK).json(updated);
     return;
   } catch (error) {
@@ -375,16 +355,6 @@ async function handleDelete(req, res) {
     }
 
     await prisma.currencyRate.delete({ where: { id: currencyRateId } });
-
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.email,
-        action: "DELETE",
-        table: "CurrencyRate",
-        recordId: currencyRateId.toString(),
-        tenantId
-      },
-    });
 
     res.status(StatusCodes.NO_CONTENT).end();
     return;

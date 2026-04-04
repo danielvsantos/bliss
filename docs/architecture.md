@@ -207,7 +207,6 @@ The database has 50+ migrations managed by Prisma. Key models:
     |
     |--- TransactionEmbedding (1:N)
     |--- ImportAdapter (1:N)
-    |--- AuditLog (1:N)
 ```
 
 ### pgvector
@@ -467,7 +466,7 @@ Bliss uses **query-level tenant isolation** (shared database, shared schema):
 ### What Is Scoped
 
 - All user-created data: accounts, transactions, categories, tags, budgets,
-  imports, embeddings, audit logs, Plaid connections, holdings.
+  imports, embeddings, Plaid connections, holdings.
 - Per-tenant settings: classification thresholds, display currency, adapter
   configurations.
 

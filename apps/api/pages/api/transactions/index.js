@@ -637,7 +637,7 @@ async function handlePut(req, res) {
             existingTag = await prisma.tag.create({
               data: { name, tenantId, color: '#' + Math.floor(Math.random() * 16777215).toString(16) }
             });
-            await prisma.auditLog.create({ data: { userId: req.user.email, action: "CREATE", table: "Tag", recordId: existingTag.id.toString(), tenantId } });
+
           }
           return { id: existingTag.id };
         }
@@ -698,16 +698,6 @@ async function handlePut(req, res) {
             }
           }
         }
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.email,
-          action: "UPDATE",
-          table: "Transaction",
-          recordId: updatedTransaction.id.toString(),
-          tenantId,
-        },
       });
 
       return updatedTransaction;
@@ -847,16 +837,6 @@ async function handleDelete(req, res) {
         where: { id: transactionId }
       });
 
-      // Create the audit log
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user.email,
-          action: "DELETE",
-          table: "Transaction",
-          recordId: transactionId.toString(),
-          tenantId,
-        },
-      });
     });
 
     // After deletion, check if we need to trigger a portfolio rebuild
