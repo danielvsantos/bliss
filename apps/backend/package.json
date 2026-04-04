@@ -7,7 +7,7 @@
     "start": "node src/index.js",
     "dev": "node src/index.js",
     "start:dev": "nodemon src/index.js",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test": "jest",
     "test:unit": "jest --testPathPatterns=unit",
     "test:integration": "jest --testPathPatterns=integration",
     "test:watch": "jest --watch",
