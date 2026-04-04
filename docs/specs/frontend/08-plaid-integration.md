@@ -294,6 +294,7 @@ Plaid transactions are **not surfaced** in the main list until promoted via the 
 | `useDisconnectPlaidItem` | `hooks/use-plaid-actions.ts` | Mutation: soft disconnect (Pause Sync) |
 | `useFetchHistoricalTransactions` | `hooks/use-plaid-actions.ts` | Mutation: trigger historical backfill for a date range |
 | `usePlaidItems` | `hooks/use-plaid-actions.ts` | Query: fetch all PlaidItems for tenant |
+| `usePageVisible` | `hooks/use-page-visible.ts` | Returns `true` when the browser tab is visible (uses `document.visibilitychange`). Used to pause the 60-second polling interval when the tab is hidden, preventing unnecessary network requests. |
 
 ---
 

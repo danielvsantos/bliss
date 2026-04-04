@@ -219,8 +219,7 @@ All date boundary calculations use `Date.UTC()` to match the valuation engine's 
 
 ### 7.8.3. Portfolio Sync
 
-- **Cash Portfolio Items**: Must exist before cash processing begins
+- **Cash Portfolio Items**: Auto-created on demand by `getOrCreateCashPortfolioItem()` — the cash processor is self-sufficient and does not depend on a prior portfolio sync step. The function looks up an existing CASH `PortfolioItem` for the given `(tenantId, currency)` and creates one via upsert if none exists.
 - **Currency Discovery**: Gets currency list from transaction data
-- **Item Creation**: Portfolio sync creates cash items for each currency
 
 This architecture ensures that cash holdings are managed with precision, performance, and reliability while maintaining clean separation from analytics and valuation concerns.

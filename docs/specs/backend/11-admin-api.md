@@ -107,6 +107,7 @@ System-managed field on `Category`. Values used by the classification pipeline:
 |---|---|
 | `API_STOCK` | Requires investment enrichment (ticker/qty/price) before promotion |
 | `API_CRYPTO` | Requires investment enrichment (ticker/qty/price) before promotion |
+| `API_FUND` | Requires investment enrichment (ticker/qty/price) before promotion |
 | `MANUAL` | Requires manual investment enrichment before promotion |
 
 Cannot be changed via the Admin API (returns 400 if attempted).

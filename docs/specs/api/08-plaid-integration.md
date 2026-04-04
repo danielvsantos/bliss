@@ -81,8 +81,8 @@ This module handles secure connection establishment, real-time webhook processin
 
 - **Purpose**: Rotates the Plaid `accessToken` for a given Item by calling `plaidClient.itemAccessTokenInvalidate()`. The old token is invalidated and the new token is encrypted and persisted.
 - **Auth**: JWT.
-- **Validation**: Validates tenant ownership. Only `ACTIVE` items may be rotated.
-- **Action**: Calls Plaid's `itemAccessTokenInvalidate` API, encrypts the returned new token, updates `PlaidItem.accessToken`, writes an audit log (`action: 'UPDATE'`).
+- **Validation**: Validates tenant ownership. Any item status may be rotated (no status check is enforced).
+- **Action**: Calls Plaid's `itemAccessTokenInvalidate` API, encrypts the returned new token, updates `PlaidItem.accessToken`.
 - **Response**: `{ message: 'Access token rotated successfully' }`.
 
 ---
@@ -123,7 +123,7 @@ This module handles secure connection establishment, real-time webhook processin
 - **Auth**: JWT.
 - **Design rationale**: `plaidClient.itemRemove()` is a **permanent, irreversible** Plaid operation — once called, the Item is destroyed and reconnection via Plaid Link update mode is impossible. By only updating the local status, the `accessToken` remains valid so the user can reconnect at any time.
 - **Effect on sync**: The `plaidSyncWorker` checks `status === 'ACTIVE'` at job start and skips gracefully for `REVOKED` items. Plaid webhooks for `REVOKED` items are also ignored.
-- **Action**: Sets `PlaidItem.status = 'REVOKED'`. Writes audit log (`action: 'UPDATE'`).
+- **Action**: Sets `PlaidItem.status = 'REVOKED'`.
 - **Response**: `{ message: 'Connection disconnected' }`.
 - **UI label**: Shown to users as **"Pause Sync"** to accurately set expectations.
 
@@ -269,6 +269,7 @@ Controls two things simultaneously:
 |---|---|---|---|
 | `historicalSyncComplete` | `Boolean` | `false` | Set to `true` when a `WEBHOOK_HISTORICAL_UPDATE` sync completes. Indicates the full 2-year Plaid backfill is done. |
 | `earliestTransactionDate` | `DateTime?` | `null` | The oldest transaction date seen across all sync batches. Updated monotonically (only moves earlier, never later). |
+| `seedReady` | `Boolean` | `false` | Set to `true` when Phase 1 seed classification is complete in `plaidProcessorWorker`. Signals the frontend to show the Quick Seed interview. |
 
 ### `PlaidTransaction`
 

@@ -21,14 +21,28 @@ A global (not per-tenant) table storing stock fundamentals. Key fields:
 | `sector` | `String?` | GICS sector |
 | `industry` | `String?` | GICS industry |
 | `country` | `String?` | Country of incorporation |
-| `exchange` | `String?` | Primary exchange |
+| `exchange` | `String?` | Primary exchange (ISO-10383 MIC code, e.g. XNYS) |
+| `currency` | `String?` | Trading currency (e.g. USD, EUR) |
+| `isin` | `String?` | International Securities Identification Number |
+| `description` | `String? @db.Text` | Company description |
+| `logoUrl` | `String?` | Company logo URL (from Twelve Data) |
+| `assetType` | `String?` | Asset type (e.g. "Common Stock", "ETF") |
+| `ceo` | `String?` | Chief executive officer |
+| `employees` | `Int?` | Number of employees |
+| `website` | `String?` | Company website URL |
 | `trailingEps` | `Decimal(12,4)?` | Trailing 4-quarter EPS |
 | `peRatio` | `Decimal(12,4)?` | Price / trailing EPS |
 | `annualizedDividend` | `Decimal(12,4)?` | 12-month dividend sum |
 | `dividendYield` | `Decimal(8,6)?` | Annualized dividend / price |
+| `latestEpsActual` | `Decimal(12,4)?` | Most recent quarter EPS actual |
+| `latestEpsSurprise` | `Decimal(8,4)?` | Most recent quarter EPS surprise percentage |
 | `week52High` | `Decimal(18,4)?` | 52-week high price |
 | `week52Low` | `Decimal(18,4)?` | 52-week low price |
 | `averageVolume` | `Decimal(18,0)?` | Average daily volume |
+| `lastProfileUpdate` | `DateTime?` | Last time profile fields were refreshed |
+| `lastFundamentalsUpdate` | `DateTime?` | Last time earnings/dividends/quote were refreshed |
+| `createdAt` | `DateTime` | Record creation timestamp |
+| `updatedAt` | `DateTime` | Last modification timestamp (auto-updated) |
 
 Indexes: `sector`, `industry`, `country`, `assetType`.
 

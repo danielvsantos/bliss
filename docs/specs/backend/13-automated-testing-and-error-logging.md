@@ -13,13 +13,15 @@ The backend uses a **two-layer test pyramid**:
 ```
          ┌──────────────────────────┐
          │   Integration Tests       │  supertest + real Express + real Prisma
-         │   (fewer, slower)         │  37 tests across 5 suites
+         │   (fewer, slower)         │
          └──────────────────────────┘
       ┌────────────────────────────────┐
       │      Unit Tests                │  Jest + full mocks, no I/O
-      │      (more, fast)              │  211 tests across 23 suites
+      │      (more, fast)              │
       └────────────────────────────────┘
 ```
+
+The backend test suite includes unit tests (in `__tests__/unit/`) and integration tests (in `__tests__/integration/`). Run `pnpm test:backend` to execute all tests.
 
 E2E tests (Playwright, across all services) live in the `bliss-frontend` repository at `e2e/` — see `bliss-frontend/specs/13-automated-testing-and-error-logging.md §13.5`.
 
@@ -294,13 +296,10 @@ bliss-frontend/specs/13-automated-testing-and-error-logging.md
 - **Runner**: Vitest 2.x + `@vitejs/plugin-react-swc` + jsdom
 - **Component testing**: `@testing-library/react` + `@testing-library/jest-dom`
 - **API mocking**: MSW v2 (node server via `setupServer`)
-- **Status**: 0 test files written; all config in place; `npm run test:unit` passes with exit 0
+- **Status**: ~46 test files covering hooks, pages, contexts, and lib utilities
 
 ```bash
-cd bliss-frontend
-npm run test:unit     # passes with 0 tests (passWithNoTests: true)
-npm run test:watch    # TDD watch mode
-npm run test:coverage # v8 coverage (60% threshold on src/components + src/hooks)
+pnpm test:web         # run all frontend tests
 ```
 
 ---
@@ -313,64 +312,24 @@ The table below tracks major feature areas and their current test status:
 
 #### Backend (`bliss-backend-service`)
 
-| Feature | Unit Tests | Integration Tests | Notes |
-|---------|-----------|------------------|-------|
-| `feedback.js` route | ✅ (indirect) | ✅ 7 tests | Complete |
-| `events.js` route | ✅ (indirect) | ✅ 5 tests | Complete |
-| `ticker.js` route | ✅ (via stockService) | ✅ 12 tests | Complete |
-| `similar.js` route | ❌ | ✅ 7 tests | Vector search endpoint |
-| `adminRoutes.js` route | ❌ | ✅ 6 tests | Embedding regeneration |
-| `categorizationService` | ✅ 11 tests | ❌ | Full 3-tier waterfall + recordFeedback |
-| `geminiService` | ✅ 12 tests | ❌ | Embedding + classification + retry logic |
-| `priceService` | ✅ 8 tests | ❌ | Asset type routing + DB fallback |
-| `cryptoService` | ✅ 11 tests | ❌ | Twelve Data crypto delegation (pair construction, dedup, search) |
-| `currencyService` | ✅ 10 tests | ❌ | CurrencyLayer API wrapper + cache |
-| `debounceService` | ✅ 6 tests | ❌ | Redis key aggregation |
-| `stockService` | ✅ 8 tests | ❌ | Provider delegation |
-| `twelveDataService` | ✅ 12 tests | ❌ | Historical/latest price + search |
-| `apiKeyAuth` middleware | ✅ 6 tests | ❌ (tested via integration routes) | X-API-KEY validation |
-| `categoryCache` | ✅ 10 tests | ❌ | TTL, invalidation, stale fallback |
-| Valuation strategies | ✅ 26 tests | ❌ | API_FUND (8), API_STOCK (6), API_CRYPTO (7), MANUAL (5) |
-| `eventSchedulerWorker` | ✅ 10 tests | ❌ | All event types routed correctly (incl. SMART_IMPORT_COMMIT) |
-| `commitWorker` | ✅ 11 tests | ❌ | Batch commit, tag linking, enrichment skip, feedback, error handling |
-| `smartImportWorker` | ✅ 6 tests (hash only) | ❌ | `computeTransactionHash()` tested; full pipeline untested |
-| `adapterEngine.js` | ✅ 11 tests | ❌ | Parsing, sorting, detection |
-| Encryption middleware | ✅ 10 tests | ❌ | AES-256-GCM both modes |
-| `plaidSyncWorker` | ❌ | ❌ | Complex Plaid API flow |
-| `plaidProcessorWorker` | ✅ 13 tests | ❌ | Auto-promote logic, threshold behaviour, hash dedup, investment detection |
-| `portfolioWorker` | ❌ | ❌ | FIFO lots, PnL calculation |
-| `analyticsWorker` | ❌ | ❌ | Aggregation correctness |
+The backend has comprehensive unit test coverage across services, workers, utilities, valuation strategies, and middleware. Key areas with tests include:
 
-#### Finance-API (`bliss-finance-api`)
+**Services:** categorizationService, geminiService, priceService, cryptoService, currencyService, debounceService, stockService, twelveDataService, insightService, securityMasterService.
 
-| Feature | Unit Tests | Integration Tests | Notes |
-|---------|-----------|------------------|-------|
-| `auth/signup.ts` | ❌ | ✅ 5 tests | Complete |
-| `accounts.ts` | ❌ | ✅ 4 tests | Complete |
-| `categories.ts` | ❌ | ✅ 2 tests | Complete |
-| `auth/signin.ts` | ❌ | ❌ | JWT issuance + Set-Cookie |
-| `auth/signout.ts` | ❌ | ❌ | Token denylist write |
-| `auth/refresh.ts` | ❌ | ❌ | Token rotation |
-| `transactions/import.ts` | ❌ | ❌ | Old "dumb" import path |
-| `imports/upload.ts` | ❌ | ❌ | Multipart form + GCS |
-| `imports/[id].ts` (commit) | ❌ | ✅ 11 tests | Async commit dispatch (202), cancel, produceEvent revert |
-| `imports/detect-adapter.ts` | ❌ | ❌ | Header analysis |
-| `imports/adapters.ts` | ❌ | ❌ | CRUD |
-| `users/settings.ts` | ❌ | ❌ | Threshold persistence |
-| `plaid/` routes | ❌ | ❌ | Requires Plaid sandbox credentials |
-| `portfolio/` routes | ❌ | ❌ | Aggregation endpoints |
-| `analytics/` routes | ❌ | ❌ | Analytics aggregation endpoints |
+**Workers:** eventSchedulerWorker, commitWorker, smartImportWorker, plaidProcessorWorker, plaidSyncWorker, portfolioWorker, analyticsWorker (via scoped tests), insightGeneratorWorker, securityMasterWorker. Portfolio handler tests live under `unit/workers/portfolio-handlers/`.
+
+**Utilities:** descriptionCache, transactionNormalizer, portfolioItemStateCalculator, encryption, categoryCache, redis.
+
+**Valuation strategies:** API_FUND, API_STOCK, API_CRYPTO, MANUAL.
+
+**Integration routes:** feedback, events, ticker, similar, adminRoutes, insights, pricing, securityMaster.
+
+#### Finance-API (`apps/api`)
+
+The API layer now has extensive test coverage. See `docs/specs/api/13-automated-testing-and-error-logging.md` for the full breakdown. Unit tests under `unit/api/` cover analytics, banks, countries, currencies, imports, plaid routes, portfolio routes, notifications, onboarding, and tenants. Integration tests cover auth, accounts, categories, tags, transactions, imports commit, and plaid routes.
 
 ### Recommended Next Steps
 
-#### Backend: Full Worker Pipeline Tests (high ROI)
-
-The `eventSchedulerWorker` routing and `smartImportWorker` hash function are now tested. The remaining untested workers contain critical business logic:
-
-1. **`plaidProcessorWorker`** — Auto-promote threshold logic is a regression risk. `normalizeDescription` and `buildFrequencyMap` are currently unexported; exporting them would enable targeted unit tests.
-2. **`portfolioWorker`** — FIFO lot calculation and PnL are exercised indirectly via `portfolioItemStateCalculator` unit tests, but the full worker pipeline (fetching prices, building snapshots) is untested.
-3. **`plaidSyncWorker`** — Complex Plaid API pagination flow. Would require heavy Plaid SDK mocking.
-
-#### Frontend: Custom Hooks (lowest barrier, highest confidence)
-
-The MSW infrastructure is already wired up. See `bliss-frontend/specs/13-automated-testing-and-error-logging.md` for detailed frontend test recommendations.
+1. **Edge case coverage** -- existing worker tests cover the happy path and key logic branches. Adding tests for error recovery, retry exhaustion, and concurrent job scenarios would increase confidence.
+2. **Integration test expansion** -- adding integration tests for the newer routes (insights, pricing, securityMaster) would validate the full HTTP contract.
+3. **Frontend E2E** -- the Playwright stubs are ready to be implemented. See `docs/specs/frontend/13-automated-testing-and-error-logging.md` for details.

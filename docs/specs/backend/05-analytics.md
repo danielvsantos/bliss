@@ -20,19 +20,27 @@ The `eventSchedulerWorker` orchestrates the pipeline by listening for business e
 
 The worker is responsible for the core analytics calculation and cross-currency reporting. It can run in two distinct modes depending on the job name. Cash holdings are now handled by the dedicated cash processor.
 
-### 5.3.1. Job Modes
+### 5.3.1. Worker Configuration
 
-1.  **Full Rebuild (`full-rebuild-analytics`)**: Triggered after a bulk import. This job runs on the tenant's entire transaction history.
-2.  **Scoped Update (`scoped-update-analytics`)**: Triggered by manual transaction changes. This job runs on a specific, narrow scope (e.g., a single month), making it fast and efficient.
+- **Concurrency**: 1 (single-threaded to avoid race conditions on shared analytics tables).
+- **Lock Duration**: 300,000ms (5 minutes).
 
-### 5.3.2. Core Logic (`calculateAnalytics`)
+### 5.3.2. Job Modes
+
+1.  **Full Rebuild (`full-rebuild-analytics`)**: Triggered after a bulk import. This job runs on the tenant's entire transaction history. Before recalculating, the worker deletes ALL existing `AnalyticsCacheMonthly` AND `TagAnalyticsCacheMonthly` records for the tenant within a `$transaction`. This prevents stale rows (e.g., tag analytics for tags that were removed from transactions) from persisting.
+2.  **Scoped Update (`scoped-update-analytics`)**: Triggered by manual transaction changes or tag modifications. This job accepts a `scopes` array (multiple scopes) and iterates over each scope, running `calculateAnalytics` per scope. Results are deduplicated by their composite key to handle overlapping scopes.
+3.  **Legacy Fallback (`recalculate-analytics`)**: A legacy job name still handled by the worker. When called without a scope (or with an empty scope) and without `scopes`, it behaves as a full rebuild (deletes all existing analytics before recalculating). Otherwise, it runs `calculateAnalytics` with the provided scope.
+
+### 5.3.3. Core Logic (`calculateAnalytics`)
 
 This function performs a two-pass calculation:
 
 1.  **Pass 1 (Date Range Discovery)**: It scans all transactions within the job's scope to find the complete date range and all required currency pairs. It then pre-fetches all necessary currency rates in a single bulk operation.
-2.  **Pass 2 (Aggregation)**: It processes the transactions, converting them to the tenant's configured currencies using the in-memory rate cache. The data is then aggregated into monthly totals, grouped by a multi-dimensional key (`year`, `month`, `currency`, `country`, `type`, `group`). The results are `upserted` into the `AnalyticsCacheMonthly` table.
+2.  **Pass 2 (Aggregation)**: It processes the transactions, converting them to the tenant's configured currencies using the in-memory rate cache. The data is then aggregated into monthly totals, grouped by a multi-dimensional key (`year`, `month`, `currency`, `country`, `type`, `group`). In parallel during Pass 2, **tag analytics** are computed into `TagAnalyticsCacheMonthly`. Multi-tagged transactions create one entry per tag, keyed by `(tagId, year, month, currency, country, type, group, categoryId)`. Both full-rebuild and scoped-update modes populate both tables.
 
-### 5.3.3. Cross-Currency Reporting
+    The results are `upserted` into their respective tables in batches of 500 within `$transaction` blocks, to avoid overwhelming the Prisma Accelerate proxy (10s per-query timeout).
+
+### 5.3.4. Cross-Currency Reporting
 
 The analytics worker focuses on creating aggregated financial data across multiple currencies for reporting purposes. It converts all transactions to the tenant's configured target currencies and stores monthly aggregates.
 

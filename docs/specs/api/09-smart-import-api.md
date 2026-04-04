@@ -56,6 +56,7 @@ See `bliss-backend-service/specs/09-smart-import.md` for the backend worker pipe
 
 - **Purpose**: Accepts the file, stores it in GCS, creates a `StagedImport` record, and enqueues the background processing job.
 - **Body**: `multipart/form-data` with `file`, `accountId`, `adapterId`.
+  - `accountId` is **required** for all adapters except the Bliss Native adapter (`matchSignature.isNative: true`). Native adapters resolve the target account per-row from the CSV `account` column, so `accountId` is optional and may be omitted.
 - **Accepted file types**: `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (XLSX), `application/vnd.ms-excel` (XLS). Any other MIME type returns `400` with `{ error: "Unsupported file type..." }`.
 - **Size limit**: 10 MB maximum. Exceeding this returns `400` with `{ error: "File exceeds maximum allowed size of 10 MB" }`.
 - **Workflow**:
@@ -63,7 +64,7 @@ See `bliss-backend-service/specs/09-smart-import.md` for the backend worker pipe
   2. Upload file to GCS with a UUID-keyed path (`imports/{tenantId}/{uuid}-{filename}`).
   3. Create `StagedImport { status: 'PROCESSING', progress: 0 }`.
   4. Emit `SMART_IMPORT_REQUESTED` event → backend `smartImportWorker` picks it up.
-- **Response**: `{ importId }` — returned immediately; processing is asynchronous.
+- **Response**: `{ stagedImportId, status: 'PROCESSING', message }` — returned immediately; processing is asynchronous.
 - **Rate limit**: `importsUpload` limiter (stricter than read endpoints).
 
 ---

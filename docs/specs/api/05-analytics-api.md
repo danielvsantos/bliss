@@ -11,10 +11,11 @@ The Analytics API provides a flexible way to query pre-aggregated financial data
 
 The API supports filtering by time, geography, and category, and it returns data in a nested structure that is easy for the frontend to consume.
 
-## 5.2. Authentication and Authorization
+## 5.2. Authentication, Authorization, and Rate Limiting
 
 - **Authentication**: All requests to this endpoint must be authenticated using a JWT token provided in the `Authorization` header (`Bearer <token>`).
 - **Authorization**: The endpoint is tenant-aware and will only return data associated with the authenticated user's `tenantId`.
+- **Rate Limiting**: The endpoint uses `rateLimiters.analytics` to prevent abuse.
 
 ## 5.3. Query Parameters
 
@@ -68,3 +69,15 @@ The API returns a JSON object with the requested `currency`, `view`, and a `data
   }
 }
 ```
+
+## 5.5. Tag Analytics
+
+Tag analytics are served via a separate endpoint (`GET /api/analytics/tags`), documented in spec 18. The backend analytics worker computes both regular and tag analytics in a single pass (see backend spec `05-analytics.md`).
+
+## 5.6. Backend Job Names
+
+The backend analytics worker handles the following job names:
+
+- `full-rebuild-analytics` -- Full tenant analytics recalculation.
+- `scoped-update-analytics` -- Incremental update for a specific scope.
+- `recalculate-analytics` -- Legacy/fallback job name. When called without a scope, it behaves as a full rebuild.

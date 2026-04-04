@@ -55,7 +55,7 @@ Four-card grid layout:
 
 ## 19.5. Grouping Selector
 
-Pill-toggle with three options: Sector (default), Industry, Country. Triggers a new API call via the `groupBy` parameter on the React Query hook.
+Pill-toggle with three options: Sector (default), Industry, Country. The hook always fetches data once with `groupBy: 'sector'`. When the user switches tabs, the data is re-grouped client-side via `useMemo` -- no additional API calls are made. The `queryKey` is stable (`['equity-analysis']`), so switching tabs does not trigger a refetch.
 
 ## 19.6. Allocation Chart
 

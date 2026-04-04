@@ -12,9 +12,9 @@
 |-------|------|------|
 | **UIKit definition** | `Uikitforbliss/src/styles/theme.css` | Canonical token values (hex format) |
 | **UIKit page** | `Uikitforbliss/src/app/pages/DesignSystem.tsx` | Visual reference — rendered swatches, type scale, components |
-| **Production CSS** | `bliss-frontend/src/index.css` | Token values in HSL format (Tailwind-compatible) |
-| **Tailwind mapping** | `bliss-frontend/tailwind.config.ts` | Maps CSS vars → Tailwind utility classes |
-| **Usage rules** | `bliss-frontend/CLAUDE.md` | Enforcement rules for Claude Code sessions |
+| **Production CSS** | `apps/web/src/index.css` | Token values in HSL format (Tailwind-compatible) |
+| **Tailwind mapping** | `apps/web/tailwind.config.ts` | Maps CSS vars → Tailwind utility classes |
+| **Usage rules** | `apps/web/CLAUDE.md` | Enforcement rules for Claude Code sessions |
 
 ---
 
@@ -43,7 +43,17 @@ The Bliss palette is built around a **muted purple-gray core** with **semantic a
 | **border** | `--border` | `border-border` | #E2E8F0 | Input borders, dividers, card borders (shadcn default) |
 | **input-background** | `--input-background` | `bg-input-background` | #F5F3F8 | Input field backgrounds |
 | **ring** | `--ring` | `ring-ring` | #6D657A | Focus rings (keyboard navigation) |
-| **card** | `--card` | `bg-card` | rgba(255,255,255,0.72) | Card backgrounds (translucent in UIKit; opaque white in production) |
+| **ring-offset** | `--ring-offset` | — | #FAFAFA | Focus ring offset (matches background) |
+| **switch-background** | `--switch-background` | — | #C4BDD0 | Switch/toggle track background |
+| **card** | `--card` | `bg-card` | #FFFFFF | Card backgrounds (solid white). Translucency is only in the `[data-slot="card"]` CSS override. |
+| **card-foreground** | `--card-foreground` | `text-card-foreground` | #1A1625 | Card text color |
+| **popover** | `--popover` | `bg-popover` | #FFFFFF | Popover/dropdown backgrounds |
+| **popover-foreground** | `--popover-foreground` | `text-popover-foreground` | #1A1625 | Popover text color |
+| **primary** | `--primary` | `bg-primary`, `text-primary` | #3A3542 | Primary buttons, selected states |
+| **primary-foreground** | `--primary-foreground` | `text-primary-foreground` | #FFFFFF | Text on primary backgrounds |
+| **secondary** | `--secondary` | `bg-secondary` | #FFFFFF | Secondary button backgrounds |
+| **secondary-foreground** | `--secondary-foreground` | `text-secondary-foreground` | #3A3542 | Text on secondary backgrounds |
+| **accent-foreground** | `--accent-foreground` | `text-accent-foreground` | #3A3542 | Text on accent backgrounds |
 
 ### `negative` vs `destructive` — Critical Distinction
 
@@ -63,8 +73,25 @@ Used exclusively for data visualization. Do not use for UI states.
 | `--chart-1` | `text-chart-1` | #6D657A | Brand primary series |
 | `--chart-2` | `text-chart-2` | #2E8B57 | Positive / growth series |
 | `--chart-3` | `text-chart-3` | #E5989B | Negative / loss series |
-| `--chart-4` | `text-chart-4` | #A09AB0 | Neutral / comparison series |
+| `--chart-4` | `text-chart-4` | #9E98AE | Neutral / comparison series |
 | `--chart-5` | `text-chart-5` | #3A3542 | Deep / secondary series |
+
+### Data Visualization Tokens (`dataviz-1` through `dataviz-8`)
+
+An extended 8-hue palette for portfolio charts and grouped data visualizations. Assigned dynamically via `buildGroupColorMap()` and `getGroupColor()` from `src/lib/portfolio-utils.ts`. Debt groups always use negative-family colors.
+
+| Token | Tailwind | HSL | Hex | Role |
+|-------|----------|-----|-----|------|
+| `--dataviz-1` | `text-dataviz-1`, `bg-dataviz-1` | 263 9% 43% | #6D657A | Brand primary (default) |
+| `--dataviz-2` | `text-dataviz-2`, `bg-dataviz-2` | 147 50% 36% | #2E8B57 | Positive / green |
+| `--dataviz-3` | `text-dataviz-3`, `bg-dataviz-3` | 36 77% 50% | #E09F12 | Warning / amber |
+| `--dataviz-4` | `text-dataviz-4`, `bg-dataviz-4` | 263 11% 23% | #3A3542 | Brand-deep / dark plum |
+| `--dataviz-5` | `text-dataviz-5`, `bg-dataviz-5` | 180 35% 35% | #3A8A8F | Teal |
+| `--dataviz-6` | `text-dataviz-6`, `bg-dataviz-6` | 265 30% 72% | #B8AEC8 | Light purple |
+| `--dataviz-7` | `text-dataviz-7`, `bg-dataviz-7` | 260 12% 52% | #7E7590 | Mid purple |
+| `--dataviz-8` | `text-dataviz-8`, `bg-dataviz-8` | 260 6% 61% | #9A95A4 | Muted |
+
+**Never hardcode hex colors for chart groups.** Use the dataviz tokens through the utility functions.
 
 ### Sidebar Tokens
 
@@ -74,15 +101,19 @@ Used only in sidebar layout components. Not for general UI.
 |-------|----------|-----|
 | `--sidebar-background` | `bg-sidebar` | Sidebar panel background (#F5F3F8) |
 | `--sidebar-foreground` | `text-sidebar-foreground` | Sidebar text (#3A3542) |
+| `--sidebar-primary` | `text-sidebar-primary` | Sidebar primary text/icons (#3A3542) |
+| `--sidebar-primary-foreground` | `text-sidebar-primary-foreground` | Text on sidebar primary (#FFFFFF) |
 | `--sidebar-accent` | `bg-sidebar-accent` | Nav item hover background |
+| `--sidebar-accent-foreground` | `text-sidebar-accent-foreground` | Text on sidebar accent (#3A3542) |
 | `--sidebar-border` | `border-sidebar-border` | Sidebar right border |
+| `--sidebar-ring` | `ring-sidebar-ring` | Focus ring inside sidebar (#6D657A) |
 
 ### Dark Mode
 
 Dark mode is enabled via the `.dark` class on the `<html>` element. Most tokens automatically invert:
 - Background: `#FAFAFA` → `#1A1625` (deep plum)
-- Cards: `rgba(255,255,255,0.72)` → `rgba(42, 37, 54, 0.78)` (translucent dark purple)
-- Borders: `#E2E8F0` → `rgba(255, 255, 255, 0.1)` (subtle white overlay)
+- Cards: `[data-slot="card"]` override `rgba(255,255,255,0.68)` → `rgba(42, 37, 54, 0.68)` (translucent dark purple)
+- Borders: `#E2E8F0` → `hsl(255 23% 20%)` (muted dark purple)
 - Text: `#1A1625` → `#F0EDF5` (pale lavender)
 - `muted`: `#F1EEF5` → `#2E2840`
 
@@ -212,7 +243,7 @@ The standard badge pattern uses a `bg-{color}/10 text-{color} border-{color}/20`
 
 ```html
 <!-- Already imported globally in index.css -->
-@import url('https://fonts.google.com/css2?family=Urbanist:wght@400;500;600;700');
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700&display=swap');
 ```
 
 Use via Tailwind: `font-sans` (already set as default in `tailwind.config.ts`).
@@ -266,24 +297,27 @@ All radius values use the `--radius` CSS variable (`0.75rem` / 12px) as the base
 
 ### Cards
 
-Standard cards use shadcn's `<Card>` component from `@/components/ui/card`. For elevated "liquid glass" effect use the `.glass-card` utility class:
+Standard cards use shadcn's `<Card>` component from `@/components/ui/card`. The "liquid glass" effect is applied globally to all Card components via the `[data-slot="card"]` attribute selector:
 
 ```css
-/* Defined in index.css */
-.glass-card {
+/* Defined in index.css — applied automatically to all Card components */
+[data-slot="card"] {
   background: rgba(255, 255, 255, 0.68);
   backdrop-filter: blur(20px) saturate(1.6);
-  border: 1px solid #E2E8F0;
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
   box-shadow: 0 1px 2px ..., 0 4px 12px ..., inset 0 1px 0 rgba(255,255,255,0.9);
-  border-radius: 12px;
+}
+
+.dark [data-slot="card"] {
+  background: rgba(42, 37, 54, 0.68);
 }
 ```
 
-Note: `.glass-card` uses raw hex for the border and background. This is intentional — it's defined at the CSS layer, not in JSX.
+Note: `[data-slot="card"]` uses raw rgba for the background. This is intentional — it's defined at the CSS layer, not in JSX. The `--card` CSS variable itself is solid white (`0 0% 100%`); the translucency only exists in this attribute selector override.
 
 ### Buttons
 
-Always use shadcn `<Button>` from `@/components/ui/button` — **never** use `src/components/button.tsx` (legacy component with hardcoded hex, pending refactor).
+Always use shadcn `<Button>` from `@/components/ui/button`. The legacy `src/components/button.tsx` has been refactored and now uses design tokens correctly.
 
 | Variant | Background | Text | Use |
 |---------|------------|------|-----|
@@ -320,14 +354,14 @@ Edit `Uikitforbliss/src/styles/theme.css`:
 ```
 
 ### Step 2 — Production CSS
-Edit `bliss-frontend/src/index.css` (HSL format):
+Edit `apps/web/src/index.css` (HSL format):
 ```css
 --positive: 147 50% 36%;
 --my-new-token: H S% L%;   /* ← HSL equivalent */
 ```
 
 ### Step 3 — Tailwind mapping
-Edit `bliss-frontend/tailwind.config.ts`:
+Edit `apps/web/tailwind.config.ts`:
 ```ts
 colors: {
   positive: "hsl(var(--positive))",

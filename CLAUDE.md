@@ -4,13 +4,14 @@ Bliss is a multi-tenant personal finance platform. It ingests bank transactions 
 
 ## Architecture overview
 
-Monorepo with three services behind a single `.env` file:
+Monorepo with four services behind a single `.env` file:
 
 | Service | Stack | Port | Module system | Role |
 |---------|-------|------|---------------|------|
 | `apps/api` | Next.js 15 (Pages Router) | 3000 | ESM | Auth (NextAuth), REST API routes, Prisma ORM |
 | `apps/backend` | Express + BullMQ | 3001 | **CJS** | Workers, async pipelines, internal API |
 | `apps/web` | React 18 + Vite | 8080 | ESM | SPA with shadcn/ui, TanStack Query, Tailwind |
+| `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
 | `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters |
 
 **Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues.
@@ -86,7 +87,7 @@ Open http://localhost:8080. Plaid, Gemini, and Twelve Data API keys are optional
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | Runs all ~588 tests |
+| All | `pnpm test` | -- | Runs all tests across services |
 | API | `pnpm test:api` | Vitest (ESM) | Unit + integration with real Postgres |
 | Backend | `pnpm test:backend` | Jest (CJS) | Unit + integration with supertest |
 | Frontend | `pnpm test:web` | Vitest + RTL | Component tests, MSW for API mocking |
@@ -111,7 +112,7 @@ bliss/
       src/
         routes/           # Internal REST endpoints
         services/         # Business logic (classification, pricing, portfolio, analytics)
-        workers/          # BullMQ consumers (10 workers)
+        workers/          # BullMQ consumers (9 worker files)
         queues/           # Queue definitions
         config/           # Classification thresholds, constants
         middleware/       # apiKeyAuth
@@ -124,6 +125,9 @@ bliss/
         hooks/            # 40+ custom React hooks (use-*.ts)
         contexts/         # AuthContext
         lib/              # Utility modules (portfolio-utils, etc.)
+    docs/                 # Nextra documentation site
+      content/            # MDX/Markdown pages, guides
+      public/openapi/     # OpenAPI YAML specs
   packages/shared/        # Encryption + storage adapters
   prisma/                 # Schema + 50+ migrations + seed
   docker/                 # Dockerfiles + nginx config
@@ -140,7 +144,7 @@ Transaction classification flows through tiers until one succeeds:
 1. **Exact Match** -- O(1) in-memory cache per tenant, backed by the `DescriptionMapping` table (SHA-256 hash → categoryId). Confidence: `1.0`
 2. **Vector Match (tenant)** -- pgvector cosine similarity on `TransactionEmbedding` (768-dim, Gemini embeddings). Threshold: `reviewThreshold` (default 0.70)
 3. **Vector Match (global)** -- Cross-tenant `GlobalEmbedding` table, discounted by `0.92x`
-4. **LLM** -- Gemini 3.0 Flash, temperature 0.1, confidence hard-capped at `0.85`
+4. **LLM** -- Gemini (`gemini-3-flash-preview`), temperature 0.1, confidence hard-capped at `0.85`
 
 Thresholds are per-tenant (`Tenant.autoPromoteThreshold`, `Tenant.reviewThreshold`). Config constants live in `apps/backend/src/config/classificationConfig.js` and must stay in sync with Prisma schema defaults.
 
@@ -212,11 +216,10 @@ Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
 
 | Worker | Queue | Concurrency | Purpose |
 |--------|-------|-------------|---------|
-| `eventSchedulerWorker` | event-scheduler | 3 | Routes typed events to appropriate queues |
-| `smartImportWorker` | smart-import | 1 | CSV parse, dedup, classify, stage |
-| `commitWorker` | smart-import | 1 | Batch commit staged rows to transactions |
-| `plaidSyncWorker` | plaid-sync | 3 | Incremental Plaid transaction fetch |
-| `plaidProcessorWorker` | plaid-processor | 5 | Classify and persist Plaid transactions |
+| `eventSchedulerWorker` | event-scheduler | 1 | Routes typed events to appropriate queues |
+| `smartImportWorker` | smart-import | 1 | CSV parse, dedup, classify, stage; also dispatches `commit-smart-import` jobs to `commitWorker` |
+| `plaidSyncWorker` | plaid-sync | 1 | Incremental Plaid transaction fetch |
+| `plaidProcessorWorker` | plaid-processor | 1 | Classify and persist Plaid transactions |
 | `portfolioWorker` | portfolio | 5 | FIFO lots, PnL, valuation, cash holdings, **nightly revaluation (4 AM UTC)** |
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
 | `insightGeneratorWorker` | insights | 1 | AI financial insights generation (cron 6 AM UTC) |
@@ -230,14 +233,16 @@ All workers report failures to Sentry with structured context (worker name, job 
 
 All services read from a single `.env` file at the repo root. Run `./scripts/setup.sh` to generate secrets.
 
-**Required:** `DATABASE_URL`, `REDIS_URL`, `ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`, `NEXTAUTH_URL`, `BACKEND_URL`, `NEXT_PUBLIC_API_URL`, `FRONTEND_URL`
+**Required:** `DATABASE_URL`, `POSTGRES_PASSWORD`, `REDIS_URL`, `REDIS_PASSWORD`, `ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`, `NEXTAUTH_URL`, `BACKEND_URL`, `NEXT_PUBLIC_API_URL`, `FRONTEND_URL`
 
 **Optional integrations (degrade gracefully):**
-- Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`
-- AI: `GEMINI_API_KEY`
+- Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, `PLAID_WEBHOOK_URL`, `PLAID_HISTORY_DAYS`
+- AI: `GEMINI_API_KEY`, `INSIGHT_MODEL`
 - Market data: `TWELVE_DATA_API_KEY` or `FINNHUB_API_KEY` (set `STOCK_PROVIDER`)
 - Currency rates: `CURRENCYLAYER_API_KEY`
-- Observability: `SENTRY_DSN`
+- Storage: `STORAGE_BACKEND`, `LOCAL_STORAGE_DIR`, `GCS_BUCKET_NAME`, `GCS_SERVICE_ACCOUNT_JSON`
+- Key rotation: `ENCRYPTION_SECRET_PREVIOUS`, `JWT_SECRET_PREVIOUS`
+- Observability: `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`
 
 See `.env.example` for the full reference.
 

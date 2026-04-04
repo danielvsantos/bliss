@@ -22,7 +22,7 @@ The dashboard provides a modern, hero-driven financial overview with glass-morph
 ### 5.2.1. Layout Structure
 
 ```
-Header: Title + Year/Currency selectors
+Header: Title + Year selector (currency from portfolioCurrency via useUserSignals)
 SetupChecklist (conditional, auto-hides when complete/dismissed)
 HeroNetWorth (glass card)
   - Total Net Worth (large, prominent value)
@@ -56,7 +56,7 @@ RecentTransactionsCard: 5 rows with emoji, date, description, category, account,
 - **Account type icons**: Custom SVGs (BankIcon, CardTypeIcon, InvestIcon, WalletIcon). Type detected from `plaidItem.accounts[0].type` — `depository`, `credit`, `investment`, or manual fallback.
 - **Category emojis**: Transaction rows display the category emoji from `tx.category.icon` (returned by `/api/transactions`). Background color is type-based: Income=`bg-positive/10`, Expense=`bg-brand-primary/10`, Debt=`bg-negative/10`.
 - **Responsive transaction columns**: Full desktop shows Emoji | Date | Description | Category | Account | Amount. On tablet (`sm`), Category column hides. On mobile, Date/Category/Account collapse into a subtitle line under Description (e.g. "Mar 7 · Groceries · Chase Checking").
-- **Animations**: `framer-motion` staggered `fadeUp` (opacity 0→1, y 12→0) with 0.1s delay between sections.
+- **Animations**: `framer-motion` staggered `fadeUp` (opacity 0→1, y 12→0) with staggered delays: 0.1s (SyncedAccountsCard), 0.15s (ExpenseSplitCard), 0.2s (QuickActionsCard), 0.25s (RecentTransactionsCard). Duration is 0.4s for all sections.
 
 ### 5.2.4. Data Hooks
 

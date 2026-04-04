@@ -36,14 +36,17 @@ A key architectural feature of the portfolio dashboard is its reliance on **serv
 
 ### 6.2.2. Visualizations and Interactivity
 
-- **Performance Chart**: A "Performance" tab displays a historical area chart of the user's net worth, with options to filter the time range.
+- **Performance Chart**: A "Performance" tab displays a historical area chart of the user's net worth. Users can select time ranges via `TIME_RANGES`: 1M (1 month), 6M (6 months), 1Y (1 year), and ALL (full history). These are rendered as pill-shaped toggle buttons.
 - **Filtering and Sorting**: Users can filter the list of assets by their symbol and sort the holdings table by various columns.
+- **Equity Analysis**: Detailed stock equity analysis (P/E ratios, dividend yields, sector breakdowns) is documented in a separate spec (`19-equity-analysis.md`).
 
 ### 6.2.3. Data Fetching
 
-The dashboard uses three primary hooks:
+The dashboard uses the following hooks:
 - `usePortfolioItems`: Fetches the current state of all portfolio items from the `/api/portfolio/items` endpoint. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion.
 - `usePortfolioHistory`: Fetches historical data for the performance chart.
+- `usePortfolioHoldings`: Fetches historical daily `PortfolioHolding` records from `/api/portfolio/holdings`. Accepts optional filters: `account`, `category`, `categoryGroup`, `ticker`.
+- `usePortfolioLots`: Fetches FIFO lot data for an individual asset. Accepts an `assetId` parameter and is only enabled when an asset is selected.
 - `useMetadata`: Retrieves category definitions and other metadata.
 
 ## 6.3. Manual Updates & Debt Management Page
@@ -86,6 +89,18 @@ When the selected ticker's `assetCurrency` differs from the account's currency:
 
 Tickers must contain at least one letter. The frontend pre-populates ticker fields from raw transaction data (`deep-dive-drawer.tsx`) and validates before submission.
 
-## 6.5. Portfolio Currency Settings
+## 6.5. Portfolio Utility Functions (`lib/portfolio-utils.ts`)
+
+Key utility functions used across portfolio pages:
+
+| Function | Purpose |
+|----------|---------|
+| `getDisplayData(item, portfolioCurrency)` | Picks the correct financial block from a `PortfolioItem` response: uses the `portfolio` block when `portfolioCurrency !== 'USD'`, otherwise falls back to the `usd` block. |
+| `buildGroupColorMap(assetGroups, debtGroups)` | Builds a `Record<string, string>` mapping category group names to dataviz hex colors. Groups are sorted alphabetically for deterministic assignment. Debt groups always use negative-family colors. |
+| `getGroupColor(group, isDebt, index)` | Returns the hex color for a single category group. Debt groups use negative-family palette; asset groups use `dataviz-1` through `dataviz-8` tokens. |
+
+These functions ensure consistent color assignment and currency-aware display across all portfolio visualizations.
+
+## 6.6. Portfolio Currency Settings
 
 The portfolio display currency is configurable per tenant via `GET/PUT /api/tenants/settings` (`portfolioCurrency` field). The settings page allows users to select from their configured currencies. When changed, the dashboard automatically reflects values in the new currency.

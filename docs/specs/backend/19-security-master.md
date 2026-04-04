@@ -30,7 +30,8 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 | `getBySymbols(symbols)` | Fetch multiple records by symbol array |
 | `upsertFromProfile(symbol, profileData)` | Upsert profile fields + `lastProfileUpdate` |
 | `upsertFundamentals(symbol, { earnings, dividends, quote })` | Compute and upsert fundamental fields |
-| `getAllActiveStockSymbols()` | Distinct symbols from PortfolioItem where `processingHint = 'API_STOCK'` and `quantity > 0` |
+| `getAllActiveStockSymbols()` | Distinct `{ symbol, exchange }` pairs from PortfolioItem where `processingHint = 'API_STOCK'` and `quantity > 0` |
+| `getAllSecurityMasterSymbols()` | All `{ symbol, exchange }` pairs from the SecurityMaster table, ordered by symbol. Used for full-table refresh |
 
 ### Computation Logic (`upsertFundamentals`)
 
@@ -62,7 +63,7 @@ A third rate limiter for nightly fundamentals batch:
 ### Enhanced Functions
 
 - **`getSymbolProfile(symbol)`**: Now also returns `industry`, `country`, `description`, `logoUrl`, `ceo`, `employees`, `website`
-- **`getLatestPrice(symbol, { extended: true })`**: Returns `{ close, week52High, week52Low, averageVolume }` instead of a plain number
+- **`getLatestPrice(symbol, { extended: true })`**: Returns `{ close, currency, week52High, week52Low, averageVolume }` instead of a plain number
 
 ## 19.4. Cache Layer
 
@@ -93,7 +94,9 @@ Fundamentals data is NOT fetched eagerly; the nightly job handles it.
 |--------|-------|-------------|
 | `GET` | `/api/security-master?symbol=` | Single symbol lookup |
 | `GET` | `/api/security-master/bulk?symbols=` | Batch lookup (comma-separated) |
-| `POST` | `/api/security-master/refresh` | Enqueue on-demand refresh for a symbol |
+| `POST` | `/api/security-master/refresh` | Enqueue on-demand refresh for a single symbol |
+| `POST` | `/api/security-master/refresh-all` | Enqueue full nightly refresh (all active stock symbols) |
+| `POST` | `/api/security-master/refresh-table` | Refresh ALL SecurityMaster records (forces profile refresh) |
 
 ### Route Registration
 
@@ -120,6 +123,7 @@ Fundamentals data is NOT fetched eagerly; the nightly job handles it.
 |----------|---------|-------------|
 | `refresh-all-fundamentals` | Daily cron `0 3 * * *` (3 AM UTC) | Refreshes all active stock symbols |
 | `refresh-single-symbol` | On-demand via `POST /api/security-master/refresh` | Refreshes one symbol (profile + fundamentals) |
+| `refresh-all-from-table` | On-demand via `POST /api/security-master/refresh-table` | Refreshes ALL SecurityMaster records (forces profile refresh). Uses `getAllSecurityMasterSymbols()` instead of active portfolio items |
 
 ### `refresh-all-fundamentals` Flow
 
@@ -142,7 +146,23 @@ Fundamentals data is NOT fetched eagerly; the nightly job handles it.
 
 200 stocks x 41 credits = 8,200 credits. At ~30 fundamentals calls/min + quote reuse, total runtime is approximately 20-30 minutes overnight.
 
-## 19.7. Schema
+## 19.7. Exchange Disambiguation
+
+The worker includes logic to handle the difference between ISO-10383 MIC codes (e.g. `XNYS`, `BVMF`, `XNAS`) and display-name exchanges (e.g. `NYSE`, `NASDAQ`, `BOVESPA`). Twelve Data requires MIC codes for API calls.
+
+### `isLikelyMicCode(exchange)`
+
+Returns `true` if the value looks like a valid 4-character MIC code, `false` if it matches a known display name or is longer than 4 characters.
+
+### `DISPLAY_NAME_EXCHANGES`
+
+A `Set` of known display-name exchange strings that should NOT be passed as `mic_code` to Twelve Data: `NYSE`, `NASDAQ`, `BOVESPA`, `AMEX`, `OTC`, `LSE`, `TSE`, `SSE`, `HKSE`, `NSE`, `BSE`, `KRX`, `JPX`, `ASX`, `TSX`, `SIX`, `MOEX`, `SGX`.
+
+### Self-healing exchange codes
+
+During profile refresh, the worker compares the MIC code returned by Twelve Data with the exchange stored on portfolio items. If they differ, it runs `prisma.portfolioItem.updateMany()` to correct portfolio items that were created with display names instead of MIC codes. This ensures future API calls use the correct exchange identifier.
+
+## 19.8. Schema
 
 The SecurityMaster model is defined in `prisma/schema.prisma` (synced from `bliss-finance-api`). See the migration at `bliss-finance-api/prisma/migrations/20260313000000_add_security_master/migration.sql`.
 
@@ -150,12 +170,6 @@ Key design decisions:
 - Global table (not per-tenant) — stock fundamentals are universal
 - `Decimal` types for all numeric fields to match existing Prisma patterns
 - Indexes on `sector`, `industry`, `country`, `assetType` for equity analysis grouping queries
-
-## 19.8. Seed Script
-
-- **File**: `scripts/seed-security-master.js`
-- Pre-populates SecurityMaster with top ~50 US stocks
-- Run: `node scripts/seed-security-master.js`
 
 ## 19.9. Tests
 

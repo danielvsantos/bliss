@@ -81,7 +81,7 @@ When neither exact nor vector match is found, the description is sent to the Goo
    A classification rule is added: *"If a PLAID CATEGORY is provided, use it as a contextual hint but always map to the most appropriate category from your list."* This improves accuracy for first-time merchants that miss Tiers 1 & 2.
 4. Parses the structured JSON response: `{ categoryId, confidence, reasoning }`.
 5. Returns `{ categoryId, confidence, reasoning, source: 'LLM' }`. The confidence is **hard-capped at 0.85** in code (`Math.min(..., 0.85)`) so LLM classifications can never auto-promote. The `reasoning` string is stored in `PlaidTransaction.classificationReasoning` and surfaced in the Transaction Review deep-dive drawer.
-6. On Gemini API failure: retries up to 5 times with exponential backoff, then returns `null` (transaction is staged without a category).
+6. On Gemini API failure: retries up to 5 times with exponential backoff, then throws an `Error` (`'All classification tiers failed...'`). The calling worker handles this by leaving the transaction without a category.
 
 **Retry/backoff**: Implemented in `geminiService.js` with `MAX_RETRIES = 5` and `BASE_DELAY_MS = 1000`. Rate-limit errors (429) use a longer `RATE_LIMIT_BASE_DELAY_MS = 60_000` (60s → 120s → 180s).
 
@@ -134,7 +134,7 @@ After staging a `PlaidTransaction`, the processor calls `categorizationService.c
 - `classificationReasoning` — LLM reasoning string (only for `'LLM'` tier; `null` otherwise)
 - `promotionStatus` → `'CLASSIFIED'`
 
-**Investment Detection**: After classification, if `category.type === 'Investments'` and `category.processingHint` is in `INVESTMENT_HINTS` (`API_STOCK`, `API_CRYPTO`, or `MANUAL`), the row is flagged with `requiresEnrichment: true` and `enrichmentType: 'INVESTMENT'`. These rows are **never auto-promoted** regardless of confidence — they require user-provided ticker/quantity/price before the Transaction record can be created correctly.
+**Investment Detection**: After classification, if `category.type === 'Investments'` and `category.processingHint` is in `INVESTMENT_HINTS` (`API_STOCK`, `API_CRYPTO`, `API_FUND`, or `MANUAL`), the row is flagged with `requiresEnrichment: true` and `enrichmentType: 'INVESTMENT'`. These rows are **never auto-promoted** regardless of confidence — they require user-provided ticker/quantity/price before the Transaction record can be created correctly.
 
 **Phase 1 hold-back (Quick Seed interview)**: Before Phase 2 classifies the bulk of transactions, Phase 1 classifies the top N descriptions by frequency. Results are held with `seedHeld=true` (rather than processed immediately) unless:
 - `result.source === 'EXACT_MATCH'` — always trusted, processed immediately.
@@ -194,11 +194,11 @@ Two Gemini API capabilities are used:
 - **Output**: 768-dimensional float vector
 - **API call**: `model.embedContent({ content: { parts: [{ text }] }, outputDimensionality: 768 })`
 - `outputDimensionality: 768` is required — the model produces 3072 dims by default; constraining to 768 matches the `vector(768)` DB column without a migration.
-- Retry logic: 3 attempts with exponential backoff.
+- Retry logic: 5 attempts (`MAX_RETRIES = 5`) with exponential backoff.
 
 ### Classification Model
 
-- **Model**: `gemini-2.0-flash`
+- **Model**: `gemini-3-flash-preview`
 - **Temperature**: `0.1` (low for deterministic output)
 - **Response format**: `application/json`
 - Returns `{ categoryId: int, confidence: float 0–1, reasoning: string }`
@@ -288,7 +288,8 @@ All tuning constants for the four-tier waterfall live in `src/config/classificat
 | `DEFAULT_AUTO_PROMOTE_THRESHOLD` | `0.90` | Worker fallback when `Tenant.autoPromoteThreshold` is null |
 | `DEFAULT_REVIEW_THRESHOLD` | `0.70` | Worker fallback when `Tenant.reviewThreshold` is null |
 | `TOP_N_SEEDS` | `15` | Phase 1 — max distinct descriptions held for the Quick Seed interview |
-| `PHASE2_CONCURRENCY` | `15` | Phase 2 — p-limit concurrency cap for parallel LLM calls |
+| `DEFAULT_PLAID_HISTORY_DAYS` | `1` (from `PLAID_HISTORY_DAYS` env var) | Default days of Plaid transaction history fetched on initial connect; written to `Tenant.plaidHistoryDays` at creation |
+| `PHASE2_CONCURRENCY` | `5` | Phase 2 — p-limit concurrency cap for parallel LLM calls |
 
 **Note on Prisma schema sync**: The `Tenant` model in `bliss-finance-api/prisma/schema.prisma` also has `@default(0.90)` and `@default(0.70)` on `autoPromoteThreshold` and `reviewThreshold`. These must be kept in sync manually — Prisma schema cannot import this JS file.
 

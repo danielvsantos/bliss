@@ -47,7 +47,7 @@ The Insights feature provides a card-based feed of AI-generated financial observ
 2. **Generate button**: Triggers `POST /api/insights` and begins polling for new results.
 3. **Generation polling**: 10-second interval. Stops when `latestBatchDate` changes (new batch detected) or after 30 seconds (timeout). Shows a loading indicator during generation.
 4. **Empty state**: When no insights exist, displays a message encouraging the user to generate their first batch.
-5. **Animations**: Framer Motion `AnimatePresence` for card enter/exit transitions and page-level fade-in.
+5. **Animations**: Framer Motion `AnimatePresence` for card enter/exit transitions.
 
 ---
 

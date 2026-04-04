@@ -10,7 +10,7 @@ The Notification Center provides two operations:
 
 | Method | Purpose |
 |--------|---------|
-| `GET /api/notifications/summary` | Aggregate 4 signal types from existing tables |
+| `GET /api/notifications/summary` | Aggregate signal types from 7 parallel queries |
 | `PUT /api/notifications/summary` | Mark notifications as seen (update `lastNotificationSeenAt`) |
 
 Both endpoints require JWT authentication via `withAuth` and are protected by rate limiting and CORS middleware.
@@ -21,7 +21,7 @@ Both endpoints require JWT authentication via `withAuth` and are protected by ra
 
 ### `GET /api/notifications/summary`
 
-Runs parallel queries against existing tables to produce a unified signal summary.
+Runs 7 parallel queries against existing tables to produce a unified signal summary.
 
 **Response** (`200 OK`):
 
@@ -33,31 +33,31 @@ Runs parallel queries against existing tables to produce a unified signal summar
     {
       "type": "PENDING_REVIEW",
       "count": 3,
-      "label": "transactions awaiting review",
+      "label": "3 transactions awaiting review",
       "href": "/agents/review",
-      "severity": "warning",
+      "severity": "info",
       "isNew": true
     },
     {
       "type": "PLAID_ACTION_REQUIRED",
       "count": 1,
-      "label": "bank connection needs attention",
+      "label": "Chase needs attention",
       "href": "/accounts",
       "severity": "warning",
       "isNew": true
     },
     {
       "type": "ONBOARDING_INCOMPLETE",
-      "count": 1,
-      "label": "setup steps remaining",
-      "href": "/onboarding",
+      "count": 3,
+      "label": "3 setup steps remaining",
+      "href": "/",
       "severity": "info",
       "isNew": false
     },
     {
       "type": "NEW_INSIGHTS",
       "count": 7,
-      "label": "new insights available",
+      "label": "7 new insights available",
       "href": "/agents/insight",
       "severity": "positive",
       "isNew": true
@@ -84,16 +84,16 @@ Marks all notifications as seen by updating `User.lastNotificationSeenAt` to the
 
 ## 14.3. Signal Types
 
-4 signal types are aggregated from existing tables. No dedicated notification storage is needed.
+Signal types are aggregated from existing tables via 7 parallel queries (including `accountCount`, `hasTransaction`, and `tenant.onboardingCompletedAt` lookups). No dedicated notification storage is needed.
 
 | Signal Type | Source Table(s) | Count Logic | `isNew` Logic |
 |-------------|----------------|-------------|---------------|
 | `PENDING_REVIEW` | `PlaidTransaction` (status `CLASSIFIED`) + `StagedImportRow` (status `PENDING`) | Sum of both counts | Always `true` (actionable) |
-| `PLAID_ACTION_REQUIRED` | `PlaidItem` (status `LOGIN_REQUIRED` or `ERROR`) | Count of matching items | Always `true` (actionable) |
-| `ONBOARDING_INCOMPLETE` | `Tenant.onboardingProgress` | `1` if setup is not complete | Always `false` (not urgent) |
+| `PLAID_ACTION_REQUIRED` | `PlaidItem` (status `LOGIN_REQUIRED` or `ERROR`) | One signal PER PlaidItem (each with `count: 1` and institution-specific label, e.g., "Chase needs attention") | Always `true` (actionable) |
+| `ONBOARDING_INCOMPLETE` | `Tenant.onboardingCompletedAt` + account/transaction counts | Number of incomplete onboarding steps | Always `false` (not urgent) |
 | `NEW_INSIGHTS` | `Insight` (not dismissed) | Count of insights created after `lastSeenAt` | `true` if any `createdAt > lastSeenAt` |
 
-All queries are scoped to `req.user.tenantId`.
+All queries are scoped to `req.user.tenantId`. Signals with `count: 0` are omitted from the response (guarded by `if (count > 0)`).
 
 ---
 
@@ -115,12 +115,12 @@ Each signal in the `signals` array has the following structure:
 |-------|------|-------------|
 | `type` | string | Signal identifier (e.g., `PENDING_REVIEW`) |
 | `count` | integer | Number of items in this signal |
-| `label` | string | Human-readable description (e.g., "transactions awaiting review") |
+| `label` | string | Dynamic human-readable description with count (e.g., "3 transactions awaiting review") |
 | `href` | string | Frontend route to navigate to (e.g., `/agents/review`) |
 | `severity` | string | Color hint for the frontend (`positive`, `warning`, `info`) |
 | `isNew` | boolean | Whether this signal contributes to `totalUnseen` |
 
-Signals with `count: 0` are still included in the response (with `isNew: false`) so the frontend can show a complete signal list.
+Signals with `count: 0` are omitted entirely from the response (guarded by `if (count > 0)`). The frontend handles a variable-length signal array.
 
 ---
 
@@ -145,5 +145,5 @@ No new tables were created. The `lastNotificationSeenAt` timestamp is used to de
 - **Email digests** — Daily/weekly email summary of pending signals and new insights.
 - **Notification preferences** — Per-signal-type mute/unmute (e.g., disable onboarding signal).
 - **Notification history persistence** — Dedicated `Notification` table for historical tracking and audit.
-- **WebSocket real-time updates** — Replace 30-second polling with WebSocket push for instant updates.
+- **WebSocket real-time updates** — Replace polling with WebSocket push for instant updates.
 - **Sound/vibration on critical alerts** — Audio or haptic feedback for high-severity signals.

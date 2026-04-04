@@ -26,7 +26,7 @@ apps/backend/src/
     securityMaster.js   # GET /api/security-master -- stock fundamentals
     adminRoutes.js      # POST /api/admin -- embedding regeneration
   services/             # Business logic
-  workers/              # BullMQ job processors (10 workers)
+  workers/              # BullMQ job processors (8 workers + commitWorker helper)
   queues/               # BullMQ queue definitions (8 queues)
   utils/                # Logging, caching, hashing, encryption, Redis
   __tests__/
@@ -55,13 +55,18 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 | Event type | Target queue | Worker |
 |------------|-------------|--------|
 | `SMART_IMPORT_REQUESTED` | smart-import | smartImportWorker |
-| `SMART_IMPORT_COMMIT` | smart-import | commitWorker |
+| `SMART_IMPORT_COMMIT` | smart-import | smartImportWorker (commit path) |
 | `PLAID_INITIAL_SYNC`, `PLAID_SYNC_UPDATES` | plaid-sync | plaidSyncWorker |
-| `PLAID_SYNC_COMPLETE` | plaid-processor | plaidProcessorWorker |
-| `TRANSACTIONS_IMPORTED`, `MANUAL_TRANSACTION_MODIFIED` | portfolio | portfolioWorker |
+| `PLAID_HISTORICAL_BACKFILL` | plaid-sync | plaidSyncWorker |
+| `MANUAL_PORTFOLIO_PRICE_UPDATED` | portfolio | portfolioWorker |
+| `MANUAL_TRANSACTION_MODIFIED`, `MANUAL_TRANSACTION_CREATED` | portfolio | portfolioWorker |
+| `TRANSACTIONS_IMPORTED` | portfolio | portfolioWorker |
 | `PORTFOLIO_CHANGES_PROCESSED` | analytics | analyticsWorker |
+| `CASH_HOLDINGS_PROCESSED` | analytics | analyticsWorker |
+| `ANALYTICS_RECALCULATION_COMPLETE` | insights | insightGeneratorWorker |
 | `TAG_ASSIGNMENT_MODIFIED` | analytics | analyticsWorker |
 | `PORTFOLIO_STALE_REVALUATION` | portfolio | portfolioWorker (debounced 30min) |
+| `TENANT_CURRENCY_SETTINGS_UPDATED` | portfolio | portfolioWorker |
 
 **Critical:** `originalScope` and `portfolioItemIds` must be threaded through the entire pipeline from event source to final worker. Dropping these breaks scoped (incremental) updates.
 
@@ -69,13 +74,12 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 
 | Worker | Queue | Concurrency | Lock duration | Key job types |
 |--------|-------|-------------|---------------|---------------|
-| `eventSchedulerWorker` | event-scheduler | 3 | default | Routes events to queues |
-| `smartImportWorker` | smart-import | 1 | default | `process-smart-import` |
-| `commitWorker` | smart-import | 1 | default | `commit-smart-import` |
-| `plaidSyncWorker` | plaid-sync | 3 | default | `plaid-sync-job` |
-| `plaidProcessorWorker` | plaid-processor | 5 | default | `process-plaid-transactions` |
-| `portfolioWorker` | portfolio | 5 | 300s | `process-portfolio-changes`, `recalculate-portfolio-items`, `value-portfolio-items`, `value-all-assets`, `revalue-all-tenants` (cron 4AM UTC) |
-| `analyticsWorker` | analytics | 1 | default | `full-rebuild-analytics`, `scoped-update-analytics` |
+| `eventSchedulerWorker` | event-scheduler | 1 | default | Routes events to queues |
+| `smartImportWorker` | smart-import | 1 | 600s | `process-smart-import`, `commit-smart-import` (commit logic in `commitWorker.js`, loaded lazily) |
+| `plaidSyncWorker` | plaid-sync | default | default | `plaid-sync-job` |
+| `plaidProcessorWorker` | plaid-processor | 1 | 600s | `process-plaid-transactions` |
+| `portfolioWorker` | portfolio | 5 | 300s | `process-portfolio-changes`, `process-cash-holdings`, `recalculate-portfolio-item`, `recalculate-portfolio-items`, `process-simple-liability`, `process-amortizing-loan`, `value-portfolio-items`, `value-all-assets`, `generate-portfolio-valuation`, `revalue-all-tenants` (cron 4AM UTC) |
+| `analyticsWorker` | analytics | 1 | 300s | `full-rebuild-analytics`, `scoped-update-analytics` |
 | `insightGeneratorWorker` | insights | 1 | 600s | `generate-all-insights` (cron 6AM UTC), `generate-tenant-insights` |
 | `securityMasterWorker` | security-master | 1 | 1800s | `refresh-all-fundamentals` (cron 3AM UTC), `refresh-single-symbol` |
 
@@ -156,6 +160,11 @@ Single source of truth for all AI tuning constants:
 | `TOP_N_SEEDS` | 15 | Phase 1 seed interview size |
 | `PHASE2_CONCURRENCY` | 5 | Max concurrent Gemini LLM calls |
 
+**Gemini models** (configured in `services/geminiService.js`):
+- Classification: `gemini-3-flash-preview` (fast, high-volume)
+- Insights: `gemini-3.1-pro-preview` (quality prose, override via `INSIGHT_MODEL` env var)
+- Embeddings: `gemini-embedding-001` with `outputDimensionality: 768`
+
 These defaults must stay in sync with `Tenant.autoPromoteThreshold` and `Tenant.reviewThreshold` in `prisma/schema.prisma`.
 
 ## Caching utilities
@@ -173,9 +182,11 @@ Strategy pattern for asset valuation:
 ```
 portfolioWorker
   -> process-portfolio-changes.js    # FIFO lot calculation, USD PnL with historical FX
+  -> recalculate-portfolio-item.js   # Re-derive lots/PnL for a single portfolio item
   -> cash-processor.js               # Transaction-date-only cash holdings
   -> simple-liability-processor.js   # Simple debt tracking
   -> amortizing-loan-processor.js    # Amortizing loan tracking
+  -> asset-aggregator.js             # Aggregates asset-level summaries
   -> valuation/
       -> index.js                    # Orchestrator: fetch-once, process-in-memory
       -> price-fetcher.js            # 4-stage waterfall: cache -> API -> DB lookback -> manual

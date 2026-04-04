@@ -1,5 +1,7 @@
 # Getting Started
 
+> **Just want to try Bliss?** See the [Docker Quick Start](apps/docs/content/guides/docker-quickstart.md) guide to get running in under 5 minutes.
+
 This guide walks you through setting up Bliss Finance for development or local use.
 
 ## Monorepo Structure
@@ -9,7 +11,8 @@ bliss/
 ├── apps/
 │   ├── api/          # Next.js API (port 3000)
 │   ├── backend/      # Express + BullMQ workers (port 3001)
-│   └── web/          # React SPA — Vite + shadcn/ui (port 8080)
+│   ├── web/          # React SPA — Vite + shadcn/ui (port 8080)
+│   └── docs/         # Nextra 4 documentation site (port 3002)
 ├── packages/
 │   └── shared/       # Shared utilities: encryption, storage adapter
 ├── prisma/           # Schema, migrations, seed

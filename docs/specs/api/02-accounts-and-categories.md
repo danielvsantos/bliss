@@ -11,9 +11,10 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 ### Endpoints
 
 - **`GET /api/accounts`**: Retrieves a list of accounts for the authenticated user's tenant. Supports filtering by `countryId`, `currencyCode`, and `ownerId`, as well as pagination and sorting.
+- **`GET /api/accounts?id={accountId}`**: Retrieves a single account by ID with full includes (owners, country, currency, bank). Returns `404` if the account is not found or does not belong to the tenant.
 - **`POST /api/accounts`**: Creates a new account. Performs extensive validation to ensure that the specified bank, currency, country, and owners are all valid and associated with the tenant.
 - **`PUT /api/accounts?id={accountId}`**: Updates an existing account. Includes pre-transaction validation to verify any changed fields and handles the addition and removal of account owners.
-- **`DELETE /api/accounts?id={accountId}`**: Deletes an account. Includes a safeguard to prevent the deletion of an account that has associated transactions, thus maintaining data integrity.
+- **`DELETE /api/accounts?id={accountId}`**: Deletes an account. Returns `409 Conflict` if the account has associated transactions (with a count of linked transactions in the response). Returns `204 No Content` on successful deletion.
 
 ### Data Model (`Account`)
 
@@ -24,14 +25,20 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 - `currencyCode` (String): Foreign key to the `Currency` entity.
 - `countryId` (String): Foreign key to the `Country` entity.
 - `owners` (Relation): Many-to-many with `User` via the `AccountOwner` join table.
+- `plaidAccountId` (String?): Plaid's `account_id`. Set when the account is linked via Plaid.
+- `plaidItemId` (String?): Foreign key to the `PlaidItem` entity.
+- `mask` (String?): Last 4 digits of the account number (e.g., `"1234"`).
+- `type` (String?): Plaid account type (e.g., `depository`, `credit`, `investment`, `loan`).
+- `subtype` (String?): Plaid account subtype (e.g., `checking`, `savings`, `cd`).
+- `plaidItem` (Relation): Optional belongs-to relation with `PlaidItem` via `plaidItemId`.
 
 ### Business Logic & Security
 
 - **Encryption at Rest**: The `accountNumber` field is encrypted using AES-256-GCM with a random salt per entry (non-searchable). Decryption is handled transparently by Prisma middleware.
 - **Authorization**: All queries are strictly scoped to the `tenantId` of the authenticated user.
+- **Rate Limiting**: The endpoint uses a per-route rate limiter (`rateLimiters.accounts`).
 - **Validation**: `POST` and `PUT` endpoints validate that all associated entities (banks, currencies, countries, owners) belong to the current tenant.
-- **Deletion Protection**: An account cannot be deleted if it has any linked transactions.
-- **Auditing**: All `CREATE`, `UPDATE`, and `DELETE` operations are recorded in the `AuditLog`.
+- **Deletion Protection**: An account cannot be deleted if it has any linked transactions. DELETE returns `409 Conflict` with a transaction count, or `204 No Content` on success.
 
 ---
 
@@ -62,14 +69,15 @@ The Categories API, at `pages/api/categories.js`, provides full CRUD functionali
 
 ### Allowed Types (`ALLOWED_CATEGORY_TYPES`)
 
-Defined in `lib/constants.js`. The `type` field must be one of:
+Defined in `lib/constants.js`. The `type` field must be one of (9 types):
 - `Income`
 - `Essentials`
 - `Lifestyle`
 - `Growth`
-- `Investments`
-- `Asset`
-- `Debt`
+- `Ventures` — For own businesses / side projects
+- `Investments` — For assets that appreciate/generate income
+- `Asset` — For transactional assets like cash
+- `Debt` — For liabilities
 - `Transfers`
 
 ### POST — Create Category
@@ -119,7 +127,6 @@ Defined in `lib/constants.js`. The `type` field must be one of:
 - **Authorization**: All queries are scoped by `tenantId`.
 - **Validation**: The `type` field is validated against `ALLOWED_CATEGORY_TYPES`. Invalid values return `400`.
 - **Uniqueness**: The `[name, tenantId]` pair must be unique. Duplicate name creation returns `409 Conflict`.
-- **Auditing**: All `CREATE`, `UPDATE`, and `DELETE` operations are recorded in the `AuditLog`.
 
 ---
 
@@ -136,7 +143,7 @@ Each entry in the exported `DEFAULT_CATEGORIES` array has:
 | `code` | Stable `SNAKE_UPPER_CASE` identifier. Persisted as `defaultCategoryCode` on the `Category` row. Used for cross-tenant global embedding matching. |
 | `name` | Display name (e.g. `"Groceries"`). |
 | `group` | Broader grouping (e.g. `"Eating In"`). |
-| `type` | One of the 8 canonical types. |
+| `type` | One of the 9 canonical types. |
 | `icon` | Emoji icon (e.g. `"🛒"`). User can rename this via the UI. |
 | `processingHint` | Optional. Directs backend workers (e.g. `"API_STOCK"`, `"MANUAL"`). **Immutable after creation.** |
 | `portfolioItemKeyStrategy` | Optional. Controls portfolio item aggregation (`"TICKER"`, `"CATEGORY_NAME"`, etc.). |
@@ -155,7 +162,8 @@ Existing tenants do **not** automatically receive new default categories when th
 
 | Value | Meaning |
 |---|---|
-| `API_STOCK` | Category is backed by live stock price data from AlphaVantage |
+| `API_STOCK` | Category is backed by live stock price data from Twelve Data |
+| `API_FUND` | Category is backed by live fund/ETF price data from Twelve Data (used by Funds and ETFs categories) |
 | `API_CRYPTO` | Category is backed by live crypto price data |
 | `AMORTIZING_LOAN` | Triggers amortizing loan debt tracking in the portfolio worker |
 | `SIMPLE_LIABILITY` | Triggers simple liability tracking |

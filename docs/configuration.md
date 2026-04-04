@@ -11,6 +11,24 @@ Bliss Finance uses a **single root `.env` file** as the source of truth for all 
 
 ---
 
+## Minimal Docker Setup
+
+For a basic Docker deployment, `scripts/setup.sh` generates all required secrets automatically (`ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`). It also sets safe defaults for `DATABASE_URL`, `REDIS_URL`, and all service URLs. **You do not need to configure anything to get a working local instance.**
+
+The only variables you might want to customize are the optional integration keys:
+
+| Integration | Variables | Purpose |
+|---|---|---|
+| Plaid | `PLAID_CLIENT_ID`, `PLAID_SECRET` | Bank account linking |
+| Gemini AI | `GEMINI_API_KEY` | AI classification and insights |
+| Market data | `TWELVE_DATA_API_KEY` or `FINNHUB_API_KEY` | Stock price fetching |
+| Currency rates | `CURRENCYLAYER_API_KEY` | Automatic FX rate fetching |
+| Observability | `SENTRY_DSN` | Error tracking |
+
+All of these are optional. The application works without them and degrades gracefully.
+
+---
+
 ## Database
 
 | Variable | Required | Default | Description |

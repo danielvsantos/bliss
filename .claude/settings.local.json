@@ -27,7 +27,13 @@
       "Bash(pnpm vitest:*)",
       "Bash(node_modules/.bin/jest --no-coverage \"src/__tests__/unit/workers/\\(portfolio-handlers|portfolioWorker|smartImportWorker\\)\")",
       "Bash(ls /Users/danielviana/Desktop/bliss/apps/web/src/hooks/*test* /Users/danielviana/Desktop/bliss/apps/web/src/contexts/*test* /Users/danielviana/Desktop/bliss/apps/web/src/pages/*test*)",
-      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx vitest run)"
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx vitest run)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx vitest run --pool=forks)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx vitest run --pool=forks --reporter=verbose)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npx vitest run --pool=forks --poolOptions.forks.maxForks=1)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npm run test)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npm run test:coverage)",
+      "Bash(node apps/docs/scripts/sync-docs.mjs)"
     ]
   }
 }

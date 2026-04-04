@@ -6,9 +6,9 @@ This document outlines the frontend implementation for managing the core referen
 
 ## 3.1. Centralized Data Fetching
 
-To ensure consistency and efficiency, a custom hook, `useReferenceData`, has been created to handle the fetching of all reference data from a single, centralized location.
+To ensure consistency and efficiency, a custom hook, `useMetadata`, has been created to handle the fetching of all reference data from a single, centralized location.
 
-### `src/hooks/use-reference-data.ts`
+### `src/hooks/use-metadata.ts`
 
 -   **Responsibility**: This hook encapsulates the logic for fetching the master lists of banks, countries, and currencies using `react-query`.
 -   **Benefits**: It provides caching, automatic refetching, and a unified loading/error state for all reference data, which simplifies the components that consume this data.
@@ -22,21 +22,26 @@ The `onboarding.tsx` component guides new users through the initial setup of the
 ### `src/pages/onboarding.tsx`
 
 -   **Responsibility**: To provide a step-by-step, wizard-like interface for new users to configure their tenant.
--   **Data Fetching**: It uses the `useReferenceData` hook to fetch all required reference data.
+-   **Data Fetching**: It uses the `useMetadata` hook to fetch all required reference data.
 -   **State Management**: It uses local `useState` to manage the lists of selected items for each of the three entities.
 -   **User Interaction**: It presents the data in a multi-select format, allowing users to choose their preferred options.
 -   **Submission**: On completion, it sends the selected IDs to the `tenants` API to update the tenant's profile.
 
 ## 3.3. Application Settings
 
-The main application settings page allows users to modify their tenant's reference data at any time.
+The main application settings page is a comprehensive tenant configuration interface with multiple tabs.
 
 ### `src/pages/settings/index.tsx`
 
--   **Responsibility**: To allow users to view and update their selected banks, countries, and currencies after the initial onboarding.
--   **Data Fetching**: It also uses the `useReferenceData` hook to get the master lists and `getTenantMeta` to get the user's current selections.
--   **User Interaction**: It provides a similar multi-select interface as the onboarding page, but within the main application layout.
--   **State Management**: The component's state is derived from two primary sources: the `useReferenceData` hook provides the lists of available entities, and the `getTenantMeta` utility provides the user's currently selected entities. A single `useState` hook manages the user's selections as they are being edited.
--   **Data Flow**: The component follows a clean, unidirectional data flow. Data from hooks and local storage is passed down into the UI, and user interactions trigger handler functions that update the state. This clear flow prevents race conditions and makes the component easy to reason about.
--   **Error Handling**: The component has robust error handling for the API calls made by the `useReferenceData` hook. It will display a clear error message to the user if the reference data cannot be loaded, and it will show a loading spinner while the data is being fetched.
--   **Submission**: When the user saves their changes, the component sends a simplified `TenantUpdateRequest` object, containing only the IDs of the selected entities, to the `tenants` API. 
+-   **Responsibility**: To allow users to view and update all aspects of their tenant configuration after the initial onboarding.
+-   **Data Fetching**: Uses the `useMetadata` hook to get the master lists of countries, currencies, banks, categories, and accounts, along with tenant settings hooks for current selections.
+-   **Tabbed Interface**: The settings page is organized into multiple tabs:
+    -   **General Settings** — Tenant name, plan, and basic configuration.
+    -   **Countries / Currencies** — Multi-select interfaces for choosing the tenant's active countries and currencies.
+    -   **Banks** — Multi-select for the tenant's banks, with Plaid-linked banks indicated.
+    -   **AI Classification Thresholds** — Slider controls for `autoPromoteThreshold` and `reviewThreshold`, allowing users to tune the sensitivity of the AI classification pipeline.
+    -   **Portfolio Currency** — Selector for the tenant's base portfolio currency (auto-detected with USD > EUR > GBP priority when currencies change).
+    -   **Change Password** — Password update form.
+    -   **Delete Tenant** — Destructive action to permanently delete the tenant and all associated data, with confirmation safeguards.
+-   **State Management**: The component's state is derived from two primary sources: the `useMetadata` hook provides the lists of available entities, and the tenant settings provide the user's current selections.
+-   **Submission**: When the user saves their changes, the component sends a `TenantUpdateRequest` object to the `tenants` API. Join table updates use conditional-replace semantics — only non-empty provided arrays trigger changes.

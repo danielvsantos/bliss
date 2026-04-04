@@ -42,7 +42,7 @@ The main user interface for interacting with transactions is a comprehensive, fe
     -   **Category Group** — `Select` dropdown listing unique category groups. When changed, the Category filter is reset and its options are narrowed to that group.
     -   **Category** — `Select` dropdown listing categories (filtered by the selected group if any).
     -   A "Clear Filters" button appears when any filter is active.
--   All filter changes reset pagination to page 1. The `TransactionFilters` type includes `startDate`, `endDate`, `accountId`, `group`, `categoryId`, `page`, `sort`, and `order`.
+-   All filter changes reset pagination to page 1. The `TransactionFilters` type includes `startDate`, `endDate`, `accountId`, `group`, `categoryId`, `page`, `sortField`, and `sortDirection`.
 -   **Loading / Error / Empty States**: All rendered inside the Card for visual consistency.
 
 ---
@@ -67,7 +67,7 @@ A dedicated form component is used for both creating new transactions and editin
 ### Category Combobox (`src/components/entities/category-combobox.tsx`)
 
 A single searchable Popover + Command (cmdk) combobox replaces the previous two-dropdown (Group + Category) selector pattern:
--   Categories are grouped by type in `CommandGroup` sections, ordered: Income, Essentials, Lifestyle, Growth, Investments, Asset, Debt, Transfers.
+-   Categories are grouped by type in `CommandGroup` sections, ordered: Income, Essentials, Lifestyle, Growth, Ventures, Investments, Asset, Debt, Transfers.
 -   Each item shows `{emoji} {name}` on the left and `{group}` in muted text on the right.
 -   `CommandItem` value combines `name`, `group`, and `type` for fuzzy cross-field search.
 -   The trigger button displays the selected category's emoji and name.
@@ -86,7 +86,9 @@ The investment enrichment section is always visible as a collapsible `Accordion`
 -   **Controlled state**: `investmentAccordionValue` state auto-opens (`'investment-details'`) when an Investment category is selected via `isInvestment` detection.
 -   When no investment category is selected, the accordion trigger shows a muted hint: "(select an investment category to enable)".
 -   The user can freely open/close the accordion regardless of category.
--   Fields inside: Ticker (with autocomplete from Twelve Data), Asset Price, Asset Quantity (auto-calculated from amount / price).
+-   Fields inside: Ticker (with autocomplete via `useTickerSearch` hook), Asset Price, Asset Quantity (auto-calculated: `assetQuantity = amount / assetPrice`).
+-   **Ticker Autocomplete**: The `useTickerSearch` hook calls `GET /api/ticker/search` with debounced input. When a result is selected, it populates resolution metadata fields: `isin`, `exchange`, and `assetCurrency` on the transaction form.
+-   **Auto-Calculation**: When the user enters an `assetPrice`, the `assetQuantity` is automatically computed as `amount / assetPrice`. The user can override this manually.
 -   The **Debt Details** accordion remains conditionally rendered (only visible for Debt categories with a credit value).
 
 ---
@@ -103,21 +105,21 @@ When filters are active, clicking Export opens a dialog asking the user to choos
 
 - **"Current filters"** is pre-selected when any filter is active. The count comes from the current `useTransactions` query total.
 - **"All transactions"** exports every transaction for the tenant.
-- Forwarded filters: `startDate`, `endDate`, `accountId`, `categoryId`, `categoryGroup`, `type`, `tags`, `source`, `currencyCode`.
+- Forwarded filters: `startDate`, `endDate`, `accountId`, `categoryId`, `group`.
 
 ### Download Mechanism
 
 The export uses `fetch` with auth headers, receives the response as a blob, and triggers a browser download via a programmatic `<a>` element click. The downloaded file is named `bliss-export-YYYY-MM-DD.csv` (date = today).
 
-- **Loading state**: The Export button shows a spinner and is disabled while the download is in progress.
+- **Loading state**: The Export button shows "Exporting..." text and is disabled while the download is in progress.
 - **Empty state**: If no transactions match the filters, the CSV contains only the header row. No error is shown.
-- **Toast**: On successful download, a brief toast: *"Exported N transactions"*.
+- **Toast**: On successful download, a brief toast: *"Export complete"* / *"CSV file downloaded"* (no transaction count).
 
 ### Hook: `useExportTransactions`
 
 ```typescript
 useExportTransactions(): {
-  exportCsv: (filters: TransactionFilters) => Promise<void>;
+  exportTransactions: (filters: TransactionFilters) => Promise<void>;
   isExporting: boolean;
 }
 ```

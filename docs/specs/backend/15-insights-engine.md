@@ -275,7 +275,7 @@ Enqueues a `generate-tenant-insights` job on the `insights` queue.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `Int @id @default(autoincrement())` | Primary key |
+| `id` | `String @id @default(cuid())` | Primary key |
 | `tenantId` | `String` | FK to Tenant |
 | `batchId` | `String` | Groups insights from the same generation run (`crypto.randomUUID()`) |
 | `date` | `DateTime` | Generation date (midnight UTC) |
@@ -284,7 +284,7 @@ Enqueues a `generate-tenant-insights` job on the `insights` queue.
 | `body` | `String` | Insight body (2-4 sentences with specific numbers) |
 | `severity` | `String` | `POSITIVE`, `INFO`, `WARNING`, or `CRITICAL` |
 | `priority` | `Int` | 1-100 (higher = more important) |
-| `dataHash` | `String` | SHA-256 of the input data — used for deduplication |
+| `dataHash` | `String?` | SHA-256 of the input data — used for deduplication (nullable) |
 | `metadata` | `Json?` | Optional lens-specific data points |
 | `dismissed` | `Boolean @default(false)` | User-dismissible |
 | `createdAt` | `DateTime @default(now())` | Creation timestamp |

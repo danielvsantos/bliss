@@ -67,13 +67,14 @@ This mirrors the detection logic in `src/pages/manual-updates.tsx`.
 
 ### Return Value
 
-`useUserSignals(year?)` returns both signals AND raw data:
+`useUserSignals(year?: string, currency?: string)` returns both signals AND raw data:
 
 ```ts
 interface UseUserSignalsResult {
   signals: UserSignals;
   accounts: EnrichedAccount[];
   metrics: DashboardMetrics | undefined;
+  portfolioCurrency: string;
   metricsLoading: boolean;
   accountsLoading: boolean;
 }

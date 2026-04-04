@@ -50,10 +50,11 @@ usd block:     convert(marketValue, priceCurrency → 'USD')
 
 ### 6.2.2. Query Parameters
 
-| Parameter   | Type     | Description                                | Default |
-|-------------|----------|--------------------------------------------|---------|
-| `assetType` | `string` | Filters items by the category `type`.      |         |
-| `source`    | `string` | Filters items by their data source.        |         |
+| Parameter               | Type     | Description                                              | Default |
+|-------------------------|----------|----------------------------------------------------------|---------|
+| `assetType`             | `string` | Filters items by the category `type`.                    |         |
+| `source`                | `string` | Filters items by their data source.                      |         |
+| `include_manual_values` | `string` | When `'true'`, includes the most recent `ManualAssetValue` record for each item. |         |
 
 ### 6.2.3. Response Format
 
@@ -131,14 +132,27 @@ This check is non-blocking: errors are caught silently and never delay the GET r
 
 ### 6.4.2. Query Parameters
 
-| Parameter | Type     | Description                           | Default          |
-|-----------|----------|---------------------------------------|------------------|
-| `from`    | `string` | The start date in ISO 8601 format.    | The beginning of time |
-| `to`      | `string` | The end date in ISO 8601 format.      | Today            |
+| Parameter    | Type     | Description                                                                 | Default                |
+|--------------|----------|-----------------------------------------------------------------------------|------------------------|
+| `from`       | `string` | The start date in ISO 8601 format.                                          | Earliest history record |
+| `to`         | `string` | The end date in ISO 8601 format.                                            | Today                  |
+| `type`       | `string` | Comma-separated category types to filter by (e.g., `Investments,Asset`).    |                        |
+| `group`      | `string` | Comma-separated category groups to filter by.                               |                        |
+| `resolution` | `string` | Data resolution: `daily`, `weekly`, or `monthly`. Overrides auto-detection. |                        |
 
-### 6.4.3. Response Format
+### 6.4.3. Auto-Resolution System
 
-The endpoint returns a wrapped object: `{ portfolioCurrency: string, history: AggregatedPortfolioHistory[] }`. Each history entry includes `totalUSD` and optional `totalPortfolioCurrency` (when `portfolioCurrency !== 'USD'`).
+When `resolution` is not explicitly provided, it is auto-detected based on the date range:
+
+- **Daily** for ranges <= 90 days (all dates returned).
+- **Weekly** for ranges <= 365 days (Saturdays sampled, ~52 data points).
+- **Monthly** for ranges > 365 days (last calendar day of each month).
+
+This keeps Prisma query row counts bounded regardless of portfolio size.
+
+### 6.4.4. Response Format
+
+The endpoint returns a wrapped object: `{ portfolioCurrency: string, resolution: string, history: AggregatedPortfolioHistory[] }`. The `resolution` field indicates the effective resolution used (e.g., `'daily'`, `'weekly'`, `'monthly'`). Each history entry includes `totalUSD` and optional `totalPortfolioCurrency` (when `portfolioCurrency !== 'USD'`).
 
 ---
 
@@ -167,16 +181,33 @@ The endpoint returns a wrapped object: `{ portfolioCurrency: string, history: Ag
 - **Responsibility**: Returns the `DebtTerms` record for a liability portfolio item (interest rate, principal, term, origination date).
 
 ### `POST /api/portfolio/items/{assetId}/debt-terms`
-- **Responsibility**: Creates or upserts debt terms for a liability. Fields: `initialBalance`, `interestRate`, `loanTermMonths`, `originationDate`, `paymentFrequency`.
-- **Audit Logging**: Creates an `AuditLog` entry on changes.
+- **Responsibility**: Creates or upserts debt terms for a liability. Fields: `initialBalance`, `interestRate`, `termInMonths`, `originationDate`.
+- **Validation**: All four fields are required. The asset must be of type `Debt`.
 
 ### `PUT /api/portfolio/items/{assetId}/debt-terms`
-- **Responsibility**: Updates existing debt terms for a liability.
-- **Audit Logging**: Creates an `AuditLog` entry on changes.
+- **Responsibility**: Updates existing debt terms for a liability. Accepts partial updates (only changed fields).
 
 ---
 
-## 6.7. Ticker Resolution
+## 6.7. Equity Analysis
+
+### `GET /api/portfolio/equity-analysis`
+
+Provides a breakdown of the user's stock holdings grouped by a configurable dimension, enriched with live prices and SecurityMaster fundamentals (P/E ratio, dividend yield, EPS, 52-week range).
+
+- **Auth**: JWT (cookie-based), rate limited via `rateLimiters.portfolio`.
+- **Query Parameters**:
+
+| Parameter | Type     | Description                                        | Default  |
+|-----------|----------|----------------------------------------------------|----------|
+| `groupBy` | `string` | Grouping dimension: `sector`, `industry`, or `country`. | `sector` |
+
+- **Response**: `{ portfolioCurrency, summary: { totalEquityValue, holdingsCount, weightedPeRatio, weightedDividendYield }, groups: [...] }`. Each group contains `name`, `totalValue`, `holdingsCount`, `weight`, and an array of enriched `holdings` with per-stock metrics.
+- **Scope**: Only `API_STOCK` items with positive quantity are included. Funds, crypto, and manual assets are excluded.
+
+---
+
+## 6.8. Ticker Resolution
 
 ### `GET /api/ticker/search?q={query}&type={type}`
 - **Responsibility**: Proxies ticker search to the backend service. All searches route to Twelve Data; `type=crypto` filters and deduplicates for digital currency symbols.
@@ -212,7 +243,7 @@ Three-layer validation prevents asset currency from differing from account curre
 
 ---
 
-## 6.8. Portfolio Currency
+## 6.9. Portfolio Currency
 
 ### Settings API
 
@@ -229,7 +260,7 @@ Portfolio values are stored in USD. Conversion happens at query time:
 
 ---
 
-## 6.9. Schema: Multi-Market Fields
+## 6.10. Schema: Multi-Market Fields
 
 | Table | Field | Type | Purpose |
 |-------|-------|------|---------|
@@ -243,7 +274,7 @@ Portfolio values are stored in USD. Conversion happens at query time:
 
 ---
 
-## 6.10. Default Categories
+## 6.11. Default Categories
 
 | Code | Name | Group | Type | ProcessingHint |
 |------|------|-------|------|---------------|
@@ -255,7 +286,7 @@ The `Funds` hint change from `MANUAL` to `API_FUND` enables automatic pricing vi
 
 ---
 
-## 6.11. Investment Enrichment Flow
+## 6.12. Investment Enrichment Flow
 
 ### INVESTMENT_HINTS Constants
 
@@ -273,7 +304,7 @@ For crypto categories (`processingHint === 'API_CRYPTO'`), `assetCurrency` is se
 
 ---
 
-## 6.12. Portfolio API Tests
+## 6.13. Portfolio API Tests
 
 | Suite | File | Tests | Coverage |
 |-------|------|-------|----------|

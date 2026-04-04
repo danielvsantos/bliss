@@ -65,11 +65,12 @@ All icons are from `lucide-react`. Colors follow the design system tokens define
 
 | Setting | Value |
 |---------|-------|
-| `refetchInterval` | `30_000ms` (30 seconds) |
-| `staleTime` | `15_000ms` (15 seconds) |
+| `refetchInterval` | `60_000ms` (60 seconds) |
+| `staleTime` | `30_000ms` (30 seconds) |
 | `refetchOnWindowFocus` | `true` (automatic) |
+| Tab visibility | Polling only active when tab is visible (`usePageVisible()` hook) |
 
-The 30-second polling ensures the badge updates reasonably quickly when new events occur (e.g., Plaid sync completes, new insights generated) without creating excessive API load.
+The 60-second polling ensures the badge updates reasonably quickly when new events occur (e.g., Plaid sync completes, new insights generated) without creating excessive API load. Polling pauses when the browser tab is not visible to avoid unnecessary network requests.
 
 ---
 
@@ -79,8 +80,8 @@ Defined in `src/hooks/use-notifications.ts`:
 
 | Hook | Query Key | Description |
 |------|-----------|-------------|
-| `useNotificationSummary()` | `['notification-summary']` | Fetches `GET /api/notifications/summary`. 30s polling, 15s stale time. Returns `{ totalUnseen, lastSeenAt, signals[] }`. |
-| `useMarkNotificationsSeen()` | — | Mutation: `PUT /api/notifications/summary`. Optimistic update of `totalUnseen` to `0`. Invalidates `notification-summary` query. |
+| `useNotificationSummary()` | `['notification-summary']` | Fetches `GET /api/notifications/summary`. 60s polling (paused when tab hidden via `usePageVisible()`), 30s stale time. Returns `{ totalUnseen, lastSeenAt, signals[] }`. |
+| `useMarkNotificationsSeen()` | — | Mutation: `PUT /api/notifications/summary`. Invalidates `notification-summary` query on success. |
 
 ---
 
@@ -106,7 +107,7 @@ The notification center and the dashboard action registry (`specs/16-dashboard-a
 | `ONBOARDING_INCOMPLETE` | `!onboardingComplete` |
 | `NEW_INSIGHTS` | `insightCount > 0` |
 
-**Architecture decision**: The notification center stays server-side (7 parallel DB queries via `/api/notifications/summary`) because it's always visible in the header and needs to be lightweight. The dashboard's `useUserSignals()` hook evaluates the same signals client-side from data already being fetched for dashboard rendering. React Query deduplicates the underlying HTTP calls.
+**Architecture decision**: The notification center stays server-side (7 parallel DB queries via `/api/notifications/summary`; includes accountCount, hasTransaction, and tenant onboardingCompletedAt lookups) because it's always visible in the header and needs to be lightweight. The dashboard's `useUserSignals()` hook evaluates the same signals client-side from data already being fetched for dashboard rendering. React Query deduplicates the underlying HTTP calls.
 
 **Future unification**: If needed, the notification center could adopt `useUserSignals()` for client-side rendering while keeping the server-side endpoint for badge count polling.
 

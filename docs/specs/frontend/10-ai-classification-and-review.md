@@ -173,7 +173,7 @@ Four status types using design system tokens:
 
 **Status mapping logic**:
 ```typescript
-const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'MANUAL']);
+const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND', 'MANUAL']);
 if (item.requiresEnrichment) → 'needs-enrichment'
 else if (item.confidence < reviewThreshold) → 'low-confidence'
 else if (noMerchantHistory) → 'new-merchant'
@@ -209,7 +209,7 @@ Card section labeled **✨ BLISS ANALYSIS**:
 Section labeled **🔧 ENRICHMENT REQUIRED**. Shown conditionally:
 
 ```typescript
-const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'MANUAL']);
+const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND', 'MANUAL']);
 const selectedCat = categories.find(c => c.id === drawerCategory);
 const showEnrichment = item.requiresEnrichment ||
   (selectedCat?.type === 'Investments' && INVESTMENT_HINTS.has(selectedCat.processingHint ?? ''));

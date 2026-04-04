@@ -126,7 +126,7 @@ POST and PUT handlers accept `budget` (Decimal), `startDate` (ISO string), and `
 
 - **File**: `pages/api/transactions/index.js`
 
-When tag assignments change on a transaction (via PUT), the API emits a `TAG_ASSIGNMENT_MODIFIED` event to the backend service. This triggers a scoped analytics recalculation that repopulates both `AnalyticsCacheMonthly` and `TagAnalyticsCacheMonthly`.
+When tag assignments change on a transaction (via PUT to update tags, or POST to create a transaction with tags), the API emits a `TAG_ASSIGNMENT_MODIFIED` event to the backend service. This triggers a scoped analytics recalculation that repopulates both `AnalyticsCacheMonthly` and `TagAnalyticsCacheMonthly`.
 
 Event payload:
 ```json
@@ -134,6 +134,7 @@ Event payload:
   "type": "TAG_ASSIGNMENT_MODIFIED",
   "data": {
     "tenantId": "...",
+    "tagIds": [1, 2],
     "transactionScopes": [{ "year": 2026, "month": 3, "currency": "USD", "country": "US" }]
   }
 }

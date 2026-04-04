@@ -59,6 +59,10 @@ A new event case routes tag assignment changes through the existing analytics qu
 ```javascript
 case 'TAG_ASSIGNMENT_MODIFIED': {
     const { tenantId, transactionScopes } = data;
+    if (!tenantId) {
+        logger.warn('TAG_ASSIGNMENT_MODIFIED missing tenantId, skipping');
+        break;
+    }
     await scheduleDebouncedJob(
         getAnalyticsQueue(),
         'scoped-update-analytics',

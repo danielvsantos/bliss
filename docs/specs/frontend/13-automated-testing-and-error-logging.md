@@ -17,11 +17,11 @@ The frontend uses a **three-layer test pyramid**:
             └────────────────────────────────────┘
          ┌──────────────────────────────────────────┐
          │      Component Tests (RTL)               │  jsdom + MSW, no real API
-         │      (medium)                            │  not yet written
+         │      (medium)                            │  page + context tests
          └──────────────────────────────────────────┘
       ┌────────────────────────────────────────────────┐
       │         Hook / Unit Tests (Vitest + MSW)        │  renderHook, no DOM render
-      │         (most, fastest)                         │  not yet written
+      │         (most, fastest)                         │  hooks + lib tests
       └────────────────────────────────────────────────┘
 ```
 
@@ -54,13 +54,13 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     reporter: 'verbose',
-    passWithNoTests: true,      // exit 0 when no test files exist yet
+    passWithNoTests: false,
     setupFiles: ['src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     coverage: {
       provider: 'v8',
       include: ['src/components/**', 'src/hooks/**'],
-      thresholds: { branches: 60, functions: 70, lines: 70 },
+      thresholds: { branches: 60, functions: 60, lines: 60 },
     },
   },
   resolve: {
@@ -70,7 +70,7 @@ export default defineConfig({
 ```
 
 Key decisions:
-- `passWithNoTests: true` — prevents CI from failing before the first test file is written
+- `passWithNoTests: false` — test files now exist, so the suite should fail if no tests are found (indicating a config issue)
 - `@vitejs/plugin-react-swc` — must match the existing `vite.config.ts` plugin; using `@vitejs/plugin-react` (Babel) causes transform errors
 - `@` alias — mirrors `vite.config.ts` so import paths like `@/hooks/use-accounts` work in tests
 
@@ -138,9 +138,9 @@ it('shows an error banner when accounts fail to load', async () => {
 
 ```bash
 # Unit + component tests (no backend required)
-npm run test:unit       # run once, exit 0 even with 0 test files
+npm run test:unit       # run once
 npm run test:watch      # watch mode — recommended during active development
-npm run test:coverage   # v8 coverage report, enforces 60/70/70 thresholds
+npm run test:coverage   # v8 coverage report, enforces 60/60/60 thresholds
 ```
 
 ---
@@ -205,33 +205,22 @@ When real tests are implemented, the CI job will also need to start `bliss-backe
 
 ## 13.6 CI/CD
 
-This repo has its own GitHub Actions workflow at `.github/workflows/ci.yml`.
+Frontend tests run as part of the unified monorepo CI workflow at `.github/workflows/ci.yml`.
 
 ### Jobs
 
 | Job | Trigger | Infrastructure |
 |-----|---------|---------------|
-| `frontend-unit` | every push + PRs to main/develop | none |
-| `e2e` | `main` branch only, after `frontend-unit` passes | none (stubs skip without a server) |
+| `web-unit` | every push + PRs to main/develop | none |
+| `e2e` | `main` branch only, after unit jobs pass | none (stubs skip without a server) |
 
 ### Environment Variables
 
-No secrets required. All CI values are hardcoded test-safe values:
-
-| Variable | Value in CI |
-|----------|-------------|
-| `E2E_BASE_URL` | `http://localhost:8080` |
+No secrets required for unit tests. All CI values are hardcoded test-safe values.
 
 ### Workflow Trigger
 
-```yaml
-on:
-  push:                       # every branch push triggers frontend-unit
-  pull_request:
-    branches: [main, develop]
-```
-
-This means unit tests run the moment you push any feature branch — not just when a PR is opened.
+The unified CI workflow triggers on every push and pull request to main/develop. The `web-unit` job runs frontend tests as part of the broader monorepo CI pipeline.
 
 ---
 
@@ -239,19 +228,16 @@ This means unit tests run the moment you push any feature branch — not just wh
 
 ### Frontend Unit & Component Tests
 
-We have successfully established a robust base of **83 passing tests** across all major data-fetching hooks and container components. The suite achieves near-isolation natively by extensively utilizing MSW for intercepting API requests, and standardizing JSDOM mock patterns (e.g., `ResizeObserver`, `react-plaid-link`).
+The frontend test suite has grown to approximately 46 test files covering the major application layers. Run `pnpm test:web` to execute all tests.
 
-The following primary domains have comprehensive Coverage:
-1. **Domain 1: User Settings & Accounts** (`use-user-settings`, `use-accounts`, `Sidebar`)
-2. **Domain 2: Transaction Management** (`use-transactions`, `TransactionsPage`, etc.)
-3. **Domain 3: Plaid Integration** (`use-plaid-actions`, `PlaidConnect` mock abstractions, etc.)
-4. **Domain 4: Smart Import Wizard** (`use-imports`, `smart-import` container)
-5. **Domain 5: Advanced Analytics & Reporting** (`use-dashboard-metrics`, `Dashboard` container)
-6. **Domain 6: Portfolio & Assets** (`use-portfolio-history`, `Portfolio` component)
+**Test categories:**
+
+- **Hook tests** (`src/hooks/*.test.tsx`): The largest group, covering data-fetching hooks including use-account-list, use-currency-rates, use-dashboard-actions, use-equity-analysis, use-force-theme, use-insights, use-notifications, use-onboarding-progress, use-portfolio-holdings, use-portfolio-lots, use-sync-logs, use-tag-analytics, use-tags, use-ticker-search, and more. These use `renderHook()` + MSW.
+- **Page tests** (`src/pages/*.test.tsx`): Component-level tests for accounts, categories, and settings pages using RTL + MSW.
+- **Context tests** (`src/contexts/*.test.tsx`): AuthContext provider tests.
+- **Library tests** (`src/lib/*.test.ts`): Pure utility tests for investment-utils, pnl, portfolio-utils, and general utils.
 
 ### E2E Flows Not Yet Implemented (Phase 4)
-
-With the React hooks and component boundaries securely tested, the **next frontier is Playwright E2E testing**.
 
 | Spec File | Stubs | When to Implement |
 |-----------|-------|------------------|

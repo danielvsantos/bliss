@@ -16,11 +16,11 @@ If no exact match, Bliss computes a vector embedding (Gemini, 768 dimensions) an
 Same as Tier 2 but searches across all tenants' embeddings. Results are discounted by 0.92x since cross-tenant matches are less reliable.
 
 ### Tier 4: LLM
-If no vector match, Gemini 2.0 Flash classifies the transaction with temperature 0.1. Confidence is hard-capped at 0.85 — LLM results always go through review.
+If no vector match, Gemini 3 Flash (`gemini-3-flash-preview`) classifies the transaction with temperature 0.1. Confidence is hard-capped at 0.85 — LLM results always go through review.
 
 ## Enabling AI classification
 
-Tiers 1 and 2 work out of the box. For Tier 3-4, add a Gemini API key:
+Tier 1 works out of the box. Tiers 2-4 require a Gemini API key (Tier 2 needs it to generate embeddings, Tiers 3-4 use it for cross-tenant search and LLM classification):
 
 ```env
 GEMINI_API_KEY=your_api_key
@@ -43,7 +43,7 @@ Two tenant-level thresholds control the pipeline behavior:
 
 | Threshold | Default | Effect |
 |-----------|---------|--------|
-| `autoPromoteThreshold` | 0.95 | Classifications above this are saved without review |
+| `autoPromoteThreshold` | 0.90 | Classifications above this are saved without review |
 | `reviewThreshold` | 0.70 | Minimum vector similarity score to accept a match |
 
 Adjust these in **Settings** based on your comfort level. Lower `autoPromoteThreshold` = less manual review but more risk of misclassification.

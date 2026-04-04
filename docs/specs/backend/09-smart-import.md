@@ -215,7 +215,7 @@ When the user clicks "Commit Import", the API endpoint (`POST /api/imports/:id?a
       - **Enrichment missing** (filtered out at step a, not in `rowIdToExternalId` map) → `status: 'STAGED'` (returned for data entry)
    h. **Tag linking**: For rows with a non-null `tags` array, tags are resolved via `resolveTagsByName()` (find-or-create by name) and linked to created transactions via `TransactionTag`.
    h. Updates `StagedImport.progress` (0→85% across batches).
-4. **Embedding feedback** (fire-and-forget, non-blocking): Calls `categorizationService.recordFeedback()` for all committed rows with `classificationSource = 'LLM'` or `'USER_OVERRIDE'`. Updates the in-memory description cache and pgvector embedding index. `EXACT_MATCH` and `VECTOR_MATCH` rows are skipped (already indexed). Progress → 90%.
+4. **Embedding feedback** (fire-and-forget, non-blocking): Calls `categorizationService.recordFeedback()` for committed rows with `classificationSource = 'LLM'` or `'USER_OVERRIDE'` to update the pgvector embedding index. Additionally, `addDescriptionEntry()` is called for **all** committed rows (regardless of classification source) to warm the in-memory description cache — this ensures EXACT_MATCH and VECTOR_MATCH descriptions are also cached for future classification. Progress → 90%.
 5. **Check remaining rows** — Counts remaining `CONFIRMED`/`PENDING`/`POTENTIAL_DUPLICATE`/`STAGED` rows with a category.
 6. **Final status** — Sets `StagedImport.status` to `'COMMITTED'` (remaining = 0) or `'READY'` (remaining > 0), with `progress: 100` and `errorDetails.commitResult = { transactionCount, remaining }`.
 7. **Downstream event** — Enqueues `TRANSACTIONS_IMPORTED` event (direct queue call) with `accountIds`, `dateScopes`, and `source: 'SMART_IMPORT'` to trigger portfolio recalculation.
@@ -280,7 +280,7 @@ If no candidates are found or the API call fails, `isin`/`exchange`/`assetCurren
 | `ticker` | — | Investment ticker symbol (triggers Step 6b metadata resolution) |
 | `assetquantity` | — | Number of units |
 | `assetprice` | — | Price per unit at transaction date |
-| `tags` | — | Pipe-separated tag names (e.g. `Japan 2026\|Business`) |
+| `tags` | — | Comma-separated tag names (e.g. `Japan 2026, Business`) |
 
 A downloadable template is available at `/templates/bliss-native-template.csv`.
 
@@ -307,6 +307,8 @@ See `bliss-finance-api/specs/17-transaction-export-update-api.md` for the API la
 ## 9.9. CSV Update Pipeline — Worker Changes (`smartImportWorker.js`)
 
 For native adapter imports, the Phase 0 loop gains a new branch for rows with an `id` value. Rows with a populated `id` follow the **update path**; rows without follow the existing **create path**.
+
+**Update-only import optimisation:** When every row in a native adapter CSV has a valid `id` column (i.e. a pure update import with no new rows), the worker skips the expensive description cache warming (`warmDescriptionCache`) and duplicate hash set building entirely, since update rows need neither AI classification nor deduplication.
 
 **Update path logic:**
 
@@ -363,8 +365,6 @@ The commit worker partitions promotable rows into `createRows` (where `updateTar
 **Final status**: `errorDetails.commitResult` now includes `{ transactionCount, updateCount, remaining }`.
 
 **Downstream events**: `TRANSACTIONS_IMPORTED` includes all affected account IDs. Category changes on update rows also produce `MANUAL_TRANSACTION_UPDATED` events for portfolio recalculation.
-
-**Audit trail**: Each updated transaction is logged in `AuditLog` with `action: 'TRANSACTION_UPDATED_VIA_IMPORT'`, including the import ID and computed diff in `details`.
 
 ---
 

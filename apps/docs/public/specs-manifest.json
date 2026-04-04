@@ -128,7 +128,9 @@
     "description": "Docker Compose, START_MODE, scaling strategy",
     "order": 12,
     "layers": {
-      "backend": "docs/specs/backend/12-deployment-architecture.md"
+      "api": "docs/specs/api/12-deployment.md",
+      "backend": "docs/specs/backend/12-deployment-architecture.md",
+      "frontend": "docs/specs/frontend/12-deployment.md"
     }
   },
   {

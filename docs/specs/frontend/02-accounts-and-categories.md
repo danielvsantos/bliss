@@ -22,7 +22,7 @@ The Accounts page (`src/pages/accounts.tsx`) uses a **master-detail layout** —
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Accounts                        [+ Add Account]  [Connect Bank]     │
+│  Accounts              [Connect Bank Account]  [Add Manual Account]   │
 ├──────────────────────────────────────────────────────────────────────┤
 │  [Left panel — w-[380px] shrink-0] │ [Right panel — flex-1]         │
 │                                    │                                  │
@@ -40,7 +40,7 @@ The outer flex container uses `flex flex-1 min-h-0` for correct overflow handlin
 
 ### Account List Panel (`account-list-panel.tsx`)
 
-- Renders a scrollable list of all tenant accounts.
+- Renders a scrollable list of all tenant accounts **grouped by bank** using `<Collapsible>` components. Each bank is a collapsible section header showing the bank name and account count. Accounts under the same institution are grouped together; accounts without a bank are grouped under "Manual Accounts" (sorted last).
 - Each item is a `<button>` with icon, name, institution, masked account number, and a `StatusBadge`.
 - **Status badges** use design tokens:
   - `ACTIVE` → `bg-positive/10 text-positive border-positive/20` ("Synced")
@@ -66,9 +66,9 @@ Shows the full detail of the selected account, including:
 
 Two entry points:
 
-1. **Manual account** — `[+ Add Account]` button opens `<AddAccountModal />`, a dialog form with fields: name, account number (encrypted at rest), bank, currency, country, owners. Uses `react-hook-form` + `zod`.
+1. **Manual account** — `[Add Manual Account]` button opens `<AddAccountModal />`, a dialog form with fields: name, account number (encrypted at rest), bank, currency, country, owners. Uses `react-hook-form` + `zod`.
 
-2. **Plaid Connect** — `[Connect Bank]` button opens the `<PlaidConnect />` component, which initiates the Plaid Link flow (fetches a link token from `/api/plaid/link-token`, opens the Plaid SDK modal, exchanges the public token via `/api/plaid/exchange-token`).
+2. **Plaid Connect** — `[Connect Bank Account]` button opens the `<PlaidConnect />` component, which initiates the Plaid Link flow (fetches a link token from `/api/plaid/link-token`, opens the Plaid SDK modal, exchanges the public token via `/api/plaid/exchange-token`).
 
 ### Deleting an Account
 
@@ -76,8 +76,27 @@ Triggered from the detail panel. A confirmation dialog is shown. The delete oper
 
 ### Key Hooks
 
-- `useAccountList()` — fetches and caches the account list; returns `{ accounts, isLoading, refetch }`.
-- `accountListKeys` — React Query key factory for cache invalidation.
+- `useAccountList()` — fetches and caches the account list; returns `{ accounts, isLoading, refetch }`. Internally fetches both metadata (accounts, banks) and Plaid items, then builds an `EnrichedAccount[]` array.
+- `accountListKeys` — React Query key factory for cache invalidation (`all` for accounts, `plaidItems()` for Plaid items).
+
+### EnrichedAccount Interface
+
+The `useAccountList()` hook enriches raw `Account` objects into an `EnrichedAccount` type that includes:
+- `status`: `'synced' | 'action-required' | 'disconnected' | 'manual'`
+- `healthLabel` / `healthColor`: Design-system-friendly health indicators
+- `plaidItem`: Linked `PlaidItem` reference (null for manual accounts)
+- `plaidAccountId`: Specific Plaid sub-account ID
+- `historicalSyncComplete`, `earliestTransactionDate`: Sync progress indicators
+- `originalAccount`: Reference to the raw `Account` object
+
+### Plaid Items Polling
+
+Plaid items are fetched via a separate query (`accountListKeys.plaidItems()`) that polls every 60 seconds while any item has an incomplete historical sync (`historicalSyncComplete === false`). Polling is paused when the browser tab is not visible (`usePageVisible()`). The account list also refetches on window focus to catch post-Plaid-modal updates.
+
+### Subcomponents
+
+- **`ConnectionHealth`** (`src/components/accounts/connection-health.tsx`) — Renders Plaid connection health status with consent expiration warnings.
+- **`SyncLogsTable`** (`src/components/accounts/sync-logs-table.tsx`) — Paginated table of recent Plaid sync events (type, status, counts, timestamp).
 
 ### Design System
 
@@ -92,12 +111,12 @@ The Categories page (`src/pages/Categories.tsx`) uses an **accordion-per-type la
 ### Data Model Hierarchy
 
 ```
-Type (e.g. "Living Expenses")
-  └── Group (e.g. "Eating Out")
-        └── Category (e.g. 🍔 Restaurants)
+Type (e.g. "Essentials")
+  └── Group (e.g. "Eating In")
+        └── Category (e.g. 🛒 Groceries)
 ```
 
-The 8 canonical types are defined in `bliss-finance-api/lib/constants.js` as `ALLOWED_CATEGORY_TYPES` and mirrored on the frontend. All categories must belong to one of these types. Groups are free-form strings within a type.
+The 9 canonical types are defined in `apps/api/lib/constants.js` as `ALLOWED_CATEGORY_TYPES` and mirrored on the frontend in `CATEGORY_TYPES`. All categories must belong to one of these types: Income, Essentials, Lifestyle, Growth, Ventures, Investments, Asset, Debt, Transfers. Groups are free-form strings within a type.
 
 ### Default vs. Custom Categories
 
@@ -129,19 +148,21 @@ Every tenant receives the full default category set at signup (seeded from `blis
 ├────────────────────────────────────────────────────────┤
 │  [Search input]                                        │
 │                                                        │
-│  ▼  Net Income             7 categories               │
+│  ▼  Income                 7 categories               │
 │  ├── Labor Income                                      │
 │  │     💵  Salary                     [···]            │
 │  │     🏛️  Government Funds           [···]            │
-│  └──  [+ Add Net Income Category]                      │
+│  └──  [+ Add Income Category]                          │
 │                                                        │
-│  ▶  Living Expenses       43 categories               │
-│  ▶  Housing & Utilities    8 categories               │
+│  ▶  Essentials            43 categories               │
+│  ▶  Lifestyle              8 categories               │
+│  ▶  Growth                 5 categories               │
+│  ▶  Ventures               3 categories               │
 │  ...                                                   │
-│                                                        │
-│  ─── Custom Categories     0 categories  [+ Add]  ─── │
 └────────────────────────────────────────────────────────┘
 ```
+
+Custom categories (those with `defaultCategoryCode === null`) are mixed into the same type-based accordion sections alongside default categories. They are distinguished by the absence of the Default/Lock badge. There is no separate standalone section for custom categories.
 
 ### Accordion Sections
 
@@ -149,14 +170,15 @@ Each type has an `AccordionItem` (from `src/components/ui/accordion.tsx`, built 
 
 | Type | Token Class |
 |---|---|
-| Net Income | `border-l-positive` |
-| Living Expenses | `border-l-negative` |
-| Housing & Utilities | `border-l-warning` |
+| Income | `border-l-positive` |
+| Essentials | `border-l-negative` |
+| Lifestyle | `border-l-warning` |
+| Growth | `border-l-brand-primary` |
+| Ventures | `border-l-dataviz-5` |
 | Investments | `border-l-brand-primary` |
 | Asset | `border-l-brand-deep` |
 | Debt | `border-l-destructive` |
-| Asset Transfer | `border-l-muted-foreground` |
-| Personal Development | `border-l-brand-primary` |
+| Transfers | `border-l-muted-foreground` |
 
 Within each open accordion, **group subheadings** appear as `text-[10px] font-semibold uppercase tracking-wider text-muted-foreground` labels — purely visual, non-collapsible.
 
@@ -176,8 +198,9 @@ Each category is rendered as a row with:
 | `AMORTIZING_LOAN` | Loan Tracking | `bg-brand-primary/10 text-brand-primary border-brand-primary/20` |
 | `SIMPLE_LIABILITY` | Liability Tracking | `bg-brand-primary/10 text-brand-primary border-brand-primary/20` |
 | `CASH` | Cash Tracking | `bg-brand-primary/10 text-brand-primary border-brand-primary/20` |
-| `MANUAL` | Manual | `bg-muted text-muted-foreground` |
+| `MANUAL` | Manual | `bg-muted text-muted-foreground border-border` |
 | `TAX_DEDUCTIBLE` | Tax Deductible | `bg-warning/10 text-warning border-warning/20` |
+| `DEBT` | Debt Tracking | `bg-brand-primary/10 text-brand-primary border-brand-primary/20` |
 
 - **Transaction count** — `{n} transactions` in `text-xs text-muted-foreground` (omitted when count is 0).
 - **`···` context menu** — context-sensitive:
@@ -195,10 +218,6 @@ The search input filters by name, group, and type simultaneously. When a query i
 
 Each accordion section has a `+ Add [Type] Category` ghost button at the bottom. Clicking it opens the create form with the `type` field pre-populated.
 
-### Custom Categories Section
-
-A standalone non-accordion section at the bottom of the page for tenant-created categories (`defaultCategoryCode === null`). Includes its own `+ Add Category` button. Empty state message: *"No custom categories yet. Add one when the defaults don't fit your needs."*
-
 ### Category Form (`category-form.tsx`)
 
 The form has two modes, selected automatically by the parent:
@@ -213,13 +232,13 @@ The form has two modes, selected automatically by the parent:
 - The group dropdown is disabled until a type is selected, and resets when the type changes.
 - Uses two separate Zod schemas: `renameSchema` and `fullSchema`.
 
-### Future Work
+### "Merge Into" on Delete
 
-> **"Merge into" on delete** is not yet implemented. In a future sprint, when deleting a custom category that has associated transactions, the UI will offer to reassign those transactions to a different category before deletion, rather than blocking the delete or leaving transactions uncategorised.
+When deleting a category that has associated transactions, the delete dialog transitions to a "Reassign & Delete" flow. The API returns `requiresMerge: true` with a `transactionCount`, and the dialog displays a `<Select>` dropdown listing all other categories as merge targets. The user selects a target category, then confirms with a "Delete & Reassign" button. All dependent records (transactions, PlaidTransactions, TransactionEmbeddings, PortfolioItems) are atomically reassigned to the target category before the source category is deleted.
 
 ### API Interaction
 
 - `api.getCategories()` — fetches all categories. The response now includes `_count.transactions` (number of transactions tagged to each category) and `defaultCategoryCode`.
 - `api.createCategory(payload)` — creates a custom category. Accepts `name`, `group`, `type`, `icon`.
 - `api.updateCategory(id, payload)` — updates a category. Accepts `name`, `group`, `type`, `icon`. The `processingHint` and `portfolioItemKeyStrategy` fields are system-managed and cannot be set by users.
-- `api.deleteCategory(id)` — deletes a custom category. The API enforces deletion protection for system-critical groups.
+- `api.deleteCategory(id, mergeTargetId?)` — deletes a custom category. If the category has transactions, the API returns `requiresMerge: true` and the UI prompts the user to select a merge target. On retry with a `mergeTargetId`, all dependent records are reassigned before deletion. The API enforces deletion protection for system-critical groups.

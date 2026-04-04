@@ -63,7 +63,7 @@ const LAYER_FILES = {
   'smart-import':             { api: '09-smart-import-api.md', backend: '09-smart-import.md', frontend: '09-smart-import-ui.md' },
   'ai-classification':        { api: '10-ai-classification-and-review.md', backend: '10-ai-classification-and-review.md', frontend: '10-ai-classification-and-review.md' },
   'admin':                    { api: '11-admin-api.md', backend: '11-admin-api.md' },
-  'deployment':               { backend: '12-deployment-architecture.md' },
+  'deployment':               { api: '12-deployment.md', backend: '12-deployment-architecture.md', frontend: '12-deployment.md' },
   'testing':                  { api: '13-automated-testing-and-error-logging.md', backend: '13-automated-testing-and-error-logging.md', frontend: '13-automated-testing-and-error-logging.md' },
   'notifications':            { api: '14-notification-center.md', frontend: '14-notification-center.md' },
   'insights':                 { api: '15-insights.md', backend: '15-insights-engine.md', frontend: '15-insights.md' },

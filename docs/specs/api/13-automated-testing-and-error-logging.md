@@ -15,11 +15,11 @@ The service uses a **two-layer test pyramid**:
          └──────────────────────────────────────┘
       ┌────────────────────────────────────────────┐
       │      Unit Tests                             │  Vitest + full vi.mock(), no I/O
-      │      (more, fast)                           │  55 tests across 8 suites
+      │      (more, fast)                           │
       └────────────────────────────────────────────┘
 ```
 
-**Total: 140 tests across 19 suites.**
+The API test suite includes unit tests (in `__tests__/unit/`) and integration tests (in `__tests__/integration/`). Run `pnpm test:api` to execute all tests.
 
 ---
 
@@ -94,16 +94,25 @@ function makeRes(): Partial<NextApiResponse> {
 
 ### Test Suites
 
-| File | Tests | Covers | Key Mocks |
-|------|-------|--------|-----------|
-| `unit/middleware/withAuth.test.ts` | 9 | JWT extraction (cookie + header), denylist check, role enforcement, optional mode | prisma, denylist, jsonwebtoken |
-| `unit/utils/encryption.test.ts` | 9 | AES-256-GCM encrypt/decrypt, searchable salt behaviour | none |
-| `unit/utils/cookieUtils.test.ts` | 5 | `setAuthCookie()` / `clearAuthCookie()` — HttpOnly, Secure, Domain, Max-Age | none (pure function, toggled via NODE_ENV) |
-| `unit/utils/cors.test.ts` | 6 | CORS preflight (OPTIONS → 200), origin allowlist, localhost in dev, headers/methods | none (pure middleware) |
-| `unit/utils/denylist.test.ts` | 7 | `addToDenylist()` / `isRevoked()` — Redis SET/EXISTS, TTL enforcement, graceful degradation without REDIS_URL | ioredis constructor |
-| `unit/utils/produceEvent.test.ts` | 5 | Fire-and-forget POST to backend `/api/events`, error capture via Sentry | node-fetch, @sentry/nextjs |
-| `unit/utils/currencyConversion.test.ts` | 7 | `convertCurrency()` direct/inverse/forward-fill, `batchFetchRates()` | prisma.currencyRate |
-| `unit/routes/signout.test.ts` | 6 | POST /api/auth/signout — method guard, cookie clear, JWT decode + denylist, error handling | rateLimit, cors, cookieUtils, denylist, jsonwebtoken |
+**Middleware & utility tests** (`unit/middleware/`, `unit/utils/`):
+
+| File | Covers | Key Mocks |
+|------|--------|-----------|
+| `unit/middleware/withAuth.test.ts` | JWT extraction (cookie + header), denylist check, role enforcement, optional mode | prisma, denylist, jsonwebtoken |
+| `unit/utils/encryption.test.ts` | AES-256-GCM encrypt/decrypt, searchable salt behaviour | none |
+| `unit/utils/cookieUtils.test.ts` | `setAuthCookie()` / `clearAuthCookie()` — HttpOnly, Secure, Domain, Max-Age | none |
+| `unit/utils/cors.test.ts` | CORS preflight (OPTIONS), origin allowlist, localhost in dev | none |
+| `unit/utils/denylist.test.ts` | `addToDenylist()` / `isRevoked()` — Redis SET/EXISTS, TTL, graceful degradation | ioredis constructor |
+| `unit/utils/produceEvent.test.ts` | Fire-and-forget POST to backend `/api/events`, Sentry capture | node-fetch, @sentry/nextjs |
+| `unit/utils/currencyConversion.test.ts` | `convertCurrency()` direct/inverse/forward-fill, `batchFetchRates()` | prisma.currencyRate |
+| `unit/utils/tagUtils.test.ts` | Tag resolution and linking utilities | prisma |
+| `unit/utils/transactionHash.test.ts` | SHA-256 transaction dedup hash computation | none |
+| `unit/utils/descriptionHash.test.ts` | Description normalization and hashing | none |
+| `unit/utils/validateEnv.test.ts` | Environment variable validation | none |
+| `unit/utils/rateLimit.test.ts` | Rate limiter configuration and middleware | none |
+| `unit/routes/signout.test.ts` | POST /api/auth/signout — method guard, cookie clear, JWT decode + denylist | rateLimit, cors, cookieUtils, denylist, jsonwebtoken |
+
+**Route handler tests** (`unit/api/`): Covers a wide range of API routes using the mocked handler pattern, including analytics, banks, countries, currencies, currency-rates, imports (detect-adapter, pending, upload), insights, notifications-summary, onboarding-progress, plaid routes (accounts, bulk-promote, bulk-requeue, create-link-token, disconnect, exchange-token, items, resync, sync-accounts, sync-logs, webhook), portfolio routes (debt-terms, equity-analysis, history, holdings, items, manual-value-detail, manual-values), tenants, and transactions-merchant-history.
 
 ### Running Unit Tests
 
@@ -179,11 +188,14 @@ No cookie setup is required.
 
 These tests use real Prisma connected to `bliss_test` and the `createIsolatedTenant()` helper:
 
-| File | Tests | Route | Approach |
-|------|-------|-------|----------|
-| `integration/api/auth/signup.test.ts` | 5 | `POST /api/auth/signup` | Real Prisma, mocked rate limiter |
-| `integration/api/accounts.test.ts` | 4 | `GET/POST /api/accounts` | Real Prisma + real `withAuth` |
-| `integration/api/categories.test.ts` | 2 | `GET /api/categories` | Real Prisma, manual category seeding |
+| File | Route | Approach |
+|------|-------|----------|
+| `integration/api/auth/signup.test.ts` | `POST /api/auth/signup` | Real Prisma, mocked rate limiter |
+| `integration/api/auth/change-password.test.ts` | `POST /api/auth/change-password` | Real Prisma + real `withAuth` |
+| `integration/api/accounts.test.ts` | `GET/POST /api/accounts` | Real Prisma + real `withAuth` |
+| `integration/api/categories.test.ts` | `GET /api/categories` | Real Prisma, manual category seeding |
+| `integration/api/users.test.ts` | `GET/PUT /api/users` | Real Prisma + real `withAuth` |
+| `integration/api/plaid/fetch-historical.test.ts` | `POST /api/plaid/fetch-historical` | Real Prisma, mocked Plaid client |
 
 #### Mocked-Handler Integration Tests
 
@@ -288,14 +300,7 @@ The CI job runs `npx prisma migrate deploy` before executing tests to ensure the
 
 ## 13.7 Test Results Summary
 
-| Category | Suites | Tests |
-|----------|--------|-------|
-| Unit tests | 8 | 54 |
-| Integration tests (real DB) | 3 | 11 |
-| Integration tests (mocked handler) | 8 | 75 |
-| **Total** | **19** | **140** |
-
-All 140 tests pass. No external services (Redis, backend) required for test runs.
+The test suite has grown significantly since initial implementation. Unit tests cover middleware, utilities, and route handlers across `unit/middleware/`, `unit/utils/`, and `unit/api/` directories. Integration tests use both real-DB and mocked-handler patterns. Run `pnpm test:api` to get current counts. No external services (Redis, backend) required for test runs.
 
 ### Key Implementation Patterns
 
@@ -345,45 +350,17 @@ All 13 E2E test cases are `test.skip` stubs — they pass in CI (exit 0, all ski
 
 ---
 
-## 13.9 Untested Features & Next Steps
+## 13.9 Coverage Notes & Next Steps
 
-### Finance-API: Test Coverage Status
+The API test suite has broad coverage across authentication, accounts, categories, tags, transactions, imports, Plaid routes, portfolio routes, analytics, and utility modules. Many features previously listed as "untested" now have unit or integration tests under `unit/api/` and `unit/utils/`.
 
-| Feature | Unit | Integration | Notes |
-|---------|------|-------------|-------|
-| `auth/signup.ts` | ❌ | ✅ 5 tests | Complete (real DB) |
-| `auth/signin.ts` | ❌ | ✅ 7 tests | Complete (mocked handler) |
-| `auth/signout.ts` | ✅ 6 tests | ❌ | Unit tests cover method guard, denylist, cookie clear |
-| `accounts.ts` | ❌ | ✅ 4 tests | Complete (real DB) |
-| `categories.ts` | ❌ | ✅ 2 tests | Complete (real DB) |
-| `tenants/settings.ts` | ❌ | ✅ 8 tests | Complete (mocked handler) |
-| `ticker/search.ts` | ❌ | ✅ 6 tests | Complete (mocked handler) |
-| `tags.ts` | ❌ | ✅ 10 tests | Full CRUD (mocked handler) |
-| `imports/adapters.ts` | ❌ | ✅ 7 tests | GET + POST validation (mocked handler) |
-| `plaid/transactions/[id].ts` | ❌ | ✅ 6 tests | PUT status transitions (mocked handler) |
-| `withAuth` middleware | ✅ 9 tests | ❌ | JWT, denylist, roles, optional mode |
-| `encryption` utils | ✅ 9 tests | ❌ | AES-256-GCM both modes |
-| `cookieUtils` | ✅ 5 tests | ❌ | Set/clear auth cookie |
-| `cors` | ✅ 6 tests | ❌ | Preflight, origin allowlist |
-| `denylist` | ✅ 7 tests | ❌ | Redis SET/EXISTS, graceful degradation |
-| `produceEvent` | ✅ 5 tests | ❌ | Fire-and-forget POST, Sentry capture |
-| `currencyConversion` | ✅ 7 tests | ❌ | Direct/inverse/forward-fill rates, batch |
-| `auth/refresh.ts` | ❌ | ❌ | Token rotation |
-| `transactions/` routes | ❌ | ✅ 20 tests | CRUD, validation, debt repayment logic (mocked handler) |
-| `transactions/import.ts` | ❌ | ❌ | "Dumb" import path |
-| `imports/upload.ts` | ❌ | ❌ | Multipart + GCS |
-| `imports/[id].ts` (commit) | ❌ | ✅ 11 tests | Async commit dispatch (202), cancel, produceEvent revert (mocked handler) |
-| `imports/detect-adapter.ts` | ❌ | ❌ | Formidable file upload parsing |
-| `users/settings.ts` | ❌ | ❌ | Threshold persistence |
-| `portfolio/` routes | ❌ | ❌ | Aggregation |
-| `analytics/` routes | ❌ | ❌ | Aggregation |
+**Areas with remaining gaps:**
+- `auth/refresh.ts` -- token rotation
+- `transactions/import.ts` -- legacy "dumb" import path
+- `imports/upload.ts` -- multipart file upload + GCS storage
 
 ### Recommended Next Steps
 
-1. **`auth/refresh.ts`** — Last remaining auth endpoint without coverage
-2. **`transactions/` routes** — Highest complexity but critical business logic; consider extracting pure validation/transformation functions for unit testing
-3. **`imports/[id].ts` (commit)** — The batch commit flow with feedback fire-and-forget is a regression risk
-
-### Frontend Testing Entry Point
-
-The `bliss-frontend` test infrastructure (Vitest + RTL + MSW) is fully configured and ready. No test files exist yet — the recommended entry point is the **custom hooks layer** using `renderHook()` + MSW. See `bliss-frontend/specs/13-automated-testing-and-error-logging.md` for details.
+1. **`auth/refresh.ts`** -- last remaining auth endpoint without coverage
+2. **Multipart upload paths** -- `imports/upload.ts` and `imports/detect-adapter.ts` require formidable/file mocking
+3. **Edge cases in existing tests** -- error paths, concurrent access, and boundary conditions in the already-tested routes

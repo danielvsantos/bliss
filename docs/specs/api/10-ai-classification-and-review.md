@@ -69,7 +69,7 @@ This module provides the API layer for reviewing, categorising, and promoting AI
 - Requires a `suggestedCategoryId` (either existing or provided in the same request).
 - Optional fields accepted at promote time:
   - `details?: string` — overrides the default `plaidTx.name` used as the `Transaction.details` field.
-  - `ticker?: string`, `assetQuantity?: number`, `assetPrice?: number` — investment enrichment fields. Required (validation enforced) when the target category has an investment `processingHint` (`API_STOCK`, `API_CRYPTO`, or `MANUAL`).
+  - `ticker?: string`, `assetQuantity?: number`, `assetPrice?: number` — investment enrichment fields. Required (validation enforced) when the target category has an investment `processingHint` (`API_STOCK`, `API_CRYPTO`, `API_FUND`, or `MANUAL`).
 - Atomically (within a Prisma transaction):
   1. Creates a `Transaction` record with `source: 'PLAID'` and `externalId: plaidTransactionId` (dedup guard).
   2. Updates `PlaidTransaction.promotionStatus = 'PROMOTED'` and sets `matchedTransactionId`.
@@ -161,6 +161,34 @@ When a transaction is confirmed (promoted, committed, or overridden), a fire-and
 - **Auth**: JWT.
 - **Query params**: `description` (required), `limit` (optional, default 10).
 - **Response**: Array of `{ id, date, amount, currencyCode, categoryName, source }`.
+
+---
+
+## Additional Endpoints
+
+### Bulk Re-queue
+
+**POST** `/api/plaid/transactions/bulk-requeue`
+
+- **Purpose**: Transitions multiple `SKIPPED` PlaidTransactions back to `CLASSIFIED` so they reappear in the review queue.
+- **Auth**: JWT.
+- **Body**: `{ transactionIds: string[] }` — IDs of PlaidTransactions to re-queue.
+- **Response**: `{ requeued: N, skipped: M }`.
+
+### Seed Transactions
+
+**GET** `/api/plaid/transactions/seeds`
+
+- **Purpose**: Returns PlaidTransactions held for the Quick Seed interview (`seedHeld: true`). These are high-frequency descriptions classified during Phase 1 that require user confirmation before Phase 2 processing continues.
+- **Auth**: JWT.
+- **Response**: Array of seed PlaidTransactions with suggested categories and classification details.
+
+**POST** `/api/plaid/transactions/confirm-seeds`
+
+- **Purpose**: Confirms or overrides categories for seed-held transactions. On confirmation, promotes held transactions and releases any excluded seeds to `promotionStatus: CLASSIFIED` (pending review queue).
+- **Auth**: JWT.
+- **Body**: Array of `{ id: string, suggestedCategoryId: number }` — one entry per seed transaction.
+- **Response**: `{ confirmed: N, released: M }`.
 
 ---
 

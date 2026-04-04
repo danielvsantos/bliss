@@ -62,13 +62,26 @@ Note: The register form does **not** include a confirm-password field. Instead, 
     - On success, navigates the user to the main dashboard (`/`).
 - **`onRegisterSubmit(values)`** (inside `SignUpForm`):
     - Calls the `signUp` function from `useAuth()`.
-    - **Important**: The initial `signUp` call sends an empty payload for `countries`, `currencies`, and `bankIds`. This indicates that the core tenant setup happens later in the onboarding process.
+    - **Important**: The `signUp` call defaults `countries` to `['US']` and `currencies` to `['USD']` if not provided (fallback applied in `AuthContext.signUp`). This ensures a valid tenant is created even before the onboarding flow where the user customizes their selections. `bankIds` defaults to an empty array.
     - On success, saves tenant meta to localStorage via `setTenantMeta()` and navigates to `/onboarding`.
 - **Google OAuth button** (`GoogleButton` component):
     - Both the **Sign In** tab and the **Sign Up** tab render a styled Google button (multicolor SVG icon, white background, border, hover shadow) positioned above an "or continue with email" divider (`OrSeparator`).
     - Sign In tab label: **"Sign in with Google"**. Sign Up tab label: **"Sign up with Google"**.
     - Both call `signInWithGoogle()` from `useAuth()`.
     - The same OAuth flow handles both new and returning users — the distinction is made server-side by `AuthService.findOrCreateGoogleUser`. New users are routed to `/onboarding`; returning users are routed to `/`.
+
+### Demo Mode (`useDemoMode` hook):
+
+The auth page supports a **demo mode** for visitors arriving from the documentation site. This is controlled by the `useDemoMode()` hook defined in the same file.
+
+- **Trigger**: The `?origin=docs-site` URL query parameter activates demo mode (e.g., `/auth?origin=docs-site`).
+- **Hook behaviour**: `useDemoMode()` reads `window.location.search` on mount and returns `true` if `origin === "docs-site"`.
+- **UI changes in demo mode**:
+  - The tab switcher is hidden — only the **Sign In** form is shown (no Sign Up tab).
+  - A **demo banner** is displayed above the form explaining this is a live demo environment.
+  - The sign-in form fields are **pre-filled** with demo credentials: `email: "daniel@blissfinance.co"`, `password: "bliss1234"`.
+  - The user can click "Sign In" immediately without typing anything.
+- **`SignInForm` component**: Accepts an optional `demoMode` prop. When `true`, `useForm()` is initialized with the pre-filled demo credentials as `defaultValues`.
 
 ### Styling Approach:
 - All colors use design tokens (CSS variables from `src/index.css`) — no raw Tailwind colors per `CLAUDE.md` rules.
@@ -284,6 +297,7 @@ This context is the heart of the frontend's authentication system. It provides t
     3. Appends hidden `csrfToken` and `callbackUrl` inputs.
     4. Calls `form.submit()` — full browser navigation, NextAuth handles the OAuth redirect.
 - **`checkSession` in public interface**: Exposed so `callback.tsx` can trigger a session refresh after the Google OAuth landing (the cookie was already set server-side).
+- **Session Expiration Handling (`auth:session-expired` event)**: The `AuthProvider` registers a `window` event listener for the custom `auth:session-expired` event. This event is dispatched by the API client (`src/lib/api.ts`) when a `401 Unauthorized` response is received — but only once per page load (a module-level flag prevents duplicate toasts). When the event fires, `AuthContext` clears the `user` state to `null` and shows a destructive toast: "Session expired — Your session has expired. Please sign in again." This pattern decouples the API client from the auth context while ensuring the user is always notified of session invalidation.
 
 ---
 

@@ -28,7 +28,7 @@ Fetches the tenant's insights with optional filtering and pagination.
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
-| `limit` | integer | 50 | Max results per page |
+| `limit` | integer | 20 | Max results per page |
 | `offset` | integer | 0 | Pagination offset |
 | `lens` | string | — | Filter by lens (e.g., `SPENDING_VELOCITY`) |
 | `severity` | string | — | Filter by severity (e.g., `WARNING`) |
@@ -40,7 +40,7 @@ Fetches the tenant's insights with optional filtering and pagination.
 {
   "insights": [
     {
-      "id": 42,
+      "id": "cm1abc2d3e4f5g6h7i8j9k0l",
       "batchId": "a1b2c3d4-...",
       "date": "2026-03-06T00:00:00.000Z",
       "lens": "SPENDING_VELOCITY",
@@ -60,7 +60,7 @@ Fetches the tenant's insights with optional filtering and pagination.
 
 **Ordering:** `priority DESC`, `createdAt DESC`.
 
-**`latestBatchDate`:** The `createdAt` of the most recent insight for this tenant. Used by the frontend to detect when a new batch has been generated during polling.
+**`latestBatchDate`:** The `date` field of the most recent insight for this tenant. Used by the frontend to detect when a new batch has been generated during polling.
 
 ### `PUT /api/insights`
 
@@ -70,14 +70,14 @@ Dismisses or restores a specific insight.
 
 ```json
 {
-  "insightId": 42,
+  "insightId": "cm1abc2d3e4f5g6h7i8j9k0l",
   "dismissed": true
 }
 ```
 
 **Validation:**
-- `insightId` is required and must be a valid integer.
-- Ownership check: the insight's `tenantId` must match `req.user.tenantId`. Returns `403` if not.
+- `insightId` is required and must be a valid string.
+- Ownership check: the query filters by both `id` and `tenantId`, so a non-owned insight returns `404` (not found rather than forbidden).
 
 **Response** (`200 OK`): The updated `Insight` object.
 
@@ -96,7 +96,7 @@ Triggers on-demand insight generation for the authenticated user's tenant.
 
 ```json
 {
-  "message": "Insight generation triggered"
+  "message": "Insight generation started"
 }
 ```
 
@@ -110,7 +110,7 @@ Triggers on-demand insight generation for the authenticated user's tenant.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `Int` | Auto-incremented primary key |
+| `id` | `String` | CUID primary key (`@default(cuid())`) |
 | `tenantId` | `String` | FK to Tenant |
 | `batchId` | `String` | Groups insights from the same generation run |
 | `date` | `DateTime` | Generation date |
@@ -119,7 +119,7 @@ Triggers on-demand insight generation for the authenticated user's tenant.
 | `body` | `String` | Detailed observation (2-4 sentences) |
 | `severity` | `String` | `POSITIVE` / `INFO` / `WARNING` / `CRITICAL` |
 | `priority` | `Int` | 1-100 (higher = more important) |
-| `dataHash` | `String` | SHA-256 hash for deduplication |
+| `dataHash` | `String?` | SHA-256 hash for deduplication (nullable) |
 | `metadata` | `Json?` | Lens-specific data points |
 | `dismissed` | `Boolean` | Default `false`. User-toggleable. |
 | `createdAt` | `DateTime` | Creation timestamp |

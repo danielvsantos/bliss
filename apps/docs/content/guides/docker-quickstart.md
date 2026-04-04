@@ -48,3 +48,5 @@ Adminer is included at [http://localhost:8888](http://localhost:8888). Log in wi
 - [Seed your financial world](/docs/guides/tenant-seed-setup) — bulk-create accounts, banks, and categories
 - [Import transactions](/docs/guides/importing-transactions) — bring in your CSV/XLSX data
 - [Connect a bank](/docs/guides/plaid-bank-sync) — automatic sync with Plaid
+
+Ready to contribute? See the full [Getting Started](/docs/getting-started) guide for local development setup.

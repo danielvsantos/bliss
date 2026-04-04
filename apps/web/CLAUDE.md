@@ -12,9 +12,9 @@ All files use `import` / `export`. Never use `require()` in this app.
 apps/web/src/
   pages/                # Route pages
     auth/               # Sign-in, sign-up
-    reports/            # Financial reports (sub-pages)
-    settings/           # User and tenant settings
-    bliss-agents/       # AI-powered features
+    reports/            # Financial reports (portfolio, expenses, tags, PnL, equity-analysis)
+    settings/           # User settings (index.tsx) + user management (users.tsx)
+    Index.tsx           # Landing / home page
     dashboard.tsx       # Main dashboard
     accounts.tsx        # Account management
     transactions.tsx    # Transaction list
@@ -25,8 +25,10 @@ apps/web/src/
     currency-rates.tsx  # Exchange rates
     Categories.tsx      # Category management
     onboarding.tsx      # First-time setup
+    coming-soon.tsx     # Placeholder page
+    NotFound.tsx        # 404 page
   components/
-    ui/                 # shadcn/ui primitives (55 components -- do not modify directly)
+    ui/                 # shadcn/ui primitives (53 components -- do not modify directly)
     layout/             # App shell, sidebar, navigation
     dashboard/          # Dashboard widgets
     accounts/           # Account-related components
@@ -37,7 +39,9 @@ apps/web/src/
     entities/           # Shared entity components
     settings/           # Settings panels
     onboarding/         # Onboarding flow components
-  hooks/                # 40+ custom React hooks (use-*.ts)
+    plaid-connect.tsx   # Plaid connection component (top-level)
+    withAuth.tsx        # Auth HOC wrapper (top-level)
+  hooks/                # 32 custom React hooks (use-*.ts/tsx)
   contexts/             # AuthContext (single context provider)
   lib/                  # Utility modules
     portfolio-utils.ts  # parseDecimal, getGroupColor, buildGroupColorMap, getGroupIcon
@@ -147,11 +151,15 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-analytics.ts` -- Financial analytics data
 - `use-portfolio-items.ts` -- Portfolio asset management
 - `use-portfolio-history.ts` -- Historical portfolio valuations
+- `use-portfolio-holdings.ts` -- Portfolio holdings data
+- `use-portfolio-lots.ts` -- Portfolio lot-level data
+- `use-normalized-portfolio-items.ts` -- Normalized portfolio item data
 - `use-plaid-actions.ts` -- Plaid link/sync operations
 - `use-plaid-review.ts` -- Plaid transaction review
 - `use-imports.ts` -- Smart import flow
 - `use-insights.ts` -- AI insights
 - `use-tenant-settings.ts` -- Tenant configuration
+- `use-user-settings.ts` -- User preferences
 - `use-tags.ts` -- Tag management
 - `use-tag-analytics.ts` -- Per-tag analytics
 - `use-equity-analysis.ts` -- Equity risk metrics
@@ -159,6 +167,17 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-dashboard-actions.ts` -- Dashboard quick actions
 - `use-notifications.ts` -- Notification center
 - `use-merchant-history.ts` -- Merchant name suggestions
+- `use-account-list.ts` -- Account list data
+- `use-currency-rates.ts` -- Exchange rate data
+- `use-sync-logs.ts` -- Plaid sync log history
+- `use-ticker-search.ts` -- Stock/fund ticker lookup
+- `use-export-transactions.ts` -- Transaction CSV export
+- `use-onboarding-progress.ts` -- Onboarding checklist state
+- `use-force-theme.ts` -- Theme override
+- `use-metadata.ts` -- Page metadata
+- `use-page-visible.ts` -- Page visibility detection
+- `use-user-signals.ts` -- User signal tracking
+- `use-toast.ts` -- Toast notification hook
 
 ## Internationalization
 
@@ -173,10 +192,13 @@ i18next with multiple locales. Translation files live in `src/i18n/`. Use the `u
 pnpm test:web
 ```
 
+**Coverage:** 46 test files across hooks (28), pages (7), components (7), contexts (1), and lib utilities (4).
+
 **Patterns:**
 - Component tests render with necessary providers (QueryClient, Router, Auth)
 - API calls mocked via MSW handlers
-- Playwright e2e tests in `e2e/` directory
+- Hook tests use `renderHook` from `@testing-library/react` with query client wrapper
+- Playwright e2e tests in `e2e/` directory (stubs only)
 
 ## Path aliases
 

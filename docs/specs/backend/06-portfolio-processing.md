@@ -73,7 +73,7 @@ A foundational principle of the pipeline is that **all currency conversions and 
 
 These fields are calculated and maintained exclusively by the backend workers, providing a single source of truth for all valuations and ensuring high performance and accuracy for the frontend.
 
-### 6.2.1. Schema: Multi-Market & Currency Fields
+### 6.3.2. Schema: Multi-Market & Currency Fields
 
 The `PortfolioItem` and `Transaction` models carry additional fields for multi-market support:
 
@@ -121,7 +121,7 @@ This worker handles cross-currency reporting and aggregation. It pre-calculates 
 
 ### 6.4.3. Valuation Engine (`valuation/index.js`)
 
-This worker handles all `Investment` and `Asset` types. It is built on a "fetch once, process in memory" pattern. [[memory:3474704]]
+This worker handles all `Investment` and `Asset` types via the `value-all-assets` job (alias: `generate-portfolio-valuation`). It is built on a "fetch once, process in memory" pattern. [[memory:3474704]]
 
 1.  **Global Currency Pre-Fetching**: To avoid N+1 queries, the worker determines the global date range for all assets in the job and pre-fetches all required currency rates in a single, consolidated step.
 2.  **Smart Deletion**: The worker partitions incoming assets into `cashAssets` and `nonCashAssets`.
@@ -341,20 +341,38 @@ The `holdings-calculator.js` infers the transaction type from its financial prop
 - **Business Logic**: This processor contains critical, specialized business logic. It is self-sufficient and prioritizes data from the **`DebtTerms` table** as the definitive source for a loan's `initialBalance` and `originationDate`. If no `DebtTerms` record exists, it gracefully falls back to using the first credit transaction.
 - **Currency Logic**: Its currency pre-fetching logic is robust. It determines the true earliest date for its rate query by comparing the `originationDate` from `DebtTerms` with the date of the earliest transaction, ensuring the rate for the origination date is always available.
 
-## 6.5. Supporting Workers
+## 6.5. Recalculate Portfolio Items (`recalculate-portfolio-items`)
 
-### 6.5.1. Transaction Import Worker (`importWorker`)
+This job is dispatched by the `eventSchedulerWorker` when individual portfolio items need recalculation (e.g., after a manual transaction modification). It groups the provided `portfolioItemIds` by their processing type and dispatches them to the correct processors:
+
+- **Investments** (default): sent to `generatePortfolioValuation`.
+- **Simple Liabilities** (`processingHint === 'SIMPLE_LIABILITY'`): sent to `simpleLiabilityProcessor`.
+- **Amortizing Loans** (`processingHint === 'AMORTIZING_LOAN'`): sent to `processAmortizingLoan`.
+
+All three types are processed in parallel via `Promise.all`.
+
+## 6.6. Debounced Job Scheduling
+
+The `eventSchedulerWorker` uses `scheduleDebouncedJob()` from `debounceService.js` to consolidate rapid-fire events into a single job. This is used for all major job dispatches (portfolio changes, cash processing, analytics, revaluation). The debounce window is 5 seconds. During the window, array-type fields (e.g., `portfolioItemIds`, `scopes`, `needsCashRebuild`) are aggregated across events.
+
+## 6.7. TAG_ASSIGNMENT_MODIFIED Event Routing
+
+When tags are added to or removed from transactions, the API emits a `TAG_ASSIGNMENT_MODIFIED` event containing `tenantId` and `transactionScopes`. The `eventSchedulerWorker` routes this directly to `scoped-update-analytics` on the analytics queue, bypassing the portfolio pipeline. The analytics worker populates both regular and tag analytics in a single pass.
+
+## 6.8. Supporting Workers
+
+### 6.8.1. Transaction Import Worker (`importWorker`)
 
 Before the portfolio can be processed, transactions must be present in the system. The `importWorker` is a specialized worker responsible for handling bulk CSV transaction imports. It uses a robust two-pass (validate, then write) streaming architecture and enqueues a `TRANSACTIONS_IMPORTED` event on success, which triggers the portfolio sync.
 
-### 6.5.2. On-Demand Recalculation (`recalculate-portfolio-item.js`)
+### 6.8.2. On-Demand Recalculation (`recalculate-portfolio-item.js`)
 
 This is a lightweight worker triggered when a transaction is manually updated or deleted. Its role is nuanced and respects the separation of concerns.
 
 - **For Investments**: It performs a full state recalculation by calling the `calculatePortfolioItemState` utility.
 - **For Debt**: It does **not** perform any state calculations. For `Debt` items, it logs that it is skipping the asset and exits. This is critical because the authoritative calculation for `Debt` must be performed by the specialized processors, which are triggered by separate events. This prevents this worker from overwriting the correct state with a simplified calculation.
 
-## 6.6. Default Categories
+## 6.9. Default Categories
 
 | Code | Name | Group | Type | ProcessingHint | Key Strategy |
 |------|------|-------|------|---------------|--------------|
@@ -364,7 +382,7 @@ This is a lightweight worker triggered when a transaction is manually updated or
 
 The `Funds` hint change from `MANUAL` to `API_FUND` enables automatic pricing via Twelve Data. The `API_FUND` strategy has a graceful manual fallback for funds without resolvable tickers.
 
-## 6.7. Portfolio Engine Tests
+## 6.10. Portfolio Engine Tests
 
 | Suite | File | Tests | What it covers |
 |-------|------|-------|----------------|

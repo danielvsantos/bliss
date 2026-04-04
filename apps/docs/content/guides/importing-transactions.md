@@ -52,14 +52,14 @@ For maximum control, prepare your data in the Bliss Native format. This bypasses
 | `ticker` | Stock/ETF symbol — triggers investment metadata lookup |
 | `assetquantity` | Number of shares/units |
 | `assetprice` | Price per unit |
-| `tags` | Pipe-separated tags (e.g., `vacation\|2024`) |
+| `tags` | Comma-separated tags (e.g., `vacation,2024`) |
 
 **Example:**
 
 ```csv
 transactiondate,description,debit,credit,account,category,currency,ticker,assetquantity,assetprice,tags
 2024-06-15,AAPL Purchase,5000,,Schwab,Stocks,USD,AAPL,25,200,
-2024-06-15,Salary,,8500,Revolut Daniel,Salary,EUR,,,,"income|june"
+2024-06-15,Salary,,8500,Revolut Daniel,Salary,EUR,,,,"income,june"
 2024-06-16,Grocery Store,45.80,,Nubank,Groceries,BRL,,,,
 ```
 
@@ -75,7 +75,7 @@ After processing, review the staged rows. The AI assigns a category and confiden
 
 ![Transaction review with AI drawer](/images/transactionreviewdrawer.png)
 
-Rows with confidence above your `autoPromoteThreshold` (default 0.95) are auto-confirmed.
+Rows with confidence above your `autoPromoteThreshold` (default 0.90) are auto-confirmed.
 
 ## Next steps
 

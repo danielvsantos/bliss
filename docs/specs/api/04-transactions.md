@@ -14,7 +14,7 @@ A key design principle of the transaction management system is that the backend 
 
 ### Endpoints
 
--   **`GET /api/transactions`**: This is a powerful endpoint for retrieving transaction data. It supports a wide range of filters, including by date (year, month, quarter), entity (category, account), and properties (currency, tags). It also provides robust sorting and pagination capabilities to handle large datasets efficiently.
+-   **`GET /api/transactions`**: This is a powerful endpoint for retrieving transaction data. It supports a wide range of filters, including by date (year, month, quarter, or arbitrary `startDate`/`endDate` range), entity (category, account, group, type), source (`source` — MANUAL, PLAID, or CSV), and properties (currency, tags, accountCountry). It also provides robust sorting and pagination capabilities to handle large datasets efficiently. The response includes a `totals` object with aggregated `credit`, `debit`, and `balance` (credit minus debit) for the current filter set.
 -   **`POST /api/transactions`**: Handles the creation of new transactions. A key feature of this endpoint is its ability to automatically manage `PortfolioItem`s. When a transaction is related to an investment or debt, this endpoint will automatically `upsert` a corresponding portfolio item, linking the two. It also includes special logic for handling debt repayments, which are split into principal and interest components.
 -   **`PUT /api/transactions?id={transactionId}`**: Manages the updating of existing transactions. Similar to the `POST` endpoint, it will intelligently update any associated `PortfolioItem` links if the transaction's category or other key details are changed.
 -   **`DELETE /api/transactions?id={transactionId}`**: Handles the deletion of transactions. To ensure data integrity, it also removes any associated `TransactionTag` entries.
@@ -36,6 +36,19 @@ The transaction creation and update endpoints (`POST` and `PUT`) now support the
 
 All `write` operations (`POST`, `PUT`, `DELETE`) on this endpoint produce system events that are sent to the backend worker service. These events (`MANUAL_TRANSACTION_CREATED`, `MANUAL_TRANSACTION_MODIFIED`) trigger asynchronous background jobs, such as recalculating portfolio valuations, ensuring that the user's financial picture is always up-to-date.
 
+Additionally, when tags are assigned or changed on a transaction, a `TAG_ASSIGNMENT_MODIFIED` event is emitted. This event carries the affected `tagIds` and `transactionScopes` (year, month, currency, country) so the backend can incrementally rebuild the tag analytics cache for only the impacted dimensions.
+
+### Merchant History
+
+**`GET /api/transactions/merchant-history`** (`pages/api/transactions/merchant-history.js`)
+
+Returns recent promoted Plaid transactions matching a merchant name, used by the Transaction Review inbox to show historical context for a merchant.
+
+-   **Auth**: JWT via `withAuth`.
+-   **Query params**: `description` (required, the merchant name to search), `limit` (optional, default 10, max 50).
+-   **Logic**: Because `Transaction.description` is encrypted (non-searchable), this endpoint searches `PlaidTransaction` by `merchantName` and `name` fields (unencrypted, case-insensitive contains) where `promotionStatus = 'PROMOTED'`. Results are scoped to the tenant's Plaid items and enriched with category data.
+-   **Response**: Array of objects with `id`, `transaction_date`, `description`, `debit`, `credit`, `currency`, `source`, `category` (with name/group), and `account`.
+
 ---
 
 ## 4.2. Bulk CSV Import (Smart Import — Native Adapter)
@@ -56,9 +69,10 @@ A key responsibility of the transaction endpoints is to produce events for the b
 
 The Tags API, located at `pages/api/tags.js`, provides full, tenant-scoped CRUD functionality for managing transaction tags.
 
-- **Uniqueness**: It enforces that tag names must be unique within a tenant.
+- **Uniqueness**: It enforces that tag names must be unique within a tenant (enforced by both pre-check and Prisma `P2002` constraint).
 - **Deletion Protection**: It includes a critical safeguard that prevents the deletion of a tag if it is currently associated with any transactions. This maintains the integrity of the transaction ledger.
-- **Auditing**: All CUD operations are audited.
+- **Tag Fields**: Each tag has `id`, `name`, and optional `color`, `emoji`, `budget` (Float), `startDate` (DateTime), and `endDate` (DateTime) fields.
+- **Pagination**: `GET /api/tags` supports optional `limit` and `offset` query parameters. When `limit` is provided, the response shape is `{ tags: Tag[], total: number }`. Without `limit`, it returns a flat `Tag[]` array for backward compatibility.
 - **Response Shape**: The `GET /api/transactions` endpoint returns tags as flat `Tag[]` objects (via `t.tags.map(tt => tt.tag)`), not the raw join-table shape. Each tag object contains `id`, `name`, and optional `color`/`emoji` fields.
 
 ---
@@ -70,7 +84,7 @@ The Tags API, located at `pages/api/tags.js`, provides full, tenant-scoped CRUD 
 Exports matching transactions as a downloadable Bliss Native CSV file with the `id` column populated, enabling round-trip editing via re-import through Smart Import.
 
 - **Auth**: JWT.
-- **Query params**: Same filter set as `GET /api/transactions` — `startDate`, `endDate`, `accountId`, `categoryId`, `categoryGroup`, `type`, `tags`, `source`, `currencyCode`, `group`.
+- **Query params**: Same filter set as `GET /api/transactions` — `startDate`, `endDate`, `accountId`, `categoryId`, `group`, `type`, `tags`, `source`, `currencyCode`.
 - **Response**: Streamed `text/csv; charset=utf-8` with `Content-Disposition: attachment`. Columns: `id`, `transactiondate`, `description`, `debit`, `credit`, `account`, `category`, `currency`, `details`, `ticker`, `assetquantity`, `assetprice`, `tags` (pipe-separated). Includes UTF-8 BOM for Excel compatibility.
 - **Empty result**: Returns header row only (no error).
 

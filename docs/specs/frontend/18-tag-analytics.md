@@ -15,13 +15,14 @@ The Tag Analytics page allows users to analyze spending associated with individu
 ### 18.2.1. API Client
 
 - **File**: `src/lib/api.ts`
-- **Method**: `api.getTagAnalytics(params)` — serializes query params and calls `GET /api/analytics/tags`
+- **Method**: `{ api }` named import from `@/lib/api`; calls `api.getTagAnalytics(params)` — serializes query params and calls `GET /api/analytics/tags`
 
 ### 18.2.2. Hook
 
 - **File**: `src/hooks/use-tag-analytics.ts`
 - **Hook**: `useTagAnalytics(filters)` — React Query wrapper
-- **Query key**: `['tag-analytics', filters]`
+- **Exported constant**: `TAG_ANALYTICS_QUERY_KEY = 'tag-analytics'`
+- **Query key**: `[TAG_ANALYTICS_QUERY_KEY, filters]`
 - **Enabled**: when `tagIds.length > 0 && !!view`
 
 ### 18.2.3. Types

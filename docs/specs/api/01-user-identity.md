@@ -16,7 +16,6 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 - **Password Hashing**: It calls out to an `AuthService` to hash the user's password before storing it in the database.
 - **Token Generation**: Generates and signs a new JWT with `user.id`, `user.email`, `tenant.id`, and a `jti: uuidv4()` claim.
 - **Cookie Issuance**: Calls `utils/cookieUtils.js → setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie. The token is **not** included in the response body.
-- **Auditing**: It creates an `AuditLog` entry to record the successful creation of the new tenant.
 
 ### Security & Encryption
 - **Password Hashing**: User passwords are not stored directly. They are hashed using the `pbkdf2Sync` algorithm with a unique salt for each user, as handled by the `AuthService`.
@@ -26,7 +25,7 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 1.  Receives a `POST` request with user and tenant data.
 2.  Performs a series of validation checks. Fails with `400 Bad Request` or `409 Conflict` if validation fails.
 3.  Initiates a `prisma.$transaction`.
-4.  **`Tenant` Creation**: A new `Tenant` record is created with the `tenantName` and a default `plan` of 'FREE'.
+4.  **`Tenant` Creation**: A new `Tenant` record is created with the `tenantName`, a default `plan` of 'FREE', and `plaidHistoryDays` set from the `PLAID_HISTORY_DAYS` environment variable (defaults to `1` if not set). This controls how many days of historical transactions are fetched on initial Plaid sync.
 5.  **`User` Creation**: A new `User` is created.
     - The `password` is hashed via `AuthService.hashPassword()`.
     - The `email` is automatically encrypted by the Prisma middleware before being saved.
@@ -37,7 +36,7 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 8.  **Role assignment**: `AuthService.createUser()` is called with `role: 'admin'` — signup always creates a tenant owner.
 9.  The transaction is committed.
 10. `setAuthCookie(res, token)` writes the JWT as an HttpOnly cookie.
-11. Returns `201 Created` with `{ user, tenant }`. **The `token` field is not in the response body.**
+11. Returns `201 Created` with `{ message: "Signup successful", user: userWithTenant }` where `userWithTenant` is the user object with the `tenant` nested inside (i.e., `{ ...user, tenant }`). **The `token` field is not in the response body.**
 
 ### Dependencies:
 - **`../../../services/auth.service`**: The next file to investigate. This service encapsulates the logic for password hashing, which is a critical security function.
@@ -111,18 +110,17 @@ This endpoint handles the authentication process for existing users.
 This `GET` endpoint validates a user's JWT and returns their current session information.
 
 ### Responsibilities:
-- **Token Extraction**: Reads the JWT from **`req.cookies.token`** (the HttpOnly cookie set at sign-in). Does **not** accept an `Authorization: Bearer` header.
-- **Token Verification**: Uses `jwt.verify` against `JWT_SECRET` (with rolling secret rotation fallback).
-- **Denylist Check**: Calls `isRevoked(decoded.jti)` — returns 401 if the token has been server-side revoked (e.g. after sign-out).
-- **User Hydration**: Fetches the full user record (including `role`) from the database.
-- **Session Response**: Returns the sanitized user object. `email` is auto-decrypted by Prisma middleware.
+- **Token Extraction**: Uses the `withAuth` wrapper, which accepts the JWT from **either** `req.cookies.token` (HttpOnly cookie) **or** the `Authorization: Bearer <token>` header (fallback). Cookie takes precedence.
+- **Token Verification**: `withAuth` uses `jwt.verify` against `JWT_SECRET_CURRENT` (with `JWT_SECRET_PREVIOUS` rotation fallback).
+- **Denylist Check**: `withAuth` calls `isRevoked(decoded.jti)` — returns 401 if the token has been server-side revoked (e.g. after sign-out).
+- **User Hydration**: Fetches the full user record from the database, selecting `id`, `email`, `name`, `profilePictureUrl`, `provider`, `role`, and the related `tenant` object.
+- **Session Response**: Returns the sanitized user object including `provider` and `profilePictureUrl` fields. `email` is auto-decrypted by Prisma middleware.
 
 ### Data Flow & Logic:
-1.  Reads `req.cookies.token`. Returns `401 Unauthorized` if absent.
-2.  Verifies the token with `jwt.verify()`. Returns `401` on failure.
-3.  Calls `isRevoked(jti)`. Returns `401` if revoked.
-4.  Queries `User` by `userId` (selecting `id`, `tenantId`, `email`, `role`). Returns `404` if user no longer exists.
-5.  Returns `200 OK` with the `user` object.
+1.  `withAuth` reads the token from cookie or Bearer header. Returns `401 Unauthorized` if absent or invalid.
+2.  `withAuth` verifies the token with `jwt.verify()` and checks the denylist. Returns `401` on failure.
+3.  Queries `User` by `userId` (selecting `id`, `email`, `name`, `profilePictureUrl`, `provider`, `role`, `tenant`). Returns `404` if user no longer exists.
+4.  Returns `200 OK` with `{ user: { id, email, name, role, tenant, profilePictureUrl, provider } }`.
 
 ### Dependencies:
 - **`jsonwebtoken`**: For verifying the JWT.
@@ -154,7 +152,7 @@ sequenceDiagram
     SignupAPI->>Database: $transaction: CREATE Tenant, User (role: admin), Relations
     Database-->>SignupAPI: created objects
     SignupAPI->>SignupAPI: setAuthCookie(res, token) — HttpOnly cookie
-    SignupAPI-->>APIClient: 201 Created {user, tenant} — no token in body
+    SignupAPI-->>APIClient: 201 Created {message, user: userWithTenant} — no token in body
     APIClient-->>AuthContext: response
     AuthContext-->>AuthPage: success
     AuthPage->>User: navigate to /onboarding
@@ -166,15 +164,16 @@ sequenceDiagram
 A **stateful** sign-out endpoint that actively revokes the caller's JWT server-side.
 
 ### Responsibilities:
-- Requires authentication (`withAuth`) — the caller must have a valid session cookie.
-- Extracts the `jti` claim from the decoded JWT.
+- Does **not** use `withAuth` — reads the JWT directly from `req.cookies.token` and decodes it with `jwt.decode()` (not `jwt.verify()`).
+- If a token is present and decodable, extracts the `jti` and `exp` claims.
 - Calls `addToDenylist(jti, remainingTtl)` — immediately invalidates the token in Redis even before natural expiry.
 - Calls `clearAuthCookie(res)` from `utils/cookieUtils.js` — sets `Set-Cookie: token=; Max-Age=0` to delete the browser cookie.
 - Returns `200 OK` with `{ message: 'Signed out successfully' }`.
 
 ### Behaviour:
 - Accepts `POST` requests only.
-- **Authentication is required** — the endpoint must decode the token to extract the `jti`.
+- **Authentication is NOT required** — the endpoint uses `jwt.decode()` (not `jwt.verify()`), so it works even with an expired or invalid token. If no token is present or decoding fails, the endpoint still succeeds by clearing the cookie.
+- Token decoding errors are caught silently (non-fatal) — the cookie is always cleared regardless.
 - Token revocation is permanent (until natural expiry) — replaying the old token will be rejected by `isRevoked(jti)` in `withAuth`.
 
 ### Security Note:
@@ -265,7 +264,7 @@ Converts a short-lived NextAuth session cookie into the application's standard c
 2. If the token is missing or has no `id` field → redirect to `${FRONTEND_URL}/auth?error=oauth_failed`.
 3. Looks up the user in the database via `prisma.user.findUnique({ where: { id: token.id } })`.
 4. If the user is not found → redirect to `${FRONTEND_URL}/auth?error=oauth_failed`.
-5. Issues a **custom application JWT** via `jwt.sign({ userId, tenantId, email, jti: uuidv4() }, JWT_SECRET, { expiresIn: '24h' })`. Passes `role: 'admin'` for new tenant owners.
+5. Issues a **custom application JWT** via `jwt.sign({ jti: uuidv4(), userId, tenantId, email }, JWT_SECRET, { expiresIn: '24h' })`. The JWT payload contains only `{ jti, userId, tenantId, email }` — no `role` field.
 6. Calls `setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie.
 7. Reads `nextAuthToken.isNew ?? false`.
 8. Redirects to: `${FRONTEND_URL}/auth/callback?isNew=${isNew}`. **The `token` is NOT in the redirect URL.**
@@ -429,17 +428,15 @@ Returns the tenant's current onboarding state.
 {
   "onboardingProgress": {
     "checklist": {
-      "connectBank": false,
-      "reviewTransactions": false,
-      "setPortfolioCurrency": false,
-      "exploreExpenses": false,
-      "checkPnL": false
+      "connectBank": { "done": false, "skipped": false },
+      "reviewTransactions": { "done": false },
+      "exploreExpenses": { "done": false },
+      "checkPnL": { "done": false }
     },
     "setupFlow": {
-      "step1_profile": true,
-      "step2_connect": true
+      "step1_profile": { "completedAt": "2026-03-01T11:00:00.000Z" },
+      "step2_connect": { "completedAt": "2026-03-01T11:05:00.000Z" }
     },
-    "setupComplete": true,
     "checklistDismissed": false
   },
   "onboardingCompletedAt": "2026-03-01T12:00:00.000Z"
@@ -463,15 +460,19 @@ Updates a specific onboarding step.
 
 | Category | Steps |
 |----------|-------|
-| Checklist items | `connectBank`, `reviewTransactions`, `setPortfolioCurrency`, `exploreExpenses`, `checkPnL` |
+| Checklist items | `connectBank`, `reviewTransactions`, `exploreExpenses`, `checkPnL` |
 | Setup flow | `step1_profile`, `step2_connect` |
 | Special | `setupComplete` (sets `onboardingCompletedAt`), `dismissChecklist` |
+| Deprecated | `setPortfolioCurrency` — accepted silently but ignored (returns current progress unchanged) |
 
 **Behaviour:**
-- Each step sets the corresponding boolean to `true` in the `onboardingProgress` JSON.
+- Checklist items are stored as objects with `{ done: boolean, skipped?: boolean }`, not simple booleans. Marking a step sets `done: true` and merges any additional fields from `data`.
+- Setup flow steps are stored as objects with `{ completedAt: "<ISO timestamp>", ...data }`.
 - `setupComplete` additionally sets `Tenant.onboardingCompletedAt` to the current timestamp.
 - `dismissChecklist` sets `checklistDismissed: true` — hides the checklist from the dashboard.
-- The `data` field is optional and reserved for future use (e.g., passing preferences during setup steps).
+- `setPortfolioCurrency` is deprecated — the endpoint accepts it silently for backward compatibility but returns the current progress without any changes.
+- The `data` field is optional and merged into the step object (e.g., passing preferences during setup steps).
+- **Server-side auto-correction on GET**: The GET endpoint auto-corrects data-backed checklist items — if accounts exist, `connectBank.done` is set to `true`; if transactions exist, `reviewTransactions.done` is set to `true`. The deprecated `setPortfolioCurrency` key is stripped from the response.
 
 **Response** (`200 OK`): The updated `onboardingProgress` object.
 

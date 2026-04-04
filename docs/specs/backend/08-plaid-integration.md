@@ -152,13 +152,15 @@ The full Plaid API response for each transaction is encrypted (AES-256-GCM) and 
 
 Takes the raw staged data and applies business logic.
 
+**Concurrency**: 1 (one Plaid item at a time). Note: `PHASE2_CONCURRENCY = 5` controls concurrent LLM classification calls *within* a single job, not worker-level concurrency.
+
 ### Workflow
 
 1. **Trigger**: Receives `PLAID_SYNC_COMPLETE` job (`{ plaidItemId, source }`).
 2. **Source guard (`allowSeedHeld`)**: Derives `allowSeedHeld = !source || source === 'INITIAL_SYNC'`. Only `INITIAL_SYNC` enables the Quick Seed interview — `WEBHOOK_HISTORICAL_UPDATE`, `MANUAL_RESYNC`, and other sources skip Phase 1 hold-back entirely (user is not necessarily present).
 3. **Batch**: Fetches all unprocessed `PlaidTransaction` rows where `processed = false` and `promotionStatus = 'PENDING'`.
-4. **Classify**: Calls `categorizationService.classify(description, merchantName, tenantId, reviewThreshold, plaidCategory)` for each row. The Plaid `personal_finance_category` JSON (stored in `PlaidTransaction.category`) is passed as a 5th argument and injected as a `PLAID CATEGORY` hint in the Gemini prompt (used as context, not a direct override). Up to `PHASE2_CONCURRENCY` (5) rows are classified concurrently.
-5. **Investment Detection**: If the classified category has `type = 'Investments'` and a matching `processingHint` (`API_STOCK`, `API_CRYPTO`, or `MANUAL`), the row is flagged with `requiresEnrichment: true`, `enrichmentType: 'INVESTMENT'`. These rows are **never auto-promoted** regardless of confidence — they require user-provided ticker/quantity/price.
+4. **Classify**: Calls `categorizationService.classify(description, merchantName, tenantId, reviewThreshold, plaidCategory)` for each row. The Plaid `personal_finance_category` JSON (stored in `PlaidTransaction.category`) is passed as a 5th argument and injected as a `PLAID CATEGORY` hint in the Gemini prompt (used as context, not a direct override). Up to `PHASE2_CONCURRENCY` (5) rows are classified concurrently within a single job.
+5. **Investment Detection**: If the classified category has `type = 'Investments'` and a matching `processingHint` (`API_STOCK`, `API_CRYPTO`, `API_FUND`, or `MANUAL`), the row is flagged with `requiresEnrichment: true`, `enrichmentType: 'INVESTMENT'`. These rows are **never auto-promoted** regardless of confidence — they require user-provided ticker/quantity/price.
 6. **Auto-Promote**: If `aiConfidence >= tenant.autoPromoteThreshold` AND not an investment requiring enrichment: creates a `Transaction` immediately (`promotionStatus = 'PROMOTED'`). Calls `recordFeedback()` after commit.
 7. **Phase 1 Hold-Back (Quick Seed — INITIAL_SYNC only)**: When `allowSeedHeld = true`, rows that do **not** meet auto-promote criteria AND have `classificationSource ≠ EXACT_MATCH` are held with `seedHeld = true` for the Quick Seed interview. `EXACT_MATCH` results below threshold go straight to `CLASSIFIED`.
 8. **Staged**: All other classified rows remain with `promotionStatus = 'CLASSIFIED'` for manual review.
@@ -238,10 +240,11 @@ Returns all `seedHeld=true` PlaidTransactions for the item, grouped by normalise
 
 Processes the user's seed decisions.
 
-- **Body**: `{ plaidItemId, seeds: [{ normalizedDescription, categoryId }] }`
+- **Body**: `{ plaidItemId, seeds: [{ description: string, rawName?: string, confirmedCategoryId: number }] }`
+  - `seeds` may be an empty array (e.g. when the user clicks "Skip for now"). In this case, the for-loop simply does not iterate and execution falls through to the release step.
 - **Confirmed seeds**: promoted to `Transaction` records; `seedHeld = false`; `recordFeedback()` called to update embedding index.
 - **Excluded seeds**: any `seedHeld=true` rows still remaining after confirmed seeds are processed (user clicked X) are batch-released via `updateMany`: `seedHeld = false`, `promotionStatus = 'CLASSIFIED'`. This moves excluded transactions to the pending review queue with their AI suggestion intact — they are not discarded.
-- **Response**: `{ promoted: N, skipped: N, message }`
+- **Response**: `{ confirmed: N, promoted: N }`
 
 ---
 

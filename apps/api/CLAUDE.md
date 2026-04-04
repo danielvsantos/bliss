@@ -12,26 +12,28 @@ All files use `import` / `export`. Never use `require()` in this app.
 apps/api/
   pages/api/            # File-based API routes (the core of this app)
     auth/               # signin, signup, signout, session, change-password, google-token, [...nextauth]
-    transactions/       # CRUD, export, merchant-history
-    imports/            # upload, detect-adapter, adapters, [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
-    portfolio/          # items, holdings, history, equity-analysis
-    plaid/              # create-link-token, accounts, fetch-historical, transactions/, webhook
-    notifications/      # Notification endpoints
-    onboarding/         # Onboarding flow
-    admin/              # default-categories management
-    tenants/            # settings, info
+    transactions/       # CRUD (index), export, merchant-history
+    imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
+    portfolio/          # items, holdings, history, equity-analysis, items/[assetId]/manual-values, manual-values/[valueId], items/[assetId]/debt-terms
+    plaid/              # create-link-token, exchange-public-token, accounts, sync-accounts, sync-logs, fetch-historical, resync, disconnect, rotate-token, items, items/hard-delete, webhook, transactions/ (index, [id], bulk-promote, bulk-requeue, seeds, confirm-seeds)
+    notifications/      # summary
+    onboarding/         # progress
+    admin/              # default-categories (index, [code], [code]/regenerate-embeddings)
+    tenants.js          # Tenant management
+    tenants/            # settings
     ticker/             # search
+    analytics.js        # Financial metrics
+    analytics/tags.js   # Tag analytics
     accounts.js         # Account CRUD
     categories.js       # Category CRUD + merge
     tags.js             # Tag management
-    analytics.js        # Financial metrics
     insights.js         # AI insights
     users.js            # User profile
     banks.js            # Bank listing
     countries.js        # Supported countries
     currencies.js       # Supported currencies
     currency-rates.js   # Exchange rates
-  utils/                # Shared utilities (14+ files)
+  utils/                # Shared utilities (12 files)
   services/             # Business logic (auth, transactions, plaid, valuation)
   lib/                  # Constants, default categories
   prisma/               # Prisma client with encryption + validation extensions
@@ -84,12 +86,14 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 | `withAuth.js` | JWT validation, Redis denylist check, hydrates `req.user` |
 | `cors.js` | Dynamic origin whitelist from `FRONTEND_URL`, auto-adds localhost in dev |
 | `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config |
-| `rateLimit.js` | Per-route rate limiters (22 endpoints configured) |
+| `rateLimit.js` | Per-route rate limiters (24 endpoints configured) |
 | `denylist.js` | Redis-backed JWT revocation, fail-open if Redis unavailable |
 | `produceEvent.js` | Dispatch events to backend via `POST BACKEND_URL/api/events` with `INTERNAL_API_KEY` |
 | `currencyConversion.js` | Cross-currency conversion with 7-day forward-fill lookback |
 | `tagUtils.js` | Find-or-create tags with P2002 race condition handling |
 | `transactionHash.js` | SHA-256 dedup hash: `(date + description + amount + accountId)` |
+| `descriptionHash.js` | SHA-256 hash for description-based cache lookups |
+| `encryption.js` | Encryption field configuration and helpers |
 | `validateEnv.js` | Startup validation of required env vars |
 
 ## Prisma client (`prisma/prisma.js`)
@@ -168,6 +172,7 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 | `auth.service.js` | Password hashing (PBKDF2-SHA512), user CRUD, Google OAuth find-or-create |
 | `transaction.service.js` | Debt repayment splitting (principal + interest calculation) |
 | `plaid.service.js` | Pre-configured Plaid client instance |
+| `valuation.service.js` | Asset valuation logic |
 
 ## Lib
 

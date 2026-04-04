@@ -6,6 +6,8 @@ Bliss Finance is a self-hostable financial dashboard built as a monorepo with
 three application services, one PostgreSQL database (with pgvector), and a Redis
 instance for job queues and caching.
 
+![Bliss Architecture](/images/blissarchitecture.jpg)
+
 ```
                         Browser (React SPA)
                               |
@@ -50,6 +52,7 @@ bliss-finance-monorepo/
 |   +-- api/            Next.js Pages Router (ESM, "type": "module")
 |   +-- backend/        Express + BullMQ (CJS, require())
 |   +-- web/            React SPA -- Vite, shadcn/ui, Tailwind CSS
+|   +-- docs/           Nextra 4 documentation site (port 3002)
 |
 +-- packages/
 |   +-- shared/         Dual ESM/CJS package (built with tsup)
@@ -64,7 +67,7 @@ bliss-finance-monorepo/
 +-- docker/             Dockerfiles for each service
 +-- docker-compose.yml  Orchestrates all 5 containers
 +-- scripts/            Dev and deployment helper scripts
-+-- docs/               This file lives here
++-- docs/               Canonical documentation (synced to apps/docs)
 ```
 
 ### Module System Split
@@ -373,7 +376,7 @@ the Next.js API config. Temp files are cleaned up after upload completes.
 | ------------------------- | ------------------ | ----------- | ------------------------------------------------- |
 | smartImportWorker         | smart-import       | 1           | CSV parse, dedup, classify, stage rows            |
 | plaidSyncWorker           | plaid-sync         | 3           | Incremental transaction fetch from Plaid          |
-| plaidProcessorWorker      | plaid-processor    | 5           | Classify and persist Plaid transactions            |
+| plaidProcessorWorker      | plaid-processor    | 1           | Classify and persist Plaid transactions            |
 | classificationWorker      | classification     | 5           | 3-tier AI classification pipeline                  |
 | portfolioValuationWorker  | portfolio-valuation| 1           | Fetch prices, calculate holdings P&L               |
 | eventSchedulerWorker      | event-scheduler    | 3           | Route typed events to appropriate queues           |
@@ -466,7 +469,7 @@ Bliss uses **query-level tenant isolation** (shared database, shared schema):
 ### What Is Scoped
 
 - All user-created data: accounts, transactions, categories, tags, budgets,
-  imports, embeddings, Plaid connections, holdings.
+  imports, embeddings, audit logs, Plaid connections, holdings.
 - Per-tenant settings: classification thresholds, display currency, adapter
   configurations.
 
