@@ -11,7 +11,7 @@ config({ path: resolve(__dirname, '../../.env') });
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: 'standalone',
+  output: process.env.VERCEL ? undefined : 'standalone',
   // @google-cloud/storage uses native Node.js modules that webpack cannot
   // bundle. Mark as external so Next.js resolves it from node_modules at runtime.
   serverExternalPackages: ['@google-cloud/storage'],
