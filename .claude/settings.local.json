@@ -20,7 +20,14 @@
       "Bash(export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\")",
       "Bash(grep -r \"role.*=.*admin\\\\|role.*=.*member\\\\|ROLES\\\\|Role.*enum\" /Users/danielviana/Desktop/bliss/apps/api --include=*.ts --include=*.js)",
       "Bash(npx vitest:*)",
-      "Bash(npx --package vitest vitest run --config apps/api/vitest.config.ts apps/api/__tests__/unit/middleware/withAuth.test.ts)"
+      "Bash(npx --package vitest vitest run --config apps/api/vitest.config.ts apps/api/__tests__/unit/middleware/withAuth.test.ts)",
+      "Bash(npx jest:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npm run:*)",
+      "Bash(pnpm vitest:*)",
+      "Bash(node_modules/.bin/jest --no-coverage \"src/__tests__/unit/workers/\\(portfolio-handlers|portfolioWorker|smartImportWorker\\)\")",
+      "Bash(ls /Users/danielviana/Desktop/bliss/apps/web/src/hooks/*test* /Users/danielviana/Desktop/bliss/apps/web/src/contexts/*test* /Users/danielviana/Desktop/bliss/apps/web/src/pages/*test*)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx vitest run)"
     ]
   }
 }

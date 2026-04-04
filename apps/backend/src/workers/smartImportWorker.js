@@ -908,4 +908,11 @@ const startSmartImportWorker = () => {
     return worker;
 };
 
-module.exports = { startSmartImportWorker, computeTransactionHash };
+module.exports = {
+    startSmartImportWorker,
+    computeTransactionHash,
+    // Exported for testing
+    applyClassificationToRowData,
+    computeUpdateDiff,
+    buildAiFrequencyMap,
+};

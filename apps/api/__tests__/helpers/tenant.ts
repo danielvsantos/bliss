@@ -57,12 +57,10 @@ export async function createIsolatedTenant(suffix = ''): Promise<IsolatedTenant>
 /**
  * Deletes the Tenant and all linked data.
  *
- * Handles the non-cascading relations (User, AuditLog) before deleting the
+ * Handles the non-cascading relation (User) before deleting the
  * Tenant itself, which cascades to Category, Account, Transaction, etc.
  */
 export async function teardownTenant(tenantId: string): Promise<void> {
-  // AuditLog has no FK relation to Tenant (no @relation annotation)
-  await prisma.auditLog.deleteMany({ where: { tenantId } });
   // User has no onDelete: Cascade on its Tenant relation
   await prisma.user.deleteMany({ where: { tenantId } });
   // Tenant delete cascades to Category, Account, StagedImport, TransactionEmbedding, etc.

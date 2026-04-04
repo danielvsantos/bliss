@@ -8,7 +8,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
     tag: { findFirst: vi.fn(), create: vi.fn() },
-    auditLog: { create: vi.fn() },
   },
 }));
 
@@ -50,13 +49,11 @@ describe('resolveTagsByName', () => {
 
     expect(result).toEqual([{ id: 1, name: 'Japan 2026' }]);
     expect(mockPrisma.tag.create).not.toHaveBeenCalled();
-    expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
   });
 
-  it('creates new tags with random color and audit log', async () => {
+  it('creates new tags with random color', async () => {
     mockPrisma.tag.findFirst.mockResolvedValueOnce(null);
     mockPrisma.tag.create.mockResolvedValueOnce({ id: 42, name: 'Business' });
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
 
     const result = await resolveTagsByName(['Business'], tenantId, userId);
 
@@ -67,15 +64,6 @@ describe('resolveTagsByName', () => {
         tenantId,
         color: expect.stringMatching(/^#[0-9a-f]+$/),
       }),
-    });
-    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
-      data: {
-        userId,
-        action: 'CREATE',
-        table: 'Tag',
-        recordId: '42',
-        tenantId,
-      },
     });
   });
 
@@ -135,7 +123,6 @@ describe('resolveTagsByName', () => {
     // Tag 2: new
     mockPrisma.tag.findFirst.mockResolvedValueOnce(null);
     mockPrisma.tag.create.mockResolvedValueOnce({ id: 2, name: 'Business' });
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
 
     const result = await resolveTagsByName(['Japan 2026', 'Business'], tenantId, userId);
 

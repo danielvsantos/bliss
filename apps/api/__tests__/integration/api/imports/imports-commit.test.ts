@@ -64,7 +64,6 @@ const { mockPrisma } = vi.hoisted(() => ({
     transaction: { createMany: vi.fn(), findMany: vi.fn() },
     transactionTag: { createMany: vi.fn() },
     tag: { findFirst: vi.fn(), create: vi.fn() },
-    auditLog: { create: vi.fn() },
     category: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },

@@ -58,9 +58,6 @@ const { mockPrisma } = vi.hoisted(() => ({
     transactionTag: {
       count: vi.fn(),
     },
-    auditLog: {
-      create: vi.fn(),
-    },
     $transaction: vi.fn(),
   },
 }));
@@ -164,7 +161,7 @@ describe('POST /api/tags', () => {
 
     const createdTag = { id: 1, name: 'Travel', color: null, emoji: null, tenantId: 'test-tenant-123' };
     mockPrisma.tag.create.mockResolvedValueOnce(createdTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({ method: 'POST', body: { name: 'Travel' } });
     const res = makeRes();
@@ -182,15 +179,6 @@ describe('POST /api/tags', () => {
         tenantId: 'test-tenant-123',
       },
     });
-    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
-      data: {
-        userId: 'admin@test.com',
-        action: 'CREATE',
-        table: 'Tag',
-        recordId: '1',
-        tenantId: 'test-tenant-123',
-      },
-    });
   });
 
   it('returns 201 with budget, startDate, and endDate', async () => {
@@ -202,7 +190,7 @@ describe('POST /api/tags', () => {
       tenantId: 'test-tenant-123',
     };
     mockPrisma.tag.create.mockResolvedValueOnce(createdTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({
       method: 'POST',
@@ -235,7 +223,7 @@ describe('POST /api/tags', () => {
 
     const createdTag = { id: 3, name: 'No Budget', budget: null, tenantId: 'test-tenant-123' };
     mockPrisma.tag.create.mockResolvedValueOnce(createdTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({
       method: 'POST',
@@ -306,7 +294,7 @@ describe('PUT /api/tags', () => {
     mockPrisma.tag.findUnique.mockResolvedValueOnce(null);
 
     mockPrisma.tag.update.mockResolvedValueOnce(updatedTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({ method: 'PUT', query: { id: '1' }, body: { name: 'Updated' } });
     const res = makeRes();
@@ -320,15 +308,6 @@ describe('PUT /api/tags', () => {
       where: { id: 1 },
       data: { name: 'Updated' },
     });
-    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
-      data: {
-        userId: 'admin@test.com',
-        action: 'UPDATE',
-        table: 'Tag',
-        recordId: '1',
-        tenantId: 'test-tenant-123',
-      },
-    });
   });
 
   it('returns 200 and updates budget, startDate, endDate', async () => {
@@ -341,7 +320,7 @@ describe('PUT /api/tags', () => {
 
     mockPrisma.tag.findUnique.mockResolvedValueOnce(existingTag);
     mockPrisma.tag.update.mockResolvedValueOnce(updatedTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({
       method: 'PUT',
@@ -370,7 +349,7 @@ describe('PUT /api/tags', () => {
 
     mockPrisma.tag.findUnique.mockResolvedValueOnce(existingTag);
     mockPrisma.tag.update.mockResolvedValueOnce(updatedTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({
       method: 'PUT',
@@ -399,7 +378,7 @@ describe('DELETE /api/tags', () => {
     mockPrisma.tag.findUnique.mockResolvedValueOnce(existingTag);
     mockPrisma.transactionTag.count.mockResolvedValueOnce(0);
     mockPrisma.tag.delete.mockResolvedValueOnce(existingTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({ method: 'DELETE', query: { id: '1' } });
     const res = makeRes();
@@ -410,15 +389,6 @@ describe('DELETE /api/tags', () => {
     expect(res.end).toHaveBeenCalled();
     expect(mockPrisma.$transaction).toHaveBeenCalled();
     expect(mockPrisma.tag.delete).toHaveBeenCalledWith({ where: { id: 1 } });
-    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
-      data: {
-        userId: 'admin@test.com',
-        action: 'DELETE',
-        table: 'Tag',
-        recordId: '1',
-        tenantId: 'test-tenant-123',
-      },
-    });
   });
 
   it('returns 409 when tag has linked transactions', async () => {

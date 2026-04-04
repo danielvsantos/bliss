@@ -66,7 +66,6 @@ const { mockPrisma } = vi.hoisted(() => ({
     plaidTransaction: { updateMany: vi.fn() },
     portfolioItem: { upsert: vi.fn() },
     debtTerms: { create: vi.fn(), upsert: vi.fn() },
-    auditLog: { create: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -343,7 +342,7 @@ describe('POST /api/transactions', () => {
     mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.tag.findFirst.mockResolvedValueOnce(null);
     mockPrisma.tag.create.mockResolvedValueOnce(newTag);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
     mockPrisma.transaction.create.mockResolvedValueOnce({ id: 11, tags: [] });
 
     const req = makeReq({
@@ -506,7 +505,7 @@ describe('PUT /api/transactions', () => {
       tags: [{ tag: { id: 1, name: 'Lunch', color: '#ff0000', emoji: null } }],
     };
     mockPrisma.transaction.update.mockResolvedValueOnce(updatedTx);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({
       method: 'PUT',
@@ -530,14 +529,6 @@ describe('PUT /api/transactions', () => {
       { id: 1, name: 'Lunch', color: '#ff0000', emoji: null },
     ]);
     expect(mockPrisma.transaction.update).toHaveBeenCalled();
-    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        action: 'UPDATE',
-        table: 'Transaction',
-        recordId: '1',
-        tenantId: 'test-tenant-123',
-      }),
-    });
   });
 });
 
@@ -579,7 +570,7 @@ describe('DELETE /api/transactions', () => {
     mockPrisma.transactionEmbedding.updateMany.mockResolvedValueOnce({ count: 0 });
     mockPrisma.plaidTransaction.updateMany.mockResolvedValueOnce({ count: 0 });
     mockPrisma.transaction.delete.mockResolvedValueOnce(existing);
-    mockPrisma.auditLog.create.mockResolvedValueOnce({});
+
 
     const req = makeReq({ method: 'DELETE', query: { id: '1' } });
     const res = makeRes();
@@ -601,15 +592,6 @@ describe('DELETE /api/transactions', () => {
     });
     expect(mockPrisma.transaction.delete).toHaveBeenCalledWith({
       where: { id: 1 },
-    });
-    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
-      data: {
-        userId: 'admin@test.com',
-        action: 'DELETE',
-        table: 'Transaction',
-        recordId: '1',
-        tenantId: 'test-tenant-123',
-      },
     });
   });
 });

@@ -99,7 +99,6 @@ describe('POST /api/auth/signup', () => {
   afterAll(async () => {
     // Clean up any tenants created during tests
     for (const tenantId of createdTenantIds) {
-      await prisma.auditLog.deleteMany({ where: { tenantId } }).catch(() => {});
       await prisma.user.deleteMany({ where: { tenantId } }).catch(() => {});
       await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => {});
     }
