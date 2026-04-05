@@ -215,7 +215,7 @@ export default function HomePage() {
                 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight"
                 style={{ color: 'hsl(var(--brand-deep))' }}
               >
-                Open Source Personal Finance{' '}
+                Self-Hosted Personal Finance{' '}
                 <span style={{ color: 'hsl(var(--brand-primary))' }}>for Global Citizens</span>
               </h1>
               <p
