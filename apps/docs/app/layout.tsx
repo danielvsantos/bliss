@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   description:
     'Self hosted multi-currency personal wealth intelligence platform with AI-powered transaction classification, portfolio tracking, and financial insights.',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/icon.png',
   },
 };
 
