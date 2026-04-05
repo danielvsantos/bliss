@@ -215,15 +215,14 @@ export default function HomePage() {
                 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight"
                 style={{ color: 'hsl(var(--brand-deep))' }}
               >
-                Open-Source Wealth Management{' '}
-                <span style={{ color: 'hsl(var(--brand-primary))' }}>for a Multi-Currency World</span>
+                Open Source Personal Finance{' '}
+                <span style={{ color: 'hsl(var(--brand-primary))' }}>for Global Citizens</span>
               </h1>
               <p
                 className="mt-6 text-lg md:text-xl leading-relaxed max-w-2xl"
                 style={{ color: 'hsl(var(--muted-foreground))' }}
               >
-                AI-powered transaction classification, real-time portfolio tracking, and event-driven analytics.
-                Built for self-hosting. Designed for global finances.
+                AI-powered transaction classification, real-time portfolio tracking, and event-driven analytics. Secured by AES-256 encryption. Built for self-hosting. Designed for global finances
               </p>
               <div className="mt-10 flex flex-wrap gap-4 justify-center md:justify-start">
                 <Link

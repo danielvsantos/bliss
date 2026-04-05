@@ -208,8 +208,8 @@ export default function TransactionReviewPage() {
     {
       page: importPage,
       limit: 50,
-      // Only show rows that still need user action (excludes rows marked SKIPPED after commit)
-      status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,DUPLICATE',
+      // Show rows needing action + auto-confirmed rows not yet committed (excludes SKIPPED)
+      status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,DUPLICATE,CONFIRMED',
       ...(importCategoryFilter ? { categoryId: importCategoryFilter } : {}),
     },
   );

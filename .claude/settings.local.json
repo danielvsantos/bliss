@@ -35,7 +35,10 @@
       "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npm run test:coverage)",
       "Bash(node apps/docs/scripts/sync-docs.mjs)",
       "Bash(pnpm test:web)",
-      "Bash(pnpm --filter @bliss/docs build)"
+      "Bash(pnpm --filter @bliss/docs build)",
+      "Bash(ls /Users/danielviana/Desktop/bliss/apps/web/public/favicon* /Users/danielviana/Desktop/bliss/apps/web/public/*.ico)",
+      "Bash(ls /Users/danielviana/Desktop/bliss/apps/docs/public/favicon* /Users/danielviana/Desktop/bliss/apps/docs/public/*.ico)",
+      "Bash(ls /Users/danielviana/Desktop/bliss/apps/docs/app/favicon*)"
     ]
   }
 }

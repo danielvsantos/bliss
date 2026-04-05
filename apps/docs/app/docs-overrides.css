@@ -118,6 +118,11 @@ article main pre {
   font-weight: 500 !important;
 }
 
+/* Fix folder buttons (e.g. Guides) losing padding from Tailwind reset */
+.nextra-sidebar button {
+  padding: 6px 8px !important;
+}
+
 /* ── Search input — padding fix ──────────────────── */
 
 .nextra-search input {
