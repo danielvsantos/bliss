@@ -360,7 +360,21 @@ export default function PortfolioHoldingsPage() {
       return entry;
     });
 
-    return { chartData: chartEntries, allGroups: Array.from(groups), debtGroups: debtGroupNames };
+    // Smooth ramp-up: for each group, insert a zero value one data point before
+    // its first appearance so the area grows from zero instead of jumping.
+    const allGroupNames = Array.from(groups);
+    for (const group of allGroupNames) {
+      for (let i = 0; i < chartEntries.length; i++) {
+        if (chartEntries[i][group] !== undefined) {
+          if (i > 0 && chartEntries[i - 1][group] === undefined) {
+            chartEntries[i - 1][group] = 0;
+          }
+          break;
+        }
+      }
+    }
+
+    return { chartData: chartEntries, allGroups: allGroupNames, debtGroups: debtGroupNames };
   }, [historyData, showDebt]);
 
   const { performanceSinceStartPercent } = useMemo(() => {

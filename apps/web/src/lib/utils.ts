@@ -37,6 +37,7 @@ export function formatDate(
   locale = "en-US"
 ): string {
   const dateObj = typeof date === "object" ? date : new Date(date);
+  if (isNaN(dateObj.getTime())) return '-';
   return new Intl.DateTimeFormat(locale, options).format(dateObj);
 }
 

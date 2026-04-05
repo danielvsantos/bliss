@@ -28,7 +28,7 @@ The backend service is designed as a robust, event-driven system with a clear se
 -   **[Redis](https://redis.io/)**: An in-memory data store used by BullMQ for queue management and by the application for description-match caching and adapter caching.
 
 ### Third-Party Integrations
--   **Stock & Fund Prices**: [Twelve Data](https://twelvedata.com/) is the primary provider for historical and real-time stock/ETF/fund price data, covering 27+ markets including XETRA, Euronext, LSE, and Borsa Italiana. The `STOCK_PROVIDER` env var controls provider selection (`TWELVE_DATA` or `ALPHA_VANTAGE` for rollback). [Alpha Vantage](https://www.alphavantage.co/) is retained as a fallback. The `/earnings` (10 credits) and `/dividends` (20 credits) endpoints provide EPS and dividend history used to compute P/E ratio and dividend yield for the SecurityMaster reference table, refreshed nightly.
+-   **Stock & Fund Prices**: [Twelve Data](https://twelvedata.com/) provides historical and real-time stock/ETF/fund price data, covering 27+ markets including XETRA, Euronext, LSE, and Borsa Italiana. The `/earnings` (10 credits) and `/dividends` (20 credits) endpoints provide EPS and dividend history used to compute P/E ratio and dividend yield for the SecurityMaster reference table, refreshed nightly.
 -   **Cryptocurrency Prices**: [Twelve Data](https://twelvedata.com/) is also used for crypto pricing via currency pairs (e.g. `BTC/EUR`, `ETH/USD`). The `cryptoService.js` delegates to `twelveDataService.js`, constructing pairs from the asset symbol and account currency. Crypto search deduplicates Twelve Data results to return base symbols (e.g. `BTC`, not `BTC/USD`).
 -   **Bank Data**: [Plaid](https://plaid.com/) is used to connect user bank accounts and sync transactions.
 -   **AI Classification**: [Google Gemini API](https://ai.google.dev/) is used for transaction categorization when no exact match is found in the description cache.
@@ -90,9 +90,7 @@ The service validates environment variables at startup via `utils/validateEnv.js
     DATABASE_URL=postgresql://...
     REDIS_HOST=localhost
     REDIS_PORT=6379
-    STOCK_PROVIDER=TWELVE_DATA
     TWELVE_DATA_API_KEY=...
-    ALPHA_VANTAGE_API_KEY=...    # fallback provider
     PLAID_CLIENT_ID=...
     PLAID_SECRET=...
     GEMINI_API_KEY=...

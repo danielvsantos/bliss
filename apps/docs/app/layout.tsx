@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import { Urbanist } from 'next/font/google';
 import { Head } from 'nextra/components';
 import { ThemeProvider } from 'next-themes';
-import 'nextra-theme-docs/style-prefixed.css';
 import './globals.css';
+import 'nextra-theme-docs/style-prefixed.css';
+import './docs-overrides.css';
 
 const urbanist = Urbanist({
   subsets: ['latin'],

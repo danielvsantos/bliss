@@ -87,7 +87,10 @@ describe('ExpenseTransactionList', () => {
     } as any);
 
     renderComponent();
-    
+
+    // Default view is now "By Category", switch to Transactions
+    fireEvent.click(screen.getByRole('button', { name: /Transactions/ }));
+
     expect(screen.getByText('Mortgage Payment')).toBeInTheDocument();
     expect(screen.getByText('Mortgage & Rent')).toBeInTheDocument();
     // Currency formatting test => "$1,500.00"

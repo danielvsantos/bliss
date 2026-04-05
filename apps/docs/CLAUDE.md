@@ -20,18 +20,18 @@ Content lives in `content/` and is a mix of auto-synced and hand-authored files.
 
 **NEVER edit these files inside `apps/docs/content/`:**
 
-- `getting-started.md`
 - `architecture.md`
 - `configuration.md`
+- `guides/*.md` (all guide markdown files)
 
 These are auto-synced from `docs/` at the monorepo root by `scripts/sync-docs.mjs`, which runs on every `predev` and `prebuild`. Your edits will be overwritten. **Edit the source files in `docs/` instead.**
 
 ### Adding Content
 
-Guides are authored directly in `content/guides/`. To add a new guide:
+Guides are authored in `docs/guides/` (monorepo root) and synced to `content/guides/` on build. To add a new guide:
 
-1. Create a `.md` or `.mdx` file in `content/guides/`
-2. Add an entry to `content/guides/_meta.ts` to control sidebar title and ordering
+1. Create a `.md` file in `docs/guides/`
+2. Add an entry to `content/guides/_meta.ts` to control sidebar title and ordering (this file stays in the docs app since it's Nextra-specific)
 
 Top-level sidebar order is controlled by `content/_meta.ts`. Each `_meta.ts` export maps slugs to display titles (or config objects for layout overrides).
 

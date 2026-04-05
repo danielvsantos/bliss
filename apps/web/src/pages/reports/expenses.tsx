@@ -71,12 +71,18 @@ const processAnalyticsData = (
 
   for (const timeKey in analyticsData.data) {
     const periodData = analyticsData.data[timeKey];
-    const expenseData = periodData[selectedType] || {};
-    for (const groupKey in expenseData) {
-      if (!expenseGroups[groupKey]) {
-        expenseGroups[groupKey] = 0;
+    const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Investments'];
+    const typesToProcess = selectedType === 'All'
+      ? Object.keys(periodData).filter(key => ALLOWED_TYPES.includes(key))
+      : [selectedType];
+    for (const typeKey of typesToProcess) {
+      const expenseData = periodData[typeKey] || {};
+      for (const groupKey in expenseData) {
+        if (!expenseGroups[groupKey]) {
+          expenseGroups[groupKey] = 0;
+        }
+        expenseGroups[groupKey] += expenseData[groupKey].debit;
       }
-      expenseGroups[groupKey] += expenseData[groupKey].debit;
     }
   }
 
@@ -131,7 +137,7 @@ export default function ExpenseTrackingPage() {
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [selectedCurrency, setSelectedCurrency] = useState<string>(availableCurrencies[0]?.id || 'USD');
   const [openCountries, setOpenCountries] = useState(false);
-  const [selectedCategoryType, setSelectedCategoryType] = useState<string>('Essentials');
+  const [selectedCategoryType, setSelectedCategoryType] = useState<string>('All');
   const [selectedGroupsForTrend, setSelectedGroupsForTrend] = useState<string[]>([]);
   const [openGroups, setOpenGroups] = useState(false);
   const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(null);
@@ -154,22 +160,25 @@ export default function ExpenseTrackingPage() {
     if (!categories) return [];
     const expenseTypes = new Set<string>();
     categories.forEach(cat => {
-      if (cat.type === 'Essentials' || cat.type === 'Lifestyle' || cat.type === 'Growth') {
+      if (cat.type === 'Essentials' || cat.type === 'Lifestyle' || cat.type === 'Growth' || cat.type === 'Investments') {
         expenseTypes.add(cat.type);
       }
     });
     return Array.from(expenseTypes);
   }, [categories]);
 
+  const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Investments'];
+
   const analyticsFilters = useMemo(() => {
+    const typesParam = selectedCategoryType === 'All' ? ALLOWED_TYPES : [selectedCategoryType];
     if (!startDate || !selectedCurrency || selectedCountries.length === 0) {
-      return { view: 'month' as const, types: [selectedCategoryType] };
+      return { view: 'month' as const, types: typesParam };
     }
     const filters: any = {
       view: 'month',
       currency: selectedCurrency,
       countries: selectedCountries,
-      types: [selectedCategoryType],
+      types: typesParam,
       startMonth: format(startDate, 'yyyy-MM'),
     };
     if (endDate) {
@@ -317,6 +326,7 @@ export default function ExpenseTrackingPage() {
                   <SelectValue placeholder={t("pages.expenses.selectCategoryType")} />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="All">{t("common.all")}</SelectItem>
                   {expenseCategoryTypes.map(type => (
                     <SelectItem key={type} value={type}>{type}</SelectItem>
                   ))}

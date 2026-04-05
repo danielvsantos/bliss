@@ -6,7 +6,7 @@ Bliss Finance uses a **single root `.env` file** as the source of truth for all 
 
 - **Docker Compose** reads the root `.env` automatically -- no `env_file` directive needed.
 - **`scripts/setup.sh`** generates cryptographic secrets (`ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`) so you never have to create them by hand. Run it once after copying `.env.example` to `.env`.
-- **Optional integrations** (Plaid, Gemini AI, Twelve Data / Finnhub, Sentry) are activated simply by adding the relevant API keys. The application degrades gracefully when they are absent.
+- **Optional integrations** (Plaid, Gemini AI, Twelve Data, Sentry) are activated simply by adding the relevant API keys. The application degrades gracefully when they are absent.
 - **Test-specific overrides**: each service may have a `.env.test` file that overrides `DATABASE_URL` to point at an isolated test database. These files are loaded automatically by the test runners and should never be committed.
 
 ---
@@ -21,7 +21,7 @@ The only variables you might want to customize are the optional integration keys
 |---|---|---|
 | Plaid | `PLAID_CLIENT_ID`, `PLAID_SECRET` | Bank account linking |
 | Gemini AI | `GEMINI_API_KEY` | AI classification and insights |
-| Market data | `TWELVE_DATA_API_KEY` or `FINNHUB_API_KEY` | Stock price fetching |
+| Market data | `TWELVE_DATA_API_KEY` | Stock price fetching |
 | Currency rates | `CURRENCYLAYER_API_KEY` | Automatic FX rate fetching |
 | Observability | `SENTRY_DSN` | Error tracking |
 
@@ -112,13 +112,11 @@ AI features (vector similarity classification, Gemini-powered categorization) ar
 
 ## Market Data (optional)
 
-Stock price fetching is disabled when no provider API key is set.
+Stock price fetching is provided by [Twelve Data](https://twelvedata.com) and is disabled when the API key is not set.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `STOCK_PROVIDER` | No | `TWELVE_DATA` | Market data provider: `TWELVE_DATA` (recommended) or `FINNHUB`. |
-| `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Required when `STOCK_PROVIDER=TWELVE_DATA`. |
-| `FINNHUB_API_KEY` | No | -- | API key for Finnhub. Required when `STOCK_PROVIDER=FINNHUB`. |
+| `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Enables real-time and historical pricing for stocks, ETFs, and funds (10,000+ symbols across 27+ markets). |
 
 ## Currency Rates (optional)
 

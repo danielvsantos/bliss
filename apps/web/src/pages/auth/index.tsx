@@ -210,10 +210,15 @@ function SignInForm({ demoMode = false }: { demoMode?: boolean }) {
 
   const form = useForm({
     resolver: zodResolver(loginSchema),
-    defaultValues: demoMode
-      ? { email: "daniel@blissfinance.co", password: "bliss1234" }
-      : { email: "", password: "" },
+    defaultValues: { email: "", password: "" },
   });
+
+  useEffect(() => {
+    if (demoMode) {
+      form.setValue("email", "demo@blissfinance.co");
+      form.setValue("password", "bliss1234");
+    }
+  }, [demoMode, form]);
 
   const onSubmit = async (values: z.infer<typeof loginSchema>) => {
     setError("");
@@ -505,16 +510,27 @@ function AuthCard() {
         <div
           className="text-center rounded-lg"
           style={{
-            padding: "10px 16px",
+            padding: "12px 16px",
             marginBottom: 16,
             backgroundColor: "hsl(var(--accent))",
             color: "hsl(var(--brand-deep))",
             fontSize: "0.8125rem",
             fontWeight: 500,
-            lineHeight: 1.5,
+            lineHeight: 1.6,
           }}
         >
-          {t("Welcome to the Bliss demo. Click Sign In to explore.")}
+          {t("Welcome to the Bliss demo. Use the credentials below to sign in and explore.")}
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: "0.75rem",
+              fontWeight: 400,
+              color: "hsl(var(--brand-primary))",
+              fontFamily: "monospace",
+            }}
+          >
+            demo@blissfinance.co &nbsp;/&nbsp; bliss1234
+          </div>
         </div>
       )}
 

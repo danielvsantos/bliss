@@ -9,6 +9,15 @@
       "env": {
         "PATH": "/usr/local/bin:/usr/bin:/bin"
       }
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "/usr/local/bin/pnpm",
+      "runtimeArgs": ["--filter", "@bliss/web", "dev"],
+      "port": 8080,
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
     }
   ]
 }

@@ -43,11 +43,11 @@ These files prevent the most common mistakes: using the wrong module system, har
 |----------|----------------|--------------|
 | `docs/specs/{api,backend,frontend}/` | Technical specifications (source of truth) | Anyone modifying features |
 | `CLAUDE.md` files (root + each app) | AI assistant context | Anyone introducing new patterns |
-| `docs/{getting-started,architecture,configuration}.md` | Foundation docs (canonical) | Core maintainers |
-| `apps/docs/content/guides/` | How-to guides | Anyone adding user-facing docs |
+| `docs/{architecture,configuration}.md` | Foundation docs (synced to docs site) | Core maintainers |
+| `docs/guides/` | How-to guides (synced to docs site) | Anyone adding user-facing docs |
 | `CONTRIBUTING.md` | This file | Core maintainers |
 
-**Important:** The files `getting-started.md`, `architecture.md`, and `configuration.md` inside `apps/docs/content/` are **auto-synced** from `docs/` root by `apps/docs/scripts/sync-docs.mjs`. Never edit the copies -- edit the source in `docs/` instead.
+**Important:** All content inside `apps/docs/content/` (except `_meta.ts` files and `index.mdx`) is **auto-synced** from `docs/` root by `apps/docs/scripts/sync-docs.mjs`. Never edit the copies -- edit the source in `docs/` instead.
 
 ## Development Setup
 
@@ -112,7 +112,7 @@ bliss/
   packages/
     shared/       # Encryption + storage adapters (dual ESM + CJS via tsup)
   prisma/         # Prisma schema and migrations (shared by api and backend)
-  docs/           # Specs, architecture, getting-started, configuration
+  docs/           # Specs, architecture, configuration
   docker/         # Dockerfiles + nginx config
   scripts/        # setup.sh and utilities
 ```

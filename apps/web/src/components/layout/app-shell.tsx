@@ -89,7 +89,7 @@ export function AppShell({ children }: AppShellProps) {
           sidebarOpen={sidebarOpen}
           onSidebarToggle={toggleSidebar}
         />
-        <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 bg-gray-50 dark:bg-gray-900">
+        <main className="flex-1 overflow-auto p-4 md:p-5 lg:p-6 bg-gray-50 dark:bg-gray-900">
           {children}
         </main>
       </div>

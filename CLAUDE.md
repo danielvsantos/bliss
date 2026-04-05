@@ -87,10 +87,10 @@ Open http://localhost:8080. Plaid, Gemini, and Twelve Data API keys are optional
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | Runs all tests across services |
-| API | `pnpm test:api` | Vitest (ESM) | Unit + integration with real Postgres |
-| Backend | `pnpm test:backend` | Jest (CJS) | Unit + integration with supertest |
-| Frontend | `pnpm test:web` | Vitest + RTL | Component tests, MSW for API mocking |
+| All | `pnpm test` | -- | 1,076 tests across 152 files |
+| API | `pnpm test:api` | Vitest (ESM) | 46 unit files (288 tests) + 14 integration files (121 tests) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 39 unit files (395 tests) + 8 integration files (66 tests) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 45 files (206 tests) |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -238,7 +238,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 **Optional integrations (degrade gracefully):**
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, `PLAID_WEBHOOK_URL`, `PLAID_HISTORY_DAYS`
 - AI: `GEMINI_API_KEY`, `INSIGHT_MODEL`
-- Market data: `TWELVE_DATA_API_KEY` or `FINNHUB_API_KEY` (set `STOCK_PROVIDER`)
+- Market data: `TWELVE_DATA_API_KEY`
 - Currency rates: `CURRENCYLAYER_API_KEY`
 - Storage: `STORAGE_BACKEND`, `LOCAL_STORAGE_DIR`, `GCS_BUCKET_NAME`, `GCS_SERVICE_ACCOUNT_JSON`
 - Key rotation: `ENCRYPTION_SECRET_PREVIOUS`, `JWT_SECRET_PREVIOUS`
@@ -261,7 +261,7 @@ Detailed specs live in `docs/` and are organized by layer:
 
 - `docs/architecture.md` -- Full system design
 - `docs/configuration.md` -- Environment variable reference
-- `docs/getting-started.md` -- Setup guide
+- `docs/guides/` -- How-to guides (Docker setup, imports, portfolios, etc.)
 - `docs/specs/api/` -- API endpoint specifications (15 spec files)
 - `docs/specs/backend/` -- Backend service specifications (12 spec files)
 - `docs/specs/frontend/` -- Frontend component specifications (16 spec files)

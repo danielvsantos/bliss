@@ -10,14 +10,14 @@
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#features">Features</a> &bull;
   <a href="#develop-with-claude-code">Claude Code</a> &bull;
-  <a href="docs/getting-started.md">Docs</a> &bull;
+  <a href="docs/guides">Guides</a> &bull;
   <a href="docs/architecture.md">Architecture</a> &bull;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/tests-588%20passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-1076%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/Claude%20Code-ready-6D657A?logo=anthropic&logoColor=white" alt="Claude Code Ready" />
 </p>
@@ -117,7 +117,7 @@ Bliss analyzes your financial patterns and generates actionable insights:
          +---------------+---------------+
          |                               |
     Next.js API (:3000)          Express Backend (:3001)
-    - Auth (JWT + cookies)       - BullMQ workers (10)
+    - Auth (JWT + cookies)       - BullMQ workers (9)
     - REST endpoints             - AI classification
     - Prisma ORM                 - Portfolio valuation
     - File upload                - Plaid sync
@@ -129,7 +129,7 @@ Bliss analyzes your financial patterns and generates actionable insights:
                    (queues + cache)
 ```
 
-**Three services, one database, one queue.** The API layer handles auth and CRUD. The backend service runs 10 async workers for heavy computation — AI classification, portfolio revaluation, Plaid sync, analytics caching, and more. Both share the same Prisma schema and PostgreSQL instance.
+**Three services, one database, one queue.** The API layer handles auth and CRUD. The backend service runs 9 async workers for heavy computation — AI classification, portfolio revaluation, Plaid sync, analytics caching, and more. Both share the same Prisma schema and PostgreSQL instance.
 
 See [docs/architecture.md](docs/architecture.md) for the full deep dive.
 
@@ -178,7 +178,7 @@ pnpm dev                    # starts all three services in parallel
 - API: http://localhost:3000
 - Backend: http://localhost:3001
 
-See [docs/getting-started.md](docs/getting-started.md) for detailed setup instructions.
+See the [Guides](apps/docs/content/guides) for detailed setup instructions.
 
 ### Develop with Claude Code
 
@@ -189,7 +189,7 @@ cd bliss
 claude   # Claude Code automatically loads the project context
 ```
 
-The project includes four `CLAUDE.md` files that layer context by scope:
+The project includes five `CLAUDE.md` files that layer context by scope:
 
 | File | Scope |
 |------|-------|
@@ -197,6 +197,7 @@ The project includes four `CLAUDE.md` files that layer context by scope:
 | [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md) | Route handler patterns, auth flow, Prisma extensions, event dispatch |
 | [`apps/backend/CLAUDE.md`](apps/backend/CLAUDE.md) | Worker patterns, event routing, services, classification config |
 | [`apps/web/CLAUDE.md`](apps/web/CLAUDE.md) | Design tokens, component conventions, hooks reference, chart colors |
+| [`apps/docs/CLAUDE.md`](apps/docs/CLAUDE.md) | Sync script rules, content architecture, Nextra patterns |
 
 Claude Code loads the root file everywhere, plus the app-specific file when you're working in that directory. This means it knows to use `require()` in the backend, `import` in the API, and never to use `green-500` in the frontend -- without you having to explain it.
 
@@ -208,7 +209,7 @@ Claude Code loads the root file everywhere, plus the app-specific file when you'
 |---------|------|------|------|
 | **web** | React + Vite + shadcn/ui | 8080 | SPA frontend served by nginx (Docker) or Vite dev server |
 | **api** | Next.js | 3000 | Auth, REST API, Prisma ORM, file uploads |
-| **backend** | Express + BullMQ | 3001 | 10 async workers: AI classification, portfolio valuation, Plaid sync, analytics |
+| **backend** | Express + BullMQ | 3001 | 9 async workers: AI classification, portfolio valuation, Plaid sync, analytics |
 | **postgres** | PostgreSQL 16 + pgvector | 5432 | Primary datastore with vector similarity search |
 | **redis** | Redis 7 | 6379 | Job queues (BullMQ) and caching |
 
@@ -240,7 +241,7 @@ Without these keys, Bliss still provides full manual transaction management, CSV
 | Queue | Redis 7 via BullMQ |
 | Storage | Local filesystem (default) or Google Cloud Storage |
 | AI/ML | Gemini Flash (classification), Gemini Embedding-001 (768-dim vectors) |
-| Market Data | Twelve Data, Alpha Vantage (legacy) |
+| Market Data | Twelve Data |
 | Banking | Plaid |
 | Observability | Sentry, OpenTelemetry |
 | Testing | Jest (backend), Vitest (API + frontend), MSW, Playwright (E2E stubs) |
@@ -255,7 +256,8 @@ bliss/
 ├── apps/
 │   ├── api/          # Next.js API layer (auth, REST, Prisma)
 │   ├── backend/      # Express + BullMQ workers (AI, portfolio, sync)
-│   └── web/          # React SPA (Vite + shadcn/ui)
+│   ├── web/          # React SPA (Vite + shadcn/ui)
+│   └── docs/         # Documentation site (Next.js + Nextra)
 ├── packages/
 │   └── shared/       # Shared modules (encryption, storage adapter)
 ├── prisma/           # Schema, migrations, seed script
@@ -271,10 +273,10 @@ bliss/
 ## Testing
 
 ```bash
-pnpm test              # run all 588 tests across all apps
-pnpm test:api          # 198 tests (Vitest) — API routes + utils
-pnpm test:backend      # 301 tests (Jest) — workers, services, routes
-pnpm test:web          # 89 tests (Vitest + MSW) — components, hooks, pages
+pnpm test              # run all 1,076 tests across all apps
+pnpm test:api          # 409 tests (Vitest) — 46 unit + 14 integration files
+pnpm test:backend      # 461 tests (Jest) — 39 unit + 8 integration files
+pnpm test:web          # 206 tests (Vitest + MSW) — 45 files covering hooks, pages, contexts
 ```
 
 ---

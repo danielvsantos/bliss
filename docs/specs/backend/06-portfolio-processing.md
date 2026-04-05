@@ -145,23 +145,16 @@ The `price-fetcher.js` uses a dynamic **Strategy Pattern** to determine how to p
 
 **Exchange-aware pre-fetch**: `createPriceFinder()` pre-fetches `AssetPrice` records into an in-memory map. When a `PortfolioItem` has an `exchange` set (e.g., `XPAR`), the query filters by that exchange, preventing price mixing for multi-listed symbols. When `exchange` is null, all prices for the symbol are loaded (backward compatible).
 
--   **`API_STOCK`**: Uses the stock pricing provider (Twelve Data or Alpha Vantage, controlled by `STOCK_PROVIDER` env var) with caching and 7-day look-back. Passes `portfolioItem.exchange` to the stock service for exchange disambiguation. Saves `AssetPrice` records with the exchange MIC code.
+-   **`API_STOCK`**: Uses Twelve Data for real-time and historical stock pricing, with caching and 7-day look-back. Passes `portfolioItem.exchange` to the stock service for exchange disambiguation. Saves `AssetPrice` records with the exchange MIC code.
 -   **`API_FUND`**: Follows the same 3-stage pricing as `API_STOCK`, plus a **Stage 4 manual fallback** — checks `manualValueMap` when API/DB lookups fail. Also passes exchange for disambiguation and saves it on `AssetPrice` records.
 -   **`API_CRYPTO`**: Uses Twelve Data via `cryptoService.js` (currency pairs like `BTC/EUR`) with caching and 7-day look-back. The pair is constructed from the asset symbol + account currency. Does not use exchange disambiguation.
 -   **`MANUAL`**: Exclusively uses user-provided prices and will never fall back to an API.
 
-### 6.4.4a. Stock Pricing Provider Dispatch (`stockService.js`)
+### 6.4.4a. Stock Pricing (`stockService.js`)
 
-The `STOCK_PROVIDER` environment variable controls which provider is used for `API_STOCK` and `API_FUND` assets:
+`stockService.js` delegates to Twelve Data (`twelveDataService.js`) for all `API_STOCK` and `API_FUND` pricing. Set `TWELVE_DATA_API_KEY` to enable. Without it, API-sourced prices are unavailable and the system falls back to the 7-day DB look-back or manual values.
 
-| Value | Provider | Notes |
-|-------|----------|-------|
-| `TWELVE_DATA` | Twelve Data (`twelveDataService.js`) | Recommended — better international coverage |
-| `ALPHA_VANTAGE` | Alpha Vantage (legacy) | Default if unset |
-
-Both `getHistoricalStockPrice(symbol, date, { exchange })` and `getLatestStockPrice(symbol, { exchange })` accept an optional `exchange` parameter (ISO-10383 MIC code). When using Twelve Data, this is forwarded as `micCode` to disambiguate multi-listed symbols. Alpha Vantage does not support exchange disambiguation.
-
-To revert to Alpha Vantage: set `STOCK_PROVIDER=ALPHA_VANTAGE` or unset it. No code changes needed.
+Both `getHistoricalStockPrice(symbol, date, { exchange })` and `getLatestStockPrice(symbol, { exchange })` accept an optional `exchange` parameter (ISO-10383 MIC code), forwarded as `micCode` to Twelve Data for multi-listed symbol disambiguation.
 
 ### 6.4.4b. Twelve Data Service (`twelveDataService.js`)
 
@@ -191,8 +184,7 @@ Combined worst-case: 350 calls/min — safely below the Grow plan's 377 credit/m
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `TWELVE_DATA_API_KEY` | Yes (if `STOCK_PROVIDER=TWELVE_DATA`) | API key |
-| `STOCK_PROVIDER` | No | `TWELVE_DATA` or `ALPHA_VANTAGE` (default) |
+| `TWELVE_DATA_API_KEY` | Yes | API key for stock/ETF/fund pricing |
 
 ### 6.4.4c. Crypto Pricing (`cryptoService.js`)
 

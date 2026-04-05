@@ -100,10 +100,18 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link
             href="/"
-            className="font-semibold text-lg tracking-tight"
-            style={{ color: 'hsl(var(--brand-deep))' }}
+            style={{
+              fontFamily: "'Urbanist', sans-serif",
+              fontSize: '1.25rem',
+              fontWeight: 600,
+              letterSpacing: '-0.03em',
+              color: '#6D657A',
+              lineHeight: 1,
+              userSelect: 'none',
+              textDecoration: 'none',
+            }}
           >
-            Bliss<span style={{ color: 'hsl(var(--brand-primary))' }}>Finance</span>
+            bliss
           </Link>
 
           {/* Desktop nav */}
@@ -219,7 +227,7 @@ export default function HomePage() {
               </p>
               <div className="mt-10 flex flex-wrap gap-4 justify-center md:justify-start">
                 <Link
-                  href="/docs/getting-started"
+                  href="/docs/guides/docker-quickstart"
                   className="inline-flex items-center px-7 py-3.5 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
                   style={{
                     backgroundColor: 'hsl(var(--brand-deep))',

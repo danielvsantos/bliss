@@ -13,10 +13,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAnalytics } from '@/hooks/use-analytics';
-import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
+import { startOfMonth, startOfYear, endOfMonth, subMonths, format } from 'date-fns';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import type { AnalyticsResponse } from '@/types/api';
 
-type ChartPeriod = 'month' | 'prev_month' | 'quarter';
+type ChartPeriod = 'year' | 'month' | 'prev_month' | 'quarter';
 
 // Design-token-aligned colors
 const CHART_COLORS = ['#3A3542', '#2E8B57', '#E5989B', '#6D657A', '#E09F12', '#9A95A4'];
@@ -64,9 +66,15 @@ const processAnalyticsData = (analyticsData: AnalyticsResponse | undefined) => {
 
   for (const timeKey in analyticsData.data) {
     const periodData = analyticsData.data[timeKey];
-    const essentials = periodData['Essentials'] || {};
-    const lifestyle = periodData['Lifestyle'] || {};
-    const expenseData = { ...essentials, ...lifestyle };
+    const EXPENSE_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Investments'];
+    const expenseData: Record<string, { debit: number }> = {};
+    for (const type of EXPENSE_TYPES) {
+      const typeData = periodData[type] || {};
+      for (const groupKey in typeData) {
+        expenseData[groupKey] = expenseData[groupKey] || { debit: 0 };
+        expenseData[groupKey].debit += typeData[groupKey].debit;
+      }
+    }
     for (const groupKey in expenseData) {
       expenseGroups[groupKey] = (expenseGroups[groupKey] ?? 0) + expenseData[groupKey].debit;
     }
@@ -74,17 +82,34 @@ const processAnalyticsData = (analyticsData: AnalyticsResponse | undefined) => {
 
   const total = Object.values(expenseGroups).reduce((s, v) => s + v, 0);
 
-  return Object.entries(expenseGroups)
-    .map(([name, value], index) => ({
-      name,
-      value,
-      percentage: total > 0 ? parseFloat(((value / total) * 100).toFixed(1)) : 0,
-      color: CHART_COLORS[index % CHART_COLORS.length],
-    }))
+  const sorted = Object.entries(expenseGroups)
+    .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
+
+  const MAX_SLICES = 7;
+  const top = sorted.slice(0, MAX_SLICES);
+  const otherValue = sorted.slice(MAX_SLICES).reduce((s, item) => s + item.value, 0);
+
+  const result = top.map((item, index) => ({
+    ...item,
+    percentage: total > 0 ? parseFloat(((item.value / total) * 100).toFixed(1)) : 0,
+    color: CHART_COLORS[index % CHART_COLORS.length],
+  }));
+
+  if (otherValue > 0) {
+    result.push({
+      name: 'Others',
+      value: otherValue,
+      percentage: total > 0 ? parseFloat(((otherValue / total) * 100).toFixed(1)) : 0,
+      color: CHART_COLORS[MAX_SLICES % CHART_COLORS.length],
+    });
+  }
+
+  return result;
 };
 
 const PERIOD_LABELS: Record<ChartPeriod, string> = {
+  year: 'This year',
   month: 'This month',
   prev_month: 'Last month',
   quarter: 'Last 3 months',
@@ -96,11 +121,16 @@ interface ExpenseSplitCardProps {
 }
 
 export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps) {
-  const [period, setPeriod] = useState<ChartPeriod>('month');
+  const [period, setPeriod] = useState<ChartPeriod>('year');
 
   const { startMonth, endMonth } = useMemo(() => {
     const now = new Date();
     switch (period) {
+      case 'year':
+        return {
+          startMonth: format(startOfYear(now), 'yyyy-MM'),
+          endMonth: format(endOfMonth(now), 'yyyy-MM'),
+        };
       case 'month':
         return {
           startMonth: format(startOfMonth(now), 'yyyy-MM'),
@@ -128,7 +158,7 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
     currency,
     startMonth,
     endMonth,
-    types: ['Essentials', 'Lifestyle'],
+    types: ['Essentials', 'Lifestyle', 'Growth', 'Investments'],
   });
 
   const chartData = useMemo(() => processAnalyticsData(analyticsData), [analyticsData]);
@@ -144,11 +174,12 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
             </span>
           </div>
           <Select value={period} onValueChange={(v) => setPeriod(v as ChartPeriod)}>
-            <SelectTrigger className="w-[120px] h-7 text-xs">
+            <SelectTrigger className="w-[130px] h-7 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
+                <SelectItem value="year">This year</SelectItem>
                 <SelectItem value="month">This month</SelectItem>
                 <SelectItem value="prev_month">Last month</SelectItem>
                 <SelectItem value="quarter">Last 3 months</SelectItem>
@@ -215,7 +246,15 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
         )}
       </div>
 
-      <div className="pb-2" />
+      <div className="px-6 pb-4 pt-2">
+        <Link
+          to="/reports/expenses"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline"
+        >
+          View expenses
+          <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
     </Card>
   );
 }

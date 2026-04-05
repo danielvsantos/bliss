@@ -143,23 +143,21 @@ export default function EquityAnalysisPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-3">
-          <Link to="/reports/portfolio">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-brand-primary" />
-            <h1 className="text-lg font-semibold text-brand-deep">Equity Analysis</h1>
-          </div>
+    <div className="pb-12 space-y-6">
+      {/* ── Page Title ── */}
+      <div className="flex items-center gap-3">
+        <Link to="/reports/portfolio">
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-brand-primary" />
+          <h1 className="text-lg font-semibold text-brand-deep">Equity Analysis</h1>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 space-y-6">
+      <div className="space-y-6">
         {/* ── Summary Cards ── */}
         <motion.div {...fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>

@@ -7,10 +7,11 @@
  * Runs automatically via `predev` and `prebuild` npm hooks.
  *
  * What it does:
- *   1. Copies docs/getting-started.md, architecture.md, configuration.md → content/
- *   2. Scans docs/specs/{api,backend,frontend}/ to build a feature manifest (specs-manifest.json)
+ *   1. Copies docs/architecture.md, configuration.md → content/
+ *   2. Copies docs/guides/*.md → content/guides/
+ *   3. Scans docs/specs/{api,backend,frontend}/ to build a feature manifest (specs-manifest.json)
  *      used by the Specifications page to generate dynamic GitHub links
- *   3. Copies docs/openapi/*.yaml → public/openapi/
+ *   4. Copies docs/openapi/*.yaml → public/openapi/
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, cpSync } from 'node:fs';
@@ -106,7 +107,7 @@ cleanDir(PUBLIC_OPENAPI);
 mkdirSync(CONTENT_DIR, { recursive: true });
 
 // 2. Copy top-level foundation docs
-const foundationDocs = ['getting-started.md', 'architecture.md', 'configuration.md'];
+const foundationDocs = ['architecture.md', 'configuration.md'];
 
 for (const file of foundationDocs) {
   const srcPath = join(DOCS_DIR, file);
@@ -120,7 +121,22 @@ for (const file of foundationDocs) {
   console.log(`[sync-docs] Copied ${file} → content/${slug}.md`);
 }
 
-// 3. Build specs manifest (JSON) for the Specifications page
+// 3. Copy guides
+const guidesSource = join(DOCS_DIR, 'guides');
+const guidesTarget = join(CONTENT_DIR, 'guides');
+mkdirSync(guidesTarget, { recursive: true });
+
+let guideCount = 0;
+if (existsSync(guidesSource)) {
+  const guideFiles = readdirSync(guidesSource).filter((f) => f.endsWith('.md'));
+  for (const file of guideFiles) {
+    copyFile(join(guidesSource, file), join(guidesTarget, file));
+    console.log(`[sync-docs] Copied guides/${file} → content/guides/${file}`);
+    guideCount++;
+  }
+}
+
+// 4. Build specs manifest (JSON) for the Specifications page
 const manifest = [];
 
 for (const [featureSlug, feature] of Object.entries(FEATURE_MAP)) {
@@ -149,7 +165,7 @@ manifest.sort((a, b) => a.order - b.order);
 writeFileSync(join(PUBLIC_DIR, 'specs-manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
 console.log(`[sync-docs] Generated specs-manifest.json with ${manifest.length} features`);
 
-// 4. Copy OpenAPI YAML files
+// 5. Copy OpenAPI YAML files
 const openapiDir = join(DOCS_DIR, 'openapi');
 if (existsSync(openapiDir)) {
   const yamlFiles = readdirSync(openapiDir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'));
@@ -159,4 +175,4 @@ if (existsSync(openapiDir)) {
   }
 }
 
-console.log(`[sync-docs] Done! ${manifest.length} features, ${foundationDocs.length} foundation docs.`);
+console.log(`[sync-docs] Done! ${manifest.length} features, ${foundationDocs.length} foundation docs, ${guideCount} guides.`);

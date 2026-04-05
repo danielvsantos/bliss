@@ -6,7 +6,6 @@ export default {
       toc: false,
     },
   },
-  'getting-started': 'Getting Started',
   guides: 'Guides',
   architecture: 'Architecture',
   configuration: 'Configuration',

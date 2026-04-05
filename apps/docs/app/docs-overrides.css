@@ -1,0 +1,144 @@
+/* ── docs-overrides.css ────────────────────────────────
+   Loaded AFTER nextra-theme-docs/style-prefixed.css
+   so these rules safely override Nextra defaults.
+   ──────────────────────────────────────────────────── */
+
+/* ── Breadcrumb ────────────────────────────────────── */
+
+.nextra-breadcrumb {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
+}
+
+.nextra-breadcrumb a {
+  color: hsl(var(--brand-primary));
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.nextra-breadcrumb a:hover {
+  opacity: 0.75;
+}
+
+/* Arrow separator */
+.nextra-breadcrumb svg {
+  opacity: 0.4;
+}
+
+/* Current page in breadcrumb (last item) */
+.nextra-breadcrumb > :last-child {
+  color: hsl(var(--muted-foreground));
+  font-weight: 400;
+}
+
+/* ── Page title (H1) ──────────────────────────────── */
+
+article main > h1 {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.2 !important;
+  color: hsl(var(--brand-deep)) !important;
+  margin-top: 8px !important;
+  margin-bottom: 24px !important;
+  padding-bottom: 0 !important;
+}
+
+/* ── Section headings (H2) ────────────────────────── */
+
+article main h2 {
+  font-size: 1.375rem !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.3 !important;
+  color: hsl(var(--brand-deep)) !important;
+  margin-top: 40px !important;
+  margin-bottom: 16px !important;
+  padding-top: 16px !important;
+  padding-bottom: 0 !important;
+  border-top: 1px solid hsl(var(--border)) !important;
+  border-bottom: none !important;
+}
+
+/* First h2 right after h1 doesn't need the top border */
+article main > h1 + h2 {
+  border-top: none !important;
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+/* ── Sub-section headings (H3) ────────────────────── */
+
+article main h3 {
+  font-size: 1.125rem !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+  color: hsl(var(--brand-deep)) !important;
+  margin-top: 28px !important;
+  margin-bottom: 12px !important;
+}
+
+/* ── Body paragraphs ──────────────────────────────── */
+
+article main p {
+  margin-bottom: 16px;
+  line-height: 1.7;
+}
+
+/* ── Lists — better spacing ──────────────────────── */
+
+article main ul,
+article main ol {
+  margin-bottom: 16px;
+}
+
+article main li {
+  margin-bottom: 4px;
+}
+
+/* ── Code blocks — breathing room ────────────────── */
+
+article main pre {
+  margin-top: 16px !important;
+  margin-bottom: 20px !important;
+  border-radius: var(--radius) !important;
+}
+
+/* ── Sidebar — top-level items match folder size ─── */
+
+/* Top-level sidebar items only (aside > div > div > ul) */
+.nextra-sidebar > div > div > ul > li > a,
+.nextra-sidebar > div > div > ul > li > button,
+.nextra-mobile-nav > ul > li > a,
+.nextra-mobile-nav > ul > li > button {
+  font-size: 0.9375rem !important;
+  font-weight: 500 !important;
+}
+
+/* ── Search input — padding fix ──────────────────── */
+
+.nextra-search input {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+/* ── Inline code styling ─────────────────────────── */
+
+article main code:not(pre code) {
+  font-size: 0.875em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  color: hsl(var(--brand-deep));
+  font-weight: 500;
+}
+
+/* ── Last updated / footer meta — subtle ─────────── */
+
+article time {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+}

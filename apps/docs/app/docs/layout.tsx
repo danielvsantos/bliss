@@ -3,10 +3,17 @@ import { getPageMap } from 'nextra/page-map';
 
 const logo = (
   <span
-    className="font-semibold text-lg tracking-tight"
-    style={{ color: 'hsl(263 11% 23%)' }}
+    style={{
+      fontFamily: "'Urbanist', sans-serif",
+      fontSize: '1.25rem',
+      fontWeight: 600,
+      letterSpacing: '-0.03em',
+      color: '#6D657A',
+      lineHeight: 1,
+      userSelect: 'none',
+    }}
   >
-    Bliss<span style={{ color: 'hsl(263 9% 43%)' }}>Finance</span>
+    bliss
   </span>
 );
 

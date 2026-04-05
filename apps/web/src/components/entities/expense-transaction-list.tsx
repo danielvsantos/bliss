@@ -26,7 +26,7 @@ const PAGE_SIZE = 50;
 
 export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: ExpenseTransactionListProps) {
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<'transactions' | 'categories'>('transactions');
+  const [viewMode, setViewMode] = useState<'transactions' | 'categories'>('categories');
   const [page, setPage] = useState(1);
 
   // Transaction list query (paginated)
@@ -57,27 +57,38 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
     viewMode === 'categories' ? summaryFilters : {} as TransactionFilters,
   );
 
-  // Aggregate transactions by category
-  const categorySummary = useMemo(() => {
-    if (viewMode !== 'categories' || !summaryData?.transactions) return [];
-    const totals: Record<string, { name: string; debit: number; count: number }> = {};
+  // Aggregate transactions by category, broken down by currency
+  const { categorySummary, currencies, currencyTotals } = useMemo(() => {
+    if (viewMode !== 'categories' || !summaryData?.transactions) {
+      return { categorySummary: [], currencies: [] as string[], currencyTotals: {} as Record<string, number> };
+    }
+    const totals: Record<string, { name: string; byCurrency: Record<string, number>; count: number; totalRaw: number }> = {};
+    const allCurrencies = new Set<string>();
 
     for (const tx of summaryData.transactions) {
       const catName = tx.category?.name || 'Uncategorized';
+      const cur = tx.currency || currency;
+      allCurrencies.add(cur);
       if (!totals[catName]) {
-        totals[catName] = { name: catName, debit: 0, count: 0 };
+        totals[catName] = { name: catName, byCurrency: {}, count: 0, totalRaw: 0 };
       }
-      totals[catName].debit += tx.debit || 0;
+      totals[catName].byCurrency[cur] = (totals[catName].byCurrency[cur] || 0) + (tx.debit || 0);
+      totals[catName].totalRaw += tx.debit || 0;
       totals[catName].count += 1;
     }
 
-    return Object.values(totals).sort((a, b) => b.debit - a.debit);
-  }, [summaryData, viewMode]);
+    const sorted = Object.values(totals).sort((a, b) => b.totalRaw - a.totalRaw);
+    const sortedCurrencies = Array.from(allCurrencies).sort();
 
-  const categoryTotal = useMemo(
-    () => categorySummary.reduce((sum, c) => sum + c.debit, 0),
-    [categorySummary],
-  );
+    // Compute per-currency grand totals
+    const cTotals: Record<string, number> = {};
+    for (const cur of sortedCurrencies) {
+      cTotals[cur] = sorted.reduce((sum, c) => sum + (c.byCurrency[cur] || 0), 0);
+    }
+
+    return { categorySummary: sorted, currencies: sortedCurrencies, currencyTotals: cTotals };
+  }, [summaryData, viewMode, currency]);
+
 
   // Reset page when filters change
   const handleViewChange = (mode: 'transactions' | 'categories') => {
@@ -113,15 +124,6 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
       {/* View toggle */}
       <div className="flex items-center gap-1">
         <Button
-          variant={viewMode === 'transactions' ? 'default' : 'outline'}
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={() => handleViewChange('transactions')}
-        >
-          <List className="h-3.5 w-3.5" />
-          Transactions
-        </Button>
-        <Button
           variant={viewMode === 'categories' ? 'default' : 'outline'}
           size="sm"
           className="h-8 gap-1.5 text-xs"
@@ -129,6 +131,15 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
         >
           <LayoutGrid className="h-3.5 w-3.5" />
           By Category
+        </Button>
+        <Button
+          variant={viewMode === 'transactions' ? 'default' : 'outline'}
+          size="sm"
+          className="h-8 gap-1.5 text-xs"
+          onClick={() => handleViewChange('transactions')}
+        >
+          <List className="h-3.5 w-3.5" />
+          Transactions
         </Button>
       </div>
 
@@ -145,8 +156,11 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                 <TableRow>
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Transactions</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">% of Group</TableHead>
+                  {currencies.map((cur) => (
+                    <TableHead key={cur} className="text-right">
+                      Total ({cur})
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -160,12 +174,11 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {cat.count}
                     </TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums text-negative">
-                      {formatCurrency(cat.debit, currency)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {categoryTotal > 0 ? ((cat.debit / categoryTotal) * 100).toFixed(1) : '0'}%
-                    </TableCell>
+                    {currencies.map((cur) => (
+                      <TableCell key={cur} className="text-right font-semibold tabular-nums text-negative">
+                        {cat.byCurrency[cur] ? formatCurrency(cat.byCurrency[cur], cur) : '—'}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>
@@ -178,10 +191,11 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                     <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                       {categorySummary.reduce((sum, c) => sum + c.count, 0)}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold tabular-nums text-negative">
-                      {formatCurrency(categoryTotal, currency)}
-                    </td>
-                    <td />
+                    {currencies.map((cur) => (
+                      <td key={cur} className="px-4 py-3 text-right font-bold tabular-nums text-negative">
+                        {formatCurrency(currencyTotals[cur] || 0, cur)}
+                      </td>
+                    ))}
                   </tr>
                 </tfoot>
               )}

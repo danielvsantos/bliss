@@ -33,7 +33,9 @@
       "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npx vitest run --pool=forks --poolOptions.forks.maxForks=1)",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npm run test)",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npm run test:coverage)",
-      "Bash(node apps/docs/scripts/sync-docs.mjs)"
+      "Bash(node apps/docs/scripts/sync-docs.mjs)",
+      "Bash(pnpm test:web)",
+      "Bash(pnpm --filter @bliss/docs build)"
     ]
   }
 }
