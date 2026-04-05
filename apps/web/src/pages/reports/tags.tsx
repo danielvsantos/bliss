@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { ArrowLeft, Hash, GitCompareArrows } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Hash, GitCompareArrows } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -229,15 +228,13 @@ export default function TagAnalyticsPage() {
     : null;
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col space-y-8">
       {/* Header */}
-      <motion.div {...fadeUp} className="flex items-center gap-4">
-        <Link to="/" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft size={20} />
-        </Link>
+      <motion.div {...fadeUp}>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tag Analytics</h1>
-          <p className="text-sm text-muted-foreground">Analyze spending by tag across all accounts and currencies</p>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">Tag Analytics</h2>
+          <p className="text-muted-foreground">Analyze spending by tag across all accounts and currencies</p>
         </div>
       </motion.div>
 
@@ -655,6 +652,7 @@ export default function TagAnalyticsPage() {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }

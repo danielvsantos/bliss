@@ -42,7 +42,7 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
-import { ArrowLeft, Download, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, ChevronDown, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -261,17 +261,7 @@ export default function PnLAnalysisPage() {
       <div className="flex flex-col space-y-8">
         <div className="flex justify-between items-start">
           <div>
-            <div className="flex items-center mb-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="mr-2"
-                onClick={() => navigate("/reports")}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <h2 className="text-3xl font-bold tracking-tight">{t("pages.pnl.title")}</h2>
-            </div>
+            <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.pnl.title")}</h2>
             <p className="text-muted-foreground">
               {t("pages.pnl.subtitle")}
             </p>

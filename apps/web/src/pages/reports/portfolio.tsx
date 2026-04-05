@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   HelpCircle,
@@ -487,12 +486,10 @@ export default function PortfolioHoldingsPage() {
 
   if (portfolioItems.length === 0) {
     return (
-      <div className="p-4 md:p-8 space-y-6">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/reports")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-2xl font-semibold tracking-tight">{t("Portfolio")}</h1>
+      <div className="container mx-auto py-6 space-y-6">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">Portfolio Holdings</h2>
+          <p className="text-muted-foreground">Track your investment portfolio performance and allocation</p>
         </div>
         <Card>
           <CardContent className="py-16 text-center">
@@ -533,13 +530,12 @@ export default function PortfolioHoldingsPage() {
   const totalLiabilityPositions = liabilityList.length;
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col space-y-8">
       {/* ── Page Header ── */}
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/reports")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Portfolio")}</h1>
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight mb-2">Portfolio Holdings</h2>
+        <p className="text-muted-foreground">Track your investment portfolio performance and allocation</p>
       </div>
 
       {/* ── Performance Chart Card ── */}
@@ -822,6 +818,7 @@ export default function PortfolioHoldingsPage() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   );
 }

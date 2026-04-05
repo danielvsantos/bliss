@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -8,7 +7,6 @@ import {
 import { motion } from 'framer-motion';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { useEquityAnalysis } from '@/hooks/use-equity-analysis';
@@ -143,18 +141,12 @@ export default function EquityAnalysisPage() {
   }
 
   return (
-    <div className="pb-12 space-y-6">
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col space-y-8">
       {/* ── Page Title ── */}
-      <div className="flex items-center gap-3">
-        <Link to="/reports/portfolio">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-brand-primary" />
-          <h1 className="text-lg font-semibold text-brand-deep">Equity Analysis</h1>
-        </div>
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight mb-2">Equity Analysis</h2>
+        <p className="text-muted-foreground">Analyze your equity holdings by sector, industry, and country</p>
       </div>
 
       <div className="space-y-6">
@@ -387,6 +379,7 @@ export default function EquityAnalysisPage() {
             </CardContent>
           </Card>
         </motion.div>
+      </div>
       </div>
     </div>
   );
