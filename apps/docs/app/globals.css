@@ -72,51 +72,6 @@
     --sidebar-ring: 263 9% 43%;
   }
 
-  .dark {
-    --background: 260 25% 12%;
-    --foreground: 262 25% 95%;
-
-    --brand-primary: 263 12% 64%;
-    --brand-deep: 262 25% 95%;
-
-    --border-color: 255 23% 20%;
-    --muted-fg: 258 8% 50%;
-
-    --card: 257 18% 17%;
-    --card-foreground: 262 25% 95%;
-
-    --popover: 257 18% 17%;
-    --popover-foreground: 262 25% 95%;
-
-    --primary: 262 25% 95%;
-    --primary-foreground: 263 11% 23%;
-
-    --secondary: 257 18% 17%;
-    --secondary-foreground: 262 25% 95%;
-
-    --muted: 255 23% 20%;
-    --muted-foreground: 258 8% 50%;
-
-    --accent: 255 23% 20%;
-    --accent-foreground: 262 25% 95%;
-
-    --destructive: 359 58% 75%;
-    --destructive-foreground: 260 25% 12%;
-
-    --border: 255 23% 20%;
-    --input: 255 23% 20%;
-    --ring: 260 6% 61%;
-    --ring-offset: 260 25% 12%;
-
-    --sidebar-background: 257 18% 17%;
-    --sidebar-foreground: 262 25% 95%;
-    --sidebar-primary: 262 25% 95%;
-    --sidebar-primary-foreground: 263 11% 23%;
-    --sidebar-accent: 255 23% 20%;
-    --sidebar-accent-foreground: 262 25% 95%;
-    --sidebar-border: 255 23% 20%;
-    --sidebar-ring: 260 6% 61%;
-  }
 }
 
 /* ── Nextra typography — only brand color overrides ───── */
@@ -139,16 +94,6 @@
     0 4px 12px rgba(58, 53, 66, 0.06),
     0 16px 40px rgba(58, 53, 66, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-.dark .glass-card {
-  background: rgba(42, 37, 54, 0.68);
-  border-color: hsl(var(--border-color));
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.1),
-    0 4px 12px rgba(0, 0, 0, 0.15),
-    0 16px 40px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ── API Reference page — full-width content, hide TOC column ── */

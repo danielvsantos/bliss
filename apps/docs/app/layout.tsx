@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Urbanist } from 'next/font/google';
 import { Head } from 'nextra/components';
-import { ThemeProvider } from 'next-themes';
+
 import './globals.css';
 import 'nextra-theme-docs/style-prefixed.css';
 import './docs-overrides.css';
@@ -36,9 +36,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </Head>
       <body style={{ fontFamily: 'var(--font-urbanist), Urbanist, sans-serif' }}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          {children}
-        </ThemeProvider>
+        {children}
       </body>
     </html>
   );

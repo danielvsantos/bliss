@@ -39,6 +39,7 @@ export default async function DocsLayout({
 }) {
   return (
     <Layout
+      darkMode={false}
       navbar={
         <Navbar
           logo={logo}

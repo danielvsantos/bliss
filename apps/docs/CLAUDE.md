@@ -60,4 +60,4 @@ To add a new API spec, place the YAML file in `docs/openapi/` (not directly in `
 
 Tailwind CSS with the same design token system as the main web app. Semantic color tokens (`brand-primary`, `brand-deep`, `positive`, `negative`, `warning`, etc.) are defined in `tailwind.config.ts` via CSS custom properties. Use tokens, not raw Tailwind colors.
 
-Dark mode is supported via `next-themes` with class-based toggling (`darkMode: ["class"]`).
+Dark mode has been removed. The site is light-mode only.
