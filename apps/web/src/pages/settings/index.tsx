@@ -17,7 +17,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,7 +41,6 @@ import {
   Settings as SettingsIcon,
   Globe,
   Building,
-  CreditCard,
   Users,
   ExternalLink,
   Plus,
@@ -62,11 +60,9 @@ import { ChangePasswordDialog } from "@/components/settings/change-password-dial
 
 /* ─── Types ─────────────────────────────────────────── */
 
-type PlanType = "FREE" | "PRO" | "AI";
-
 interface TenantSettingsData {
   name: string;
-  plan: PlanType;
+  plan: string;
   countries: string[];
   currencies: string[];
   bankIds: number[];
@@ -150,7 +146,7 @@ export default function SettingsPage() {
     if (meta) {
       setSettings({
         name: meta.name,
-        plan: meta.plan as PlanType,
+        plan: meta.plan ?? "FREE",
         countries: meta.countries?.map((c: any) => c.id) ?? [],
         currencies: meta.currencies?.map((c: any) => c.id) ?? [],
         bankIds: meta.banks?.map((b: any) => b.id) ?? [],
@@ -193,7 +189,7 @@ export default function SettingsPage() {
       setTenantMeta(pickTenantMetaFields(updatedTenant));
       setSettings({
         name: updatedTenant.name,
-        plan: updatedTenant.plan as PlanType,
+        plan: updatedTenant.plan ?? "FREE",
         countries: updatedTenant.countries.map((c: any) => c.id),
         currencies: updatedTenant.currencies.map((c: any) => c.id),
         bankIds: updatedTenant.banks.map((b: any) => b.id),
@@ -280,17 +276,6 @@ export default function SettingsPage() {
   };
 
   const deleteConfirmMatch = deleteConfirmText.trim().toLowerCase() === "delete my account";
-
-  const getPlanBadgeStyle = (plan: PlanType) => {
-    switch (plan) {
-      case "PRO":
-        return "bg-brand-deep/10 text-brand-deep border-brand-deep/20 hover:bg-brand-deep/10";
-      case "AI":
-        return "bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10";
-      default:
-        return "bg-positive/10 text-positive border-positive/20 hover:bg-positive/10";
-    }
-  };
 
   /* ─── Memoized combobox options ──────────────────── */
 
@@ -390,13 +375,6 @@ export default function SettingsPage() {
               {t("pages.settings.tabs.banks")}
             </TabsTrigger>
             <TabsTrigger
-              value="plan"
-              className="rounded-[0.75rem] px-4 py-2 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-            >
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
-              {t("pages.settings.tabs.plan")}
-            </TabsTrigger>
-            <TabsTrigger
               value="ai-classification"
               className="rounded-[0.75rem] px-4 py-2 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
@@ -435,16 +413,6 @@ export default function SettingsPage() {
                     <p className="text-xs text-muted-foreground">
                       {t("pages.settings.general.tenant_name_description")}
                     </p>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>{t("pages.settings.general.current_plan_label")}</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {t("pages.settings.general.current_plan_description")}
-                      </p>
-                    </div>
-                    <Badge className={getPlanBadgeStyle(settings.plan)}>{settings.plan}</Badge>
                   </div>
 
                   <div className="flex items-center justify-between">
@@ -826,85 +794,6 @@ export default function SettingsPage() {
                     {t("common.save_changes")}
                   </Button>
                 </div>
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* ═══════ PLAN TAB ═══════ */}
-          <TabsContent value="plan" className="mt-6 space-y-5">
-            <Card className="overflow-hidden p-0 gap-0">
-              <div className="px-7 pt-[22px] pb-[18px]">
-                <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
-                  {t("pages.settings.plan.title")}
-                </h3>
-                <p className="text-[0.8125rem] text-muted-foreground mt-1 leading-relaxed">
-                  {t("pages.settings.plan.description")}
-                </p>
-              </div>
-
-              <CardDivider />
-
-              <div className="px-7 py-7">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {(["FREE", "PRO", "AI"] as PlanType[]).map((plan) => (
-                    <Card
-                      key={plan}
-                      className={`border cursor-pointer transition-colors ${
-                        settings.plan === plan ? "border-primary ring-1 ring-primary/20" : ""
-                      }`}
-                      onClick={() => handleSettingsChange("plan", plan)}
-                    >
-                      <div className="p-5 pb-3">
-                        <h4 className="font-medium">{t(`plans.${plan}.title`)}</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {t(`plans.${plan}.description`)}
-                        </p>
-                      </div>
-                      <div className="px-5 pb-5">
-                        <div className="text-2xl font-bold mb-1">
-                          {t(`plans.${plan}.price`)}
-                        </div>
-                        <p className="text-muted-foreground text-sm mb-4">
-                          {t(`plans.${plan}.period`)}
-                        </p>
-                        <ul className="list-disc list-inside space-y-1 text-sm">
-                          {(
-                            t(`plans.${plan}.features`, { returnObjects: true }) as string[]
-                          ).map((feature: string, i: number) => (
-                            <li key={i}>{feature}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="px-5 pb-5">
-                        {settings.plan === plan ? (
-                          <Button className="w-full" disabled>
-                            {t("plans.current_plan")}
-                          </Button>
-                        ) : (
-                          <Button
-                            variant={plan === "FREE" ? "outline" : "default"}
-                            className="w-full"
-                          >
-                            {t(`plans.${plan}.action`)}
-                          </Button>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-
-              <CardDivider />
-
-              <div className="px-7 py-4 flex justify-end">
-                <Button onClick={() => handleSaveChanges()} disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}
-                  {t("common.save_changes")}
-                </Button>
               </div>
             </Card>
           </TabsContent>
