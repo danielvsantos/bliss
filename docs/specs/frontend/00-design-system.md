@@ -23,7 +23,7 @@
 ### Design Philosophy
 The Bliss palette is built around a **muted purple-gray core** with **semantic accents** for financial signals. It avoids bright primaries in favour of calm, sophisticated tones that convey trust and precision.
 
-**Financial signal colors (`positive`, `negative`, `warning`) do NOT change between light and dark mode.** They are intentionally stable — green always means gain, rose always means loss, amber always means caution, regardless of theme.
+**Financial signal colors (`positive`, `negative`, `warning`) are intentionally stable** — green always means gain, rose always means loss, amber always means caution.
 
 ### Color Tokens — Complete Reference
 
@@ -107,20 +107,6 @@ Used only in sidebar layout components. Not for general UI.
 | `--sidebar-accent-foreground` | `text-sidebar-accent-foreground` | Text on sidebar accent (#3A3542) |
 | `--sidebar-border` | `border-sidebar-border` | Sidebar right border |
 | `--sidebar-ring` | `ring-sidebar-ring` | Focus ring inside sidebar (#6D657A) |
-
-### Dark Mode
-
-Dark mode is enabled via the `.dark` class on the `<html>` element. Most tokens automatically invert:
-- Background: `#FAFAFA` → `#1A1625` (deep plum)
-- Cards: `[data-slot="card"]` override `rgba(255,255,255,0.68)` → `rgba(42, 37, 54, 0.68)` (translucent dark purple)
-- Borders: `#E2E8F0` → `hsl(255 23% 20%)` (muted dark purple)
-- Text: `#1A1625` → `#F0EDF5` (pale lavender)
-- `muted`: `#F1EEF5` → `#2E2840`
-
-**Exception — financial signal colors do NOT change in dark mode:**
-`positive`, `negative`, `warning`, `destructive` — identical in both themes.
-
-**Never hardcode light-mode hex values** in JSX — always use CSS variable tokens so dark mode works automatically.
 
 ---
 
@@ -307,10 +293,6 @@ Standard cards use shadcn's `<Card>` component from `@/components/ui/card`. The 
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
   box-shadow: 0 1px 2px ..., 0 4px 12px ..., inset 0 1px 0 rgba(255,255,255,0.9);
 }
-
-.dark [data-slot="card"] {
-  background: rgba(42, 37, 54, 0.68);
-}
 ```
 
 Note: `[data-slot="card"]` uses raw rgba for the background. This is intentional — it's defined at the CSS layer, not in JSX. The `--card` CSS variable itself is solid white (`0 0% 100%`); the translucency only exists in this attribute selector override.
@@ -387,7 +369,124 @@ The Bliss design system intentionally excludes some common UI patterns:
 
 ---
 
-## 12. Implementation Status
+## 12. Internationalization (i18n)
+
+### Overview
+
+Bliss uses **react-i18next** for frontend-only internationalization. All user-facing strings must go through the translation system — no hardcoded English text in JSX.
+
+### Supported Languages
+
+| Code | Language | File |
+|------|----------|------|
+| `en` | English | `src/i18n/locales/en.ts` |
+| `es` | Español | `src/i18n/locales/es.ts` |
+| `fr` | Français | `src/i18n/locales/fr.ts` |
+| `pt` | Português (BR) | `src/i18n/locales/pt.ts` |
+| `it` | Italiano | `src/i18n/locales/it.ts` |
+
+Language is auto-detected from the browser and persisted in `localStorage` under `i18nextLng`. Users switch via the `<LanguageSwitcher>` in the header.
+
+### Architecture
+
+- **Frontend-only** — the API returns language-agnostic data (ISO dates, numeric codes). All user-facing text is translated on the client.
+- **Inline resources** — translations are bundled as TypeScript objects imported at startup, not lazy-loaded.
+- **Fallback** — if a key is missing in the active locale, i18next falls back to `en`.
+
+### Configuration
+
+| File | Role |
+|------|------|
+| `src/i18n/index.ts` | i18next initialization, language detector, resource registration |
+| `src/i18n/locales/*.ts` | Translation files (one per language) |
+| `src/components/language-switcher.tsx` | UI for switching languages |
+| `src/lib/category-i18n.ts` | Helpers for translating system category names, groups, types |
+
+### Translation Key Conventions
+
+Keys use dot-separated namespaces:
+
+```
+common.save              → generic UI words
+pages.dashboard.title    → page-level strings
+nav.transactions         → navigation labels
+forms.required           → validation messages
+dashboard.totalBalance   → dashboard widgets
+accountsPage.title       → accounts page strings
+review.confident         → transaction review
+defaultCategories.names.SALARY → system category names
+defaultCategories.types.Income → category type labels
+defaultCategories.groups.Housing → category group labels
+```
+
+**Interpolation:** `{{variable}}` syntax — e.g. `"Welcome back, {{name}}"`.
+
+### Using Translations in Components
+
+```tsx
+import { useTranslation } from 'react-i18next';
+
+function MyComponent() {
+  const { t } = useTranslation();
+  return <h1>{t('pages.myPage.title')}</h1>;
+}
+```
+
+### Category Name Translation
+
+System categories (seeded from `defaultCategories.js`) have a stable `defaultCategoryCode` field. The frontend translates them using helpers from `src/lib/category-i18n.ts`:
+
+```tsx
+import { translateCategoryName, translateCategoryGroup, translateCategoryType } from '@/lib/category-i18n';
+
+// System categories → translated via their code
+translateCategoryName(t, category)  // uses defaultCategoryCode as i18n key
+translateCategoryGroup(t, group)    // translates group labels like "Housing"
+translateCategoryType(t, type)      // translates type labels like "Essentials"
+
+// Custom categories (code = null) → displayed as-is (user's own language)
+```
+
+**Search** in the Categories page matches against both original DB names and translated names, so users can search in any language.
+
+### Adding a New Language
+
+1. Copy `src/i18n/locales/en.ts` to `src/i18n/locales/{code}.ts`
+2. Translate all values (keep keys, interpolation variables, and technical terms unchanged)
+3. Register in `src/i18n/index.ts`:
+   ```ts
+   import xxTranslations from './locales/xx.ts';
+   // Add to resources:
+   xx: { translation: xxTranslations }
+   ```
+4. Add to `src/components/language-switcher.tsx`:
+   ```ts
+   { code: 'xx', name: 'Language Name' }
+   ```
+
+### What Stays in English
+
+- AI-generated insight content (generated by Gemini in English)
+- API error messages from the backend (not user-facing)
+- Console/debug logs
+- Processing hint codes (CASH, MANUAL, API_STOCK — internal identifiers)
+
+### Testing
+
+Tests mock `react-i18next` with a passthrough: `t: (key) => key`. Test assertions match against **translation keys**, not English text.
+
+```tsx
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string) => k })
+}));
+
+// In test:
+expect(screen.getByText('accountsPage.title')).toBeInTheDocument();
+```
+
+---
+
+## 13. Implementation Status
 
 ### ✅ Fully compliant — all files verified clean (audited 2026-03-03)
 

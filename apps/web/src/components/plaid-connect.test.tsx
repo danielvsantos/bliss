@@ -5,6 +5,11 @@ import { PlaidConnect } from './plaid-connect';
 import { api } from '@/lib/api';
 import * as ReactPlaidLink from 'react-plaid-link';
 
+// Mock i18n
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
 // Mock API and external libraries
 vi.mock('@/lib/api');
 vi.mock('@/hooks/use-toast', () => ({
@@ -52,7 +57,7 @@ describe('PlaidConnect', () => {
       expect(button).toBeEnabled();
     });
 
-    expect(screen.getByText('Connect Bank')).toBeInTheDocument();
+    expect(screen.getByText('plaidConnect.connectBank')).toBeInTheDocument();
   });
 
   it('dispatches the exchangePublicToken call automatically on success', async () => {
@@ -81,7 +86,7 @@ describe('PlaidConnect', () => {
     render(<PlaidConnect plaidItemId="existing-item-999" />);
     
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());
-    expect(screen.getByText('Reconnect')).toBeInTheDocument();
+    expect(screen.getByText('plaidConnect.reconnect')).toBeInTheDocument();
 
     // Simulate react-plaid-link returning success (e.g user typed in their updated bank password)
     await capturedPlaidConfig.onSuccess('public-token-123', {});

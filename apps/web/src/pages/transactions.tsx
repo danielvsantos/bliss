@@ -29,6 +29,7 @@ import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { format, parse } from 'date-fns';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { translateCategoryGroup, translateCategoryName } from '@/lib/category-i18n';
 import type { Transaction, Account, Category } from '@/types/api';
 
 /* ── Background color by category type ── */
@@ -170,9 +171,9 @@ export default function TransactionsPage() {
     setShowExportProgress(true);
     try {
       await exportTransactions(params);
-      toast({ title: 'Export complete', description: 'CSV file downloaded.' });
+      toast({ title: t('pages.transactions.exportComplete'), description: t('pages.transactions.csvDownloaded') });
     } catch {
-      toast({ title: t('common.error'), description: 'Export failed.', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('pages.transactions.exportFailed'), variant: 'destructive' });
     } finally {
       setShowExportProgress(false);
     }
@@ -229,12 +230,12 @@ export default function TransactionsPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleExportClick} disabled={isExporting} className="flex items-center gap-1">
             <DownloadIcon className="h-4 w-4" />
-            <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+            <span>{isExporting ? t('pages.transactions.exporting') : t('pages.transactions.exportCsv')}</span>
           </Button>
           <Button variant="outline" asChild>
             <Link to="/agents/import?adapter=native" className="flex items-center gap-1">
               <UploadIcon className="h-4 w-4" />
-              <span>Import CSV</span>
+              <span>{t('pages.transactions.importCsv')}</span>
             </Link>
           </Button>
           <Button onClick={handleAddTransaction} className="flex items-center gap-1">
@@ -252,7 +253,7 @@ export default function TransactionsPage() {
           {/* Date range */}
           <div className="flex gap-2 items-end">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Start Date</Label>
+              <Label className="text-xs text-muted-foreground">{t('time.startMonth')}</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -264,7 +265,7 @@ export default function TransactionsPage() {
                   >
                     {filters.startDate
                       ? format(parse(filters.startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy')
-                      : 'Pick date'}
+                      : t('pages.transactions.pickDate')}
                     <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -284,7 +285,7 @@ export default function TransactionsPage() {
               </Popover>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">End Date</Label>
+              <Label className="text-xs text-muted-foreground">{t('time.endMonth')}</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -296,7 +297,7 @@ export default function TransactionsPage() {
                   >
                     {filters.endDate
                       ? format(parse(filters.endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy')
-                      : 'Pick date'}
+                      : t('pages.transactions.pickDate')}
                     <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -319,16 +320,16 @@ export default function TransactionsPage() {
 
           {/* Account */}
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Account</Label>
+            <Label className="text-xs text-muted-foreground">{t('common.account')}</Label>
             <Select
               value={filters.accountId?.toString() ?? 'all'}
               onValueChange={(value) => handleFilterChange('accountId', value === 'all' ? undefined : Number(value))}
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Accounts" />
+                <SelectValue placeholder={t('pages.transactions.allAccounts')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Accounts</SelectItem>
+                <SelectItem value="all">{t('pages.transactions.allAccounts')}</SelectItem>
                 {metadata?.accounts?.map((account: Account) => (
                   <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>
                 ))}
@@ -338,18 +339,18 @@ export default function TransactionsPage() {
 
           {/* Category Group */}
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Category Group</Label>
+            <Label className="text-xs text-muted-foreground">{t('pages.transactions.categoryGroup')}</Label>
             <Select
               value={filters.group ?? 'all'}
               onValueChange={(value) => handleFilterChange('group', value === 'all' ? undefined : value)}
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Groups" />
+                <SelectValue placeholder={t('pages.transactions.allGroups')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Groups</SelectItem>
+                <SelectItem value="all">{t('pages.transactions.allGroups')}</SelectItem>
                 {categoryGroups.map((group: string) => (
-                  <SelectItem key={group} value={group}>{group}</SelectItem>
+                  <SelectItem key={group} value={group}>{translateCategoryGroup(t, group)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -357,18 +358,18 @@ export default function TransactionsPage() {
 
           {/* Category */}
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Category</Label>
+            <Label className="text-xs text-muted-foreground">{t('charts.category')}</Label>
             <Select
               value={filters.categoryId?.toString() ?? 'all'}
               onValueChange={(value) => handleFilterChange('categoryId', value === 'all' ? undefined : Number(value))}
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Categories" />
+                <SelectValue placeholder={t('pages.transactions.allCategories')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="all">{t('pages.transactions.allCategories')}</SelectItem>
                 {filteredCategories.map((category: Category) => (
-                  <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>
+                  <SelectItem key={category.id} value={String(category.id)}>{translateCategoryName(t, category)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -378,7 +379,7 @@ export default function TransactionsPage() {
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9">
               <XIcon className="h-4 w-4 mr-1" />
-              Clear
+              {t('common.clearFilter')}
             </Button>
           )}
         </div>
@@ -559,25 +560,25 @@ export default function TransactionsPage() {
       <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
         <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Export Transactions</DialogTitle>
-            <DialogDescription>Choose which transactions to export as CSV.</DialogDescription>
+            <DialogTitle>{t('pages.transactions.exportTransactions')}</DialogTitle>
+            <DialogDescription>{t('pages.transactions.exportDescription')}</DialogDescription>
           </DialogHeader>
           <RadioGroup value={exportScope} onValueChange={(v) => setExportScope(v as 'filtered' | 'all')} className="space-y-3 py-2">
             <div className="flex items-center space-x-3">
               <RadioGroupItem value="filtered" id="export-filtered" />
               <Label htmlFor="export-filtered" className="cursor-pointer">
-                Current filters ({transactionsResponse?.total ?? 0} transactions)
+                {t('pages.transactions.currentFilters', { count: transactionsResponse?.total ?? 0 })}
               </Label>
             </div>
             <div className="flex items-center space-x-3">
               <RadioGroupItem value="all" id="export-all" />
-              <Label htmlFor="export-all" className="cursor-pointer">All transactions</Label>
+              <Label htmlFor="export-all" className="cursor-pointer">{t('pages.transactions.allTransactions')}</Label>
             </div>
           </RadioGroup>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowExportDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>{t('common.cancel')}</Button>
             <Button onClick={handleExportConfirm} disabled={isExporting}>
-              {isExporting ? 'Exporting...' : 'Export'}
+              {isExporting ? t('pages.transactions.exporting') : t('pages.transactions.export')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -587,8 +588,8 @@ export default function TransactionsPage() {
           <div className="flex flex-col items-center gap-4 py-6">
             <Loader2Icon className="h-8 w-8 animate-spin text-brand-primary" />
             <div className="text-center">
-              <p className="font-medium text-sm">Exporting transactions...</p>
-              <p className="text-xs text-muted-foreground mt-1">This may take a moment for large datasets.</p>
+              <p className="font-medium text-sm">{t('pages.transactions.exportingTransactions')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('pages.transactions.exportingNote')}</p>
             </div>
           </div>
         </DialogContent>
@@ -605,7 +606,7 @@ export default function TransactionsPage() {
           <DialogHeader>
             <DialogTitle>{selectedTransaction ? t('pages.transactions.editTransaction') : t('pages.transactions.addTransaction')}</DialogTitle>
             <DialogDescription className="sr-only">
-              {selectedTransaction ? 'Edit transaction details' : 'Create a new transaction'}
+              {selectedTransaction ? t('pages.transactions.editTransactionDescription') : t('pages.transactions.addTransactionDescription')}
             </DialogDescription>
           </DialogHeader>
           <TransactionForm transaction={selectedTransaction} onClose={closeTransactionForm} />

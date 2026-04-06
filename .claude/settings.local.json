@@ -38,7 +38,16 @@
       "Bash(pnpm --filter @bliss/docs build)",
       "Bash(ls /Users/danielviana/Desktop/bliss/apps/web/public/favicon* /Users/danielviana/Desktop/bliss/apps/web/public/*.ico)",
       "Bash(ls /Users/danielviana/Desktop/bliss/apps/docs/public/favicon* /Users/danielviana/Desktop/bliss/apps/docs/public/*.ico)",
-      "Bash(ls /Users/danielviana/Desktop/bliss/apps/docs/app/favicon*)"
+      "Bash(ls /Users/danielviana/Desktop/bliss/apps/docs/app/favicon*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm exec:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(pnpm test:web -- --run)",
+      "Bash(pnpm --filter @bliss/web test)",
+      "Bash(npx next:*)",
+      "Bash(pnpm build:*)",
+      "Bash(PATH=\"/usr/local/bin:$PATH\" npx tsc --noEmit --pretty false)",
+      "Bash(npx --package=typescript tsc --noEmit --strict src/i18n/locales/pt.ts)"
     ]
   }
 }

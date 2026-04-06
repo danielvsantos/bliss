@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -39,6 +40,7 @@ interface AccountDetailPanelProps {
 }
 
 export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetailPanelProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
 
@@ -54,10 +56,10 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
     if (!plaidItemId) return;
     resync.mutate(plaidItemId, {
       onSuccess: () => {
-        toast({ title: 'Sync triggered', description: 'A new sync has been started for this account.' });
+        toast({ title: t('accountDetail.syncTriggered'), description: t('accountDetail.syncTriggeredDesc') });
         onRefetch();
       },
-      onError: () => toast({ title: 'Failed to trigger sync', variant: 'destructive' }),
+      onError: () => toast({ title: t('accountDetail.syncFailed'), variant: 'destructive' }),
     });
   };
 
@@ -65,10 +67,10 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
     if (!plaidItemId) return;
     rotateToken.mutate(plaidItemId, {
       onSuccess: () => {
-        toast({ title: 'Token rotated', description: 'Access token has been rotated successfully.' });
+        toast({ title: t('accountDetail.tokenRotated'), description: t('accountDetail.tokenRotatedDesc') });
         onRefetch();
       },
-      onError: () => toast({ title: 'Failed to rotate token', variant: 'destructive' }),
+      onError: () => toast({ title: t('accountDetail.tokenRotateFailed'), variant: 'destructive' }),
     });
   };
 
@@ -76,11 +78,11 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
     if (!plaidItemId) return;
     disconnect.mutate(plaidItemId, {
       onSuccess: () => {
-        toast({ title: 'Disconnected', description: 'Bank connection has been removed.' });
+        toast({ title: t('accountDetail.disconnected'), description: t('accountDetail.disconnectedDesc') });
         setShowDisconnectDialog(false);
         onRefetch();
       },
-      onError: () => toast({ title: 'Failed to disconnect', variant: 'destructive' }),
+      onError: () => toast({ title: t('accountDetail.disconnectFailed'), variant: 'destructive' }),
     });
   };
 
@@ -98,13 +100,13 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
             <Badge variant="outline" className="text-xs">{account.currencyCode}</Badge>
             {isPlaid && (
               <Badge variant="default" className="text-xs bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
-                <Landmark className="h-3 w-3 mr-1" /> Plaid Connected
+                <Landmark className="h-3 w-3 mr-1" /> {t('accountDetail.plaidConnected')}
               </Badge>
             )}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={onEdit}>
-          <Edit2 className="h-3.5 w-3.5 mr-1" /> Edit
+          <Edit2 className="h-3.5 w-3.5 mr-1" /> {t('common.edit')}
         </Button>
       </div>
 
@@ -132,12 +134,12 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
               <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${isExpired ? 'text-destructive' : 'text-warning'}`} />
               <div className="space-y-1">
                 <p className={`text-sm font-medium ${isExpired ? 'text-destructive' : 'text-warning'}`}>
-                  {isExpired ? 'Consent expired' : 'Consent expiring soon'}
+                  {isExpired ? t('accountDetail.consentExpired') : t('accountDetail.consentExpiringSoon')}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isExpired
-                    ? `Your bank consent expired on ${expiry.toLocaleDateString()}. Reconnect to resume syncing.`
-                    : `Your bank consent expires on ${expiry.toLocaleDateString()} (${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''} remaining). Reconnect before then to avoid interruption.`}
+                    ? t('accountDetail.consentExpiredDesc', { date: expiry.toLocaleDateString() })
+                    : t('accountDetail.consentExpiringSoonDesc', { date: expiry.toLocaleDateString(), days: daysUntilExpiry })}
                 </p>
                 <PlaidConnect
                   plaidItemId={plaidItemId!}
@@ -147,7 +149,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
                   onSuccess={() => onRefetch()}
                 >
                   <LinkIcon className="h-3.5 w-3.5 mr-2" />
-                  Reconnect
+                  {t('accountDetail.reconnect')}
                 </PlaidConnect>
               </div>
             </CardContent>
@@ -160,10 +162,10 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
         <Card>
           <CardContent className="pt-4 pb-3 space-y-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
-              Reconnect
+              {t('accountDetail.reconnect')}
             </span>
             <p className="text-sm text-muted-foreground">
-              This bank connection was disconnected. Re-link to resume syncing transactions.
+              {t('accountDetail.reconnectDesc')}
             </p>
             <PlaidConnect
               plaidItemId={plaidItemId!}
@@ -172,7 +174,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
               onSuccess={() => onRefetch()}
             >
               <LinkIcon className="h-3.5 w-3.5 mr-2" />
-              Reconnect Bank
+              {t('accountDetail.reconnectBank')}
             </PlaidConnect>
           </CardContent>
         </Card>
@@ -183,7 +185,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
         <Card>
           <CardContent className="pt-4 pb-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 block">
-              Actions
+              {t('accountDetail.actions')}
             </span>
             <div className="grid grid-cols-2 gap-2">
               <Button
@@ -194,7 +196,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
                 className="justify-start"
               >
                 <RefreshCw className={`h-3.5 w-3.5 mr-2 ${resync.isPending ? 'animate-spin' : ''}`} />
-                Resync Now
+                {t('accountDetail.resyncNow')}
               </Button>
 
               <Button
@@ -205,7 +207,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
                 className="justify-start"
               >
                 <RotateCw className={`h-3.5 w-3.5 mr-2 ${rotateToken.isPending ? 'animate-spin' : ''}`} />
-                Rotate Token
+                {t('accountDetail.rotateToken')}
               </Button>
 
               <PlaidConnect
@@ -215,7 +217,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
                 onSuccess={() => onRefetch()}
               >
                 <LinkIcon className="h-3.5 w-3.5 mr-2" />
-                Re-link Plaid
+                {t('accountDetail.relinkPlaid')}
               </PlaidConnect>
 
               <Button
@@ -225,7 +227,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
                 className="justify-start text-destructive hover:text-destructive"
               >
                 <Unlink className="h-3.5 w-3.5 mr-2" />
-                Pause Sync
+                {t('accountDetail.pauseSync')}
               </Button>
             </div>
           </CardContent>
@@ -238,12 +240,12 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-positive" />
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Security
+              {t('accountDetail.security')}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            All account data is encrypted at rest using AES-256-GCM.
-            {isPlaid && ' Plaid access tokens are rotated periodically and stored encrypted.'}
+            {t('accountDetail.securityDesc')}
+            {isPlaid && ` ${t('accountDetail.securityPlaid')}`}
           </p>
         </CardContent>
       </Card>
@@ -255,21 +257,21 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
       <Dialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Pause Sync</DialogTitle>
+            <DialogTitle>{t('accountDetail.pauseSyncTitle')}</DialogTitle>
             <DialogDescription>
-              This will pause syncing for this account. Your existing transactions and connection history will not be affected. You can reconnect at any time to resume.
+              {t('accountDetail.pauseSyncDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDisconnectDialog(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDisconnect}
               disabled={disconnect.isPending}
             >
-              {disconnect.isPending ? 'Disconnecting...' : 'Disconnect'}
+              {disconnect.isPending ? t('accountDetail.disconnecting') : t('accountDetail.disconnect')}
             </Button>
           </DialogFooter>
         </DialogContent>

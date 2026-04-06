@@ -1,6 +1,12 @@
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+
+// Mock i18n
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
 import { AccountListPanel } from './account-list-panel';
 import type { EnrichedAccount } from '@/hooks/use-account-list';
 
@@ -85,7 +91,7 @@ describe('AccountListPanel Component', () => {
         isLoading={false}
       />
     );
-    expect(screen.getByText('No accounts yet.')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.noAccountsYet')).toBeInTheDocument();
   });
 
   it('groups accounts correctly block', () => {
@@ -109,9 +115,9 @@ describe('AccountListPanel Component', () => {
     expect(screen.getByText('Cash Wallet')).toBeInTheDocument();
 
     // Check badges
-    expect(screen.getByText('Synced')).toBeInTheDocument();
-    expect(screen.getByText('Disconnected')).toBeInTheDocument();
-    expect(screen.getByText('Manual')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.synced')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.disconnected')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.manual')).toBeInTheDocument();
   });
 
   it('filters accounts by search query', () => {
@@ -124,7 +130,7 @@ describe('AccountListPanel Component', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText('Search accounts...');
+    const searchInput = screen.getByPlaceholderText('accountsPage.searchAccounts');
     
     // Type "checking"
     fireEvent.change(searchInput, { target: { value: 'checking' } });
@@ -135,7 +141,7 @@ describe('AccountListPanel Component', () => {
 
     // Empty state for no match
     fireEvent.change(searchInput, { target: { value: 'nonexistent' } });
-    expect(screen.getByText('No accounts match your search.')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.noAccountsMatch')).toBeInTheDocument();
   });
 
   it('calls onSelectAccount when an account is clicked', () => {

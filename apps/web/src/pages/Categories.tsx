@@ -13,6 +13,7 @@ import { PlusIcon, SearchIcon, TagIcon, LockIcon, MoreHorizontalIcon } from 'luc
 import { CategoryForm } from '@/components/entities/category-form';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
+import { translateCategoryName, translateCategoryGroup, translateCategoryType } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
 import { metadataKeys } from '@/hooks/use-metadata';
 import type { Category } from '@/types/api';
@@ -46,19 +47,19 @@ const TYPE_BORDER: Record<string, string> = {
   'Transfers':    'border-l-muted-foreground',
 };
 
-// ─── processingHint → badge label + style ─────────────────────────────────────
+// ─── processingHint → badge style ─────────────────────────────────────────────
 // View-only badges that tell the user whether a category is backed by a live
 // price API, has special system tracking, or is manually updated.
-// processingHint is never editable by the user.
-const PROCESSING_HINT_CONFIG: Record<string, { label: string; className: string }> = {
-  API_STOCK:        { label: 'Stock Prices API',     className: 'bg-positive/10 text-positive border-positive/20' },
-  API_CRYPTO:       { label: 'Crypto Prices API',    className: 'bg-positive/10 text-positive border-positive/20' },
-  AMORTIZING_LOAN:  { label: 'Loan Tracking',        className: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20' },
-  SIMPLE_LIABILITY: { label: 'Liability Tracking',   className: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20' },
-  CASH:             { label: 'Cash Tracking',        className: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20' },
-  MANUAL:           { label: 'Manual',               className: 'bg-muted text-muted-foreground border-border' },
-  TAX_DEDUCTIBLE:   { label: 'Tax Deductible',       className: 'bg-warning/10 text-warning border-warning/20' },
-  DEBT:             { label: 'Debt Tracking',        className: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20' },
+// processingHint is never editable by the user. Labels are translated via i18n.
+const PROCESSING_HINT_STYLE: Record<string, string> = {
+  API_STOCK:        'bg-positive/10 text-positive border-positive/20',
+  API_CRYPTO:       'bg-positive/10 text-positive border-positive/20',
+  AMORTIZING_LOAN:  'bg-brand-primary/10 text-brand-primary border-brand-primary/20',
+  SIMPLE_LIABILITY: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20',
+  CASH:             'bg-brand-primary/10 text-brand-primary border-brand-primary/20',
+  MANUAL:           'bg-muted text-muted-foreground border-border',
+  TAX_DEDUCTIBLE:   'bg-warning/10 text-warning border-warning/20',
+  DEBT:             'bg-brand-primary/10 text-brand-primary border-brand-primary/20',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,14 +69,15 @@ function isDefaultCategory(cat: Category): boolean {
 }
 
 function ProcessingHintBadge({ hint }: { hint: string }) {
-  const config = PROCESSING_HINT_CONFIG[hint];
-  if (!config) return null;
+  const { t } = useTranslation();
+  const className = PROCESSING_HINT_STYLE[hint];
+  if (!className) return null;
   return (
     <Badge
       variant="outline"
-      className={`text-[10px] font-medium px-1.5 py-0 shrink-0 ${config.className}`}
+      className={`text-[10px] font-medium px-1.5 py-0 shrink-0 ${className}`}
     >
-      {config.label}
+      {t(`defaultCategories.processingHints.${hint}`, hint)}
     </Badge>
   );
 }
@@ -95,12 +97,16 @@ function CategoryRow({ category, searchQuery, onRename, onEdit, onDelete }: Cate
   const isDefault = isDefaultCategory(category);
   const txCount = category._count?.transactions ?? 0;
 
-  // Dim rows that don't match the current search
+  // Dim rows that don't match the current search (match both original and translated names)
+  const q = searchQuery.toLowerCase();
   const matchesSearch =
     !searchQuery ||
-    category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    category.group.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    category.type.toLowerCase().includes(searchQuery.toLowerCase());
+    category.name.toLowerCase().includes(q) ||
+    category.group.toLowerCase().includes(q) ||
+    category.type.toLowerCase().includes(q) ||
+    translateCategoryName(t, category).toLowerCase().includes(q) ||
+    translateCategoryGroup(t, category.group).toLowerCase().includes(q) ||
+    translateCategoryType(t, category.type).toLowerCase().includes(q);
 
   return (
     <div
@@ -115,7 +121,7 @@ function CategoryRow({ category, searchQuery, onRename, onEdit, onDelete }: Cate
 
       {/* Name + badges */}
       <div className="flex flex-1 items-center gap-2 min-w-0 flex-wrap">
-        <span className="text-sm font-medium truncate">{category.name}</span>
+        <span className="text-sm font-medium truncate">{translateCategoryName(t, category)}</span>
 
         {/* Default / system lock badge */}
         {isDefault && (
@@ -129,13 +135,13 @@ function CategoryRow({ category, searchQuery, onRename, onEdit, onDelete }: Cate
                   className="text-[10px] font-medium px-1.5 py-0 shrink-0 bg-brand-primary/10 text-brand-primary border-brand-primary/20 cursor-default gap-1"
                 >
                   <LockIcon className="h-2.5 w-2.5" />
-                  Default
+                  {t('categoriesPage.defaultBadge')}
                 </Badge>
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">
               <p className="text-xs max-w-[220px]">
-                System category — used for AI classification across all tenants. Cannot be deleted.
+                {t('categoriesPage.systemHint')}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -150,7 +156,7 @@ function CategoryRow({ category, searchQuery, onRename, onEdit, onDelete }: Cate
       {/* Transaction count */}
       {txCount > 0 && (
         <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-          {txCount} {txCount === 1 ? 'transaction' : 'transactions'}
+          {txCount} {txCount === 1 ? t('categoriesPage.transaction') : t('categoriesPage.transactions')}
         </span>
       )}
 
@@ -160,7 +166,7 @@ function CategoryRow({ category, searchQuery, onRename, onEdit, onDelete }: Cate
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
             <MoreHorizontalIcon className="h-4 w-4" />
-            <span className="sr-only">Category options</span>
+            <span className="sr-only">{t('categoriesPage.categoryOptions')}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -230,14 +236,18 @@ function TypeSection({
     return map;
   }, [categories]);
 
-  // When searching, auto-open the section if it has any matches
+  // When searching, auto-open the section if it has any matches (original + translated)
+  const sq = searchQuery.toLowerCase();
   const hasMatches =
     !searchQuery ||
     categories.some(
       (c) =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.group.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.type.toLowerCase().includes(searchQuery.toLowerCase())
+        c.name.toLowerCase().includes(sq) ||
+        c.group.toLowerCase().includes(sq) ||
+        c.type.toLowerCase().includes(sq) ||
+        translateCategoryName(t, c).toLowerCase().includes(sq) ||
+        translateCategoryGroup(t, c.group).toLowerCase().includes(sq) ||
+        translateCategoryType(t, c.type).toLowerCase().includes(sq)
     );
 
   if (!hasMatches && searchQuery) return null;
@@ -249,7 +259,7 @@ function TypeSection({
     >
       <AccordionTrigger className="px-5 py-3.5 hover:no-underline hover:bg-muted/40 transition-colors [&[data-state=open]]:bg-muted/20">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-sm">{type}</span>
+          <span className="font-semibold text-sm">{translateCategoryType(t, type)}</span>
           <Badge
             variant="secondary"
             className="text-[10px] font-medium px-1.5 py-0 bg-muted text-muted-foreground"
@@ -266,7 +276,7 @@ function TypeSection({
               {/* Group subheading */}
               <div className="px-5 pt-3 pb-1">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group}
+                  {translateCategoryGroup(t, group)}
                 </span>
               </div>
 
@@ -295,7 +305,7 @@ function TypeSection({
               onClick={() => onAddToType(type)}
             >
               <PlusIcon className="h-3 w-3" />
-              {t('pages.categories.addToType', { type })}
+              {t('categoriesPage.addTo', { type: translateCategoryType(t, type) })}
             </Button>
           </div>
         </div>
@@ -365,17 +375,20 @@ export default function CategoriesPage() {
     if (!searchQuery) {
       setOpenSections([]);
     } else {
+      const sq = searchQuery.toLowerCase();
       const matches = CATEGORY_TYPES.filter((type) => {
         const cats = byType.get(type) ?? [];
         return cats.some(
           (c) =>
-            c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            c.group.toLowerCase().includes(searchQuery.toLowerCase())
+            c.name.toLowerCase().includes(sq) ||
+            c.group.toLowerCase().includes(sq) ||
+            translateCategoryName(t, c).toLowerCase().includes(sq) ||
+            translateCategoryGroup(t, c.group).toLowerCase().includes(sq)
         );
       });
       setOpenSections(matches);
     }
-  }, [searchQuery, byType]);
+  }, [searchQuery, byType, t]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -430,7 +443,7 @@ export default function CategoriesPage() {
       toast({
         title: t('notifications.success.deleted'),
         description: mergeTargetId
-          ? `${categoryToDelete.name} deleted and ${mergeTransactionCount} transaction(s) reassigned`
+          ? t('categoriesPage.deletedAndReassigned', { name: categoryToDelete.name, count: mergeTransactionCount })
           : `${categoryToDelete.name} ${t('pages.categories.hasBeenRemoved')}`,
       });
       setShowDeleteConfirm(false);
@@ -567,11 +580,11 @@ export default function CategoriesPage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>
-              {mergeRequired ? 'Reassign & Delete' : t('ui.dialog.deleteTitle', { entity: t('ui.entity.category') })}
+              {mergeRequired ? t('categoriesPage.reassignAndDelete') : t('ui.dialog.deleteTitle', { entity: t('ui.entity.category') })}
             </DialogTitle>
             <DialogDescription>
               {mergeRequired
-                ? `"${categoryToDelete?.name}" has ${mergeTransactionCount} transaction(s). Choose a category to reassign them to before deleting.`
+                ? t('categoriesPage.reassignMessage', { name: categoryToDelete?.name, count: mergeTransactionCount })
                 : t('ui.dialog.deleteConfirmation', { name: categoryToDelete?.name })}
             </DialogDescription>
           </DialogHeader>
@@ -582,7 +595,7 @@ export default function CategoriesPage() {
                 onValueChange={(val) => setMergeTargetId(parseInt(val, 10))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select target category" />
+                  <SelectValue placeholder={t('categoriesPage.selectTargetCategory')} />
                 </SelectTrigger>
                 <SelectContent>
                   {categories
@@ -608,7 +621,7 @@ export default function CategoriesPage() {
               {isDeleting
                 ? t('ui.deleting')
                 : mergeRequired
-                  ? 'Delete & Reassign'
+                  ? t('categoriesPage.deleteAndReassign')
                   : t('ui.delete')}
             </Button>
           </DialogFooter>

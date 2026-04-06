@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,7 @@ export function GroupCard({
   onToggle,
   pagination,
 }: GroupCardProps) {
+  const { t } = useTranslation();
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
   const expanded = isExpanded !== undefined ? isExpanded : internalExpanded;
 
@@ -91,7 +93,7 @@ export function GroupCard({
             disabled={disabled}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Approve All ({pendingCount})
+            {t('review.approveAll')} ({pendingCount})
           </Button>
         )}
       </div>
@@ -103,13 +105,13 @@ export function GroupCard({
 
           {/* Column headers (desktop) */}
           <div className="hidden md:flex items-center gap-3 px-4 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider bg-muted/30">
-            <span className="w-[80px] shrink-0">Date</span>
-            <span className="flex-1 min-w-0">Merchant</span>
-            <span className="w-[100px] shrink-0">Account</span>
-            <span className="w-[90px] shrink-0 text-right">Amount</span>
-            <span className="w-[60px] shrink-0">Conf.</span>
-            <span className="w-[110px] shrink-0">Status</span>
-            <span className="w-[70px] shrink-0 text-right">Actions</span>
+            <span className="w-[80px] shrink-0">{t('review.date')}</span>
+            <span className="flex-1 min-w-0">{t('review.merchant')}</span>
+            <span className="w-[100px] shrink-0">{t('review.account')}</span>
+            <span className="w-[90px] shrink-0 text-right">{t('review.amount')}</span>
+            <span className="w-[60px] shrink-0">{t('review.confidence')}</span>
+            <span className="w-[110px] shrink-0">{t('review.status')}</span>
+            <span className="w-[70px] shrink-0 text-right">{t('review.actions')}</span>
           </div>
 
           <div className="divide-y">

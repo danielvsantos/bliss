@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronRight, MoreHorizontal } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDivider } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -107,6 +108,7 @@ interface RecentTransactionsCardProps {
 
 export function RecentTransactionsCard({ className }: RecentTransactionsCardProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { data: txData, isLoading } = useTransactions({ limit: 5 });
 
   const transactions = txData?.transactions ?? [];
@@ -130,9 +132,9 @@ export function RecentTransactionsCard({ className }: RecentTransactionsCardProp
     <Card className={`${className ?? ''}`}>
       <CardHeader>
         <div className="flex flex-col gap-0.5">
-          <CardTitle className="text-lg font-medium">Recent Transactions</CardTitle>
+          <CardTitle className="text-lg font-medium">{t('dashboard.recentTransactions')}</CardTitle>
           <span className="text-[0.8125rem] text-muted-foreground">
-            All connected accounts
+            {t('dashboard.allConnectedAccounts')}
           </span>
         </div>
       </CardHeader>
@@ -142,19 +144,19 @@ export function RecentTransactionsCard({ className }: RecentTransactionsCardProp
       {/* Column headers */}
       <div className="flex items-center pl-16 pr-4 py-1.5 gap-3">
         <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase w-[88px] shrink-0 hidden sm:block">
-          Date
+          {t('charts.date')}
         </span>
         <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase flex-1 min-w-0 hidden sm:block">
-          Account
+          {t('common.account')}
         </span>
         <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase flex-1 min-w-0 hidden md:block">
-          Category
+          {t('charts.category')}
         </span>
         <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase flex-[2] min-w-0">
-          Description
+          {t('common.description')}
         </span>
         <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase shrink-0 text-right">
-          Amount
+          {t('charts.amount')}
         </span>
         {/* Actions spacer */}
         <span className="w-7 shrink-0 hidden sm:block" />
@@ -166,7 +168,7 @@ export function RecentTransactionsCard({ className }: RecentTransactionsCardProp
       <div className="flex flex-col">
         {transactions.length === 0 ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
-            No transactions yet
+            {t('dashboard.noTransactionsYet')}
           </p>
         ) : (
           transactions.map((tx: any, i: number) => {
@@ -200,7 +202,7 @@ export function RecentTransactionsCard({ className }: RecentTransactionsCardProp
           onClick={() => navigate('/transactions')}
           className="flex items-center gap-1 text-[0.8125rem] font-medium text-brand-primary hover:text-brand-deep transition-colors cursor-pointer"
         >
-          View all transactions
+          {t('dashboard.viewAllTransactions')}
           <ChevronRight size={14} />
         </button>
       </div>

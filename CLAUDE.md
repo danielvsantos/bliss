@@ -10,7 +10,7 @@ Monorepo with four services behind a single `.env` file:
 |---------|-------|------|---------------|------|
 | `apps/api` | Next.js 15 (Pages Router) | 3000 | ESM | Auth (NextAuth), REST API routes, Prisma ORM |
 | `apps/backend` | Express + BullMQ | 3001 | **CJS** | Workers, async pipelines, internal API |
-| `apps/web` | React 18 + Vite | 8080 | ESM | SPA with shadcn/ui, TanStack Query, Tailwind |
+| `apps/web` | React 18 + Vite | 8080 | ESM | SPA with shadcn/ui, TanStack Query, Tailwind, react-i18next (5 locales: en/es/fr/pt/it) |
 | `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
 | `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters |
 

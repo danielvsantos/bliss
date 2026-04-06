@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Sheet,
   SheetContent,
@@ -58,6 +59,8 @@ export function DeepDiveDrawer({
   onSkip,
   isSaving,
 }: DeepDiveDrawerProps) {
+  const { t } = useTranslation();
+
   // ── Local form state ─────────────────────────────────────────────────
   const [drawerCategory, setDrawerCategory] = useState<number | null>(null);
   const [drawerAccountId, setDrawerAccountId] = useState<number | null>(null);
@@ -167,11 +170,11 @@ export function DeepDiveDrawer({
               }}
             >
               <SelectTrigger className="w-[180px] h-8 text-xs">
-                <SelectValue placeholder="Select category" />
+                <SelectValue placeholder={t('review.selectCategoryPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none" disabled>
-                  Uncategorized
+                  {t('review.uncategorized')}
                 </SelectItem>
                 {categories.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id.toString()}>
@@ -193,11 +196,11 @@ export function DeepDiveDrawer({
           {item.source === 'import' && accounts && accounts.length > 0 && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                Account
+                {t('review.account')}
                 {accountMissing && (
                   <Badge variant="outline" className="text-[10px] px-1 py-0 border-warning/30 text-warning">
                     <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
-                    Required
+                    {t('review.required')}
                   </Badge>
                 )}
               </label>
@@ -208,11 +211,11 @@ export function DeepDiveDrawer({
                 }}
               >
                 <SelectTrigger className={`w-full h-8 text-xs ${accountMissing ? 'border-warning/50' : ''}`}>
-                  <SelectValue placeholder="Select account" />
+                  <SelectValue placeholder={t('review.selectAccount')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none" disabled>
-                    No account
+                    {t('review.noAccount')}
                   </SelectItem>
                   {accounts.map((acc) => (
                     <SelectItem key={acc.id} value={acc.id.toString()}>
@@ -233,7 +236,7 @@ export function DeepDiveDrawer({
               {enrichmentMandatory && enrichmentMissing && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-warning/10 border border-warning/20 text-xs text-warning">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  Investment enrichment is required for this category. Please fill ticker, quantity, and price.
+                  {t('review.investmentEnrichmentRequired')}
                 </div>
               )}
               <InvestmentEnrichmentForm
@@ -261,7 +264,7 @@ export function DeepDiveDrawer({
               {tickerAssetCurrency && tickerAssetCurrency !== item.currency && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-warning/10 border border-warning/20 text-xs text-warning">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  This asset trades in {tickerAssetCurrency} but the transaction is in {item.currency}. Portfolio values may require currency conversion.
+                  {t('review.currencyMismatch', { assetCurrency: tickerAssetCurrency, txCurrency: item.currency })}
                 </div>
               )}
             </>
@@ -271,11 +274,11 @@ export function DeepDiveDrawer({
           {!showEnrichment && (
             <div className="space-y-1.5">
               <label htmlFor="drawer-details-simple" className="text-xs font-medium text-muted-foreground">
-                Details / Notes
+                {t('review.detailsNotes')}
               </label>
               <textarea
                 id="drawer-details-simple"
-                placeholder="Optional notes override"
+                placeholder={t('review.optionalNotes')}
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
                 className="w-full text-sm min-h-[60px] resize-none rounded-md border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -296,15 +299,15 @@ export function DeepDiveDrawer({
                 onClose();
               }}
             >
-              Skip
+              {t('review.skip')}
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saveDisabled}>
             {isSaving && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
-            {isAlreadyProcessed ? 'Save Changes' : 'Save & Promote'}
+            {isAlreadyProcessed ? t('review.saveChanges') : t('review.saveAndPromote')}
           </Button>
         </SheetFooter>
       </SheetContent>

@@ -65,11 +65,11 @@ export default function InsightsPage() {
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold">{t("Insights")}</h2>
+            <h2 className="text-2xl font-bold">{t("insights.title")}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {latestBatchDate
-                ? `${t("Last updated")} ${new Date(latestBatchDate).toLocaleDateString()}`
-                : t("AI-powered observations about your finances")}
+                ? `${t("insights.lastUpdated")} ${new Date(latestBatchDate).toLocaleDateString()}`
+                : t("insights.subtitle")}
             </p>
           </div>
           <Button
@@ -83,7 +83,7 @@ export default function InsightsPage() {
             ) : (
               <Sparkles className="h-4 w-4" />
             )}
-            {isGenerating ? t("Generating...") : t("Generate New Insights")}
+            {isGenerating ? t("insights.generating") : t("insights.generateNew")}
           </Button>
         </div>
       </div>
@@ -100,7 +100,7 @@ export default function InsightsPage() {
                 : "bg-muted text-muted-foreground hover:bg-accent"
             }`}
           >
-            {filter === "All" ? t("All") : filter.charAt(0) + filter.slice(1).toLowerCase()}
+            {filter === "All" ? t("common.all") : t(`insights.severity.${filter}`)}
           </button>
         ))}
       </div>
@@ -117,9 +117,9 @@ export default function InsightsPage() {
           <div className="h-16 w-16 rounded-full bg-brand-primary/10 flex items-center justify-center mb-4">
             <Inbox className="h-8 w-8 text-brand-primary" />
           </div>
-          <h3 className="font-semibold text-lg mb-1">{t("No insights yet")}</h3>
+          <h3 className="font-semibold text-lg mb-1">{t("insights.noInsightsYet")}</h3>
           <p className="text-sm text-muted-foreground max-w-sm">
-            {t("Once you have transaction data, Bliss will analyze your finances and surface patterns that matter.")}
+            {t("insights.noInsightsDesc")}
           </p>
           <Button
             onClick={handleGenerate}
@@ -128,7 +128,7 @@ export default function InsightsPage() {
             className="mt-4 gap-2"
           >
             <Sparkles className="h-4 w-4" />
-            {t("Generate Insights")}
+            {t("insights.generate")}
           </Button>
         </div>
       ) : (

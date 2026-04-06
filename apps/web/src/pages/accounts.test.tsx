@@ -60,8 +60,8 @@ describe('AccountsPage', () => {
     const Wrapper = createWrapper();
     render(<AccountsPage />, { wrapper: Wrapper });
 
-    expect(screen.getByText('Accounts')).toBeInTheDocument();
-    expect(screen.getByText('Manage your bank connections and manual accounts.')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.title')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.subtitle')).toBeInTheDocument();
   });
 
   it('renders the account list panel', () => {
@@ -75,6 +75,6 @@ describe('AccountsPage', () => {
     const Wrapper = createWrapper();
     render(<AccountsPage />, { wrapper: Wrapper });
 
-    expect(screen.getByText('Select an account')).toBeInTheDocument();
+    expect(screen.getByText('accountsPage.selectAccount')).toBeInTheDocument();
   });
 });

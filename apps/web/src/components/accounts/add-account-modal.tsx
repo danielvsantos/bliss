@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -16,17 +17,18 @@ interface AddAccountModalProps {
 }
 
 export function AddAccountModal({ open, onOpenChange, account, onClose }: AddAccountModalProps) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {account ? 'Edit Account' : 'Add Manual Account'}
+            {account ? t('accountModal.editTitle') : t('accountModal.addTitle')}
           </DialogTitle>
           <DialogDescription>
             {account
-              ? 'Update your account details.'
-              : 'Add a new manually-tracked account.'}
+              ? t('accountModal.editDescription')
+              : t('accountModal.addDescription')}
           </DialogDescription>
         </DialogHeader>
         <AccountForm

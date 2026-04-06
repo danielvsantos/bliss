@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -21,6 +22,7 @@ import { PlaidConnect } from '@/components/plaid-connect';
 import type { Account } from '@/types/api';
 
 export default function AccountsPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { accounts, isLoading, refetch } = useAccountList();
@@ -72,14 +74,14 @@ export default function AccountsPage() {
     try {
       await api.deleteAccount(selectedAccount.id);
       toast({
-        title: 'Account deleted',
-        description: `${selectedAccount.accountName} has been removed.`,
+        title: t('accountsPage.deleteSuccess'),
+        description: t('accountsPage.deleteSuccessDetail', { name: selectedAccount.accountName }),
       });
       setShowDeleteConfirm(false);
       setSelectedAccountId(null);
       refetch();
     } catch {
-      toast({ title: 'Failed to delete account', variant: 'destructive' });
+      toast({ title: t('accountsPage.deleteFailed'), variant: 'destructive' });
     } finally {
       setIsDeleting(false);
     }
@@ -93,20 +95,20 @@ export default function AccountsPage() {
         {/* Page Header */}
         <div className="flex items-center justify-between px-6 py-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Accounts</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('accountsPage.title')}</h1>
             <p className="text-sm text-muted-foreground">
-              Manage your bank connections and manual accounts.
+              {t('accountsPage.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {/* Uses PlaidConnect's built-in exchange + AccountSelectionModal flow */}
             <PlaidConnect variant="outline">
               <Landmark className="h-4 w-4 mr-2" />
-              Connect Bank Account
+              {t('accountsPage.connectBank')}
             </PlaidConnect>
             <Button onClick={handleAddManual}>
               <PlusIcon className="h-4 w-4 mr-2" />
-              Add Manual Account
+              {t('accountsPage.addManual')}
             </Button>
           </div>
         </div>
@@ -138,9 +140,9 @@ export default function AccountsPage() {
                 <div className="bg-muted rounded-full p-4 mb-4">
                   <Landmark className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <h3 className="text-lg font-medium">Select an account</h3>
+                <h3 className="text-lg font-medium">{t('accountsPage.selectAccount')}</h3>
                 <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                  Choose an account from the list to view connection details, sync logs, and management actions.
+                  {t('accountsPage.selectAccountHint')}
                 </p>
               </div>
             )}
@@ -160,22 +162,21 @@ export default function AccountsPage() {
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Delete Account</DialogTitle>
+            <DialogTitle>{t('accountsPage.deleteTitle')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete &ldquo;{selectedAccount?.accountName}&rdquo;? This
-              action cannot be undone. Existing transactions will not be affected.
+              {t('accountsPage.deleteConfirm', { name: selectedAccount?.accountName })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={isDeleting}
             >
-              {isDeleting ? 'Deleting...' : 'Delete'}
+              {isDeleting ? t('ui.deleting') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

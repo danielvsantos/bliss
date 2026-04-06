@@ -6,6 +6,11 @@ import { http, HttpResponse } from 'msw';
 import { server } from '@/test/msw/server';
 import { ChangePasswordDialog } from './change-password-dialog';
 
+// Mock i18n
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
 // Mock useToast
 const mockToast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({
@@ -36,41 +41,41 @@ beforeEach(() => {
 describe('ChangePasswordDialog', () => {
   it('does not render content when open is false', () => {
     renderDialog(false);
-    expect(screen.queryByText('Change Password')).not.toBeInTheDocument();
+    expect(screen.queryByText('changePassword.title')).not.toBeInTheDocument();
   });
 
   it('renders all fields and buttons when open', () => {
     renderDialog();
-    expect(screen.getByText('Change Password')).toBeInTheDocument();
-    expect(screen.getByLabelText('Current Password')).toBeInTheDocument();
-    expect(screen.getByLabelText('New Password')).toBeInTheDocument();
-    expect(screen.getByLabelText('Confirm New Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /update password/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    expect(screen.getByText('changePassword.title')).toBeInTheDocument();
+    expect(screen.getByLabelText('changePassword.currentPassword')).toBeInTheDocument();
+    expect(screen.getByLabelText('changePassword.newPassword')).toBeInTheDocument();
+    expect(screen.getByLabelText('changePassword.confirmPassword')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /changePassword\.updatePassword/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /common\.cancel/i })).toBeInTheDocument();
   });
 
   it('shows validation error when passwords do not match', async () => {
     const user = userEvent.setup();
     renderDialog();
 
-    await user.type(screen.getByLabelText('Current Password'), 'OldPassword1');
-    await user.type(screen.getByLabelText('New Password'), 'NewPassword1');
-    await user.type(screen.getByLabelText('Confirm New Password'), 'Different1');
-    await user.click(screen.getByRole('button', { name: /update password/i }));
+    await user.type(screen.getByLabelText('changePassword.currentPassword'), 'OldPassword1');
+    await user.type(screen.getByLabelText('changePassword.newPassword'), 'NewPassword1');
+    await user.type(screen.getByLabelText('changePassword.confirmPassword'), 'Different1');
+    await user.click(screen.getByRole('button', { name: /changePassword\.updatePassword/i }));
 
-    expect(screen.getByText('Passwords do not match')).toBeInTheDocument();
+    expect(screen.getByText('changePassword.mismatch')).toBeInTheDocument();
   });
 
   it('shows validation error when new password is too short', async () => {
     const user = userEvent.setup();
     renderDialog();
 
-    await user.type(screen.getByLabelText('Current Password'), 'OldPassword1');
-    await user.type(screen.getByLabelText('New Password'), 'short');
-    await user.type(screen.getByLabelText('Confirm New Password'), 'short');
-    await user.click(screen.getByRole('button', { name: /update password/i }));
+    await user.type(screen.getByLabelText('changePassword.currentPassword'), 'OldPassword1');
+    await user.type(screen.getByLabelText('changePassword.newPassword'), 'short');
+    await user.type(screen.getByLabelText('changePassword.confirmPassword'), 'short');
+    await user.click(screen.getByRole('button', { name: /changePassword\.updatePassword/i }));
 
-    expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument();
+    expect(screen.getByText('changePassword.newPasswordMin')).toBeInTheDocument();
   });
 
   it('calls the API on valid submit and shows success toast', async () => {
@@ -87,14 +92,14 @@ describe('ChangePasswordDialog', () => {
     const onOpenChange = vi.fn();
     renderDialog(true, onOpenChange);
 
-    await user.type(screen.getByLabelText('Current Password'), 'OldPassword1');
-    await user.type(screen.getByLabelText('New Password'), 'NewPassword1');
-    await user.type(screen.getByLabelText('Confirm New Password'), 'NewPassword1');
-    await user.click(screen.getByRole('button', { name: /update password/i }));
+    await user.type(screen.getByLabelText('changePassword.currentPassword'), 'OldPassword1');
+    await user.type(screen.getByLabelText('changePassword.newPassword'), 'NewPassword1');
+    await user.type(screen.getByLabelText('changePassword.confirmPassword'), 'NewPassword1');
+    await user.click(screen.getByRole('button', { name: /changePassword\.updatePassword/i }));
 
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Password updated' })
+        expect.objectContaining({ title: 'changePassword.passwordUpdated' })
       );
     });
 
@@ -115,15 +120,15 @@ describe('ChangePasswordDialog', () => {
     const user = userEvent.setup();
     renderDialog();
 
-    await user.type(screen.getByLabelText('Current Password'), 'WrongPassword');
-    await user.type(screen.getByLabelText('New Password'), 'NewPassword1');
-    await user.type(screen.getByLabelText('Confirm New Password'), 'NewPassword1');
-    await user.click(screen.getByRole('button', { name: /update password/i }));
+    await user.type(screen.getByLabelText('changePassword.currentPassword'), 'WrongPassword');
+    await user.type(screen.getByLabelText('changePassword.newPassword'), 'NewPassword1');
+    await user.type(screen.getByLabelText('changePassword.confirmPassword'), 'NewPassword1');
+    await user.click(screen.getByRole('button', { name: /changePassword\.updatePassword/i }));
 
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Error',
+          title: 'common.error',
           variant: 'destructive',
         })
       );

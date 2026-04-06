@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
+import { useTranslation } from 'react-i18next';
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +19,7 @@ interface PlaidConnectProps {
 }
 
 export function PlaidConnect({ onSuccess, onComplete, variant = "default", className, children, plaidItemId }: PlaidConnectProps) {
+    const { t } = useTranslation();
     const [token, setToken] = useState<string | null>(null);
     const [isInitializing, setIsInitializing] = useState(false);
     const [showModal, setShowModal] = useState(false);
@@ -54,14 +56,14 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
             try {
                 await api.updatePlaidItem(plaidItemId!, { status: 'ACTIVE' });
                 toast({
-                    title: "Success",
-                    description: "Bank connection re-authenticated successfully.",
+                    title: t('plaidConnect.success'),
+                    description: t('plaidConnect.bankReauthenticated'),
                 });
             } catch (error) {
                 console.error("Failed to reset item status after re-auth", error);
                 toast({
-                    title: "Error",
-                    description: "Re-authentication succeeded but failed to update status.",
+                    title: t('common.error'),
+                    description: t('plaidConnect.reauthFailed'),
                     variant: "destructive",
                 });
             }
@@ -85,8 +87,8 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
         } catch (error) {
             console.error("Exchange failed", error);
             toast({
-                title: "Error",
-                description: "Failed to connect bank account.",
+                title: t('common.error'),
+                description: t('plaidConnect.connectFailed'),
                 variant: "destructive",
             });
         }
@@ -110,7 +112,7 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
     const { open, ready } = usePlaidLink(config);
 
     // Default button content
-    const defaultContent = isUpdateMode ? "Reconnect" : "Connect Bank";
+    const defaultContent = isUpdateMode ? t('plaidConnect.reconnect') : t('plaidConnect.connectBank');
     const Icon = isUpdateMode ? RefreshCw : Plus;
 
     return (

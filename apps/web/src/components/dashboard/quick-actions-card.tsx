@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardHeader, CardTitle, CardDivider } from '@/components/ui/card';
 import type { DashboardAction } from '@/lib/dashboard-actions';
 import type { UserSignals } from '@/hooks/use-user-signals';
@@ -44,13 +45,14 @@ interface QuickActionsCardProps {
 
 export function QuickActionsCard({ actions, signals, className }: QuickActionsCardProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   return (
     <Card className={`h-full ${className ?? ''}`}>
       <CardHeader>
         <div className="flex flex-col gap-0.5">
-          <CardTitle className="text-lg font-medium">Quick Actions</CardTitle>
-          <span className="text-[0.8125rem] text-muted-foreground">Common tasks</span>
+          <CardTitle className="text-lg font-medium">{t('dashboard.quickActions')}</CardTitle>
+          <span className="text-[0.8125rem] text-muted-foreground">{t('dashboard.commonTasks')}</span>
         </div>
       </CardHeader>
 

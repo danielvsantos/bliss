@@ -46,21 +46,21 @@ function SortChevron({ dir }: { dir: "asc" | "desc" | "none" }) {
 
 // ── Urgency Logic ──────────────────────────────────────────────────────────
 
-function getUrgency(daysSince: number) {
+function getUrgency(daysSince: number, t: (key: string) => string) {
   if (daysSince >= 90) {
     return {
-      label: "Critical",
+      label: t("manualUpdates.urgency.critical"),
       className: "bg-destructive/10 text-destructive border border-destructive/20",
     };
   }
   if (daysSince >= 60) {
     return {
-      label: "Warning",
+      label: t("manualUpdates.urgency.warning"),
       className: "bg-warning/10 text-warning border border-warning/20",
     };
   }
   return {
-    label: "Stale",
+    label: t("manualUpdates.urgency.stale"),
     className: "bg-brand-primary/10 text-brand-primary border border-brand-primary/20",
   };
 }
@@ -168,8 +168,8 @@ export default function ManualUpdatesPage() {
     return (
       <Alert variant="destructive" className="m-6">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Error</AlertTitle>
-        <AlertDescription>Failed to load asset data. Please try again later.</AlertDescription>
+        <AlertTitle>{t("common.error")}</AlertTitle>
+        <AlertDescription>{t("manualUpdates.errorLoading")}</AlertDescription>
       </Alert>
     );
   }
@@ -183,9 +183,9 @@ export default function ManualUpdatesPage() {
             <FileText className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{t("Manual Updates & Terms")}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{t("manualUpdates.pageTitle")}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Keep your manual assets and liabilities up to date.
+              {t("manualUpdates.pageSubtitle")}
             </p>
           </div>
         </div>
@@ -194,7 +194,7 @@ export default function ManualUpdatesPage() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2.5">
-              <CardTitle className="text-base">Action Required: Stale Prices</CardTitle>
+              <CardTitle className="text-base">{t("manualUpdates.stalePricesTitle")}</CardTitle>
               {assetsToUpdate.length > 0 && (
                 <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-destructive text-destructive-foreground text-[0.625rem] font-bold px-1.5">
                   {assetsToUpdate.length}
@@ -202,7 +202,7 @@ export default function ManualUpdatesPage() {
               )}
             </div>
             <CardDescription>
-              These manually-tracked assets haven't been updated in over 30 days.
+              {t("manualUpdates.stalePricesDesc")}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -216,7 +216,7 @@ export default function ManualUpdatesPage() {
                         onClick={() => handleStaleSort("name")}
                       >
                         <span className="inline-flex items-center">
-                          Asset
+                          {t("manualUpdates.asset")}
                           <SortChevron dir={staleDirFor("name")} />
                         </span>
                       </TableHead>
@@ -225,7 +225,7 @@ export default function ManualUpdatesPage() {
                         onClick={() => handleStaleSort("value")}
                       >
                         <span className="inline-flex items-center">
-                          Value
+                          {t("manualUpdates.value")}
                           <SortChevron dir={staleDirFor("value")} />
                         </span>
                       </TableHead>
@@ -234,21 +234,21 @@ export default function ManualUpdatesPage() {
                         onClick={() => handleStaleSort("days")}
                       >
                         <span className="inline-flex items-center">
-                          Status
+                          {t("manualUpdates.status")}
                           <SortChevron dir={staleDirFor("days")} />
                         </span>
                       </TableHead>
-                      <TableHead className="text-right">Action</TableHead>
+                      <TableHead className="text-right">{t("manualUpdates.action")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sortedStaleAssets.map((asset) => {
-                      const urgency = getUrgency(asset.daysSince);
+                      const urgency = getUrgency(asset.daysSince, t);
                       const marketValue = parseDecimal(getDisplayData(asset, portfolioCurrency).marketValue);
                       const lastManualUpdate = asset.manualValues?.[0]?.date;
                       const lastUpdateStr = lastManualUpdate
                         ? new Date(lastManualUpdate).toLocaleDateString()
-                        : "Never";
+                        : t("manualUpdates.never");
 
                       return (
                         <TableRow key={asset.id} className="hover:bg-accent/30">
@@ -258,7 +258,7 @@ export default function ManualUpdatesPage() {
                             <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
                               <span>{asset.category?.name}</span>
                               <span className="text-border-color">·</span>
-                              <span>Updated {lastUpdateStr}</span>
+                              <span>{t("manualUpdates.updatedOn", { date: lastUpdateStr })}</span>
                             </div>
                           </TableCell>
 
@@ -270,7 +270,7 @@ export default function ManualUpdatesPage() {
                           {/* Status badge */}
                           <TableCell className="text-center">
                             <Badge className={`${urgency.className} text-[0.6875rem] font-semibold`}>
-                              {asset.daysSince}d old · {urgency.label}
+                              {t("manualUpdates.dOld", { count: asset.daysSince })} · {urgency.label}
                             </Badge>
                           </TableCell>
 
@@ -282,7 +282,7 @@ export default function ManualUpdatesPage() {
                               onClick={() => handleOpenDialog(asset, "price")}
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              Update Price
+                              {t("manualUpdates.updatePrice")}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -293,7 +293,7 @@ export default function ManualUpdatesPage() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                All manually-tracked assets are up to date.
+                {t("manualUpdates.allUpToDate")}
               </p>
             )}
           </CardContent>
@@ -302,9 +302,9 @@ export default function ManualUpdatesPage() {
         {/* ── Liability Terms Card ── */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Liability Terms</CardTitle>
+            <CardTitle className="text-base">{t("manualUpdates.liabilityTerms")}</CardTitle>
             <CardDescription>
-              Manage the terms for your manually tracked loans and credit lines.
+              {t("manualUpdates.liabilityTermsDesc")}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -313,11 +313,11 @@ export default function ManualUpdatesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-accent/40">
-                      <TableHead>Debt Name</TableHead>
-                      <TableHead className="text-right">Principal Balance</TableHead>
-                      <TableHead className="text-right">Interest Rate</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{t("manualUpdates.debtName")}</TableHead>
+                      <TableHead className="text-right">{t("manualUpdates.principalBalance")}</TableHead>
+                      <TableHead className="text-right">{t("manualUpdates.interestRate")}</TableHead>
+                      <TableHead>{t("manualUpdates.duration")}</TableHead>
+                      <TableHead className="text-right">{t("common.actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -329,8 +329,8 @@ export default function ManualUpdatesPage() {
                         const years = Math.floor(termMonths / 12);
                         const months = termMonths % 12;
                         durationStr = years > 0
-                          ? `${years} yr${months > 0 ? ` ${months} mo` : ""}`
-                          : `${months} mo`;
+                          ? `${years} ${t("manualUpdates.yr")}${months > 0 ? ` ${months} ${t("manualUpdates.mo")}` : ""}`
+                          : `${months} ${t("manualUpdates.mo")}`;
                       }
 
                       return (
@@ -358,7 +358,7 @@ export default function ManualUpdatesPage() {
                               onClick={() => handleOpenDialog(asset, "debt")}
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              {asset.debtTerms ? "Edit Terms" : "Add Terms"}
+                              {asset.debtTerms ? t("manualUpdates.editTerms") : t("manualUpdates.addTerms")}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -369,7 +369,7 @@ export default function ManualUpdatesPage() {
                     <tfoot>
                       <tr className="border-t">
                         <td className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                          Total Outstanding
+                          {t("manualUpdates.totalOutstanding")}
                         </td>
                         <td className="px-4 py-3 text-right font-bold tabular-nums text-negative">
                           {formatCurrency(
@@ -388,7 +388,7 @@ export default function ManualUpdatesPage() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                No liabilities found.
+                {t("manualUpdates.noLiabilities")}
               </p>
             )}
           </CardContent>
@@ -400,8 +400,8 @@ export default function ManualUpdatesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {dialogType === "price" && `Update Price — ${selectedAsset?.symbol}`}
-              {dialogType === "debt" && `Debt Terms — ${selectedAsset?.symbol}`}
+              {dialogType === "price" && `${t("manualUpdates.updatePriceDialog")} — ${selectedAsset?.symbol}`}
+              {dialogType === "debt" && `${t("manualUpdates.debtTermsDialog")} — ${selectedAsset?.symbol}`}
             </DialogTitle>
           </DialogHeader>
           {dialogType === "price" && <ManualPriceForm asset={selectedAsset} onClose={closeDialog} />}

@@ -70,6 +70,7 @@ import {
   MonthlyData,
   AnalyticsData,
 } from "@/lib/pnl";
+import { translateCategoryGroup, translateCategoryType } from "@/lib/category-i18n";
 
 export default function PnLAnalysisPage() {
   const { t } = useTranslation();
@@ -133,11 +134,11 @@ export default function PnLAnalysisPage() {
   }, []);
 
   const quarters = React.useMemo(() => [
-    { value: 'Q1', label: 'Q1' },
-    { value: 'Q2', label: 'Q2' },
-    { value: 'Q3', label: 'Q3' },
-    { value: 'Q4', label: 'Q4' }
-  ], []);
+    { value: 'Q1', label: t('pnl.quarters.q1') },
+    { value: 'Q2', label: t('pnl.quarters.q2') },
+    { value: 'Q3', label: t('pnl.quarters.q3') },
+    { value: 'Q4', label: t('pnl.quarters.q4') }
+  ], [t]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -544,7 +545,9 @@ export default function PnLAnalysisPage() {
                                   <ChevronRight className="mr-2 h-4 w-4 text-muted-foreground" />
                                 )
                               )}
-                              {section.name}
+                              {isTypeSection(section)
+                                ? translateCategoryType(t, section.name)
+                                : t(`pnl.${section.name === 'Gross Profit' ? 'grossProfit' : section.name === 'Operating Profit' ? 'operatingProfit' : 'netProfit'}`, section.name)}
                             </TableCell>
                             {tableColumns.map(column => {
                               const totalIncome = pnlData.types.find(t => t.name === 'Income')?.totals[column] || 0;
@@ -573,7 +576,7 @@ export default function PnLAnalysisPage() {
                           {section.isExpandable && expandedSections[section.name] && typeData?.categories.map((category, catIndex) => (
                             <TableRow key={`${section.name}-${catIndex}`} className="bg-muted/50">
                               <TableCell className="pl-10">
-                                {category.name}
+                                {translateCategoryGroup(t, category.name)}
                               </TableCell>
                               {tableColumns.map(column => {
                                 const totalIncome = pnlData.types.find(t => t.name === 'Income')?.totals[column] || 0;

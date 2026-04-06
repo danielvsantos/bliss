@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -22,11 +23,7 @@ const fadeUp = {
   transition: { duration: 0.4 },
 };
 
-const GROUPING_OPTIONS = [
-  { key: 'sector', label: 'Sector' },
-  { key: 'industry', label: 'Industry' },
-  { key: 'country', label: 'Country' },
-] as const;
+const GROUPING_KEYS = ['sector', 'industry', 'country'] as const;
 
 type SortField = 'symbol' | 'name' | 'currentValue' | 'weight' | 'peRatio' | 'dividendYield' | 'trailingEps' | 'week52High' | 'week52Low';
 
@@ -64,6 +61,7 @@ function ChartTooltip({ active, payload, currency }: any) {
 }
 
 export default function EquityAnalysisPage() {
+  const { t } = useTranslation();
   const [groupBy, setGroupBy] = useState<string>('sector');
   const [sortField, setSortField] = useState<SortField>('currentValue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -135,7 +133,7 @@ export default function EquityAnalysisPage() {
   if (error) {
     return (
       <div className="p-6">
-        <p className="text-destructive">Failed to load equity analysis data.</p>
+        <p className="text-destructive">{t('equityAnalysis.loadFailed')}</p>
       </div>
     );
   }
@@ -145,8 +143,8 @@ export default function EquityAnalysisPage() {
       <div className="flex flex-col space-y-8">
       {/* ── Page Title ── */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight mb-2">Equity Analysis</h2>
-        <p className="text-muted-foreground">Analyze your equity holdings by sector, industry, and country</p>
+        <h2 className="text-3xl font-bold tracking-tight mb-2">{t('equityAnalysis.title')}</h2>
+        <p className="text-muted-foreground">{t('equityAnalysis.subtitle')}</p>
       </div>
 
       <div className="space-y-6">
@@ -154,7 +152,7 @@ export default function EquityAnalysisPage() {
         <motion.div {...fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Equity Value</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('equityAnalysis.totalEquityValue')}</p>
               {isLoading ? (
                 <Skeleton className="h-7 w-32 mt-1" />
               ) : (
@@ -166,7 +164,7 @@ export default function EquityAnalysisPage() {
           </Card>
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Holdings</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('equityAnalysis.holdings')}</p>
               {isLoading ? (
                 <Skeleton className="h-7 w-16 mt-1" />
               ) : (
@@ -176,7 +174,7 @@ export default function EquityAnalysisPage() {
           </Card>
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg P/E Ratio</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('equityAnalysis.avgPE')}</p>
               {isLoading ? (
                 <Skeleton className="h-7 w-16 mt-1" />
               ) : (
@@ -188,7 +186,7 @@ export default function EquityAnalysisPage() {
           </Card>
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg Dividend Yield</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('equityAnalysis.avgDividendYield')}</p>
               {isLoading ? (
                 <Skeleton className="h-7 w-16 mt-1" />
               ) : (
@@ -205,19 +203,19 @@ export default function EquityAnalysisPage() {
         {/* ── Grouping selector ── */}
         <motion.div {...fadeUp} transition={{ duration: 0.4, delay: 0.05 }}>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Group by:</span>
+            <span className="text-sm text-muted-foreground">{t('equityAnalysis.groupBy')}</span>
             <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
-              {GROUPING_OPTIONS.map((opt) => (
+              {GROUPING_KEYS.map((key) => (
                 <button
-                  key={opt.key}
-                  onClick={() => setGroupBy(opt.key)}
+                  key={key}
+                  onClick={() => setGroupBy(key)}
                   className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                    groupBy === opt.key
+                    groupBy === key
                       ? 'bg-primary text-white font-medium'
                       : 'text-muted-foreground hover:text-brand-deep'
                   }`}
                 >
-                  {opt.label}
+                  {t(`equityAnalysis.${key}`)}
                 </button>
               ))}
             </div>
@@ -230,7 +228,7 @@ export default function EquityAnalysisPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Allocation by {GROUPING_OPTIONS.find((o) => o.key === groupBy)?.label}
+                {t('equityAnalysis.allocationBy', { grouping: t(`equityAnalysis.${groupBy}`) })}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -238,7 +236,7 @@ export default function EquityAnalysisPage() {
                 <Skeleton className="h-[280px] w-full rounded" />
               ) : donutData.length === 0 ? (
                 <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
-                  No stock holdings found
+                  {t('equityAnalysis.noStockHoldings')}
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={280}>
@@ -267,14 +265,14 @@ export default function EquityAnalysisPage() {
           {/* Top Holdings Bar Chart */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Top 10 Holdings by Weight</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t('equityAnalysis.top10')}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-[280px] w-full rounded" />
               ) : topHoldings.length === 0 ? (
                 <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
-                  No stock holdings found
+                  {t('equityAnalysis.noStockHoldings')}
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={280}>
@@ -283,7 +281,7 @@ export default function EquityAnalysisPage() {
                     <XAxis type="number" tickFormatter={(v) => `${v.toFixed(0)}%`} />
                     <YAxis type="category" dataKey="symbol" width={50} tick={{ fontSize: 12 }} />
                     <Tooltip
-                      formatter={(value: number) => [`${value.toFixed(1)}%`, 'Weight']}
+                      formatter={(value: number) => [`${value.toFixed(1)}%`, t('equityAnalysis.weight')]}
                       labelFormatter={(label) => {
                         const h = topHoldings.find((t) => t.symbol === label);
                         return h ? `${h.name} (${h.symbol})` : label;
@@ -305,7 +303,7 @@ export default function EquityAnalysisPage() {
         <motion.div {...fadeUp} transition={{ duration: 0.4, delay: 0.15 }}>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">All Stock Holdings</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t('equityAnalysis.allHoldings')}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               {isLoading ? (
@@ -316,29 +314,29 @@ export default function EquityAnalysisPage() {
                 </div>
               ) : sortedHoldings.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8 text-sm">
-                  No stock holdings found. Add stocks to your portfolio to see equity analysis.
+                  {t('equityAnalysis.noHoldingsHint')}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-100">
-                        <SortableHeader field="symbol">Symbol</SortableHeader>
-                        <SortableHeader field="name">Name</SortableHeader>
+                        <SortableHeader field="symbol">{t('equityAnalysis.symbol')}</SortableHeader>
+                        <SortableHeader field="name">{t('equityAnalysis.name')}</SortableHeader>
                         <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Sector
+                          {t('equityAnalysis.sector')}
                         </th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Industry
+                          {t('equityAnalysis.industry')}
                         </th>
-                        <SortableHeader field="peRatio">P/E</SortableHeader>
-                        <SortableHeader field="dividendYield">Div Yield</SortableHeader>
-                        <SortableHeader field="trailingEps">EPS</SortableHeader>
+                        <SortableHeader field="peRatio">{t('equityAnalysis.pe')}</SortableHeader>
+                        <SortableHeader field="dividendYield">{t('equityAnalysis.divYield')}</SortableHeader>
+                        <SortableHeader field="trailingEps">{t('equityAnalysis.eps')}</SortableHeader>
                         <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                          52W Range
+                          {t('equityAnalysis.weekRange')}
                         </th>
-                        <SortableHeader field="weight">Weight</SortableHeader>
-                        <SortableHeader field="currentValue">Value</SortableHeader>
+                        <SortableHeader field="weight">{t('equityAnalysis.weight')}</SortableHeader>
+                        <SortableHeader field="currentValue">{t('equityAnalysis.value')}</SortableHeader>
                       </tr>
                     </thead>
                     <tbody>

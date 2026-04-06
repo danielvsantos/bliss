@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ interface CurrencyRate {
 }
 
 export default function CurrencyRatesPage() {
+  const { t } = useTranslation();
   const [currencyRates, setCurrencyRates] = useState<CurrencyRate[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -195,15 +197,15 @@ export default function CurrencyRatesPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Currency Rates</CardTitle>
+                <CardTitle>{t('currencyRates.title')}</CardTitle>
                 <CardDescription>
-                  Manage currency exchange rates for financial calculations
+                  {t('currencyRates.subtitle')}
                 </CardDescription>
               </div>
               <div className="flex items-center space-x-2">
                 <Button variant="outline" size="sm" onClick={fetchRates} disabled={loading}>
                   <RefreshCw className={"mr-2 h-4 w-4 " + (loading ? "animate-spin" : "")} />
-                  Refresh Rates
+                  {t('currencyRates.refreshRates')}
                 </Button>
                 <Button size="sm" onClick={() => {
                   setShowAddModal(true);
@@ -221,7 +223,7 @@ export default function CurrencyRatesPage() {
                   setAddError(null);
                 }}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Add Rate
+                  {t('currencyRates.addRate')}
                 </Button>
               </div>
             </div>
@@ -229,7 +231,7 @@ export default function CurrencyRatesPage() {
           <CardContent>
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Input
-                placeholder="Search currencies or providers..."
+                placeholder={t('currencyRates.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="max-w-sm"
@@ -238,26 +240,26 @@ export default function CurrencyRatesPage() {
             </div>
             <div className="rounded-md border min-h-[200px]">
               {loading ? (
-                <div className="flex items-center justify-center py-12">Loading...</div>
+                <div className="flex items-center justify-center py-12">{t('common.loading')}</div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>From</TableHead>
-                      <TableHead>To</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Year</TableHead>
-                      <TableHead>Month</TableHead>
-                      <TableHead>Day</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Last Updated</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{t('currencyRates.from')}</TableHead>
+                      <TableHead>{t('currencyRates.to')}</TableHead>
+                      <TableHead>{t('currencyRates.rate')}</TableHead>
+                      <TableHead>{t('currencyRates.year')}</TableHead>
+                      <TableHead>{t('currencyRates.month')}</TableHead>
+                      <TableHead>{t('currencyRates.day')}</TableHead>
+                      <TableHead>{t('currencyRates.provider')}</TableHead>
+                      <TableHead>{t('currencyRates.lastUpdated')}</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredRates.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground">No rates found</TableCell>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">{t('currencyRates.noRatesFound')}</TableCell>
                       </TableRow>
                     ) : (
                       filteredRates.map((rate) => (
@@ -295,7 +297,7 @@ export default function CurrencyRatesPage() {
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Currency Rate</DialogTitle>
+            <DialogTitle>{t('currencyRates.addTitle')}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div className="flex gap-2">
@@ -304,7 +306,7 @@ export default function CurrencyRatesPage() {
                 onValueChange={(v) => setAddForm((f) => ({ ...f, currencyFrom: v }))}
               >
                 <SelectTrigger className="w-32">
-                  <SelectValue placeholder="From" />
+                  <SelectValue placeholder={t('currencyRates.from')} />
                 </SelectTrigger>
                 <SelectContent>
                   {availableCurrencies.map((c: any) => (
@@ -319,7 +321,7 @@ export default function CurrencyRatesPage() {
                 onValueChange={(v) => setAddForm((f) => ({ ...f, currencyTo: v }))}
               >
                 <SelectTrigger className="w-32">
-                  <SelectValue placeholder="To" />
+                  <SelectValue placeholder={t('currencyRates.to')} />
                 </SelectTrigger>
                 <SelectContent>
                   {availableCurrencies.map((c: any) => (
@@ -332,7 +334,7 @@ export default function CurrencyRatesPage() {
             </div>
             <Input
               type="text"
-              placeholder="Provider (optional)"
+              placeholder={t('currencyRates.providerOptional')}
               value={addForm.provider}
               onChange={(e) => setAddForm((f) => ({ ...f, provider: e.target.value }))}
             />
@@ -340,7 +342,7 @@ export default function CurrencyRatesPage() {
               type="number"
               step="0.0001"
               min="0"
-              placeholder="Rate"
+              placeholder={t('currencyRates.rate')}
               value={addForm.value}
               onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))}
             />
@@ -349,7 +351,7 @@ export default function CurrencyRatesPage() {
                 type="number"
                 min="2000"
                 max="2100"
-                placeholder="Year"
+                placeholder={t('currencyRates.year')}
                 value={addForm.year}
                 onChange={(e) => setAddForm((f) => ({ ...f, year: Number(e.target.value) }))}
                 className="w-24"
@@ -358,7 +360,7 @@ export default function CurrencyRatesPage() {
                 type="number"
                 min="1"
                 max="12"
-                placeholder="Month"
+                placeholder={t('currencyRates.month')}
                 value={addForm.month}
                 onChange={(e) => setAddForm((f) => ({ ...f, month: Number(e.target.value) }))}
                 className="w-20"
@@ -367,7 +369,7 @@ export default function CurrencyRatesPage() {
                 type="number"
                 min="1"
                 max="31"
-                placeholder="Day"
+                placeholder={t('currencyRates.day')}
                 value={addForm.day}
                 onChange={(e) => setAddForm((f) => ({ ...f, day: Number(e.target.value) }))}
                 className="w-20"
@@ -379,10 +381,10 @@ export default function CurrencyRatesPage() {
             <Button onClick={handleSaveRate} disabled={addLoading}>
               {addLoading ? (
                 <span className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 animate-spin" /> Adding...
+                  <RefreshCw className="h-4 w-4 animate-spin" /> {t('currencyRates.adding')}
                 </span>
               ) : (
-                "Add Rate"
+                t('currencyRates.addRate')
               )}
             </Button>
           </DialogFooter>

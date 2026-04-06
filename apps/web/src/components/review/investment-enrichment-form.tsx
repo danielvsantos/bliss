@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,6 +35,8 @@ export function InvestmentEnrichmentForm({
   onDetailsChange,
   onTickerSelect,
 }: InvestmentEnrichmentFormProps) {
+  const { t } = useTranslation();
+
   // Auto-calculate quantity when price changes (same pattern as transaction-form.tsx)
   const priceNum = parseFloat(price);
   const isAutoCalc = !!(amount && priceNum && priceNum > 0);
@@ -84,22 +87,22 @@ export function InvestmentEnrichmentForm({
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-warning" />
           <span className="text-xs font-semibold uppercase tracking-wider text-warning">
-            Enrichment Required
+            {t('review.enrichmentRequired')}
           </span>
         </div>
 
         <p className="text-xs text-muted-foreground">
-          This transaction appears investment-related. Please provide the details below to properly track it in your portfolio.
+          {t('review.enrichmentDescription')}
         </p>
 
         {/* Ticker with autocomplete */}
         <div className="space-y-1.5 relative" ref={dropdownRef}>
           <Label htmlFor="drawer-ticker" className="text-xs">
-            Ticker Symbol
+            {t('review.tickerSymbol')}
           </Label>
           <Input
             id="drawer-ticker"
-            placeholder="e.g. VWCE, AAPL"
+            placeholder={t('review.tickerPlaceholder')}
             value={ticker}
             onChange={(e) => handleTickerInput(e.target.value)}
             onFocus={() => searchInput.length >= 2 && setShowDropdown(true)}
@@ -129,12 +132,12 @@ export function InvestmentEnrichmentForm({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="drawer-price" className="text-xs">
-              Price per Share
+              {t('review.pricePerShare')}
             </Label>
             <Input
               id="drawer-price"
               type="number"
-              placeholder="e.g. 43.67"
+              placeholder={t('review.pricePlaceholder')}
               value={price}
               onChange={(e) => onPriceChange(e.target.value)}
               className="h-8 text-sm"
@@ -143,12 +146,12 @@ export function InvestmentEnrichmentForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="drawer-qty" className="text-xs">
-              Quantity {isAutoCalc && <span className="text-muted-foreground font-normal">(auto)</span>}
+              {t('review.quantity')} {isAutoCalc && <span className="text-muted-foreground font-normal">{t('review.quantityAuto')}</span>}
             </Label>
             <Input
               id="drawer-qty"
               type="number"
-              placeholder={isAutoCalc ? 'Calculated automatically' : 'e.g. 1.23'}
+              placeholder={isAutoCalc ? t('review.quantityCalculated') : t('review.quantityPlaceholder')}
               value={qty}
               onChange={(e) => onQtyChange(e.target.value)}
               className="h-8 text-sm"
@@ -161,11 +164,11 @@ export function InvestmentEnrichmentForm({
         {/* Details / Notes override */}
         <div className="space-y-1.5">
           <Label htmlFor="drawer-details" className="text-xs">
-            Details / Notes
+            {t('review.detailsNotes')}
           </Label>
           <Textarea
             id="drawer-details"
-            placeholder="Optional notes (overrides the default transaction description)"
+            placeholder={t('review.notesPlaceholder')}
             value={details}
             onChange={(e) => onDetailsChange(e.target.value)}
             className="text-sm min-h-[60px] resize-none"

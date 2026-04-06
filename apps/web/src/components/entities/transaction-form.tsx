@@ -3,6 +3,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -64,6 +65,7 @@ function getDateComponents(date: Date) {
 }
 
 export function TransactionForm({ transaction, onClose }: TransactionFormProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -188,7 +190,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     if (isInvestment && values.assetCurrency && selectedAccount && values.assetCurrency !== selectedAccount.currencyCode) {
       form.setError('ticker', {
         type: 'manual',
-        message: `This asset trades in ${values.assetCurrency}. Please select a ${values.assetCurrency} account.`,
+        message: t('transactionFormPage.currencyMismatch', { currency: values.assetCurrency }),
       });
       return;
     }
@@ -203,18 +205,18 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
 
       if (transaction) {
         await api.updateTransaction(transaction.id, transactionData);
-        toast({ title: 'Success', description: 'Transaction updated successfully.' });
+        toast({ title: t('common.success'), description: t('transactionFormPage.updatedSuccess') });
       } else {
         await api.createTransaction(transactionData);
-        toast({ title: 'Success', description: 'Transaction created successfully.' });
+        toast({ title: t('common.success'), description: t('transactionFormPage.createdSuccess') });
       }
       await queryClient.invalidateQueries({ queryKey: ['transactions'] });
       onClose(true);
     } catch (error) {
       console.error('Failed to save transaction:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to save transaction. Please try again.',
+        title: t('common.error'),
+        description: t('transactionFormPage.saveFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -233,7 +235,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     if (watchedAssetCurrency !== selectedAccount.currencyCode) {
       form.setError('ticker', {
         type: 'manual',
-        message: `This asset trades in ${watchedAssetCurrency}. Please select a ${watchedAssetCurrency} account or choose an asset that trades in ${selectedAccount.currencyCode}.`,
+        message: t('transactionFormPage.currencyMismatch', { currency: watchedAssetCurrency }) + ' ' + t('transactionFormPage.currencyMismatchAlt', { currency: watchedAssetCurrency, txCurrency: selectedAccount.currencyCode }),
       });
     } else {
       form.clearErrors('ticker');
@@ -241,7 +243,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
   }, [watchedAssetCurrency, selectedAccount, isInvestment, form]);
 
   if (isLoading) {
-    return <div className="p-8 text-center">Loading form data...</div>;
+    return <div className="p-8 text-center">{t('transactionFormPage.loadingFormData')}</div>;
   }
 
   return (
@@ -252,7 +254,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           name="transaction_date"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Date</FormLabel>
+              <FormLabel>{t('transactionFormPage.dateLabel')}</FormLabel>
               <Popover>
                 <PopoverTrigger asChild>
                   <FormControl>
@@ -261,7 +263,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                       variant={"outline"}
                       className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
                     >
-                      {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                      {field.value ? format(field.value, "PPP") : <span>{t('transactionFormPage.pickDate')}</span>}
                       <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                     </Button>
                   </FormControl>
@@ -280,9 +282,9 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           name="description"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Description</FormLabel>
+              <FormLabel>{t('transactionFormPage.descriptionLabel')}</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., Groceries, Salary, Rent" {...field} />
+                <Input placeholder={t('transactionFormPage.descriptionPlaceholder')} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -294,13 +296,13 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           name="accountId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Account</FormLabel>
+              <FormLabel>{t('transactionFormPage.accountLabel')}</FormLabel>
               <Select
                 onValueChange={(value) => field.onChange(parseInt(value, 10))}
                 value={String(field.value ?? '')}
               >
                 <FormControl>
-                  <SelectTrigger><SelectValue placeholder="Select an account" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('transactionFormPage.selectAccount')} /></SelectTrigger>
                 </FormControl>
                 <SelectContent>
                   {sortedAccounts?.map(account => (
@@ -319,7 +321,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
             name="credit"
             render={({ field }) => (
               <FormItem className="w-1/2">
-                <FormLabel>Credit</FormLabel>
+                <FormLabel>{t('transactionFormPage.creditLabel')}</FormLabel>
                 <div className="relative">
                   <Input
                     type="number"
@@ -346,7 +348,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
             name="debit"
             render={({ field }) => (
               <FormItem className="w-1/2">
-                <FormLabel>Debit</FormLabel>
+                <FormLabel>{t('transactionFormPage.debitLabel')}</FormLabel>
                 <div className="relative">
                   <Input
                     type="number"
@@ -375,7 +377,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           name="categoryId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Category</FormLabel>
+              <FormLabel>{t('transactionFormPage.categoryLabel')}</FormLabel>
               <FormControl>
                 <CategoryCombobox
                   categories={categories || []}
@@ -393,7 +395,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           name="tags"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Tags</FormLabel>
+              <FormLabel>{t('transactionFormPage.tags')}</FormLabel>
               <FormControl>
                 <TagInput
                   selectedTagIds={(field.value || []).map(Number)}
@@ -415,9 +417,9 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           <AccordionItem value="investment-details">
             <AccordionTrigger>
               <span className="flex items-center gap-2">
-                Investment Details
+                {t('transactionFormPage.investmentDetails')}
                 {!isInvestment && (
-                  <span className="text-xs text-muted-foreground font-normal">(select an investment category to enable)</span>
+                  <span className="text-xs text-muted-foreground font-normal">{t('transactionFormPage.investmentDetailsHint')}</span>
                 )}
               </span>
             </AccordionTrigger>
@@ -428,11 +430,11 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     name="ticker"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>Ticker</FormLabel>
+                        <FormLabel>{t('transactionFormPage.tickerLabel')}</FormLabel>
                         <div className="relative" ref={tickerDropdownRef}>
                           <FormControl>
                             <Input
-                              placeholder="e.g., AAPL, VWCE"
+                              placeholder={t('transactionFormPage.tickerPlaceholder')}
                               value={tickerSearchInput}
                               autoComplete="off"
                               onChange={e => {
@@ -479,7 +481,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     name="assetPrice"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>Asset Price</FormLabel>
+                        <FormLabel>{t('transactionFormPage.pricePerShare')}</FormLabel>
                         <FormControl>
                           <Input
                             {...field}
@@ -499,13 +501,13 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     name="assetQuantity"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>Asset Quantity</FormLabel>
+                        <FormLabel>{t('transactionFormPage.quantity')}</FormLabel>
                         <FormControl>
                           <Input
                             {...field}
                             type="number"
                             step="any"
-                            placeholder="Calculated automatically"
+                            placeholder={t('transactionFormPage.quantityCalculated')}
                             value={field.value ?? ''}
                             readOnly={!!assetPriceValue}
                             onChange={(e) => field.onChange(e.target.value === '' ? undefined : e.target.value)}
@@ -523,7 +525,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
         {isDebt && creditValue && (
           <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
             <AccordionItem value="item-1">
-              <AccordionTrigger>Debt Details</AccordionTrigger>
+              <AccordionTrigger>{t('transactionFormPage.debtTerms')}</AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
                 <DebtTermsForm />
               </AccordionContent>
@@ -536,10 +538,10 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
           name="details"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Details / Notes</FormLabel>
+              <FormLabel>{t('transactionFormPage.detailsNotes')}</FormLabel>
               <FormControl>
                 <Textarea
-                  placeholder="Add any extra details here."
+                  placeholder={t('transactionFormPage.notesPlaceholder')}
                   className="resize-none"
                   {...field}
                   value={field.value ?? ''}
@@ -551,9 +553,9 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
         />
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button type="button" variant="ghost" onClick={() => onClose()}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={() => onClose()}>{t('common.cancel')}</Button>
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : transaction ? 'Save Changes' : 'Create Transaction'}
+            {isSubmitting ? t('transactionFormPage.saving') : transaction ? t('common.save_changes') : t('common.submit')}
           </Button>
         </div>
       </form>

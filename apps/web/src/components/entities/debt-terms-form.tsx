@@ -1,6 +1,7 @@
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +30,7 @@ interface DebtTermsFormProps {
 }
 
 export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -53,16 +55,16 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
         originationDate: data.originationDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
       });
       toast({
-        title: 'Success!',
-        description: `Debt terms for ${asset.symbol} have been saved.`,
+        title: t('debtTermsForm.success'),
+        description: t('debtTermsForm.savedDetail', { name: asset.symbol }),
       });
       // Invalidate queries to refetch asset data with the new debt terms
       await queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] });
       onClose(true);
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to save debt terms. Please try again.',
+        title: t('common.error'),
+        description: t('debtTermsForm.saveFailed'),
         variant: 'destructive',
       });
     }
@@ -72,7 +74,7 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="initialBalance">Initial Balance</Label>
+          <Label htmlFor="initialBalance">{t('debtTermsForm.initialBalance')}</Label>
           <Controller
             name="initialBalance"
             control={control}
@@ -81,7 +83,7 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
           {errors.initialBalance && <p className="text-destructive text-sm">{errors.initialBalance.message}</p>}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="interestRate">Interest Rate (%)</Label>
+          <Label htmlFor="interestRate">{t('debtTermsForm.interestRate')}</Label>
           <Controller
             name="interestRate"
             control={control}
@@ -92,7 +94,7 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="termInMonths">Loan Term (in months)</Label>
+        <Label htmlFor="termInMonths">{t('debtTermsForm.termMonths')}</Label>
         <Controller
           name="termInMonths"
           control={control}
@@ -102,7 +104,7 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
       </div>
       
       <div className="space-y-2">
-        <Label htmlFor="originationDate">Origination Date</Label>
+        <Label htmlFor="originationDate">{t('debtTermsForm.originationDate')}</Label>
         <Controller
           name="originationDate"
           control={control}
@@ -114,7 +116,7 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
                   className="w-full justify-start text-left font-normal"
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                  {field.value ? format(field.value, "PPP") : <span>{t('debtTermsForm.pickDate')}</span>}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
@@ -135,9 +137,9 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
       </div>
 
       <div className="flex justify-end gap-2 pt-4">
-        <Button type="button" variant="ghost" onClick={() => onClose()}>Cancel</Button>
+        <Button type="button" variant="ghost" onClick={() => onClose()}>{t('common.cancel')}</Button>
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Saving...' : 'Save Terms'}
+          {isSubmitting ? t('debtTermsForm.saving') : t('debtTermsForm.saveTerms')}
         </Button>
       </div>
     </form>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -143,6 +144,7 @@ function importRowToReviewItem(
 
 // ─── Main Component ─────────────────────────────────────────────────
 export default function TransactionReviewPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -819,15 +821,15 @@ export default function TransactionReviewPage() {
     return (
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-muted-foreground">
-          Page {currentPage} of {totalPages}
+          {t('review.pageOf', { current: currentPage, total: totalPages })}
           {total ? ` (${total} ${label})` : ''}
         </p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => onPageChange(Math.max(1, currentPage - 1))} disabled={currentPage <= 1}>
-            <ChevronLeftIcon className="h-4 w-4 mr-1" /> Previous
+            <ChevronLeftIcon className="h-4 w-4 mr-1" /> {t('common.previous')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage >= totalPages}>
-            Next <ChevronRightIcon className="h-4 w-4 ml-1" />
+            {t('common.next')} <ChevronRightIcon className="h-4 w-4 ml-1" />
           </Button>
         </div>
       </div>
@@ -839,13 +841,13 @@ export default function TransactionReviewPage() {
     <Card className="overflow-hidden">
       {/* Column headers */}
       <div className="hidden md:flex items-center gap-3 px-4 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider bg-muted/30">
-        <span className="w-[80px] shrink-0">Date</span>
-        <span className="flex-1 min-w-0">Merchant</span>
-        <span className="w-[100px] shrink-0">Account</span>
-        <span className="w-[90px] shrink-0 text-right">Amount</span>
-        <span className="w-[60px] shrink-0">Conf.</span>
-        <span className="w-[110px] shrink-0">Status</span>
-        <span className="w-[70px] shrink-0 text-right">Actions</span>
+        <span className="w-[80px] shrink-0">{t('review.date')}</span>
+        <span className="flex-1 min-w-0">{t('review.merchant')}</span>
+        <span className="w-[100px] shrink-0">{t('review.account')}</span>
+        <span className="w-[90px] shrink-0 text-right">{t('review.amount')}</span>
+        <span className="w-[60px] shrink-0">{t('review.confidence')}</span>
+        <span className="w-[110px] shrink-0">{t('review.status')}</span>
+        <span className="w-[70px] shrink-0 text-right">{t('review.actions')}</span>
       </div>
       <Separator />
       <div className="divide-y">
@@ -965,10 +967,10 @@ export default function TransactionReviewPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <ClipboardCheck className="h-6 w-6 text-primary" />
-            Transaction Review
+            {t('review.pageTitle')}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Review and approve pending transactions from all sources.
+            {t('review.pageSubtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -987,12 +989,12 @@ export default function TransactionReviewPage() {
                 }
               }}
             >
-              Re-queue Skipped ({plaidSummary?.skipped ?? 0})
+              {t('review.requeueSkipped')} ({plaidSummary?.skipped ?? 0})
             </Button>
           )}
           {plaidCount > 0 && (activeTab === 'plaid' || activeTab === 'all') && (
             <Button onClick={() => setShowBulkDialog(true)} variant="outline" size="sm">
-              <Zap className="h-4 w-4 mr-1" /> Bulk Promote
+              <Zap className="h-4 w-4 mr-1" /> {t('review.bulkPromote')}
             </Button>
           )}
         </div>
@@ -1003,7 +1005,7 @@ export default function TransactionReviewPage() {
         <div className="mb-6 space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
-              {promotedCount} of {overallTotal} reviewed
+              {t('review.reviewedProgress', { done: promotedCount, total: overallTotal })}
             </span>
             <span className="font-medium">{progressPct}%</span>
           </div>
@@ -1016,7 +1018,7 @@ export default function TransactionReviewPage() {
         <div className="flex items-center justify-between mb-4">
           <TabsList>
             <TabsTrigger value="all">
-              All Pending
+              {t('review.allPending')}
               {totalCount > 0 && (
                 <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
                   {totalCount}
@@ -1024,7 +1026,7 @@ export default function TransactionReviewPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="plaid">
-              From Plaid
+              {t('review.fromPlaid')}
               {plaidCount > 0 && (
                 <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
                   {plaidCount}
@@ -1032,7 +1034,7 @@ export default function TransactionReviewPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="imports">
-              From Imports
+              {t('review.fromImports')}
               {importCount > 0 && (
                 <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
                   {importCount}
@@ -1049,14 +1051,14 @@ export default function TransactionReviewPage() {
           {plaidLoading || pendingLoading ? (
             loadingSkeleton
           ) : totalCount === 0 ? (
-            emptyState('All caught up!', 'No pending transactions to review.')
+            emptyState(t('review.allCaughtUp'), t('review.noPendingTransactions'))
           ) : (
             <div className="space-y-6">
               {/* Plaid Section */}
               {plaidReviewItems.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-                    <Landmark className="h-4 w-4" /> Plaid Transactions ({plaidCount})
+                    <Landmark className="h-4 w-4" /> {t('review.plaidTransactions')} ({plaidCount})
                   </h3>
                   {viewMode === 'grouped'
                     ? renderGroupedPlaid(groupedPlaid)
@@ -1068,7 +1070,7 @@ export default function TransactionReviewPage() {
               {importCount > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-                    <FileUp className="h-4 w-4" /> Import Transactions ({importCount})
+                    <FileUp className="h-4 w-4" /> {t('review.importTransactions')} ({importCount})
                   </h3>
                   <div className="space-y-2">
                     {pendingImports.map((imp: { id: string; fileName: string; pendingRowCount: number }) => (
@@ -1083,12 +1085,12 @@ export default function TransactionReviewPage() {
                             <span className="font-medium text-sm">{imp.fileName}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{imp.pendingRowCount} pending</Badge>
+                            <Badge variant="secondary">{imp.pendingRowCount} {t('review.pending')}</Badge>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title="Cancel import"
+                              title={t('review.cancelImport')}
                               onClick={(e) => { e.stopPropagation(); handleCancelImport(imp.id, imp.fileName); }}
                             >
                               <X className="h-3.5 w-3.5" />
@@ -1109,7 +1111,7 @@ export default function TransactionReviewPage() {
           {plaidLoading ? (
             loadingSkeleton
           ) : plaidReviewItems.length === 0 ? (
-            emptyState('No Plaid transactions to review', 'All Plaid transactions have been processed.')
+            emptyState(t('review.noPlaidToReview'), t('review.allPlaidProcessed'))
           ) : (
             <>
               {viewMode === 'grouped'
@@ -1135,7 +1137,7 @@ export default function TransactionReviewPage() {
           {pendingLoading ? (
             loadingSkeleton
           ) : pendingImports.length === 0 && !selectedImportId ? (
-            emptyState('No pending imports', 'All imports have been committed.')
+            emptyState(t('review.noPendingImports'), t('review.allImportsCommitted'))
           ) : (
             <div className="space-y-4">
               {/* Import selector */}
@@ -1149,13 +1151,13 @@ export default function TransactionReviewPage() {
                         onClick={() => { setSelectedImportId(imp.id); setImportPage(1); }}
                       >
                         <FileUp className="h-3.5 w-3.5 mr-1" />
-                        {imp.fileName} ({imp.pendingRowCount} pending)
+                        {imp.fileName} ({imp.pendingRowCount} {t('review.pending')})
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        title="Cancel import"
+                        title={t('review.cancelImport')}
                         onClick={() => handleCancelImport(imp.id, imp.fileName)}
                       >
                         <X className="h-3.5 w-3.5" />
@@ -1173,10 +1175,10 @@ export default function TransactionReviewPage() {
                     <Card className="py-6 text-center">
                       <CardContent className="space-y-3">
                         <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                        <p className="font-medium">Committing Transactions...</p>
+                        <p className="font-medium">{t('review.committingTransactions')}</p>
                         <Progress value={importInfo.progress ?? 0} className="w-full max-w-xs mx-auto" />
                         <p className="text-sm text-muted-foreground">
-                          {importInfo.progress ?? 0}% complete
+                          {importInfo.progress ?? 0}% {t('review.complete')}
                         </p>
                       </CardContent>
                     </Card>
@@ -1189,7 +1191,7 @@ export default function TransactionReviewPage() {
                       ) : importReviewItems.length === 0 ? (
                         <Card className="py-8 text-center">
                           <CardContent>
-                            <p className="text-muted-foreground">No rows in this import.</p>
+                            <p className="text-muted-foreground">{t('review.noRowsInImport')}</p>
                           </CardContent>
                         </Card>
                       ) : (
@@ -1219,9 +1221,9 @@ export default function TransactionReviewPage() {
                             disabled={commitImport.isPending}
                           >
                             {commitImport.isPending ? (
-                              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Committing...</>
+                              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('review.committing')}</>
                             ) : (
-                              <><CheckCircle2 className="h-4 w-4 mr-2" /> Commit All</>
+                              <><CheckCircle2 className="h-4 w-4 mr-2" /> {t('review.commitAll')}</>
                             )}
                           </Button>
                         </div>
@@ -1263,15 +1265,16 @@ export default function TransactionReviewPage() {
           >
             <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
-                <DialogTitle>Also confirm matching transactions?</DialogTitle>
+                <DialogTitle>{t('review.confirmMatchingTitle')}</DialogTitle>
                 <DialogDescription>
-                  There{' '}
-                  {otherCount === 1 ? 'is' : 'are'}{' '}
-                  <strong>
-                    {otherCount} other pending transaction{otherCount !== 1 ? 's' : ''}
-                  </strong>{' '}
-                  named &ldquo;{item.description}&rdquo;. Confirm them all as{' '}
-                  <strong>{effectiveCategoryName}</strong>?
+                  <span dangerouslySetInnerHTML={{ __html: t('review.confirmMatchingDescription', {
+                    count: otherCount,
+                    verb: otherCount === 1 ? 'is' : 'are',
+                    plural: otherCount !== 1 ? 's' : '',
+                    description: item.description,
+                    category: effectiveCategoryName,
+                    interpolation: { escapeValue: false },
+                  }) }} />
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="gap-2 sm:gap-0">
@@ -1283,7 +1286,7 @@ export default function TransactionReviewPage() {
                     executeDrawerSave(saved);
                   }}
                 >
-                  Just this one
+                  {t('review.justThisOne')}
                 </Button>
                 <Button
                   onClick={() => {
@@ -1349,10 +1352,10 @@ export default function TransactionReviewPage() {
                 >
                   {bulkPromote.isPending ? (
                     <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Confirming…
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('review.confirming')}
                     </>
                   ) : (
-                    <>Confirm all {otherCount + 1}</>
+                    <>{t('review.confirmAllCount', { count: otherCount + 1 })}</>
                   )}
                 </Button>
               </DialogFooter>
@@ -1368,14 +1371,14 @@ export default function TransactionReviewPage() {
       >
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Promote matching transactions?</DialogTitle>
+            <DialogTitle>{t('review.promoteMatchingTitle')}</DialogTitle>
             <DialogDescription>
-              Found{' '}
-              <strong>
-                {pendingApproveMatches.length} pending transaction
-                {pendingApproveMatches.length !== 1 ? 's' : ''}
-              </strong>{' '}
-              named &ldquo;{pendingApproveItem?.description}&rdquo;.
+              <span dangerouslySetInnerHTML={{ __html: t('review.promoteMatchingDescription', {
+                count: pendingApproveMatches.length,
+                plural: pendingApproveMatches.length !== 1 ? 's' : '',
+                description: pendingApproveItem?.description,
+                interpolation: { escapeValue: false },
+              }) }} />
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -1387,7 +1390,7 @@ export default function TransactionReviewPage() {
                 handlePlaidPromote(item.originalPlaidTx!);
               }}
             >
-              Just this one
+              {t('review.justThisOne')}
             </Button>
             <Button
               onClick={() => {
@@ -1414,10 +1417,10 @@ export default function TransactionReviewPage() {
             >
               {bulkPromote.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Promoting…
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('review.promoting')}
                 </>
               ) : (
-                <>Promote all {pendingApproveMatches.length}</>
+                <>{t('review.promoteAllCount', { count: pendingApproveMatches.length })}</>
               )}
             </Button>
           </DialogFooter>
@@ -1428,39 +1431,39 @@ export default function TransactionReviewPage() {
       <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Bulk Promote Transactions</DialogTitle>
+            <DialogTitle>{t('review.bulkPromoteTitle')}</DialogTitle>
             <DialogDescription>
-              Automatically promote all classified Plaid transactions that exceed the confidence threshold.
+              {t('review.bulkPromoteDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label>Minimum Confidence Threshold</Label>
+              <Label>{t('review.minConfidenceThreshold')}</Label>
               <Select value={bulkConfidenceThreshold} onValueChange={setBulkConfidenceThreshold}>
                 <SelectTrigger className="w-full mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0.9">90% (Most conservative)</SelectItem>
-                  <SelectItem value="0.8">80% (Recommended)</SelectItem>
-                  <SelectItem value="0.7">70%</SelectItem>
-                  <SelectItem value="0.5">50% (Least conservative)</SelectItem>
+                  <SelectItem value="0.9">{t('review.threshold90')}</SelectItem>
+                  <SelectItem value="0.8">{t('review.threshold80')}</SelectItem>
+                  <SelectItem value="0.7">{t('review.threshold70')}</SelectItem>
+                  <SelectItem value="0.5">{t('review.threshold50')}</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                Only transactions with AI confidence at or above this threshold will be promoted.
+                {t('review.thresholdHint')}
               </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBulkDialog(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleBulkPromote} disabled={bulkPromote.isPending}>
               {bulkPromote.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Promoting...</>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('review.promoting')}</>
               ) : (
-                <><Zap className="h-4 w-4 mr-2" /> Promote All</>
+                <><Zap className="h-4 w-4 mr-2" /> {t('review.promoteAll')}</>
               )}
             </Button>
           </DialogFooter>

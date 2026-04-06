@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
+import { translateCategoryGroup, translateCategoryType } from '@/lib/category-i18n';
 import api from '@/lib/api';
 import type { Category } from '@/types/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -31,22 +32,23 @@ const ALLOWED_CATEGORY_TYPES = [
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
-// Rename mode: default categories — only name and icon can change.
-const renameSchema = z.object({
-  name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
-  icon: z.string().optional(),
-});
+// Schema factories that accept `t` for translated validation messages.
+const makeRenameSchema = (t: (key: string) => string) =>
+  z.object({
+    name: z.string().min(2, { message: t('categoryFormPage.nameMin') }),
+    icon: z.string().optional(),
+  });
 
-// Full mode: custom categories — name, type, group, icon.
-const fullSchema = z.object({
-  name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
-  type: z.string().min(1, { message: 'Type is required' }),
-  group: z.string().min(1, { message: 'Group is required' }),
-  icon: z.string().optional(),
-});
+const makeFullSchema = (t: (key: string) => string) =>
+  z.object({
+    name: z.string().min(2, { message: t('categoryFormPage.nameMin') }),
+    type: z.string().min(1, { message: t('categoryFormPage.typeRequired') }),
+    group: z.string().min(1, { message: t('categoryFormPage.groupRequired') }),
+    icon: z.string().optional(),
+  });
 
-type RenameFormValues = z.infer<typeof renameSchema>;
-type FullFormValues = z.infer<typeof fullSchema>;
+type RenameFormValues = z.infer<ReturnType<typeof makeRenameSchema>>;
+type FullFormValues = z.infer<ReturnType<typeof makeFullSchema>>;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -77,7 +79,7 @@ function RenameCategoryForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<RenameFormValues>({
-    resolver: zodResolver(renameSchema),
+    resolver: zodResolver(makeRenameSchema(t)),
     defaultValues: {
       name: category.name,
       icon: category.icon ?? '',
@@ -133,12 +135,12 @@ function RenameCategoryForm({
           name="icon"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Icon</FormLabel>
+              <FormLabel>{t('categoryFormPage.iconLabel')}</FormLabel>
               <FormControl>
                 <Input placeholder="e.g. 🍔" {...field} />
               </FormControl>
               <FormDescription className="text-xs">
-                Paste any emoji to use as the category icon.
+                {t('categoryFormPage.iconHint')}
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -179,7 +181,7 @@ function FullCategoryForm({
   const { data: allCategories = [] } = useCategories();
 
   const form = useForm<FullFormValues>({
-    resolver: zodResolver(fullSchema),
+    resolver: zodResolver(makeFullSchema(t)),
     defaultValues: {
       name: category?.name ?? '',
       type: category?.type ?? presetType ?? '',
@@ -268,7 +270,7 @@ function FullCategoryForm({
             <FormItem>
               <FormLabel>{t('categoryForm.name')}</FormLabel>
               <FormControl>
-                <Input placeholder="e.g. Groceries, Salary, Rent" {...field} />
+                <Input placeholder={t('categoryFormPage.namePlaceholder')} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -285,13 +287,13 @@ function FullCategoryForm({
               <Select onValueChange={field.onChange} value={field.value}>
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue placeholder={t('categoryFormPage.selectType')} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
                   {ALLOWED_CATEGORY_TYPES.map((type) => (
                     <SelectItem key={type} value={type}>
-                      {type}
+                      {translateCategoryType(t, type)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -311,7 +313,7 @@ function FullCategoryForm({
                 <FormLabel>{t('categoryForm.group')}</FormLabel>
                 <div className="flex gap-2">
                   <FormControl className="flex-grow">
-                    <Input placeholder="Enter new group name" {...field} />
+                    <Input placeholder={t('categoryFormPage.enterNewGroup')} {...field} />
                   </FormControl>
                   <Button
                     type="button"
@@ -351,7 +353,7 @@ function FullCategoryForm({
                     <SelectTrigger>
                       <SelectValue
                         placeholder={
-                          selectedType ? 'Select group' : 'Select a type first'
+                          selectedType ? t('categoryFormPage.selectGroup') : t('categoryFormPage.selectTypeFirst')
                         }
                       />
                     </SelectTrigger>
@@ -359,11 +361,11 @@ function FullCategoryForm({
                   <SelectContent>
                     {groupOptions.map((group) => (
                       <SelectItem key={group} value={group}>
-                        {group}
+                        {translateCategoryGroup(t, group)}
                       </SelectItem>
                     ))}
                     <SelectItem value="__create_new__">
-                      + Create new group…
+                      {t('categoryFormPage.createNewGroup')}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -380,14 +382,14 @@ function FullCategoryForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>
-                Icon{' '}
-                <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                {t('categoryFormPage.iconLabel')}{' '}
+                <span className="text-muted-foreground font-normal text-xs">{t('categoryFormPage.iconOptional')}</span>
               </FormLabel>
               <FormControl>
                 <Input placeholder="e.g. 🍔" {...field} />
               </FormControl>
               <FormDescription className="text-xs">
-                Paste any emoji to use as the category icon.
+                {t('categoryFormPage.iconHint')}
               </FormDescription>
               <FormMessage />
             </FormItem>

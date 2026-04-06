@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ interface FormErrors {
 }
 
 export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialogProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -50,17 +52,17 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     const newErrors: FormErrors = {};
 
     if (!currentPassword) {
-      newErrors.currentPassword = "Current password is required";
+      newErrors.currentPassword = t('changePassword.currentPasswordRequired');
     }
     if (!newPassword) {
-      newErrors.newPassword = "New password is required";
+      newErrors.newPassword = t('changePassword.newPasswordMin');
     } else if (newPassword.length < 8) {
-      newErrors.newPassword = "Password must be at least 8 characters";
+      newErrors.newPassword = t('changePassword.newPasswordMin');
     }
     if (!confirmPassword) {
-      newErrors.confirmPassword = "Please confirm your new password";
+      newErrors.confirmPassword = t('changePassword.confirmRequired');
     } else if (newPassword && newPassword !== confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
+      newErrors.confirmPassword = t('changePassword.mismatch');
     }
 
     setErrors(newErrors);
@@ -74,14 +76,14 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     try {
       await api.changePassword({ currentPassword, newPassword, confirmPassword });
       toast({
-        title: "Password updated",
-        description: "Your password has been changed successfully.",
+        title: t('changePassword.passwordUpdated'),
+        description: t('changePassword.passwordUpdatedDetail'),
       });
       handleOpenChange(false);
     } catch (err: any) {
-      const message = err?.response?.data?.error || "Failed to change password";
+      const message = err?.response?.data?.error || t('changePassword.changeFailed');
       toast({
-        title: "Error",
+        title: t('common.error'),
         description: message,
         variant: "destructive",
       });
@@ -94,15 +96,15 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Change Password</DialogTitle>
+          <DialogTitle>{t('changePassword.title')}</DialogTitle>
           <DialogDescription>
-            Enter your current password and choose a new one.
+            {t('changePassword.description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="current-password">Current Password</Label>
+            <Label htmlFor="current-password">{t('changePassword.currentPassword')}</Label>
             <Input
               id="current-password"
               type="password"
@@ -116,7 +118,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="new-password">New Password</Label>
+            <Label htmlFor="new-password">{t('changePassword.newPassword')}</Label>
             <Input
               id="new-password"
               type="password"
@@ -124,14 +126,14 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
               onChange={(e) => setNewPassword(e.target.value)}
               className="bg-input-background"
             />
-            <p className="text-xs text-muted-foreground">Minimum 8 characters</p>
+            <p className="text-xs text-muted-foreground">{t('changePassword.minHint')}</p>
             {errors.newPassword && (
               <p className="text-xs text-destructive">{errors.newPassword}</p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="confirm-password">Confirm New Password</Label>
+            <Label htmlFor="confirm-password">{t('changePassword.confirmPassword')}</Label>
             <Input
               id="confirm-password"
               type="password"
@@ -147,11 +149,11 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
 
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Update Password
+            {t('changePassword.updatePassword')}
           </Button>
         </DialogFooter>
       </DialogContent>

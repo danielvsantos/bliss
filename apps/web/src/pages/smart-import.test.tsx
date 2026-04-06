@@ -93,10 +93,10 @@ describe('SmartImportPage', () => {
 
   it('renders initial upload step correctly', () => {
     renderPage();
-    
-    expect(screen.getByText('Smart Import')).toBeInTheDocument();
-    expect(screen.getByText('Upload a CSV or Excel file', { exact: false })).toBeInTheDocument();
-    
+
+    expect(screen.getByText('smartImport.title')).toBeInTheDocument();
+    expect(screen.getByText('smartImport.subtitle', { exact: false })).toBeInTheDocument();
+
     // The file input should be present (hidden, but functional)
     const fileInput = document.querySelector('input[type="file"]');
     expect(fileInput).toBeInTheDocument();
@@ -134,6 +134,6 @@ describe('SmartImportPage', () => {
 
     // The effect in the component will auto-transition `step` to 'review' if importStatus is READY 
     // and seeds aren't active.
-    expect(screen.getByText('3. Review')).toBeInTheDocument();
+    expect(screen.getByText('3. smartImport.steps.review')).toBeInTheDocument();
   });
 });

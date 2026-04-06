@@ -10,7 +10,10 @@ import * as UseMetadata from '@/hooks/use-metadata';
 
 // Mocks
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'en' } })
+  useTranslation: () => ({
+    t: (k: string, fallback?: any) => (typeof fallback === 'string' ? fallback : k),
+    i18n: { language: 'en' },
+  }),
 }));
 
 // ResizeObserver mock
@@ -98,7 +101,7 @@ describe('PortfolioHoldingsPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('No portfolio data yet. Connect a bank account or import transactions to get started.')).toBeInTheDocument();
+    expect(screen.getByText('portfolio.emptyState')).toBeInTheDocument();
   });
 
   it('renders assets and liabilities tables when data exists', async () => {
@@ -132,8 +135,8 @@ describe('PortfolioHoldingsPage', () => {
     const { user } = renderPage();
 
     // Chart header / Top KPI asserts
-    expect(screen.getByText('Assets')).toBeInTheDocument();
-    expect(screen.getByText('Liabilities')).toBeInTheDocument();
+    expect(screen.getByText('portfolio.assets')).toBeInTheDocument();
+    expect(screen.getByText('portfolio.liabilities')).toBeInTheDocument();
 
     // Asset groups are visible even when collapsed (default state)
     expect(screen.getByText('Equities')).toBeInTheDocument();

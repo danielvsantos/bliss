@@ -23,6 +23,7 @@ import { useTags } from '@/hooks/use-tags';
 import { useTagAnalytics } from '@/hooks/use-tag-analytics';
 import { formatCurrency } from '@/lib/utils';
 import { getTenantMeta } from '@/utils/tenantMetaStorage';
+import { translateCategoryGroup } from '@/lib/category-i18n';
 import type { Tag, Currency } from '@/types/api';
 
 const CHART_COLORS = ['#3A3542', '#2E8B57', '#E5989B', '#6D657A', '#E09F12', '#9A95A4', '#3A8A8F', '#B8AEC8'];
@@ -36,7 +37,7 @@ const fadeUp = {
 
 type TagAnalyticsData = Record<string, Record<string, Record<string, Record<string, { credit: number; debit: number; balance: number }>>>>;
 
-function processTagData(tagData: TagAnalyticsData | undefined) {
+function processTagData(tagData: TagAnalyticsData | undefined, otherLabel = 'Other') {
   if (!tagData) return { categories: [], totalDebit: 0, totalCredit: 0, totalBalance: 0, highestCategory: '' };
 
   const categoryTotals: Record<string, number> = {};
@@ -64,7 +65,7 @@ function processTagData(tagData: TagAnalyticsData | undefined) {
   // Top 7 + Other (more categories visible now that we have granularity)
   const topN = sorted.slice(0, 7);
   const otherValue = sorted.slice(7).reduce((sum, g) => sum + g.value, 0);
-  if (otherValue > 0) topN.push({ name: 'Other', value: otherValue });
+  if (otherValue > 0) topN.push({ name: otherLabel, value: otherValue });
 
   const total = topN.reduce((sum, g) => sum + g.value, 0);
   const categories = topN.map((g, i) => ({
@@ -121,6 +122,7 @@ function TagSelector({ tags, selectedId, onSelect, label }: {
   onSelect: (id: number | null) => void;
   label: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const selected = tags.find(t => t.id === selectedId);
 
@@ -140,9 +142,9 @@ function TagSelector({ tags, selectedId, onSelect, label }: {
       </PopoverTrigger>
       <PopoverContent className="w-[250px] p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search tags..." />
+          <CommandInput placeholder={t("tagAnalytics.searchTags")} />
           <CommandList>
-            <CommandEmpty>No tags found.</CommandEmpty>
+            <CommandEmpty>{t("tagAnalytics.noTagsFound")}</CommandEmpty>
             <CommandGroup>
               {tags.map(tag => (
                 <CommandItem
@@ -217,8 +219,15 @@ export default function TagAnalyticsPage() {
   const primaryData = primaryTagId ? analyticsData?.tags?.[primaryTagId.toString()] : undefined;
   const compareData = compareTagId && compareMode ? analyticsData?.tags?.[compareTagId.toString()] : undefined;
 
-  const primaryProcessed = useMemo(() => processTagData(primaryData), [primaryData]);
-  const compareProcessed = useMemo(() => processTagData(compareData), [compareData]);
+  const otherLabel = t("common.other");
+  const primaryProcessed = useMemo(() => {
+    const result = processTagData(primaryData, otherLabel);
+    return { ...result, categories: result.categories.map(c => ({ ...c, name: c.name === otherLabel ? c.name : translateCategoryGroup(t, c.name) })), highestCategory: result.highestCategory ? translateCategoryGroup(t, result.highestCategory) : '' };
+  }, [primaryData, otherLabel, t]);
+  const compareProcessed = useMemo(() => {
+    const result = processTagData(compareData, otherLabel);
+    return { ...result, categories: result.categories.map(c => ({ ...c, name: c.name === otherLabel ? c.name : translateCategoryGroup(t, c.name) })), highestCategory: result.highestCategory ? translateCategoryGroup(t, result.highestCategory) : '' };
+  }, [compareData, otherLabel, t]);
 
   const primaryTimeline = useMemo(() => processMonthlyTimeline(primaryData), [primaryData]);
   const compareTimeline = useMemo(() => processMonthlyTimeline(compareData), [compareData]);
@@ -233,14 +242,14 @@ export default function TagAnalyticsPage() {
       {/* Header */}
       <motion.div {...fadeUp}>
         <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-2">Tag Analytics</h2>
-          <p className="text-muted-foreground">Analyze spending by tag across all accounts and currencies</p>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">{t("tagAnalytics.title")}</h2>
+          <p className="text-muted-foreground">{t("tagAnalytics.subtitle")}</p>
         </div>
       </motion.div>
 
       {/* Filters */}
       <motion.div {...fadeUp} transition={{ delay: 0.1 }} className="flex flex-wrap items-center gap-3">
-        <TagSelector tags={tags} selectedId={primaryTagId} onSelect={setPrimaryTagId} label="Select a tag..." />
+        <TagSelector tags={tags} selectedId={primaryTagId} onSelect={setPrimaryTagId} label={t("tagAnalytics.selectTag")} />
 
         <Button
           variant={compareMode ? 'default' : 'outline'}
@@ -251,7 +260,7 @@ export default function TagAnalyticsPage() {
           }}
         >
           <GitCompareArrows size={16} className="mr-1.5" />
-          Compare
+          {t("tagAnalytics.compare")}
         </Button>
 
         {compareMode && (
@@ -259,7 +268,7 @@ export default function TagAnalyticsPage() {
             tags={tags.filter(t => t.id !== primaryTagId)}
             selectedId={compareTagId}
             onSelect={setCompareTagId}
-            label="Compare with..."
+            label={t("tagAnalytics.compareWith")}
           />
         )}
 
@@ -289,9 +298,9 @@ export default function TagAnalyticsPage() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <Hash size={48} className="text-muted-foreground/30 mb-4" />
-              <h3 className="text-lg font-medium text-muted-foreground">Select a tag to view analytics</h3>
+              <h3 className="text-lg font-medium text-muted-foreground">{t("tagAnalytics.emptyTitle")}</h3>
               <p className="text-sm text-muted-foreground/70 mt-1">
-                Choose a tag above to see spending breakdowns, trends, and budget tracking
+                {t("tagAnalytics.emptyDescription")}
               </p>
             </CardContent>
           </Card>
@@ -308,7 +317,7 @@ export default function TagAnalyticsPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Debit {primaryTag?.emoji && <span className="ml-1">{primaryTag.emoji}</span>}
+                    {t("tagAnalytics.totalDebit")} {primaryTag?.emoji && <span className="ml-1">{primaryTag.emoji}</span>}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -328,7 +337,7 @@ export default function TagAnalyticsPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Credit {primaryTag?.emoji && <span className="ml-1">{primaryTag.emoji}</span>}
+                    {t("tagAnalytics.totalCredit")} {primaryTag?.emoji && <span className="ml-1">{primaryTag.emoji}</span>}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -348,7 +357,7 @@ export default function TagAnalyticsPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Balance {primaryTag?.emoji && <span className="ml-1">{primaryTag.emoji}</span>}
+                    {t("tagAnalytics.balance")} {primaryTag?.emoji && <span className="ml-1">{primaryTag.emoji}</span>}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -368,7 +377,7 @@ export default function TagAnalyticsPage() {
               <motion.div {...fadeUp} transition={{ delay: 0.35 }}>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Budget Progress</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">{t("tagAnalytics.budgetProgress")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-2xl font-bold">
@@ -388,7 +397,7 @@ export default function TagAnalyticsPage() {
               <motion.div {...fadeUp} transition={{ delay: 0.4 }}>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Top Category</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">{t("tagAnalytics.topCategory")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {isLoading ? (
@@ -408,7 +417,7 @@ export default function TagAnalyticsPage() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Total Debit {compareTag?.emoji && <span className="ml-1">{compareTag.emoji}</span>}
+                        {t("tagAnalytics.totalDebit")} {compareTag?.emoji && <span className="ml-1">{compareTag.emoji}</span>}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -426,7 +435,7 @@ export default function TagAnalyticsPage() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Total Credit {compareTag?.emoji && <span className="ml-1">{compareTag.emoji}</span>}
+                        {t("tagAnalytics.totalCredit")} {compareTag?.emoji && <span className="ml-1">{compareTag.emoji}</span>}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -444,7 +453,7 @@ export default function TagAnalyticsPage() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Balance {compareTag?.emoji && <span className="ml-1">{compareTag.emoji}</span>}
+                        {t("tagAnalytics.balance")} {compareTag?.emoji && <span className="ml-1">{compareTag.emoji}</span>}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -469,7 +478,7 @@ export default function TagAnalyticsPage() {
               <Card className="h-full">
                 <CardHeader>
                   <CardTitle className="text-base">
-                    {primaryTag?.name} — Category Breakdown
+                    {primaryTag?.name} — {t("tagAnalytics.categoryBreakdown")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -477,7 +486,7 @@ export default function TagAnalyticsPage() {
                     <Skeleton className="h-[300px] w-full" />
                   ) : primaryProcessed.categories.length === 0 ? (
                     <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
-                      No spending data for this tag
+                      {t("tagAnalytics.noSpendingData")}
                     </div>
                   ) : (
                     <>
@@ -526,7 +535,7 @@ export default function TagAnalyticsPage() {
                 <Card className="h-full">
                   <CardHeader>
                     <CardTitle className="text-base">
-                      {compareTag?.name} — Category Breakdown
+                      {compareTag?.name} — {t("tagAnalytics.categoryBreakdown")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -534,7 +543,7 @@ export default function TagAnalyticsPage() {
                       <Skeleton className="h-[300px] w-full" />
                     ) : compareProcessed.categories.length === 0 ? (
                       <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
-                        No spending data for this tag
+                        {t("tagAnalytics.noSpendingData")}
                       </div>
                     ) : (
                       <>
@@ -580,14 +589,14 @@ export default function TagAnalyticsPage() {
               <motion.div {...fadeUp} transition={{ delay: 0.6 }}>
                 <Card className="h-full">
                   <CardHeader>
-                    <CardTitle className="text-base">Cash Flow Timeline</CardTitle>
+                    <CardTitle className="text-base">{t("tagAnalytics.cashFlowTimeline")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {isLoading ? (
                       <Skeleton className="h-[300px] w-full" />
                     ) : primaryTimeline.length === 0 ? (
                       <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
-                        No timeline data
+                        {t("tagAnalytics.noTimelineData")}
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height={340}>
@@ -599,7 +608,7 @@ export default function TagAnalyticsPage() {
                             formatter={(value: number) => formatCurrency(value, currency)}
                             contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                           />
-                          <Bar dataKey="balance" name="Balance" fill="#3A3542" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="balance" name={t("tagAnalytics.balance")} fill="#3A3542" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     )}
@@ -615,7 +624,7 @@ export default function TagAnalyticsPage() {
               <motion.div {...fadeUp} transition={{ delay: 0.7 }}>
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">{primaryTag?.name} — Monthly</CardTitle>
+                    <CardTitle className="text-base">{primaryTag?.name} — {t("tagAnalytics.monthly")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -624,7 +633,7 @@ export default function TagAnalyticsPage() {
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                         <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatCurrency(v, currency, 'en-US', { notation: 'compact' })} />
                         <Tooltip formatter={(value: number) => formatCurrency(value, currency)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
-                        <Bar dataKey="balance" name="Balance" fill="#3A3542" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="balance" name={t("tagAnalytics.balance")} fill="#3A3542" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -633,7 +642,7 @@ export default function TagAnalyticsPage() {
               <motion.div {...fadeUp} transition={{ delay: 0.8 }}>
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">{compareTag?.name} — Monthly</CardTitle>
+                    <CardTitle className="text-base">{compareTag?.name} — {t("tagAnalytics.monthly")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -642,7 +651,7 @@ export default function TagAnalyticsPage() {
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                         <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatCurrency(v, currency, 'en-US', { notation: 'compact' })} />
                         <Tooltip formatter={(value: number) => formatCurrency(value, currency)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
-                        <Bar dataKey="balance" name="Balance" fill="#2E8B57" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="balance" name={t("tagAnalytics.balance")} fill="#2E8B57" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>

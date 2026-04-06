@@ -15,6 +15,8 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { useTranslation } from "react-i18next";
+import { translateCategoryName, translateCategoryGroup, translateCategoryType } from "@/lib/category-i18n";
 import type { Category } from "@/types/api";
 
 const TYPE_ORDER = [
@@ -40,6 +42,7 @@ export function CategoryCombobox({
   value,
   onChange,
 }: CategoryComboboxProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   const selectedCategory = useMemo(
@@ -88,8 +91,8 @@ export function CategoryCombobox({
             )}
           >
             {selectedCategory
-              ? `${selectedCategory.icon ? selectedCategory.icon + " " : ""}${selectedCategory.name}`
-              : "Search categories..."}
+              ? `${selectedCategory.icon ? selectedCategory.icon + " " : ""}${translateCategoryName(t, selectedCategory)}`
+              : t('categoryCombobox.search')}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -99,13 +102,13 @@ export function CategoryCombobox({
         align="start"
       >
         <Command className="rounded-lg overflow-visible">
-          <CommandInput placeholder="Search categories..." />
+          <CommandInput placeholder={t('categoryCombobox.search')} />
           <CommandList
             style={{ maxHeight: 280, overscrollBehavior: 'contain' }}
           >
-            <CommandEmpty>No categories found.</CommandEmpty>
+            <CommandEmpty>{t('categoryCombobox.noResults')}</CommandEmpty>
             {groupedCategories.map(([type, cats]) => (
-              <CommandGroup key={type} heading={type}>
+              <CommandGroup key={type} heading={translateCategoryType(t, type)}>
                 {cats.map((cat) => {
                   const isSelected = cat.id === value;
                   return (
@@ -129,10 +132,10 @@ export function CategoryCombobox({
                             {cat.icon}
                           </span>
                         )}
-                        <span className="truncate">{cat.name}</span>
+                        <span className="truncate">{translateCategoryName(t, cat)}</span>
                       </span>
                       <span className="text-xs text-muted-foreground ml-2 shrink-0">
-                        {cat.group}
+                        {translateCategoryGroup(t, cat.group)}
                       </span>
                     </CommandItem>
                   );

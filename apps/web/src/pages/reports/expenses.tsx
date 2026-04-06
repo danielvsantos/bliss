@@ -49,6 +49,7 @@ import {
   Legend as RechartsLegend,
 } from "recharts";
 import { ExpenseTransactionList } from "@/components/entities/expense-transaction-list";
+import { translateCategoryType, translateCategoryGroup } from "@/lib/category-i18n";
 
 const CHART_COLORS = [
   "hsl(var(--chart-1))",
@@ -225,7 +226,7 @@ export default function ExpenseTrackingPage() {
             boxShadow: "0 4px 12px rgba(58,53,66,0.08)",
           }}
         >
-          <p className="font-semibold text-foreground">{data.name}</p>
+          <p className="font-semibold text-foreground">{translateCategoryGroup(t, data.name)}</p>
           <p className="text-negative">{formatCurrency(data.value, analyticsData?.currency)}</p>
           <p className="text-muted-foreground">{data.percentage}% of total</p>
         </div>
@@ -318,7 +319,7 @@ export default function ExpenseTrackingPage() {
                 <SelectContent>
                   <SelectItem value="All">{t("common.all")}</SelectItem>
                   {expenseCategoryTypes.map(type => (
-                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                    <SelectItem key={type} value={type}>{translateCategoryType(t, type)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -437,7 +438,7 @@ export default function ExpenseTrackingPage() {
               {isLoading ? <Skeleton className="h-9 w-3/4" /> : (
                 <>
                   <div className="text-[2rem] font-semibold tracking-tight leading-tight">
-                    {highestCategory.name}
+                    {translateCategoryGroup(t, highestCategory.name)}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1.5">
                     {formatCurrency(highestCategory.value, analyticsData?.currency)}
@@ -501,7 +502,7 @@ export default function ExpenseTrackingPage() {
                             outerRadius={140}
                             paddingAngle={2}
                             dataKey="value"
-                            label={({ name, percentage }) => parseFloat(percentage) >= 5 ? `${name}: ${percentage}%` : ''}
+                            label={({ name, percentage }) => parseFloat(percentage) >= 5 ? `${translateCategoryGroup(t, name)}: ${percentage}%` : ''}
                             labelLine={false}
                             onClick={(data) => {
                               setActiveCategoryGroup(data.name);
@@ -540,7 +541,7 @@ export default function ExpenseTrackingPage() {
                                     className="w-3 h-3 rounded-full shrink-0"
                                     style={{ backgroundColor: category.color }}
                                   />
-                                  <span className="text-sm font-medium">{category.name}</span>
+                                  <span className="text-sm font-medium">{translateCategoryGroup(t, category.name)}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <span className="text-sm font-semibold text-negative tabular-nums">
@@ -611,7 +612,7 @@ export default function ExpenseTrackingPage() {
                                       selectedGroupsForTrend.includes(group.name) ? "opacity-100" : "opacity-0"
                                     )}
                                   />
-                                  {group.name}
+                                  {translateCategoryGroup(t, group.name)}
                                 </CommandItem>
                               ))}
                             </CommandGroup>
@@ -667,7 +668,7 @@ export default function ExpenseTrackingPage() {
                         {t("common.back")}
                       </Button>
                       <h3 className="text-lg font-semibold">
-                        {t("common.for")} {activeCategoryGroup}
+                        {t("common.for")} {translateCategoryGroup(t, activeCategoryGroup)}
                       </h3>
                     </div>
                     <ExpenseTransactionList

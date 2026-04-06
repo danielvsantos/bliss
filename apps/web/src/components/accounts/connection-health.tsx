@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,22 +29,23 @@ function MetricRow({ label, value, valueColor }: { label: string; value: string;
   );
 }
 
-function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return 'Never';
+function formatRelativeTime(dateStr: string | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (!dateStr) return t('connectionHealth.never');
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.round(diffMs / 60000);
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 1) return t('connectionHealth.justNow');
+  if (diffMins < 60) return t('connectionHealth.minutesAgo', { count: diffMins });
   const diffHrs = Math.round(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
+  if (diffHrs < 24) return t('connectionHealth.hoursAgo', { count: diffHrs });
   const diffDays = Math.round(diffHrs / 24);
-  return `${diffDays}d ago`;
+  return t('connectionHealth.daysAgo', { count: diffDays });
 }
 
 export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -69,8 +71,8 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
       {
         onSuccess: () => {
           toast({
-            title: 'Backfill started',
-            description: `Fetching transactions from ${format(selectedDate, 'MMM d, yyyy')}. This may take a moment.`,
+            title: t('connectionHealth.backfillStarted'),
+            description: t('connectionHealth.backfillStartedDesc', { date: format(selectedDate, 'MMM d, yyyy') }),
           });
           setPopoverOpen(false);
           setSelectedDate(undefined);
@@ -78,7 +80,7 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
         },
         onError: () => {
           toast({
-            title: 'Failed to start backfill',
+            title: t('connectionHealth.backfillFailed'),
             variant: 'destructive',
           });
         },
@@ -101,7 +103,7 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
           size="sm"
           className="h-6 w-6 p-0"
           disabled={fetchHistorical.isPending}
-          title="Fetch older transactions"
+          title={t('connectionHealth.fetchOlderTransactions')}
         >
           {fetchHistorical.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -113,9 +115,9 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
       <PopoverContent className="w-auto p-0" align="end">
         <div className="p-3 space-y-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium">Fetch older transactions</p>
+            <p className="text-sm font-medium">{t('connectionHealth.fetchOlderTransactions')}</p>
             <p className="text-xs text-muted-foreground">
-              Select a start date (up to 2 years back)
+              {t('connectionHealth.selectStartDate')}
             </p>
           </div>
           <Calendar
@@ -137,12 +139,12 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
             {fetchHistorical.isPending ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
-                Fetching...
+                {t('connectionHealth.fetching')}
               </>
             ) : selectedDate ? (
-              `Fetch from ${format(selectedDate, 'MMM d, yyyy')}`
+              t('connectionHealth.fetchFrom', { date: format(selectedDate, 'MMM d, yyyy') })
             ) : (
-              'Select a date'
+              t('connectionHealth.selectDate')
             )}
           </Button>
         </div>
@@ -156,13 +158,13 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
         <div className="flex items-center gap-2 mb-3">
           <Activity className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Connection Health
+            {t('connectionHealth.title')}
           </span>
         </div>
 
         <div className="divide-y">
           <MetricRow
-            label="Status"
+            label={t('connectionHealth.status')}
             value={account.healthLabel}
             valueColor={
               account.healthColor === 'positive' ? 'text-positive' :
@@ -175,47 +177,47 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
           {isPlaid && (
             <>
               <MetricRow
-                label="Last Synced"
-                value={formatRelativeTime(account.lastSync)}
+                label={t('connectionHealth.lastSynced')}
+                value={formatRelativeTime(account.lastSync, t)}
               />
               <MetricRow
-                label="Next Sync"
-                value="~6 hours"
+                label={t('connectionHealth.nextSync')}
+                value={t('connectionHealth.nextSyncValue')}
               />
               {account.earliestTransactionDate ? (
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-sm text-muted-foreground">History Range</span>
+                  <span className="text-sm text-muted-foreground">{t('connectionHealth.historyRange')}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-foreground">
-                      {format(account.earliestTransactionDate, 'MMM d, yyyy')} → Today
+                      {format(account.earliestTransactionDate, 'MMM d, yyyy')} → {t('connectionHealth.today')}
                     </span>
                     {backfillButton}
                   </div>
                 </div>
               ) : isActive && (
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-sm text-muted-foreground">History Range</span>
+                  <span className="text-sm text-muted-foreground">{t('connectionHealth.historyRange')}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Not yet synced</span>
+                    <span className="text-sm text-muted-foreground">{t('connectionHealth.notYetSynced')}</span>
                     {backfillButton}
                   </div>
                 </div>
               )}
               <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-muted-foreground">History Status</span>
+                <span className="text-sm text-muted-foreground">{t('connectionHealth.historyStatus')}</span>
                 {account.historicalSyncComplete ? (
                   <Badge className="bg-positive/10 text-positive border-positive/20 text-xs">
-                    Complete
+                    {t('connectionHealth.complete')}
                   </Badge>
                 ) : (
                   <Badge className="bg-warning/10 text-warning border-warning/20 text-xs">
-                    Syncing full history…
+                    {t('connectionHealth.syncingHistory')}
                   </Badge>
                 )}
               </div>
               {account.plaidItem?.institutionId && (
                 <MetricRow
-                  label="Institution ID"
+                  label={t('connectionHealth.institutionId')}
                   value={account.plaidItem.institutionId}
                 />
               )}
@@ -224,8 +226,8 @@ export function ConnectionHealth({ account, onRefetch }: ConnectionHealthProps) 
 
           {!isPlaid && (
             <MetricRow
-              label="Connection"
-              value="Manual Entry"
+              label={t('connectionHealth.connection')}
+              value={t('connectionHealth.manualEntry')}
               valueColor="text-muted-foreground"
             />
           )}

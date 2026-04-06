@@ -86,7 +86,7 @@ export function NotificationCenter() {
 
       <PopoverContent align="end" className="w-80 p-0">
         <div className="px-4 py-3 border-b">
-          <h4 className="font-semibold text-sm">{t("Notifications")}</h4>
+          <h4 className="font-semibold text-sm">{t("notifications.center.title")}</h4>
         </div>
 
         {signals.length === 0 ? (
@@ -94,7 +94,7 @@ export function NotificationCenter() {
             <div className="h-10 w-10 rounded-full bg-positive/10 flex items-center justify-center mb-2">
               <Check className="h-5 w-5 text-positive" />
             </div>
-            <p className="text-sm text-muted-foreground">{t("All caught up")}</p>
+            <p className="text-sm text-muted-foreground">{t("notifications.center.allCaughtUp")}</p>
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto">

@@ -69,26 +69,26 @@ import type { ReviewItem } from '@/components/review/types';
 type Step = 'upload' | 'processing' | 'seed' | 'review' | 'done';
 
 // ─── Status badge helpers ────────────────────────────────────────────
-const rowStatusBadge = (status: string) => {
+const rowStatusBadge = (status: string, t: (key: string) => string) => {
   switch (status) {
     case 'CONFIRMED':
-      return <Badge className="bg-positive/10 text-positive hover:bg-positive/10">Confirmed</Badge>;
+      return <Badge className="bg-positive/10 text-positive hover:bg-positive/10">{t('smartImport.status.confirmed')}</Badge>;
     case 'PENDING':
-      return <Badge variant="secondary">Pending</Badge>;
+      return <Badge variant="secondary">{t('smartImport.status.pending')}</Badge>;
     case 'DUPLICATE':
-      return <Badge variant="destructive">Duplicate</Badge>;
+      return <Badge variant="destructive">{t('smartImport.status.duplicate')}</Badge>;
     case 'POTENTIAL_DUPLICATE':
-      return <Badge className="bg-warning/10 text-warning hover:bg-warning/10">Possible Dup</Badge>;
+      return <Badge className="bg-warning/10 text-warning hover:bg-warning/10">{t('smartImport.status.possibleDup')}</Badge>;
     case 'SKIPPED':
-      return <Badge variant="outline">Skipped</Badge>;
+      return <Badge variant="outline">{t('smartImport.status.skipped')}</Badge>;
     case 'ERROR':
-      return <Badge variant="destructive">Error</Badge>;
+      return <Badge variant="destructive">{t('smartImport.status.error')}</Badge>;
     default:
       return <Badge variant="secondary">{status}</Badge>;
   }
 };
 
-const confidenceBadge = (confidence: number | null | undefined, source: string | null | undefined) => {
+const confidenceBadge = (confidence: number | null | undefined, source: string | null | undefined, t: (key: string) => string) => {
   if (confidence == null) return <span className="text-muted-foreground text-xs">-</span>;
   const pct = Math.round(confidence * 100);
   const color =
@@ -96,10 +96,10 @@ const confidenceBadge = (confidence: number | null | undefined, source: string |
       pct >= 50 ? 'text-warning' :
         'text-destructive';
   const label =
-    source === 'USER_OVERRIDE' ? 'Manual' :
-      source === 'EXACT_MATCH' ? 'Exact' :
-        source === 'VECTOR_MATCH' ? 'Vector' :
-          source === 'AI_CLASSIFICATION' ? 'AI' :
+    source === 'USER_OVERRIDE' ? t('smartImport.source.manual') :
+      source === 'EXACT_MATCH' ? t('smartImport.source.exact') :
+        source === 'VECTOR_MATCH' ? t('smartImport.source.vector') :
+          source === 'AI_CLASSIFICATION' ? t('smartImport.source.ai') :
             source ?? '';
   return (
     <span className={`text-xs font-medium ${color}`}>
@@ -289,8 +289,8 @@ export default function SmartImportPage() {
   if (step === 'processing' && importStatus && importStatus !== 'PROCESSING' && !seedReady) {
     const readyRowCount = stagedData?.import?.totalRows ?? 0;
     toast({
-      title: 'Import Ready',
-      description: `${readyRowCount} row${readyRowCount !== 1 ? 's' : ''} ready for review.`,
+      title: t('smartImport.toast.importReady'),
+      description: t('smartImport.toast.rowsReady', { count: readyRowCount }),
     });
     setStep('review');
   }
@@ -306,8 +306,8 @@ export default function SmartImportPage() {
       // must trigger the review transition ourselves here.
       const readyRowCount = stagedData?.import?.totalRows ?? 0;
       toast({
-        title: 'Import Ready',
-        description: `${readyRowCount} row${readyRowCount !== 1 ? 's' : ''} ready for review.`,
+        title: t('smartImport.toast.importReady'),
+        description: t('smartImport.toast.rowsReady', { count: readyRowCount }),
       });
       setStep('review');
       return;
@@ -355,13 +355,13 @@ export default function SmartImportPage() {
       }
       const readyRowCount = stagedData?.import?.totalRows ?? 0;
       toast({
-        title: 'Import Ready',
-        description: `${readyRowCount} row${readyRowCount !== 1 ? 's' : ''} ready for review.`,
+        title: t('smartImport.toast.importReady'),
+        description: t('smartImport.toast.rowsReady', { count: readyRowCount }),
       });
       setStep('review');
     } catch (err) {
       console.error('Seed confirmation failed:', err);
-      toast({ title: 'Error', description: 'Could not save category selections.', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('smartImport.toast.seedSaveFailed'), variant: 'destructive' });
     } finally {
       setIsConfirmingSeeds(false);
     }
@@ -370,8 +370,8 @@ export default function SmartImportPage() {
   const handleImportSeedSkip = useCallback(() => {
     const readyRowCount = stagedData?.import?.totalRows ?? 0;
     toast({
-      title: 'Import Ready',
-      description: `${readyRowCount} row${readyRowCount !== 1 ? 's' : ''} ready for review.`,
+      title: t('smartImport.toast.importReady'),
+      description: t('smartImport.toast.rowsReady', { count: readyRowCount }),
     });
     setStep('review');
   }, [stagedData, toast]);
@@ -396,22 +396,22 @@ export default function SmartImportPage() {
       }
       setStep('done');
       const parts = [];
-      if (result?.transactionCount) parts.push(`${result.transactionCount} created`);
-      if (result?.updateCount) parts.push(`${result.updateCount} updated`);
+      if (result?.transactionCount) parts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
+      if (result?.updateCount) parts.push(t('smartImport.toast.nUpdated', { count: result.updateCount }));
       toast({
-        title: 'Import Committed',
-        description: parts.length > 0 ? `${parts.join(', ')}.` : 'Done.',
+        title: t('smartImport.toast.importCommitted'),
+        description: parts.length > 0 ? `${parts.join(', ')}.` : t('smartImport.toast.done'),
       });
       // Now that transactions exist, invalidate transaction queries
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     } else if (importStatus === 'READY' && prevStatus === 'COMMITTING' && result) {
       // Partial commit: some rows were committed but others remain
       const partialParts = [];
-      if (result.transactionCount) partialParts.push(`${result.transactionCount} created`);
-      if (result.updateCount) partialParts.push(`${result.updateCount} updated`);
+      if (result.transactionCount) partialParts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
+      if (result.updateCount) partialParts.push(t('smartImport.toast.nUpdated', { count: result.updateCount }));
       toast({
-        title: 'Partial Commit Complete',
-        description: `${partialParts.join(', ')}. ${result.remaining} rows remaining for review.`,
+        title: t('smartImport.toast.partialCommit'),
+        description: `${partialParts.join(', ')}. ${t('smartImport.toast.rowsRemaining', { count: result.remaining })}`,
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
@@ -436,8 +436,8 @@ export default function SmartImportPage() {
       },
       onError: () => {
         toast({
-          title: 'Detection Failed',
-          description: 'Could not detect the file format. Please check your CSV or Excel file.',
+          title: t('smartImport.toast.detectionFailed'),
+          description: t('smartImport.toast.detectionFailedDesc'),
           variant: 'destructive',
         });
       },
@@ -457,8 +457,8 @@ export default function SmartImportPage() {
         },
         onError: () => {
           toast({
-            title: 'Upload Failed',
-            description: 'Could not start the import. Please try again.',
+            title: t('smartImport.toast.uploadFailed'),
+            description: t('smartImport.toast.uploadFailedDesc'),
             variant: 'destructive',
           });
         },
@@ -508,8 +508,8 @@ export default function SmartImportPage() {
                   const catName = confirmedRow.suggestedCategory?.name ??
                     categoriesMap.get(confirmedRow.suggestedCategoryId)?.name ?? 'this category';
                   toast({
-                    title: `${similar.length} other transaction${similar.length > 1 ? 's' : ''} in "${catName}"`,
-                    description: 'Confirm all?',
+                    title: t('smartImport.toast.otherTransactions', { count: similar.length, category: catName }),
+                    description: t('smartImport.toast.confirmAllQuestion'),
                     action: (
                       <Button
                         size="sm"
@@ -518,10 +518,10 @@ export default function SmartImportPage() {
                           similar.forEach((r) => {
                             updateRow.mutate({ rowId: r.id, data: { status: 'CONFIRMED' } });
                           });
-                          toast({ title: `Confirmed ${similar.length} transactions` });
+                          toast({ title: t('smartImport.toast.confirmedN', { count: similar.length }) });
                         }}
                       >
-                        Confirm All
+                        {t('smartImport.confirmAll')}
                       </Button>
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     ) as any,
@@ -586,11 +586,11 @@ export default function SmartImportPage() {
         setShowCommitDialog(false);
         // Don't transition to 'done' — the worker processes async.
         // Polling will detect COMMITTING → COMMITTED and transition then.
-        toast({ title: 'Commit Started', description: 'Your transactions are being committed...' });
+        toast({ title: t('smartImport.toast.commitStarted'), description: t('smartImport.toast.commitStartedDesc') });
       },
       onError: () => {
         setShowCommitDialog(false);
-        toast({ title: 'Commit Failed', description: 'Could not start the commit process.', variant: 'destructive' });
+        toast({ title: t('smartImport.toast.commitFailed'), description: t('smartImport.toast.commitFailedDesc'), variant: 'destructive' });
       },
     });
   }, [stagedImportId, commitImport, toast]);
@@ -613,12 +613,12 @@ export default function SmartImportPage() {
     cancelImport.mutate(stagedImportId, {
       onSuccess: () => {
         setShowCancelDialog(false);
-        toast({ title: 'Import Cancelled' });
+        toast({ title: t('smartImport.toast.importCancelled') });
         handleReset();
       },
       onError: () => {
         setShowCancelDialog(false);
-        toast({ title: 'Cancel Failed', variant: 'destructive' });
+        toast({ title: t('smartImport.toast.cancelFailed'), variant: 'destructive' });
       },
     });
   }, [stagedImportId, cancelImport, toast, handleReset]);
@@ -676,14 +676,14 @@ export default function SmartImportPage() {
 
     if (editingAdapter) {
       updateAdapterMutation.mutate({ id: editingAdapter.id, data: payload as Partial<CreateAdapterRequest> }, {
-        onSuccess: () => { setShowAdapterForm(false); toast({ title: 'Adapter updated' }); },
-        onError: (e: Error) => toast({ title: 'Update failed', description: e.message, variant: 'destructive' }),
+        onSuccess: () => { setShowAdapterForm(false); toast({ title: t('smartImport.toast.adapterUpdated') }); },
+        onError: (e: Error) => toast({ title: t('smartImport.toast.updateFailed'), description: e.message, variant: 'destructive' }),
       });
     } else {
       createAdapter.mutate(payload, {
         onSuccess: () => {
           setShowAdapterForm(false);
-          toast({ title: 'Adapter created' });
+          toast({ title: t('smartImport.toast.adapterCreated') });
           // Auto-redetect if a file is already selected so the user can proceed immediately
           if (selectedFile) {
             detectAdapter.mutate(selectedFile, {
@@ -691,21 +691,21 @@ export default function SmartImportPage() {
                 setDetectionResult(result);
                 if (result.adapter) {
                   setSelectedAdapterId(String(result.adapter.id));
-                  toast({ title: `Format matched: ${result.adapter.name}`, description: 'Your file is now recognized. You can proceed with the upload.' });
+                  toast({ title: t('smartImport.toast.formatMatched', { name: result.adapter.name }), description: t('smartImport.toast.formatMatchedDesc') });
                 }
               },
             });
           }
         },
-        onError: (e: Error) => toast({ title: 'Create failed', description: e.message, variant: 'destructive' }),
+        onError: (e: Error) => toast({ title: t('smartImport.toast.createFailed'), description: e.message, variant: 'destructive' }),
       });
     }
   };
 
   const handleDeleteAdapter = (id: number) => {
     deleteAdapterMutation.mutate(id, {
-      onSuccess: () => toast({ title: 'Adapter deleted' }),
-      onError: (e: unknown) => toast({ title: 'Delete failed', description: (e as Error)?.message || 'Unknown error', variant: 'destructive' }),
+      onSuccess: () => toast({ title: t('smartImport.toast.adapterDeleted') }),
+      onError: (e: unknown) => toast({ title: t('smartImport.toast.deleteFailed'), description: (e as Error)?.message || 'Unknown error', variant: 'destructive' }),
     });
   };
 
@@ -758,15 +758,15 @@ export default function SmartImportPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Sparkles className="h-7 w-7 text-primary" />
-            Smart Import
+            {t('smartImport.title')}
           </h1>
           <p className="text-muted-foreground">
-            Upload a CSV or Excel file, let AI classify your transactions, then review and commit.
+            {t('smartImport.subtitle')}
           </p>
         </div>
         {step !== 'upload' && step !== 'done' && (
           <Button variant="outline" onClick={() => setShowCancelDialog(true)}>
-            <XCircle className="h-4 w-4 mr-2" /> Cancel Import
+            <XCircle className="h-4 w-4 mr-2" /> {t('smartImport.cancelImport')}
           </Button>
         )}
       </div>
@@ -776,10 +776,10 @@ export default function SmartImportPage() {
       {/* ─── Step Indicator ─────────────────────────────────────────── */}
       <div className="flex items-center gap-2 mb-8">
         {[
-          { key: 'upload', label: '1. Upload' },
-          { key: 'processing', label: '2. Processing' },
-          { key: 'review', label: '3. Review' },
-          { key: 'done', label: '4. Done' },
+          { key: 'upload', label: `1. ${t('smartImport.steps.upload')}` },
+          { key: 'processing', label: `2. ${t('smartImport.steps.processing')}` },
+          { key: 'review', label: `3. ${t('smartImport.steps.review')}` },
+          { key: 'done', label: `4. ${t('smartImport.steps.done')}` },
         ].map(({ key, label }, idx) => {
           const isCurrent = step === key;
           const isPast =
@@ -810,8 +810,8 @@ export default function SmartImportPage() {
           {/* File picker */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Select File</CardTitle>
-              <CardDescription>Choose a bank statement or export file (CSV or Excel) to import.</CardDescription>
+              <CardTitle className="text-lg">{t('smartImport.selectFile')}</CardTitle>
+              <CardDescription>{t('smartImport.selectFileDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div
@@ -822,7 +822,7 @@ export default function SmartImportPage() {
                 {selectedFile ? (
                   <p className="text-sm font-medium">{selectedFile.name} <span className="text-muted-foreground">({(selectedFile.size / 1024).toFixed(1)} KB)</span></p>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Click to select or drag a CSV or Excel file</p>
+                  <p className="text-sm text-muted-foreground">{t('smartImport.dropzone')}</p>
                 )}
                 <input
                   ref={fileInputRef}
@@ -836,7 +836,7 @@ export default function SmartImportPage() {
               {/* Detection result */}
               {detectAdapter.isPending && (
                 <div className="flex items-center gap-2 mt-4 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Detecting file format...
+                  <Loader2 className="h-4 w-4 animate-spin" /> {t('smartImport.detectingFormat')}
                 </div>
               )}
 
@@ -845,19 +845,18 @@ export default function SmartImportPage() {
                   {detectionResult.adapter ? (
                     <Alert>
                       <CheckCircle2 className="h-4 w-4" />
-                      <AlertTitle>Format Detected: {detectionResult.adapter.name}</AlertTitle>
+                      <AlertTitle>{t('smartImport.formatDetected', { name: detectionResult.adapter.name })}</AlertTitle>
                       <AlertDescription>
-                        This file matches the <strong>{detectionResult.adapter.name}</strong> adapter.
-                        Column mapping will be applied automatically.
+                        {t('smartImport.formatDetectedDesc', { name: detectionResult.adapter.name })}
                       </AlertDescription>
                     </Alert>
                   ) : (
                     <Alert variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
-                      <AlertTitle>Unknown Format</AlertTitle>
+                      <AlertTitle>{t('smartImport.unknownFormat')}</AlertTitle>
                       <AlertDescription className="space-y-3">
                         <p>
-                          No adapter matches this file. Headers detected:{' '}
+                          {t('smartImport.unknownFormatDesc')}{' '}
                           <code className="text-xs">{detectionResult.headers?.join(', ')}</code>
                         </p>
                         <Button
@@ -870,7 +869,7 @@ export default function SmartImportPage() {
                           }}
                         >
                           <Plus className="h-4 w-4 mr-2" />
-                          Create Adapter for this Format
+                          {t('smartImport.createAdapterForFormat')}
                         </Button>
                       </AlertDescription>
                     </Alert>
@@ -883,11 +882,11 @@ export default function SmartImportPage() {
           {/* Account selection */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Destination Account</CardTitle>
+              <CardTitle className="text-lg">{t('smartImport.destinationAccount')}</CardTitle>
               <CardDescription>
                 {isNativeAdapterSelected
-                  ? 'Optional — the native adapter resolves account per-row from your CSV.'
-                  : 'All transactions will be imported into this account.'}
+                  ? t('smartImport.destinationAccountNative')
+                  : t('smartImport.destinationAccountDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -896,7 +895,7 @@ export default function SmartImportPage() {
                 onValueChange={(v) => setSelectedAccountId(v ? Number(v) : null)}
               >
                 <SelectTrigger className="w-full max-w-sm">
-                  <SelectValue placeholder={isNativeAdapterSelected ? 'Optional — resolved from CSV...' : 'Select an account...'} />
+                  <SelectValue placeholder={isNativeAdapterSelected ? t('smartImport.optionalFromCsv') : t('smartImport.selectAccount')} />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((acc: Account) => (
@@ -908,7 +907,7 @@ export default function SmartImportPage() {
               </Select>
               {isNativeAdapterSelected && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Each row's <code className="font-mono">account</code> column overrides this selection. Only select a fallback here if some rows have no account specified.
+                  {t('smartImport.nativeAccountHint')}
                 </p>
               )}
             </CardContent>
@@ -920,10 +919,10 @@ export default function SmartImportPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Settings2 className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle className="text-base">Import Adapters</CardTitle>
+                  <CardTitle className="text-base">{t('smartImport.importAdapters')}</CardTitle>
                   <Badge variant="secondary" className="text-xs">{adapters.length}</Badge>
                 </div>
-                <span className="text-xs text-muted-foreground">{showAdapterManager ? 'Hide' : 'Manage'}</span>
+                <span className="text-xs text-muted-foreground">{showAdapterManager ? t('smartImport.hide') : t('smartImport.manage')}</span>
               </div>
             </CardHeader>
             {showAdapterManager && (
@@ -940,7 +939,7 @@ export default function SmartImportPage() {
                             <Settings2 className="h-3.5 w-3.5 text-primary shrink-0" />
                           )}
                           <span className="text-sm font-medium truncate">{adapter.name}</span>
-                          {isGlobal && <Badge variant="outline" className="text-xs shrink-0">System</Badge>}
+                          {isGlobal && <Badge variant="outline" className="text-xs shrink-0">{t('smartImport.system')}</Badge>}
                           {(adapter as ImportAdapter & { matchSignature?: { isNative?: boolean } }).matchSignature?.isNative && (
                             <a
                               href="/templates/bliss-native-template.csv"
@@ -949,7 +948,7 @@ export default function SmartImportPage() {
                               onClick={(e) => e.stopPropagation()}
                             >
                               <Download className="h-3 w-3" />
-                              Template
+                              {t('smartImport.template')}
                             </a>
                           )}
                         </div>
@@ -958,7 +957,7 @@ export default function SmartImportPage() {
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAdapterForm(adapter)}>
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteAdapterMutation.mutate(adapter.id, { onSuccess: () => toast({ title: 'Adapter deleted' }), onError: (e: unknown) => toast({ title: 'Delete failed', description: (e as Error)?.message || 'Unknown error', variant: 'destructive' }) })}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteAdapterMutation.mutate(adapter.id, { onSuccess: () => toast({ title: t('smartImport.toast.adapterDeleted') }), onError: (e: unknown) => toast({ title: t('smartImport.toast.deleteFailed'), description: (e as Error)?.message || 'Unknown error', variant: 'destructive' }) })}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
@@ -967,11 +966,11 @@ export default function SmartImportPage() {
                     );
                   })}
                   {adapters.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-2">No adapters yet. Create one to start importing.</p>
+                    <p className="text-sm text-muted-foreground text-center py-2">{t('smartImport.noAdapters')}</p>
                   )}
                 </div>
                 <Button variant="outline" size="sm" onClick={() => openCreateAdapterForm()}>
-                  <Plus className="h-4 w-4 mr-2" /> New Adapter
+                  <Plus className="h-4 w-4 mr-2" /> {t('smartImport.newAdapter')}
                 </Button>
               </CardContent>
             )}
@@ -981,80 +980,80 @@ export default function SmartImportPage() {
           <Dialog open={showAdapterForm} onOpenChange={setShowAdapterForm}>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
-                <DialogTitle>{editingAdapter ? 'Edit Adapter' : 'Create Adapter'}</DialogTitle>
-                <DialogDescription>Define how your bank's CSV/Excel columns map to Bliss transaction fields.</DialogDescription>
+                <DialogTitle>{editingAdapter ? t('smartImport.editAdapter') : t('smartImport.createAdapter')}</DialogTitle>
+                <DialogDescription>{t('smartImport.adapterFormDesc')}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-1">
-                  <Label>Name *</Label>
-                  <Input value={adapterFormData.name} onChange={e => setAdapterFormData(p => ({ ...p, name: e.target.value }))} placeholder="Chase Checking CSV" />
+                  <Label>{t('smartImport.form.name')} *</Label>
+                  <Input value={adapterFormData.name} onChange={e => setAdapterFormData(p => ({ ...p, name: e.target.value }))} placeholder={t('smartImport.form.namePlaceholder')} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Match Headers (comma-separated) *</Label>
-                  <Input value={adapterFormData.matchHeaders} onChange={e => setAdapterFormData(p => ({ ...p, matchHeaders: e.target.value }))} placeholder="Date, Description, Amount" />
-                  <p className="text-xs text-muted-foreground">Column headers that uniquely identify this bank's export format.</p>
+                  <Label>{t('smartImport.form.matchHeaders')} *</Label>
+                  <Input value={adapterFormData.matchHeaders} onChange={e => setAdapterFormData(p => ({ ...p, matchHeaders: e.target.value }))} placeholder={t('smartImport.form.matchHeadersPlaceholder')} />
+                  <p className="text-xs text-muted-foreground">{t('smartImport.form.matchHeadersHint')}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label>Date Column *</Label>
-                    <Input value={adapterFormData.dateColumn} onChange={e => setAdapterFormData(p => ({ ...p, dateColumn: e.target.value }))} placeholder="Date" />
+                    <Label>{t('smartImport.form.dateColumn')} *</Label>
+                    <Input value={adapterFormData.dateColumn} onChange={e => setAdapterFormData(p => ({ ...p, dateColumn: e.target.value }))} placeholder={t('smartImport.form.dateColumnPlaceholder')} />
                   </div>
                   <div className="space-y-1">
-                    <Label>Description Column *</Label>
-                    <Input value={adapterFormData.descriptionColumn} onChange={e => setAdapterFormData(p => ({ ...p, descriptionColumn: e.target.value }))} placeholder="Description" />
+                    <Label>{t('smartImport.form.descriptionColumn')} *</Label>
+                    <Input value={adapterFormData.descriptionColumn} onChange={e => setAdapterFormData(p => ({ ...p, descriptionColumn: e.target.value }))} placeholder={t('smartImport.form.descriptionColumnPlaceholder')} />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label>Amount Strategy *</Label>
+                  <Label>{t('smartImport.form.amountStrategy')} *</Label>
                   <Select value={adapterFormData.amountStrategy} onValueChange={v => setAdapterFormData(p => ({ ...p, amountStrategy: v as 'SINGLE_SIGNED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE' }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="SINGLE_SIGNED">Single Amount Column (signed)</SelectItem>
-                      <SelectItem value="DEBIT_CREDIT_COLUMNS">Separate Debit & Credit Columns</SelectItem>
-                      <SelectItem value="AMOUNT_WITH_TYPE">Amount + Type Column</SelectItem>
+                      <SelectItem value="SINGLE_SIGNED">{t('smartImport.form.singleSigned')}</SelectItem>
+                      <SelectItem value="DEBIT_CREDIT_COLUMNS">{t('smartImport.form.debitCredit')}</SelectItem>
+                      <SelectItem value="AMOUNT_WITH_TYPE">{t('smartImport.form.amountWithType')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {adapterFormData.amountStrategy === 'DEBIT_CREDIT_COLUMNS' ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label>Debit Column *</Label>
-                      <Input value={adapterFormData.debitColumn} onChange={e => setAdapterFormData(p => ({ ...p, debitColumn: e.target.value }))} placeholder="Debit" />
+                      <Label>{t('smartImport.form.debitColumn')} *</Label>
+                      <Input value={adapterFormData.debitColumn} onChange={e => setAdapterFormData(p => ({ ...p, debitColumn: e.target.value }))} placeholder={t('smartImport.form.debitColumnPlaceholder')} />
                     </div>
                     <div className="space-y-1">
-                      <Label>Credit Column *</Label>
-                      <Input value={adapterFormData.creditColumn} onChange={e => setAdapterFormData(p => ({ ...p, creditColumn: e.target.value }))} placeholder="Credit" />
+                      <Label>{t('smartImport.form.creditColumn')} *</Label>
+                      <Input value={adapterFormData.creditColumn} onChange={e => setAdapterFormData(p => ({ ...p, creditColumn: e.target.value }))} placeholder={t('smartImport.form.creditColumnPlaceholder')} />
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <Label>Amount Column *</Label>
-                    <Input value={adapterFormData.amountColumn} onChange={e => setAdapterFormData(p => ({ ...p, amountColumn: e.target.value }))} placeholder="Amount" />
+                    <Label>{t('smartImport.form.amountColumn')} *</Label>
+                    <Input value={adapterFormData.amountColumn} onChange={e => setAdapterFormData(p => ({ ...p, amountColumn: e.target.value }))} placeholder={t('smartImport.form.amountColumnPlaceholder')} />
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label>Date Format</Label>
+                    <Label>{t('smartImport.form.dateFormat')}</Label>
                     <Input value={adapterFormData.dateFormat} onChange={e => setAdapterFormData(p => ({ ...p, dateFormat: e.target.value }))} placeholder="MM/DD/YYYY" />
                   </div>
                   <div className="space-y-1">
-                    <Label>Default Currency</Label>
+                    <Label>{t('smartImport.form.defaultCurrency')}</Label>
                     <Input value={adapterFormData.currencyDefault} onChange={e => setAdapterFormData(p => ({ ...p, currencyDefault: e.target.value }))} placeholder="USD" />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label>Skip Rows (header rows to skip)</Label>
+                  <Label>{t('smartImport.form.skipRows')}</Label>
                   <Input type="number" min={0} value={adapterFormData.skipRows} onChange={e => setAdapterFormData(p => ({ ...p, skipRows: parseInt(e.target.value) || 0 }))} />
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowAdapterForm(false)}>Cancel</Button>
+                <Button variant="outline" onClick={() => setShowAdapterForm(false)}>{t('common.cancel')}</Button>
                 <Button
                   onClick={handleSaveAdapter}
                   disabled={createAdapter.isPending || updateAdapterMutation.isPending}
                 >
                   {(createAdapter.isPending || updateAdapterMutation.isPending) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  {editingAdapter ? 'Save Changes' : 'Create Adapter'}
+                  {editingAdapter ? t('common.save_changes') : t('smartImport.createAdapter')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1069,11 +1068,11 @@ export default function SmartImportPage() {
             >
               {uploadImport.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading...
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('smartImport.uploading')}
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4 mr-2" /> Upload & Process
+                  <Upload className="h-4 w-4 mr-2" /> {t('smartImport.uploadAndProcess')}
                 </>
               )}
             </Button>
@@ -1088,16 +1087,16 @@ export default function SmartImportPage() {
           <Card className="max-w-lg mx-auto">
             <CardHeader className="text-center">
               <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary mb-4" />
-              <CardTitle>Processing Your Import</CardTitle>
+              <CardTitle>{t('smartImport.processingTitle')}</CardTitle>
               <CardDescription>
-                AI is classifying your transactions. This may take a moment...
+                {t('smartImport.processingDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Progress value={pct} className="w-full" />
-              <p className="text-sm font-medium text-center mt-3">{pct}% complete</p>
+              <p className="text-sm font-medium text-center mt-3">{t('smartImport.percentComplete', { pct })}</p>
               <p className="text-xs text-muted-foreground text-center mt-1">
-                {selectedFile?.name} &middot; {accountsMap.get(selectedAccountId!)?.name ?? 'Unknown Account'}
+                {selectedFile?.name} &middot; {accountsMap.get(selectedAccountId!)?.name ?? t('smartImport.unknownAccount')}
               </p>
             </CardContent>
           </Card>
@@ -1129,10 +1128,10 @@ export default function SmartImportPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-brand-primary" />
-                  <CardTitle className="text-lg">Quick Classify</CardTitle>
+                  <CardTitle className="text-lg">{t('smartImport.quickClassify')}</CardTitle>
                 </div>
                 <CardDescription>
-                  We found your most recurring transactions. Confirm or adjust their categories to make AI smarter for future imports.
+                  {t('smartImport.quickClassifyDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -1226,7 +1225,7 @@ export default function SmartImportPage() {
                             variant="outline"
                             className="text-xs bg-brand-primary/10 text-brand-primary border-brand-primary/20 whitespace-nowrap"
                           >
-                            {seed.classificationSource === 'VECTOR_MATCH_GLOBAL' ? 'Global' : seed.classificationSource === 'VECTOR_MATCH' ? 'Match' : 'AI'}{seed.aiConfidence != null ? ` ${Math.round(seed.aiConfidence * 100)}%` : ''}
+                            {seed.classificationSource === 'VECTOR_MATCH_GLOBAL' ? t('smartImport.seed.global') : seed.classificationSource === 'VECTOR_MATCH' ? t('smartImport.seed.match') : t('smartImport.source.ai')}{seed.aiConfidence != null ? ` ${Math.round(seed.aiConfidence * 100)}%` : ''}
                           </Badge>
                         </div>
                       )}
@@ -1244,7 +1243,7 @@ export default function SmartImportPage() {
                           return next;
                         })}
                         className="flex-shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                        title={isExcluded ? 'Restore' : 'Skip this merchant'}
+                        title={isExcluded ? t('smartImport.seed.restore') : t('smartImport.seed.skipMerchant')}
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -1257,11 +1256,11 @@ export default function SmartImportPage() {
 
                 <div className="flex justify-between items-center pt-1">
                   <Button variant="ghost" size="sm" onClick={handleImportSeedSkip} disabled={isConfirmingSeeds}>
-                    Skip for now
+                    {t('smartImport.skipForNow')}
                   </Button>
                   <Button size="sm" onClick={handleImportSeedConfirm} disabled={isConfirmingSeeds}>
                     {isConfirmingSeeds && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Confirm & Continue
+                    {t('smartImport.confirmAndContinue')}
                   </Button>
                 </div>
               </CardContent>
@@ -1287,22 +1286,22 @@ export default function SmartImportPage() {
                 <CardContent className="py-4 space-y-3">
                   <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                     <div>
-                      <span className="text-muted-foreground">File:</span>{' '}
+                      <span className="text-muted-foreground">{t('smartImport.review.file')}:</span>{' '}
                       <span className="font-medium">{importInfo.fileName}</span>
                     </div>
                     {importInfo.accountId && (
                       <div>
-                        <span className="text-muted-foreground">Account:</span>{' '}
+                        <span className="text-muted-foreground">{t('smartImport.review.account')}:</span>{' '}
                         <span className="font-medium">{accountsMap.get(importInfo.accountId)?.name ?? '-'}</span>
                       </div>
                     )}
                     <div>
-                      <span className="text-muted-foreground">Total:</span>{' '}
-                      <span className="font-medium">{importInfo.totalRows} rows</span>
+                      <span className="text-muted-foreground">{t('smartImport.review.total')}:</span>{' '}
+                      <span className="font-medium">{t('smartImport.review.nRows', { count: importInfo.totalRows })}</span>
                     </div>
                     {earliest && (
                       <div>
-                        <span className="text-muted-foreground">Earliest:</span>{' '}
+                        <span className="text-muted-foreground">{t('smartImport.review.earliest')}:</span>{' '}
                         <span className="font-medium">{formatDate(earliest)}</span>
                       </div>
                     )}
@@ -1311,32 +1310,32 @@ export default function SmartImportPage() {
                   <div className="flex flex-wrap gap-2">
                     {autoConfirmed > 0 && (
                       <Badge className="bg-positive/10 text-positive border-positive/20 hover:bg-positive/10">
-                        {autoConfirmed} auto-confirmed
+                        {t('smartImport.review.autoConfirmed', { count: autoConfirmed })}
                       </Badge>
                     )}
                     {updateCountVal > 0 && (
                       <Badge className="bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
-                        {updateCountVal} update{updateCountVal > 1 ? 's' : ''}
+                        {t('smartImport.review.nUpdates', { count: updateCountVal })}
                       </Badge>
                     )}
                     {pendingCount > 0 && (
                       <Badge className="bg-warning/10 text-warning border-warning/20 hover:bg-warning/10">
-                        {pendingCount} pending review
+                        {t('smartImport.review.pendingReview', { count: pendingCount })}
                       </Badge>
                     )}
                     {duplicateCount > 0 && (
                       <Badge className="bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
-                        {duplicateCount} duplicate{duplicateCount > 1 ? 's' : ''}
+                        {t('smartImport.review.nDuplicates', { count: duplicateCount })}
                       </Badge>
                     )}
                     {errorCount > 0 && (
                       <Badge className="bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10">
-                        {errorCount} error{errorCount > 1 ? 's' : ''}
+                        {t('smartImport.review.nErrors', { count: errorCount })}
                       </Badge>
                     )}
                     {importInfo.status === 'ERROR' && (
                       <Badge variant="destructive">
-                        {(importInfo.errorDetails as { message?: string })?.message ?? 'Processing failed'}
+                        {(importInfo.errorDetails as { message?: string })?.message ?? t('smartImport.processingFailed')}
                       </Badge>
                     )}
                   </div>
@@ -1350,15 +1349,15 @@ export default function SmartImportPage() {
             <Card className="max-w-lg mx-auto text-center">
               <CardHeader>
                 <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary mb-4" />
-                <CardTitle>Committing Transactions</CardTitle>
+                <CardTitle>{t('smartImport.committingTitle')}</CardTitle>
                 <CardDescription>
-                  Creating transactions from your confirmed rows...
+                  {t('smartImport.committingDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Progress value={importInfo.progress ?? 0} className="w-full" />
                 <p className="text-sm font-medium text-center mt-3 text-muted-foreground">
-                  {importInfo.progress ?? 0}% complete
+                  {t('smartImport.percentComplete', { pct: importInfo.progress ?? 0 })}
                 </p>
               </CardContent>
             </Card>
@@ -1366,19 +1365,19 @@ export default function SmartImportPage() {
 
           {/* Filter bar — hidden while committing */}
           {importInfo?.status !== 'COMMITTING' && <div className="flex flex-wrap items-center gap-3">
-            <Label className="text-sm text-muted-foreground">Filter by status:</Label>
+            <Label className="text-sm text-muted-foreground">{t('smartImport.review.filterByStatus')}:</Label>
             <Select value={reviewFilter} onValueChange={(v) => { setReviewFilter(v); setReviewPage(1); }}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Rows</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="CONFIRMED">Confirmed</SelectItem>
-                <SelectItem value="DUPLICATE">Duplicate</SelectItem>
-                <SelectItem value="POTENTIAL_DUPLICATE">Possible Duplicate</SelectItem>
-                <SelectItem value="SKIPPED">Skipped</SelectItem>
-                <SelectItem value="ERROR">Error</SelectItem>
+                <SelectItem value="all">{t('smartImport.filter.allRows')}</SelectItem>
+                <SelectItem value="PENDING">{t('smartImport.status.pending')}</SelectItem>
+                <SelectItem value="CONFIRMED">{t('smartImport.status.confirmed')}</SelectItem>
+                <SelectItem value="DUPLICATE">{t('smartImport.status.duplicate')}</SelectItem>
+                <SelectItem value="POTENTIAL_DUPLICATE">{t('smartImport.filter.possibleDuplicate')}</SelectItem>
+                <SelectItem value="SKIPPED">{t('smartImport.status.skipped')}</SelectItem>
+                <SelectItem value="ERROR">{t('smartImport.status.error')}</SelectItem>
               </SelectContent>
             </Select>
             <div className="ml-auto flex gap-1">
@@ -1387,14 +1386,14 @@ export default function SmartImportPage() {
                 size="sm"
                 onClick={() => setViewMode('flat')}
               >
-                <LayoutList className="h-4 w-4 mr-1" /> Flat
+                <LayoutList className="h-4 w-4 mr-1" /> {t('smartImport.review.flat')}
               </Button>
               <Button
                 variant={viewMode === 'grouped' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setViewMode('grouped')}
               >
-                <FolderOpen className="h-4 w-4 mr-1" /> Grouped
+                <FolderOpen className="h-4 w-4 mr-1" /> {t('smartImport.review.grouped')}
               </Button>
             </div>
           </div>}
@@ -1410,14 +1409,14 @@ export default function SmartImportPage() {
           ) : stagedError ? (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Error Loading Import</AlertTitle>
-              <AlertDescription>Could not load the staged import data. Please try refreshing.</AlertDescription>
+              <AlertTitle>{t('smartImport.review.errorLoadingTitle')}</AlertTitle>
+              <AlertDescription>{t('smartImport.review.errorLoadingDesc')}</AlertDescription>
             </Alert>
           ) : rows.length === 0 ? (
             <div className="bg-muted py-10 rounded-lg text-center">
-              <h3 className="text-lg font-medium">No rows found</h3>
+              <h3 className="text-lg font-medium">{t('smartImport.review.noRowsFound')}</h3>
               <p className="text-muted-foreground mt-2">
-                {reviewFilter !== 'all' ? 'Try a different filter.' : 'The import did not produce any rows.'}
+                {reviewFilter !== 'all' ? t('smartImport.review.tryDifferentFilter') : t('smartImport.review.noRowsProduced')}
               </p>
             </div>
           ) : viewMode === 'grouped' ? (
@@ -1425,7 +1424,7 @@ export default function SmartImportPage() {
               {groupedRows.map((group) => (
                 <GroupCard
                   key={group.key}
-                  categoryName={group.category?.name ?? 'Uncategorized'}
+                  categoryName={group.category?.name ?? t('review.uncategorized')}
                   items={group.items}
                   total={group.total}
                   onApprove={(item) => handleRowStatusChange(item.id, 'CONFIRMED')}
@@ -1464,15 +1463,15 @@ export default function SmartImportPage() {
               {/* Pagination */}
               <div className="flex justify-between items-center mt-4">
                 <p className="text-sm text-muted-foreground">
-                  Page {reviewPage} of {totalPages}
-                  {pagination?.total ? ` (${pagination.total} rows)` : ''}
+                  {t('smartImport.review.pageOf', { current: reviewPage, total: totalPages })}
+                  {pagination?.total ? ` (${t('smartImport.review.nRows', { count: pagination.total })})` : ''}
                 </p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setReviewPage((p) => Math.max(1, p - 1))} disabled={reviewPage <= 1}>
-                    <ChevronLeftIcon className="h-4 w-4 mr-1" /> Previous
+                    <ChevronLeftIcon className="h-4 w-4 mr-1" /> {t('common.previous')}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setReviewPage((p) => Math.min(totalPages, p + 1))} disabled={reviewPage >= totalPages}>
-                    Next <ChevronRightIcon className="h-4 w-4 ml-1" />
+                    {t('common.next')} <ChevronRightIcon className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
               </div>
@@ -1496,7 +1495,7 @@ export default function SmartImportPage() {
           {importInfo?.status === 'READY' && (
             <div className="flex justify-between items-center pt-4 border-t">
               <Button variant="outline" onClick={() => setShowCancelDialog(true)}>
-                <XCircle className="h-4 w-4 mr-2" /> Cancel Import
+                <XCircle className="h-4 w-4 mr-2" /> {t('smartImport.cancelImport')}
               </Button>
               <Button
                 size="lg"
@@ -1504,9 +1503,9 @@ export default function SmartImportPage() {
                 disabled={commitImport.isPending}
               >
                 {commitImport.isPending ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Committing...</>
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('smartImport.committing')}</>
                 ) : (
-                  <><CheckCircle2 className="h-4 w-4 mr-2" /> Commit Import</>
+                  <><CheckCircle2 className="h-4 w-4 mr-2" /> {t('smartImport.commitImport')}</>
                 )}
               </Button>
             </div>
@@ -1516,15 +1515,15 @@ export default function SmartImportPage() {
             <div className="flex justify-between items-center pt-4 border-t">
               <Alert variant="destructive" className="flex-1 mr-4">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Import Error</AlertTitle>
+                <AlertTitle>{t('smartImport.importError')}</AlertTitle>
                 <AlertDescription>
                   {importInfo?.errorDetails && typeof importInfo.errorDetails === 'object' && 'message' in importInfo.errorDetails
                     ? (importInfo.errorDetails as { message: string }).message
-                    : 'An error occurred during processing.'}
+                    : t('smartImport.processingError')}
                 </AlertDescription>
               </Alert>
               <Button variant="outline" onClick={handleReset}>
-                <RotateCcw className="h-4 w-4 mr-2" /> Start Over
+                <RotateCcw className="h-4 w-4 mr-2" /> {t('smartImport.startOver')}
               </Button>
             </div>
           )}
@@ -1536,8 +1535,8 @@ export default function SmartImportPage() {
         <Card className="max-w-lg mx-auto text-center">
           <CardHeader>
             <CheckCircle2 className="h-16 w-16 mx-auto text-positive mb-4" />
-            <CardTitle>Import Complete!</CardTitle>
-            <CardDescription>Your transactions have been committed successfully.</CardDescription>
+            <CardTitle>{t('smartImport.importComplete')}</CardTitle>
+            <CardDescription>{t('smartImport.importCompleteDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {commitResult && (
@@ -1545,29 +1544,29 @@ export default function SmartImportPage() {
                 {commitResult.transactionCount > 0 && (
                   <div>
                     <span className="text-2xl font-bold text-positive">{commitResult.transactionCount}</span>
-                    <p className="text-muted-foreground">Created</p>
+                    <p className="text-muted-foreground">{t('smartImport.done.created')}</p>
                   </div>
                 )}
                 {commitResult.updateCount > 0 && (
                   <div>
                     <span className="text-2xl font-bold text-brand-primary">{commitResult.updateCount}</span>
-                    <p className="text-muted-foreground">Updated</p>
+                    <p className="text-muted-foreground">{t('smartImport.done.updated')}</p>
                   </div>
                 )}
                 {commitResult.remaining > 0 && (
                   <div>
                     <span className="text-2xl font-bold text-warning">{commitResult.remaining}</span>
-                    <p className="text-muted-foreground">Remaining</p>
+                    <p className="text-muted-foreground">{t('smartImport.done.remaining')}</p>
                   </div>
                 )}
               </div>
             )}
             <div className="flex gap-3 justify-center mt-4">
               <Button onClick={handleReset} variant="outline">
-                <RotateCcw className="h-4 w-4 mr-2" /> Import Another File
+                <RotateCcw className="h-4 w-4 mr-2" /> {t('smartImport.importAnotherFile')}
               </Button>
               <Button onClick={() => navigate('/agents/review?source=imports')}>
-                <ClipboardCheck className="h-4 w-4 mr-2" /> Review in Transaction Review
+                <ClipboardCheck className="h-4 w-4 mr-2" /> {t('smartImport.reviewInTransactionReview')}
               </Button>
             </div>
           </CardContent>
@@ -1578,21 +1577,20 @@ export default function SmartImportPage() {
       <Dialog open={showCommitDialog} onOpenChange={setShowCommitDialog}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Commit Import</DialogTitle>
+            <DialogTitle>{t('smartImport.commitImport')}</DialogTitle>
             <DialogDescription>
-              This will create transactions for all confirmed, pending, and potential-duplicate rows.
-              Duplicate and skipped rows will be excluded. This action cannot be undone.
+              {t('smartImport.commitDialogDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCommitDialog(false)}>
-              Go Back
+              {t('smartImport.goBack')}
             </Button>
             <Button onClick={handleCommit} disabled={commitImport.isPending}>
               {commitImport.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Committing...</>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('smartImport.committing')}</>
               ) : (
-                'Yes, Commit'
+                t('smartImport.yesCommit')
               )}
             </Button>
           </DialogFooter>
@@ -1603,20 +1601,20 @@ export default function SmartImportPage() {
       <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Cancel Import</DialogTitle>
+            <DialogTitle>{t('smartImport.cancelImport')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel? All staged rows will be discarded.
+              {t('smartImport.cancelDialogDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
-              Go Back
+              {t('smartImport.goBack')}
             </Button>
             <Button variant="destructive" onClick={handleCancel} disabled={cancelImport.isPending}>
               {cancelImport.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cancelling...</>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('smartImport.cancelling')}</>
               ) : (
-                'Yes, Cancel Import'
+                t('smartImport.yesCancelImport')
               )}
             </Button>
           </DialogFooter>

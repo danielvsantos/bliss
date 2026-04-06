@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from 'recharts';
@@ -16,6 +17,7 @@ import { useAnalytics } from '@/hooks/use-analytics';
 import { startOfMonth, startOfYear, endOfMonth, subMonths, format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { translateCategoryGroup } from '@/lib/category-i18n';
 import type { AnalyticsResponse } from '@/types/api';
 
 type ChartPeriod = 'year' | 'month' | 'prev_month' | 'quarter';
@@ -49,12 +51,13 @@ function renderPieLabel({
 }
 
 function ChartTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+  const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="bg-card/95 border border-border rounded-lg px-3 py-2 shadow-lg">
       <p className="text-sm font-medium text-foreground">{d.name}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{d.percentage}% of spending</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{d.percentage}% {t('expenseSplit.ofSpending')}</p>
     </div>
   );
 }
@@ -108,11 +111,11 @@ const processAnalyticsData = (analyticsData: AnalyticsResponse | undefined) => {
   return result;
 };
 
-const PERIOD_LABELS: Record<ChartPeriod, string> = {
-  year: 'This year',
-  month: 'This month',
-  prev_month: 'Last month',
-  quarter: 'Last 3 months',
+const PERIOD_LABEL_KEYS: Record<ChartPeriod, string> = {
+  year: 'expenseSplit.thisYear',
+  month: 'expenseSplit.thisMonth',
+  prev_month: 'expenseSplit.lastMonth',
+  quarter: 'expenseSplit.last3Months',
 };
 
 interface ExpenseSplitCardProps {
@@ -121,6 +124,7 @@ interface ExpenseSplitCardProps {
 }
 
 export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps) {
+  const { t } = useTranslation();
   const [period, setPeriod] = useState<ChartPeriod>('year');
 
   const { startMonth, endMonth } = useMemo(() => {
@@ -161,16 +165,22 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
     types: ['Essentials', 'Lifestyle', 'Growth', 'Investments'],
   });
 
-  const chartData = useMemo(() => processAnalyticsData(analyticsData), [analyticsData]);
+  const chartData = useMemo(() =>
+    processAnalyticsData(analyticsData).map(d => ({
+      ...d,
+      name: translateCategoryGroup(t, d.name),
+    })),
+    [analyticsData, t],
+  );
 
   return (
     <Card className={`h-full ${className ?? ''}`}>
       <CardHeader>
         <div className="flex items-center justify-between w-full">
           <div className="flex flex-col gap-0.5">
-            <CardTitle className="text-lg font-medium">Expense Split</CardTitle>
+            <CardTitle className="text-lg font-medium">{t('expenseSplit.title')}</CardTitle>
             <span className="text-[0.8125rem] text-muted-foreground">
-              {PERIOD_LABELS[period]}
+              {t(PERIOD_LABEL_KEYS[period])}
             </span>
           </div>
           <Select value={period} onValueChange={(v) => setPeriod(v as ChartPeriod)}>
@@ -179,10 +189,10 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                <SelectItem value="year">This year</SelectItem>
-                <SelectItem value="month">This month</SelectItem>
-                <SelectItem value="prev_month">Last month</SelectItem>
-                <SelectItem value="quarter">Last 3 months</SelectItem>
+                <SelectItem value="year">{t('expenseSplit.thisYear')}</SelectItem>
+                <SelectItem value="month">{t('expenseSplit.thisMonth')}</SelectItem>
+                <SelectItem value="prev_month">{t('expenseSplit.lastMonth')}</SelectItem>
+                <SelectItem value="quarter">{t('expenseSplit.last3Months')}</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -198,7 +208,7 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
           </div>
         ) : chartData.length === 0 ? (
           <div className="flex items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">No spending data for this period.</p>
+            <p className="text-sm text-muted-foreground">{t('expenseSplit.noData')}</p>
           </div>
         ) : (
           <>
@@ -237,7 +247,7 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: d.color }}
                   />
-                  <span className="text-xs text-muted-foreground truncate">{d.name}</span>
+                  <span className="text-xs text-muted-foreground truncate">{translateCategoryGroup(t, d.name)}</span>
                   <span className="text-xs font-medium text-brand-primary ml-auto">{d.percentage}%</span>
                 </div>
               ))}
@@ -251,7 +261,7 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
           to="/reports/expenses"
           className="inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline"
         >
-          View expenses
+          {t('expenseSplit.viewExpenses')}
           <ArrowRight className="h-3 w-3" />
         </Link>
       </div>

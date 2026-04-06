@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Card,
   CardContent,
@@ -92,6 +93,7 @@ interface ExtendedUser extends User {
 }
 
 export default function UserManagementPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState("all");
@@ -119,8 +121,8 @@ export default function UserManagementPage() {
       } catch (error) {
         console.error("Failed to fetch users:", error);
         toast({
-          title: "Error",
-          description: "Failed to load users",
+          title: t('common.error'),
+          description: t('userManagement.userCreateFailed'),
           variant: "destructive",
         });
       }
@@ -164,8 +166,8 @@ export default function UserManagementPage() {
       ]);
 
       toast({
-        title: "User created",
-        description: `User ${newUser.name || newUser.email} has been created successfully`,
+        title: t('userManagement.userCreated'),
+        description: t('userManagement.userCreatedDetail', { name: newUser.name || newUser.email }),
       });
 
       // Reset and close dialog
@@ -181,8 +183,8 @@ export default function UserManagementPage() {
     } catch (error) {
       console.error("Error creating user:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong when creating the user",
+        title: t('common.error'),
+        description: error instanceof Error ? error.message : t('userManagement.userCreateFailed'),
         variant: "destructive",
       });
     }
@@ -211,8 +213,8 @@ export default function UserManagementPage() {
       ));
       
       toast({
-        title: "User updated",
-        description: `User ${currentUser.name || currentUser.email} has been updated successfully`,
+        title: t('userManagement.userUpdated'),
+        description: t('userManagement.userUpdatedDetail', { name: currentUser.name || currentUser.email }),
       });
       
       // Reset and close dialog
@@ -221,8 +223,8 @@ export default function UserManagementPage() {
     } catch (error) {
       console.error("Error updating user:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong when updating the user",
+        title: t('common.error'),
+        description: error instanceof Error ? error.message : t('userManagement.userUpdateFailed'),
         variant: "destructive",
       });
     }
@@ -236,14 +238,14 @@ export default function UserManagementPage() {
       setUsers(users.filter(user => user.id !== userId));
       
       toast({
-        title: "User removed",
-        description: "The user has been removed from this tenant",
+        title: t('userManagement.userRemoved'),
+        description: t('userManagement.userRemovedDetail'),
       });
     } catch (error) {
       console.error("Error removing user:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong when removing the user",
+        title: t('common.error'),
+        description: error instanceof Error ? error.message : t('userManagement.userRemoveFailed'),
         variant: "destructive",
       });
     }
@@ -262,14 +264,14 @@ export default function UserManagementPage() {
       // await api.resendInvitation(userId);
       
       toast({
-        title: "Invitation sent",
-        description: `A new invitation has been sent to ${user.email}`,
+        title: t('userManagement.invitationSent'),
+        description: t('userManagement.invitationSentDetail', { email: user.email }),
       });
     } catch (error) {
       console.error("Error resending invitation:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Something went wrong when resending the invitation",
+        title: t('common.error'),
+        description: error instanceof Error ? error.message : t('userManagement.invitationFailed'),
         variant: "destructive",
       });
     }
@@ -277,23 +279,23 @@ export default function UserManagementPage() {
 
   // Get relationship label
   const getRelationshipLabel = (type?: RelationshipTypeValue) => {
-    if (!type) return "Other";
-    
+    if (!type) return t('userManagement.relationOther');
+
     switch (type) {
       case RelationshipType.SELF:
-        return "Self";
+        return t('userManagement.relationSelf');
       case RelationshipType.PARTNER:
-        return "Partner";
+        return t('userManagement.relationPartner');
       case RelationshipType.CHILD:
-        return "Child";
+        return t('userManagement.relationChild');
       case RelationshipType.OTHER_RELATIVE:
-        return "Other Relative";
+        return t('userManagement.relationRelative');
       case RelationshipType.FRIEND:
-        return "Friend";
+        return t('userManagement.relationFriend');
       case RelationshipType.COLLEAGUE:
-        return "Colleague";
+        return t('userManagement.relationColleague');
       default:
-        return "Other";
+        return t('userManagement.relationOther');
     }
   };
 
@@ -337,81 +339,81 @@ export default function UserManagementPage() {
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
-              <h2 className="text-3xl font-bold tracking-tight">User Management</h2>
+              <h2 className="text-3xl font-bold tracking-tight">{t('userManagement.title')}</h2>
             </div>
             <p className="text-muted-foreground">
-              Manage users and their access to your tenant
+              {t('userManagement.subtitle')}
             </p>
           </div>
           <Dialog open={showAddUserDialog} onOpenChange={setShowAddUserDialog}>
             <DialogTrigger asChild>
               <Button>
                 <UserPlus className="mr-2 h-4 w-4" />
-                Create User
+                {t('userManagement.createUser')}
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Create a New User</DialogTitle>
+                <DialogTitle>{t('userManagement.createTitle')}</DialogTitle>
                 <DialogDescription>
-                  Create a new user account with login credentials.
+                  {t('userManagement.createDescription')}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-6 py-4">
                 <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Name</Label>
+                    <Label htmlFor="name">{t('userManagement.name')}</Label>
                     <Input
                       id="name"
-                      placeholder="Enter their name"
+                      placeholder={t('userManagement.namePlaceholder')}
                       value={newUser.name}
                       onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email Address</Label>
+                    <Label htmlFor="email">{t('userManagement.emailAddress')}</Label>
                     <Input
                       id="email"
                       type="email"
-                      placeholder="Enter their email address"
+                      placeholder={t('userManagement.emailPlaceholder')}
                       value={newUser.email}
                       onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
+                    <Label htmlFor="password">{t('userManagement.password')}</Label>
                     <Input
                       id="password"
                       type="password"
-                      placeholder="Set a password (min 6 characters)"
+                      placeholder={t('userManagement.passwordPlaceholder')}
                       value={newUser.password}
                       onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="create-role">Role</Label>
+                    <Label htmlFor="create-role">{t('userManagement.role')}</Label>
                     <Select
                       value={newUser.role || "member"}
                       onValueChange={(value) => setNewUser({ ...newUser, role: value })}
                     >
                       <SelectTrigger id="create-role">
-                        <SelectValue placeholder="Select role" />
+                        <SelectValue placeholder={t('userManagement.selectRole')} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="admin">
                           <div className="flex items-center gap-2">
                             <Shield className="h-4 w-4" />
-                            Admin
+                            {t('userManagement.roleAdmin')}
                           </div>
                         </SelectItem>
-                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="member">{t('userManagement.roleMember')}</SelectItem>
                         <SelectItem value="viewer">
                           <div className="flex items-center gap-2">
                             <Eye className="h-4 w-4" />
-                            Viewer (read-only)
+                            {t('userManagement.roleViewer')}
                           </div>
                         </SelectItem>
                       </SelectContent>
@@ -419,13 +421,13 @@ export default function UserManagementPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="locale">Preferred Language</Label>
+                    <Label htmlFor="locale">{t('userManagement.preferredLanguage')}</Label>
                     <Select
                       value={newUser.preferredLocale}
                       onValueChange={(value) => setNewUser({ ...newUser, preferredLocale: value })}
                     >
                       <SelectTrigger id="locale">
-                        <SelectValue placeholder="Select language" />
+                        <SelectValue placeholder={t('userManagement.selectLanguage')} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="en-US">English (US)</SelectItem>
@@ -443,7 +445,7 @@ export default function UserManagementPage() {
               <DialogFooter>
                 <Button type="submit" onClick={handleAddUser} disabled={!newUser.email || !newUser.password || newUser.password.length < 6}>
                   <UserPlus className="mr-2 h-4 w-4" />
-                  Create User
+                  {t('userManagement.createUser')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -460,9 +462,9 @@ export default function UserManagementPage() {
           >
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Edit User</DialogTitle>
+                <DialogTitle>{t('userManagement.editTitle')}</DialogTitle>
                 <DialogDescription>
-                  Update user information and access permissions
+                  {t('userManagement.editDescription')}
                 </DialogDescription>
               </DialogHeader>
               {currentUser && (
@@ -482,7 +484,7 @@ export default function UserManagementPage() {
 
                     <div className="grid grid-cols-1 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="edit-name">Name</Label>
+                        <Label htmlFor="edit-name">{t('userManagement.name')}</Label>
                         <Input
                           id="edit-name"
                           value={currentUser.name || ''}
@@ -491,7 +493,7 @@ export default function UserManagementPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="edit-email">Email Address</Label>
+                        <Label htmlFor="edit-email">{t('userManagement.emailAddress')}</Label>
                         <Input
                           id="edit-email"
                           type="email"
@@ -502,13 +504,13 @@ export default function UserManagementPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="edit-locale">Preferred Language</Label>
+                        <Label htmlFor="edit-locale">{t('userManagement.preferredLanguage')}</Label>
                         <Select
                           value={currentUser.preferredLocale || ''}
                           onValueChange={(value) => setCurrentUser({ ...currentUser, preferredLocale: value })}
                         >
                           <SelectTrigger id="edit-locale">
-                            <SelectValue placeholder="Select language" />
+                            <SelectValue placeholder={t('userManagement.selectLanguage')} />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="en-US">English (US)</SelectItem>
@@ -523,7 +525,7 @@ export default function UserManagementPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="birthDate">Birth Date</Label>
+                        <Label htmlFor="birthDate">{t('userManagement.birthDate')}</Label>
                         <Input
                           id="birthDate"
                           type="date"
@@ -536,26 +538,26 @@ export default function UserManagementPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="edit-role">Role</Label>
+                        <Label htmlFor="edit-role">{t('userManagement.role')}</Label>
                         <Select
                           value={currentUser.role || 'member'}
                           onValueChange={(value) => setCurrentUser({ ...currentUser, role: value })}
                         >
                           <SelectTrigger id="edit-role">
-                            <SelectValue placeholder="Select role" />
+                            <SelectValue placeholder={t('userManagement.selectRole')} />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="admin">
                               <div className="flex items-center gap-2">
                                 <Shield className="h-4 w-4" />
-                                Admin
+                                {t('userManagement.roleAdmin')}
                               </div>
                             </SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="member">{t('userManagement.roleMember')}</SelectItem>
                             <SelectItem value="viewer">
                               <div className="flex items-center gap-2">
                                 <Eye className="h-4 w-4" />
-                                Viewer (read-only)
+                                {t('userManagement.roleViewer')}
                               </div>
                             </SelectItem>
                           </SelectContent>
@@ -572,11 +574,11 @@ export default function UserManagementPage() {
                         setCurrentUser(null);
                       }}
                     >
-                      Cancel
+                      {t('userManagement.cancel')}
                     </Button>
                     <Button onClick={handleUpdateUser} disabled={!currentUser.name || !currentUser.email}>
                       <UserCog className="mr-2 h-4 w-4" />
-                      Update User
+                      {t('userManagement.updateUser')}
                     </Button>
                   </DialogFooter>
                 </>
@@ -587,16 +589,16 @@ export default function UserManagementPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Tenant Users</CardTitle>
+            <CardTitle>{t('userManagement.tenantUsers')}</CardTitle>
             <CardDescription>
-              Manage users with access to your financial data
+              {t('userManagement.tenantUsersDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-6 space-y-4">
               <div className="flex flex-col sm:flex-row justify-between gap-3">
                 <Input
-                  placeholder="Search users..."
+                  placeholder={t('userManagement.searchUsers')}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="max-w-sm"
@@ -608,24 +610,24 @@ export default function UserManagementPage() {
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" className="h-10 gap-1">
                         <Filter className="h-4 w-4" />
-                        <span>Status</span>
+                        <span>{t('userManagement.statusFilter')}</span>
                         <ChevronDown className="h-4 w-4 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Filter by Status</DropdownMenuLabel>
+                      <DropdownMenuLabel>{t('userManagement.statusFilter')}</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => setStatusFilter("all")}>
-                        All Statuses
+                        {t('userManagement.allStatuses')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setStatusFilter("active")}>
-                        Active
+                        {t('userManagement.statusActive')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setStatusFilter("pending")}>
-                        Pending
+                        {t('userManagement.statusPending')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setStatusFilter("inactive")}>
-                        Inactive
+                        {t('userManagement.statusInactive')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -634,12 +636,12 @@ export default function UserManagementPage() {
               
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">
-                  Showing {filteredUsers.length} of {users.length} users
+                  {t('userManagement.showing')} {filteredUsers.length} {t('userManagement.of')} {users.length} {t('userManagement.users')}
                 </span>
 
                 {statusFilter !== "all" && (
                   <Badge variant="outline" className="flex items-center gap-1">
-                    <span>Status: {statusFilter}</span>
+                    <span>{t('userManagement.statusFilter')}: {statusFilter}</span>
                     <button 
                       className="ml-1 hover:text-destructive" 
                       onClick={() => setStatusFilter("all")}
@@ -655,11 +657,11 @@ export default function UserManagementPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Login</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('userManagement.user')}</TableHead>
+                    <TableHead>{t('userManagement.role')}</TableHead>
+                    <TableHead>{t('userManagement.statusFilter')}</TableHead>
+                    <TableHead>{t('userManagement.lastLogin')}</TableHead>
+                    <TableHead className="text-right">{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -707,7 +709,7 @@ export default function UserManagementPage() {
                           {user.lastLogin ? (
                             formatDate(user.lastLogin)
                           ) : (
-                            <span className="text-muted-foreground">Never</span>
+                            <span className="text-muted-foreground">{t('userManagement.never')}</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -718,7 +720,7 @@ export default function UserManagementPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuLabel>{t('common.actions')}</DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => {
@@ -727,14 +729,14 @@ export default function UserManagementPage() {
                                 }}
                               >
                                 <Pencil className="h-4 w-4 mr-2" />
-                                Edit user
+                                {t('userManagement.editUser')}
                               </DropdownMenuItem>
                               {user.status === "pending" && (
                                 <DropdownMenuItem
                                   onClick={() => handleResendInvitation(user.id || '')}
                                 >
                                   <Mail className="h-4 w-4 mr-2" />
-                                  Resend invitation
+                                  {t('userManagement.resendInvitation')}
                                 </DropdownMenuItem>
                               )}
                               {user.role !== "owner" && (
@@ -743,7 +745,7 @@ export default function UserManagementPage() {
                                   onClick={() => handleDeleteUser(user.id || '')}
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
-                                  Remove user
+                                  {t('userManagement.removeUser')}
                                 </DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
@@ -754,7 +756,7 @@ export default function UserManagementPage() {
                   ) : (
                     <TableRow>
                       <TableCell colSpan={4} className="h-24 text-center">
-                        No users found matching the filters
+                        {t('userManagement.noUsersFound')}
                       </TableCell>
                     </TableRow>
                   )}

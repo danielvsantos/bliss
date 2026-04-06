@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -5,15 +6,16 @@ import { Separator } from '@/components/ui/separator';
 import { Sparkles } from 'lucide-react';
 import type { ReviewItem } from './types';
 
-const sourceLabels: Record<string, string> = {
-  USER_OVERRIDE: 'Set by you',
-  EXACT_MATCH: 'Matched from history',
-  VECTOR_SEARCH: 'Similar to your history',
-  VECTOR_MATCH: 'Similar to your history',
-  VECTOR_MATCH_GLOBAL: 'Known spending pattern',
-  PLAID_MAPPED: 'Suggested by bank',
-  LLM: 'AI analysis',
-  AI_CLASSIFICATION: 'AI analysis',
+// Source key mapping for i18n lookup — maps API values to translation keys
+const sourceKeyMap: Record<string, string> = {
+  USER_OVERRIDE: 'USER_OVERRIDE',
+  EXACT_MATCH: 'EXACT_MATCH',
+  VECTOR_SEARCH: 'VECTOR_MATCH',
+  VECTOR_MATCH: 'VECTOR_MATCH',
+  VECTOR_MATCH_GLOBAL: 'VECTOR_MATCH_GLOBAL',
+  PLAID_MAPPED: 'PLAID_HINT',
+  LLM: 'LLM',
+  AI_CLASSIFICATION: 'LLM',
 };
 
 interface AIAnalysisPanelProps {
@@ -21,10 +23,11 @@ interface AIAnalysisPanelProps {
 }
 
 export function AIAnalysisPanel({ item }: AIAnalysisPanelProps) {
+  const { t } = useTranslation();
   const pct = item.confidence != null ? Math.round(item.confidence * 100) : null;
   const sourceLabel = item.classificationSource
-    ? sourceLabels[item.classificationSource] ?? item.classificationSource
-    : 'Unknown';
+    ? t(`review.sourceLabels.${sourceKeyMap[item.classificationSource] ?? 'default'}`)
+    : t('review.unknown');
 
   // Parse Plaid category hint
   let plaidCategoryDisplay: string | null = null;
@@ -44,7 +47,7 @@ export function AIAnalysisPanel({ item }: AIAnalysisPanelProps) {
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Bliss Analysis
+            {t('review.blissAnalysis')}
           </span>
         </div>
 
@@ -52,7 +55,7 @@ export function AIAnalysisPanel({ item }: AIAnalysisPanelProps) {
         {pct != null && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">AI Confidence</span>
+              <span className="text-muted-foreground">{t('review.aiConfidence')}</span>
               <span className="font-semibold">{pct}%</span>
             </div>
             <Progress
@@ -64,7 +67,7 @@ export function AIAnalysisPanel({ item }: AIAnalysisPanelProps) {
 
         {/* Source */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Source</span>
+          <span className="text-muted-foreground">{t('review.source')}</span>
           <Badge variant="outline" className="text-xs">
             {sourceLabel}
           </Badge>
@@ -73,7 +76,7 @@ export function AIAnalysisPanel({ item }: AIAnalysisPanelProps) {
         {/* Plaid Category */}
         {item.source === 'plaid' && plaidCategoryDisplay && (
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Plaid Category</span>
+            <span className="text-muted-foreground">{t('review.plaidCategory')}</span>
             <span className="text-xs font-mono text-muted-foreground">
               {plaidCategoryDisplay}
             </span>
@@ -86,7 +89,7 @@ export function AIAnalysisPanel({ item }: AIAnalysisPanelProps) {
             <Separator />
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">
-                Why I chose this
+                {t('review.whyChose')}
               </span>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {item.classificationReasoning}

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDivider } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -121,7 +122,7 @@ function AccountRow({ account }: { account: EnrichedAccount }) {
 
 /* ── Status Badge ── */
 
-function StatusBadge({ accounts }: { accounts: EnrichedAccount[] }) {
+function StatusBadge({ accounts, t }: { accounts: EnrichedAccount[]; t: (key: string) => string }) {
   const allSynced = accounts.length > 0 && accounts.every(a => a.status === 'synced');
   const hasActionRequired = accounts.some(a => a.status === 'action-required');
 
@@ -129,7 +130,7 @@ function StatusBadge({ accounts }: { accounts: EnrichedAccount[] }) {
     return (
       <div className="flex items-center gap-1.5 bg-positive/[0.08] border border-positive/[0.18] rounded-md px-2 py-0.5 shrink-0">
         <div className="w-1.5 h-1.5 rounded-full bg-positive" />
-        <span className="text-[0.6875rem] font-semibold text-positive tracking-wide">Live</span>
+        <span className="text-[0.6875rem] font-semibold text-positive tracking-wide">{t('dashboard.live')}</span>
       </div>
     );
   }
@@ -138,7 +139,7 @@ function StatusBadge({ accounts }: { accounts: EnrichedAccount[] }) {
     return (
       <div className="flex items-center gap-1.5 bg-warning/[0.08] border border-warning/[0.18] rounded-md px-2 py-0.5 shrink-0">
         <div className="w-1.5 h-1.5 rounded-full bg-warning" />
-        <span className="text-[0.6875rem] font-semibold text-warning tracking-wide">Action needed</span>
+        <span className="text-[0.6875rem] font-semibold text-warning tracking-wide">{t('dashboard.actionNeeded')}</span>
       </div>
     );
   }
@@ -156,6 +157,7 @@ interface SyncedAccountsCardProps {
 
 export function SyncedAccountsCard({ accounts, isLoading, className }: SyncedAccountsCardProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const displayAccounts = accounts.slice(0, 3);
   const connectedCount = accounts.filter(a => a.status === 'synced').length;
   const allCurrent = connectedCount === accounts.length && accounts.length > 0;
@@ -181,12 +183,12 @@ export function SyncedAccountsCard({ accounts, isLoading, className }: SyncedAcc
       <CardHeader>
         <div className="flex items-center justify-between w-full">
           <div className="flex flex-col gap-0.5">
-            <CardTitle className="text-lg font-medium">Synced Accounts</CardTitle>
+            <CardTitle className="text-lg font-medium">{t('dashboard.syncedAccounts')}</CardTitle>
             <span className="text-[0.8125rem] text-muted-foreground">
-              {accounts.length} connected{allCurrent ? ' · all current' : ''}
+              {accounts.length} {t('dashboard.connected')}{allCurrent ? ` · ${t('dashboard.allCurrent')}` : ''}
             </span>
           </div>
-          <StatusBadge accounts={accounts} />
+          <StatusBadge accounts={accounts} t={t} />
         </div>
       </CardHeader>
 
@@ -204,7 +206,7 @@ export function SyncedAccountsCard({ accounts, isLoading, className }: SyncedAcc
         ))}
         {accounts.length === 0 && (
           <p className="text-sm text-muted-foreground py-4 text-center">
-            No accounts connected yet
+            {t('dashboard.noAccountsConnected')}
           </p>
         )}
       </div>
@@ -217,7 +219,7 @@ export function SyncedAccountsCard({ accounts, isLoading, className }: SyncedAcc
           onClick={() => navigate('/accounts')}
           className="flex items-center gap-1 text-[0.8125rem] font-medium text-brand-primary hover:text-brand-deep transition-colors cursor-pointer"
         >
-          Connect more accounts
+          {t('dashboard.connectMoreAccounts')}
           <ChevronRight size={14} />
         </button>
       </div>

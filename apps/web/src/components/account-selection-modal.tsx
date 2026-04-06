@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
     const seedConfirmedRef = useRef(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const stableCountRef = useRef(0);
+    const { t } = useTranslation();
     const { toast } = useToast();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -163,8 +165,8 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
         } catch (error) {
             console.error("Failed to fetch Plaid accounts", error);
             toast({
-                title: "Error",
-                description: "Failed to load accounts from bank.",
+                title: t('common.error'),
+                description: t('accountSelection.loadFailed'),
                 variant: "destructive",
             });
         } finally {
@@ -334,8 +336,8 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
         } catch (error) {
             console.error("Sync failed", error);
             toast({
-                title: "Error",
-                description: "Failed to link accounts.",
+                title: t('common.error'),
+                description: t('accountSelection.linkFailed'),
                 variant: "destructive",
             });
         } finally {
@@ -366,7 +368,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
             invalidateAccountQueries();
         } catch (err) {
             console.error('Seed confirmation failed:', err);
-            toast({ title: 'Error', description: 'Could not save category selections.', variant: 'destructive' });
+            toast({ title: t('common.error'), description: t('accountSelection.seedSaveFailed'), variant: 'destructive' });
         } finally {
             setIsConfirmingSeeds(false);
         }
@@ -405,9 +407,9 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
 
     // ── Sync Progress Steps ──
     const syncSteps = [
-        { label: 'Accounts linked', done: syncStep >= 0 },
-        { label: 'Syncing transactions', done: syncStep >= 2, active: syncStep === 1 },
-        { label: 'AI classifying', done: syncPhase === 'done', active: syncStep === 2 && syncPhase !== 'done' },
+        { label: t('accountSelection.accountsLinked'), done: syncStep >= 0 },
+        { label: t('accountSelection.syncingTransactions'), done: syncStep >= 2, active: syncStep === 1 },
+        { label: t('accountSelection.aiClassifying'), done: syncPhase === 'done', active: syncStep === 2 && syncPhase !== 'done' },
     ];
 
     return (
@@ -415,21 +417,21 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
             <DialogContent className="sm:max-w-[600px] overflow-hidden">
                 <DialogHeader>
                     <DialogTitle>
-                        {syncPhase === 'setup' && 'Set Up Accounts'}
-                        {syncPhase === 'syncing' && 'Syncing in Progress...'}
+                        {syncPhase === 'setup' && t('accountSelection.setupTitle')}
+                        {syncPhase === 'syncing' && t('accountSelection.syncingTitle')}
                         {syncPhase === 'seed' && (
                             <span className="flex items-center gap-2">
                                 <Sparkles className="h-4 w-4 text-brand-primary" />
-                                Quick Classify
+                                {t('accountSelection.quickClassify')}
                             </span>
                         )}
-                        {syncPhase === 'done' && 'Sync Complete'}
+                        {syncPhase === 'done' && t('accountSelection.syncComplete')}
                     </DialogTitle>
                     <DialogDescription>
-                        {syncPhase === 'setup' && 'Choose accounts to sync, link to existing ones, and set names.'}
-                        {syncPhase === 'syncing' && 'Your transactions are being synced and classified by AI.'}
-                        {syncPhase === 'seed' && 'We found your most recurring transactions. Confirm or adjust their categories to make AI smarter for your next sync.'}
-                        {syncPhase === 'done' && 'All transactions have been synced and classified.'}
+                        {syncPhase === 'setup' && t('accountSelection.setupDescription')}
+                        {syncPhase === 'syncing' && t('accountSelection.syncingDescription')}
+                        {syncPhase === 'seed' && t('accountSelection.seedDescription')}
+                        {syncPhase === 'done' && t('accountSelection.doneDescription')}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -445,24 +447,22 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                 {unsupportedCurrencies.length > 0 && (
                                     <Alert>
                                         <AlertTriangle className="h-4 w-4" />
-                                        <AlertTitle>New currencies detected</AlertTitle>
+                                        <AlertTitle>{t('accountSelection.newCurrenciesDetected')}</AlertTitle>
                                         <AlertDescription>
-                                            These accounts use{' '}
+                                            {t('accountSelection.currenciesUse')}{' '}
                                             <span className="font-medium">{unsupportedCurrencies.join(', ')}</span>
-                                            {' '}which {unsupportedCurrencies.length === 1 ? 'is' : 'are'} not yet in your workspace.
-                                            {' '}They will be added automatically when you sync.
+                                            {' '}{t('accountSelection.currenciesNotConfigured', { plurality: unsupportedCurrencies.length === 1 ? 'is' : 'are' })}
                                         </AlertDescription>
                                     </Alert>
                                 )}
                                 {unsupportedCountry && (
                                     <Alert>
                                         <AlertTriangle className="h-4 w-4" />
-                                        <AlertTitle>New country detected</AlertTitle>
+                                        <AlertTitle>{t('accountSelection.newCountryDetected')}</AlertTitle>
                                         <AlertDescription>
-                                            This bank operates in{' '}
+                                            {t('accountSelection.bankOperatesIn')}{' '}
                                             <span className="font-medium">{unsupportedCountry}</span>
-                                            {' '}which is not yet in your workspace.
-                                            {' '}It will be added automatically when you sync.
+                                            {' '}{t('accountSelection.countryNotConfigured')}
                                         </AlertDescription>
                                     </Alert>
                                 )}
@@ -494,7 +494,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                                             {!account.isCurrencySupported && (
                                                                 <Badge variant="outline" className="text-xs py-0 h-4">
                                                                     <AlertTriangle className="h-2.5 w-2.5 mr-1" />
-                                                                    not configured
+                                                                    {t('accountSelection.notConfigured')}
                                                                 </Badge>
                                                             )}
                                                         </p>
@@ -518,7 +518,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                                                     <SelectValue />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
-                                                                    <SelectItem value="__new__">Create new account</SelectItem>
+                                                                    <SelectItem value="__new__">{t('accountSelection.createNewAccount')}</SelectItem>
                                                                     {compatibleAccounts.map(ma => (
                                                                         <SelectItem key={ma.id} value={ma.id.toString()}>
                                                                             <span className="flex items-center gap-1.5">
@@ -537,12 +537,12 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                                                     ...prev,
                                                                     [account.accountId]: e.target.value,
                                                                 }))}
-                                                                placeholder="Account name"
+                                                                placeholder={t('accountSelection.accountNamePlaceholder')}
                                                                 className="h-8 text-sm"
                                                             />
                                                         ) : (
                                                             <p className="text-xs text-muted-foreground italic">
-                                                                Existing account name will be kept
+                                                                {t('accountSelection.existingAccountKept')}
                                                             </p>
                                                         )}
                                                     </div>
@@ -551,7 +551,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                         );
                                     })}
                                     {accounts.length === 0 && (
-                                        <p className="text-center text-muted-foreground">No accounts found.</p>
+                                        <p className="text-center text-muted-foreground">{t('accountSelection.noAccountsFound')}</p>
                                     )}
                                 </div>
                             </div>
@@ -559,14 +559,14 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                         <p className="text-xs text-muted-foreground">
                             <span className="inline-flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                Bliss will sync up to 2 years of history. Recent transactions appear in seconds; full history arrives within 24 hours.
+                                {t('accountSelection.syncHistoryNote')}
                             </span>
                         </p>
                         <DialogFooter>
-                            <Button variant="outline" onClick={handleClose} disabled={isSyncing}>Cancel</Button>
+                            <Button variant="outline" onClick={handleClose} disabled={isSyncing}>{t('common.cancel')}</Button>
                             <Button onClick={handleSync} disabled={isSyncing || selectedIds.length === 0}>
                                 {isSyncing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Sync {selectedIds.length} Accounts
+                                {t('accountSelection.syncAccounts', { count: selectedIds.length })}
                             </Button>
                         </DialogFooter>
                     </>
@@ -594,30 +594,30 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                         </div>
 
                         <p className="text-sm text-muted-foreground text-center max-w-sm mx-auto mt-1">
-                            Importing your recent transactions{earliestDate && (
-                                <> from <span className="font-medium text-foreground">{format(new Date(earliestDate), 'MMM d, yyyy')}</span></>
-                            )}. Your full 2-year history will continue to sync in the background.
+                            {t('accountSelection.importingTransactions')}{earliestDate && (
+                                <> {t('accountSelection.importingFrom')} <span className="font-medium text-foreground">{format(new Date(earliestDate), 'MMM d, yyyy')}</span></>
+                            )}. {t('accountSelection.fullHistoryNote')}
                         </p>
 
                         {syncSummary && (
                             <div className="bg-muted rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                                 <div className="flex justify-between">
-                                    <span>Promoted</span>
+                                    <span>{t('accountSelection.promoted')}</span>
                                     <span className="font-medium text-positive">{syncSummary.promoted}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span>Pending Review</span>
+                                    <span>{t('accountSelection.pendingReview')}</span>
                                     <span className="font-medium text-foreground">{syncSummary.classified + (syncSummary.seedHeld ?? 0)}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span>Processing</span>
+                                    <span>{t('accountSelection.processing')}</span>
                                     <span className="font-medium text-foreground">{syncSummary.pending}</span>
                                 </div>
                             </div>
                         )}
 
                         <p className="text-xs text-muted-foreground text-center">
-                            Please don't close this dialog while syncing is in progress.
+                            {t('accountSelection.doNotClose')}
                         </p>
                     </div>
                 )}
@@ -697,7 +697,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                                 }}
                                             >
                                                 <SelectTrigger className="h-7 text-[11px] flex-1 min-w-0 px-2">
-                                                    <SelectValue placeholder="Type" />
+                                                    <SelectValue placeholder={t('common.type')} />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-60 overflow-auto">
                                                     {sortedTypes.map(t => (
@@ -716,7 +716,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                                 }}
                                             >
                                                 <SelectTrigger className="h-7 text-[11px] flex-1 min-w-0 px-2">
-                                                    <SelectValue placeholder="Group" />
+                                                    <SelectValue placeholder={t('categoryForm.group')} />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-60 overflow-auto">
                                                     {(groupsByType[localSeedTypes[seed.normalizedDescription]] ?? []).map(g => (
@@ -736,7 +736,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                                 }
                                             >
                                                 <SelectTrigger className="h-7 text-[11px] flex-1 min-w-0 px-2">
-                                                    <SelectValue placeholder="Category" />
+                                                    <SelectValue placeholder={t('charts.category')} />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-60 overflow-auto">
                                                     {(catsByTypeGroup[localSeedTypes[seed.normalizedDescription]]?.[localSeedGroups[seed.normalizedDescription]] ?? []).map(cat => (
@@ -754,11 +754,11 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
 
                             <DialogFooter>
                                 <Button variant="ghost" onClick={handleSeedSkip} disabled={isConfirmingSeeds}>
-                                    Skip for now
+                                    {t('accountSelection.skipForNow')}
                                 </Button>
                                 <Button onClick={handleSeedConfirm} disabled={isConfirmingSeeds}>
                                     {isConfirmingSeeds && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Confirm & Continue
+                                    {t('accountSelection.confirmContinue')}
                                 </Button>
                             </DialogFooter>
                         </div>
@@ -779,24 +779,24 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
 
                         {syncSummary && (
                             <div className="bg-positive/5 border border-positive/20 rounded-lg p-4 text-sm space-y-2">
-                                <p className="font-semibold text-positive mb-1">Sync Complete</p>
+                                <p className="font-semibold text-positive mb-1">{t('accountSelection.syncComplete')}</p>
                                 {earliestDate && (
                                     <div className="flex justify-between text-muted-foreground">
-                                        <span>History Range</span>
+                                        <span>{t('accountSelection.historyRange')}</span>
                                         <span className="font-medium text-foreground">{format(new Date(earliestDate), 'MMM d, yyyy')} → Today</span>
                                     </div>
                                 )}
                                 <div className="flex justify-between">
-                                    <span className="text-positive">Promoted</span>
+                                    <span className="text-positive">{t('accountSelection.promoted')}</span>
                                     <span className="font-semibold text-positive">{syncSummary.promoted}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span>Ready for Review</span>
+                                    <span>{t('accountSelection.readyForReview')}</span>
                                     <span className="font-semibold">{syncSummary.classified}</span>
                                 </div>
                                 {syncSummary.skipped > 0 && (
                                     <div className="flex justify-between text-muted-foreground">
-                                        <span>Skipped (duplicates)</span>
+                                        <span>{t('accountSelection.skippedDuplicates')}</span>
                                         <span>{syncSummary.skipped}</span>
                                     </div>
                                 )}
@@ -809,22 +809,22 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                             </div>
                             <div className="space-y-0.5">
                                 <p className="text-sm font-medium text-foreground">
-                                    Full history syncing in the background
+                                    {t('accountSelection.fullHistorySyncing')}
                                 </p>
                                 <p className="text-xs text-muted-foreground leading-relaxed">
                                     {earliestDate && (
-                                        <>Currently synced from <span className="font-medium text-foreground">{format(new Date(earliestDate), 'MMM d, yyyy')}</span>. </>
+                                        <>{t('accountSelection.currentlySyncedFrom')} <span className="font-medium text-foreground">{format(new Date(earliestDate), 'MMM d, yyyy')}</span>. </>
                                     )}
-                                    Bliss will automatically sync up to 2 years of transaction history over the next 24 hours. New transactions will appear in your review queue as they arrive — no action needed.
+                                    {t('accountSelection.fullHistoryDetail')}
                                 </p>
                             </div>
                         </div>
 
                         <DialogFooter className="sm:justify-between">
-                            <Button variant="outline" onClick={handleClose}>Close</Button>
+                            <Button variant="outline" onClick={handleClose}>{t('ui.close')}</Button>
                             <Button onClick={handleReview}>
                                 <BrainCircuit className="h-4 w-4 mr-2" />
-                                Review Transactions
+                                {t('accountSelection.reviewTransactions')}
                             </Button>
                         </DialogFooter>
                     </div>

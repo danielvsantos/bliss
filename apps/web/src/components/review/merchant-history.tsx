@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, Clock } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -8,6 +9,7 @@ interface MerchantHistoryProps {
 }
 
 export function MerchantHistory({ description }: MerchantHistoryProps) {
+  const { t } = useTranslation();
   const { data: history, isLoading } = useMerchantHistory(description);
 
   if (!description) return null;
@@ -19,7 +21,7 @@ export function MerchantHistory({ description }: MerchantHistoryProps) {
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Merchant History
+            {t('review.merchantHistory')}
           </span>
         </div>
 
@@ -29,7 +31,7 @@ export function MerchantHistory({ description }: MerchantHistoryProps) {
           </div>
         ) : !history || history.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2">
-            No previous transactions found for this merchant.
+            {t('review.noMerchantHistory')}
           </p>
         ) : (
           <div className="divide-y">
@@ -55,7 +57,7 @@ export function MerchantHistory({ description }: MerchantHistoryProps) {
                     {formatCurrency(Math.abs(amount), tx.currency || 'USD')}
                   </span>
                   <span className="flex-1 min-w-0 truncate text-muted-foreground">
-                    {tx.category?.name ?? 'Uncategorized'}
+                    {tx.category?.name ?? t('review.uncategorized')}
                   </span>
                 </div>
               );

@@ -181,7 +181,15 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 
 ## Internationalization
 
-i18next with multiple locales. Translation files live in `src/i18n/`. Use the `useTranslation()` hook for all user-facing strings.
+react-i18next with 5 locales: English (`en`), Spanish (`es`), French (`fr`), Portuguese (`pt`), Italian (`it`). Translation files live in `src/i18n/locales/`.
+
+**Rules:**
+- Use `useTranslation()` hook and `t('key')` for ALL user-facing strings. No hardcoded English text in JSX.
+- System category names use helpers from `src/lib/category-i18n.ts`: `translateCategoryName(t, category)`, `translateCategoryGroup(t, group)`, `translateCategoryType(t, type)`.
+- Custom user-created categories display as-is (not translated).
+- Search features should match against both original DB values and translated values.
+- Tests mock i18n with `t: (key) => key` and assert on translation keys, not English strings.
+- Full i18n spec in `docs/specs/frontend/00-design-system.md` section 12.
 
 ## Testing
 

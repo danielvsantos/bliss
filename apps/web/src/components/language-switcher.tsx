@@ -13,7 +13,8 @@ const languages = [
   { code: 'en', name: 'English' },
   { code: 'es', name: 'Español' },
   { code: 'fr', name: 'Français' },
-  // Add more languages as needed
+  { code: 'pt', name: 'Português' },
+  { code: 'it', name: 'Italiano' },
 ];
 
 export function LanguageSwitcher() {

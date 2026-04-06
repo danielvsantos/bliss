@@ -1,6 +1,12 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock i18n
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
 import { MerchantHistory } from './merchant-history';
 import * as UseMerchantHistory from '@/hooks/use-merchant-history';
 
@@ -37,7 +43,7 @@ describe('MerchantHistory', () => {
     } as any);
 
     render(<MerchantHistory description="Target" />);
-    expect(screen.getByText('No previous transactions found for this merchant.')).toBeInTheDocument();
+    expect(screen.getByText('review.noMerchantHistory')).toBeInTheDocument();
   });
 
   it('renders a list of transaction history correctly', () => {
@@ -66,7 +72,7 @@ describe('MerchantHistory', () => {
     render(<MerchantHistory description="Target" />);
 
     expect(screen.getByText('Retail')).toBeInTheDocument();
-    expect(screen.getByText('Uncategorized')).toBeInTheDocument();
+    expect(screen.getByText('review.uncategorized')).toBeInTheDocument();
     
     // Check formatting - positive and negative
     expect(screen.getByText('+$12.00')).toBeInTheDocument();

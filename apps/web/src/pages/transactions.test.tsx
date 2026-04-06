@@ -114,7 +114,7 @@ describe('TransactionsPage', () => {
 
   it('invokes export functionality', async () => {
     renderPage();
-    const exportBtn = screen.getByRole('button', { name: /Export CSV/i });
+    const exportBtn = screen.getByRole('button', { name: /pages\.transactions\.exportCsv/i });
     fireEvent.click(exportBtn);
 
     // Since there are no active filters, it skips the dialog and fires export directly
@@ -125,7 +125,7 @@ describe('TransactionsPage', () => {
 
   it('opens add transaction form correctly', async () => {
     renderPage();
-    const addBtn = screen.getByRole('button', { name: /AddTransaction/i });
+    const addBtn = screen.getByRole('button', { name: /pages\.transactions\.addTransaction/i });
     fireEvent.click(addBtn);
 
     const dialog = await screen.findByTestId('transaction-form');
@@ -136,7 +136,7 @@ describe('TransactionsPage', () => {
     renderPage();
     
     // Check that the default filters are rendered
-    const accountTrigger = screen.getByText('All Accounts');
+    const accountTrigger = screen.getByText('pages.transactions.allAccounts');
     expect(accountTrigger).toBeInTheDocument();
     
     // Optionally trigger a filter change here if we wanted to test the Clear button visually appearing

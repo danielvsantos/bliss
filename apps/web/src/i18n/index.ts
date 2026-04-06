@@ -5,6 +5,8 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import enTranslations from './locales/en.ts';
 import esTranslations from './locales/es.ts';
 import frTranslations from './locales/fr.ts';
+import itTranslations from './locales/it.ts';
+import ptTranslations from './locales/pt.ts';
 
 // Configure i18next
 i18n
@@ -31,6 +33,12 @@ i18n
       },
       fr: {
         translation: frTranslations
+      },
+      it: {
+        translation: itTranslations
+      },
+      pt: {
+        translation: ptTranslations
       }
     }
   });

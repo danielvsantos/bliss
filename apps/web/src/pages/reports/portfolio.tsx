@@ -59,6 +59,7 @@ import {
   buildGroupColorMap,
   getGroupIcon,
 } from "@/lib/portfolio-utils";
+import { translateCategoryGroup } from "@/lib/category-i18n";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -89,6 +90,7 @@ function SortChevron({ dir }: { dir: "asc" | "desc" | "none" }) {
 // ── Asset Row ──────────────────────────────────────────────────────────────
 
 function AssetRow({ item, currency }: { item: PortfolioItem; currency: string }) {
+  const { t } = useTranslation();
   const data = getDisplayData(item, currency);
   const marketValue = parseDecimal(data.marketValue);
 
@@ -142,7 +144,7 @@ function AssetRow({ item, currency }: { item: PortfolioItem; currency: string })
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Total ROI = (Realized + Unrealized P&L) / Total Invested</p>
+              <p>{t("portfolio.roiTooltip")}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -155,6 +157,7 @@ function AssetRow({ item, currency }: { item: PortfolioItem; currency: string })
 // ── Liability Row ──────────────────────────────────────────────────────────
 
 function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: string }) {
+  const { t } = useTranslation();
   const data = getDisplayData(item, currency);
   const marketValue = Math.abs(parseDecimal(data.marketValue));
   const navigate = useNavigate();
@@ -179,7 +182,7 @@ function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: strin
           onClick={() => navigate("/manual-updates")}
         >
           <EditIcon className="h-3.5 w-3.5" />
-          {item.debtTerms ? "Edit" : "Add"} Terms
+          {item.debtTerms ? t("portfolio.editTerms") : t("portfolio.addTerms")}
         </Button>
       </TableCell>
     </TableRow>
@@ -425,9 +428,10 @@ export default function PortfolioHoldingsPage() {
   }) => {
     if (!active || !payload?.length) return null;
 
-    const netWorthItem = payload.find((item) => item.name === "Net Worth");
+    const netWorthLabel = t("portfolio.netWorth");
+    const netWorthItem = payload.find((item) => item.name === netWorthLabel || item.name === "Net Worth");
     const groupItems = payload
-      .filter((item) => item.name !== "Net Worth" && item.value !== 0)
+      .filter((item) => item.name !== netWorthLabel && item.name !== "Net Worth" && item.value !== 0)
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
     const netWorthValue = netWorthItem?.value ?? groupItems.reduce((sum, item) => sum + item.value, 0);
 
@@ -439,14 +443,14 @@ export default function PortfolioHoldingsPage() {
             <div key={item.name} className="flex justify-between items-center gap-6 text-sm">
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                {item.name}
+                {translateCategoryGroup(t, item.name)}
               </span>
               <span className="tabular-nums">{formatCurrency(item.value, portfolioCurrency)}</span>
             </div>
           ))}
         </div>
         <div className="flex justify-between items-center pt-2 border-t font-semibold text-sm">
-          <span>Net Worth</span>
+          <span>{t("portfolio.netWorth")}</span>
           <span className={`tabular-nums ${netWorthValue >= 0 ? "text-positive" : "text-negative"}`}>
             {formatCurrency(netWorthValue, portfolioCurrency)}
           </span>
@@ -475,9 +479,9 @@ export default function PortfolioHoldingsPage() {
       <div className="p-8">
         <Alert variant="destructive">
           <HelpCircle className="h-4 w-4" />
-          <AlertTitle>Error Loading Portfolio</AlertTitle>
+          <AlertTitle>{t("portfolio.errorTitle")}</AlertTitle>
           <AlertDescription>
-            There was an issue fetching your portfolio data. Please try again later.
+            {t("portfolio.errorDescription")}
           </AlertDescription>
         </Alert>
       </div>
@@ -488,15 +492,15 @@ export default function PortfolioHoldingsPage() {
     return (
       <div className="container mx-auto py-6 space-y-6">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-2">Portfolio Holdings</h2>
-          <p className="text-muted-foreground">Track your investment portfolio performance and allocation</p>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">{t("portfolio.title")}</h2>
+          <p className="text-muted-foreground">{t("portfolio.subtitle")}</p>
         </div>
         <Card>
           <CardContent className="py-16 text-center">
-            <p className="text-muted-foreground mb-4">No portfolio data yet. Connect a bank account or import transactions to get started.</p>
+            <p className="text-muted-foreground mb-4">{t("portfolio.emptyState")}</p>
             <div className="flex gap-3 justify-center">
-              <Button onClick={() => navigate("/accounts")}>Connect Account</Button>
-              <Button variant="outline" onClick={() => navigate("/imports")}>Import CSV</Button>
+              <Button onClick={() => navigate("/accounts")}>{t("portfolio.connectAccount")}</Button>
+              <Button variant="outline" onClick={() => navigate("/imports")}>{t("portfolio.importCSV")}</Button>
             </div>
           </CardContent>
         </Card>
@@ -534,8 +538,8 @@ export default function PortfolioHoldingsPage() {
       <div className="flex flex-col space-y-8">
       {/* ── Page Header ── */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight mb-2">Portfolio Holdings</h2>
-        <p className="text-muted-foreground">Track your investment portfolio performance and allocation</p>
+        <h2 className="text-3xl font-bold tracking-tight mb-2">{t("portfolio.title")}</h2>
+        <p className="text-muted-foreground">{t("portfolio.subtitle")}</p>
       </div>
 
       {/* ── Performance Chart Card ── */}
@@ -582,7 +586,7 @@ export default function PortfolioHoldingsPage() {
               <div className="flex items-center gap-2">
                 <Switch id="show-debt" checked={showDebt} onCheckedChange={setShowDebt} />
                 <Label htmlFor="show-debt" className="text-xs text-muted-foreground">
-                  Show Debt
+                  {t("portfolio.showDebt")}
                 </Label>
               </div>
             </div>
@@ -593,7 +597,7 @@ export default function PortfolioHoldingsPage() {
             <Skeleton className="h-80 w-full rounded-lg" />
           ) : chartData.length === 0 ? (
             <div className="h-80 flex items-center justify-center text-muted-foreground text-sm">
-              No historical data available for this period.
+              {t("portfolio.noHistoricalData")}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={380}>
@@ -666,7 +670,7 @@ export default function PortfolioHoldingsPage() {
                   strokeWidth={2}
                   strokeDasharray="5 3"
                   dot={false}
-                  name="Net Worth"
+                  name={t("portfolio.netWorth")}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -679,9 +683,9 @@ export default function PortfolioHoldingsPage() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-3">
-              <CardTitle>{t("Assets")}</CardTitle>
+              <CardTitle>{t("portfolio.assets")}</CardTitle>
               <Badge variant="outline" className="text-xs font-medium">
-                {totalAssetPositions} position{totalAssetPositions !== 1 ? "s" : ""}
+                {t("portfolio.positionCount", { count: totalAssetPositions })}
               </Badge>
               <span className="ml-auto text-lg font-bold tabular-nums tracking-tight">
                 {formatCurrency(totalAssetsValue, portfolioCurrency)}
@@ -711,7 +715,7 @@ export default function PortfolioHoldingsPage() {
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded" style={{ color: getColor(group) }}>
                       <GroupIcon className="h-4 w-4" />
                     </span>
-                    <span className="font-medium text-sm">{group}</span>
+                    <span className="font-medium text-sm">{translateCategoryGroup(t, group)}</span>
                     <Badge variant="secondary" className="text-xs ml-1">
                       {groupItems.length}
                     </Badge>
@@ -726,14 +730,14 @@ export default function PortfolioHoldingsPage() {
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-accent/40">
-                              <SortableHeader field="symbol">Symbol</SortableHeader>
-                              <SortableHeader field="quantity">Qty</SortableHeader>
-                              <TableHead>Price</TableHead>
-                              <SortableHeader field="costBasis">Cost Basis</SortableHeader>
-                              <SortableHeader field="unrealizedPnL">Unrealized P&L</SortableHeader>
-                              <SortableHeader field="realizedPnL">Realized P&L</SortableHeader>
-                              <TableHead className="text-right">ROI %</TableHead>
-                              <SortableHeader field="marketValue" align="right">Total Value</SortableHeader>
+                              <SortableHeader field="symbol">{t("portfolio.symbol")}</SortableHeader>
+                              <SortableHeader field="quantity">{t("portfolio.qty")}</SortableHeader>
+                              <TableHead>{t("portfolio.price")}</TableHead>
+                              <SortableHeader field="costBasis">{t("portfolio.costBasis")}</SortableHeader>
+                              <SortableHeader field="unrealizedPnL">{t("portfolio.unrealizedPnL")}</SortableHeader>
+                              <SortableHeader field="realizedPnL">{t("portfolio.realizedPnL")}</SortableHeader>
+                              <TableHead className="text-right">{t("portfolio.roiPercent")}</TableHead>
+                              <SortableHeader field="marketValue" align="right">{t("portfolio.totalValue")}</SortableHeader>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -755,8 +759,9 @@ export default function PortfolioHoldingsPage() {
                             className="text-xs"
                             onClick={() => setClosedSectionsVisible((p) => ({ ...p, [group]: !p[group] }))}
                           >
-                            {closedSectionsVisible[group] ? "Hide" : "Show"} {closedPositions.length} closed position
-                            {closedPositions.length !== 1 ? "s" : ""}
+                            {closedSectionsVisible[group]
+                              ? t("portfolio.hideClosedPositions", { count: closedPositions.length })
+                              : t("portfolio.showClosedPositions", { count: closedPositions.length })}
                           </Button>
                         </div>
                       )}
@@ -774,7 +779,7 @@ export default function PortfolioHoldingsPage() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-3">
-              <CardTitle>{t("Liabilities")}</CardTitle>
+              <CardTitle>{t("portfolio.liabilities")}</CardTitle>
               <Badge variant="outline" className="text-xs font-medium">
                 {totalLiabilityPositions}
               </Badge>
@@ -788,11 +793,11 @@ export default function PortfolioHoldingsPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-accent/40">
-                    <TableHead>Liability</TableHead>
-                    <TableHead>Interest Rate</TableHead>
-                    <TableHead>Term</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t("portfolio.liability")}</TableHead>
+                    <TableHead>{t("portfolio.interestRate")}</TableHead>
+                    <TableHead>{t("portfolio.term")}</TableHead>
+                    <TableHead className="text-right">{t("portfolio.balance")}</TableHead>
+                    <TableHead className="text-right">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -804,7 +809,7 @@ export default function PortfolioHoldingsPage() {
                   <tfoot>
                     <tr className="border-t">
                       <td colSpan={3} className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                        Total Outstanding
+                        {t("portfolio.totalOutstanding")}
                       </td>
                       <td className="px-4 py-3 text-right font-bold tabular-nums text-negative">
                         {formatCurrency(totalLiabilitiesValue, portfolioCurrency)}

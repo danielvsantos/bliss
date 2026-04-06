@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,11 +26,12 @@ function getAccountIcon(institution: string) {
 }
 
 function StatusBadge({ status }: { status: EnrichedAccount['status'] }) {
+  const { t } = useTranslation();
   const config = {
-    synced: { label: 'Synced', variant: 'default' as const, className: 'bg-positive/10 text-positive border-positive/20 hover:bg-positive/10' },
-    'action-required': { label: 'Action Required', variant: 'default' as const, className: 'bg-warning/10 text-warning border-warning/20 hover:bg-warning/10' },
-    disconnected: { label: 'Disconnected', variant: 'default' as const, className: 'bg-muted text-muted-foreground border-border hover:bg-muted' },
-    manual: { label: 'Manual', variant: 'secondary' as const, className: '' },
+    synced: { label: t('accountsPage.synced'), variant: 'default' as const, className: 'bg-positive/10 text-positive border-positive/20 hover:bg-positive/10' },
+    'action-required': { label: t('accountsPage.actionRequired'), variant: 'default' as const, className: 'bg-warning/10 text-warning border-warning/20 hover:bg-warning/10' },
+    disconnected: { label: t('accountsPage.disconnected'), variant: 'default' as const, className: 'bg-muted text-muted-foreground border-border hover:bg-muted' },
+    manual: { label: t('accountsPage.manual'), variant: 'secondary' as const, className: '' },
   }[status];
 
   return (
@@ -40,6 +42,7 @@ function StatusBadge({ status }: { status: EnrichedAccount['status'] }) {
 }
 
 export function AccountListPanel({ accounts, selectedAccountId, onSelectAccount, isLoading }: AccountListPanelProps) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(() => {
@@ -80,7 +83,7 @@ export function AccountListPanel({ accounts, selectedAccountId, onSelectAccount,
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search accounts..."
+            placeholder={t('accountsPage.searchAccounts')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9 text-sm"
@@ -100,7 +103,7 @@ export function AccountListPanel({ accounts, selectedAccountId, onSelectAccount,
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
-            {search ? 'No accounts match your search.' : 'No accounts yet.'}
+            {search ? t('accountsPage.noAccountsMatch') : t('accountsPage.noAccountsYet')}
           </div>
         ) : (
           <div className="py-1">

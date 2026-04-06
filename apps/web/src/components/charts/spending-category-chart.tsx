@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ResponsiveContainer,
   PieChart,
@@ -19,6 +20,7 @@ import { CategoryLegendItem } from "./category-legend-item";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
 import { Skeleton } from "@/components/ui/skeleton";
+import { translateCategoryGroup } from "@/lib/category-i18n";
 import type { AnalyticsResponse } from "@/types/api";
 
 type ChartPeriod = "month" | "prev_month" | "quarter";
@@ -60,6 +62,7 @@ const processAnalyticsData = (analyticsData: AnalyticsResponse | undefined) => {
 };
 
 export function SpendingCategoryChart({ currency = 'USD' }: { currency?: string }) {
+  const { t } = useTranslation();
   const [period, setPeriod] = useState<ChartPeriod>("month");
 
   const { startMonth, endMonth } = useMemo(() => {
@@ -93,25 +96,31 @@ export function SpendingCategoryChart({ currency = 'USD' }: { currency?: string 
     types: ['Essentials', 'Lifestyle'],
   });
 
-  const { pieData: chartData } = useMemo(() => processAnalyticsData(analyticsData), [analyticsData]);
+  const { pieData: chartData } = useMemo(() => {
+    const { pieData, totalExpenses } = processAnalyticsData(analyticsData);
+    return {
+      pieData: pieData.map(d => ({ ...d, name: translateCategoryGroup(t, d.name) })),
+      totalExpenses,
+    };
+  }, [analyticsData, t]);
 
   return (
     <Card>
       <CardContent className="p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Spending by Category
+            {t('spendingChart.title')}
           </h3>
           <div className="relative">
             <Select value={period} onValueChange={(value) => setPeriod(value as ChartPeriod)}>
               <SelectTrigger className="w-[130px] h-8 text-xs">
-                <SelectValue placeholder="Select period" />
+                <SelectValue placeholder={t('spendingChart.selectPeriod')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="month">This month</SelectItem>
-                  <SelectItem value="prev_month">Last month</SelectItem>
-                  <SelectItem value="quarter">Last 3 months</SelectItem>
+                  <SelectItem value="month">{t('spendingChart.thisMonth')}</SelectItem>
+                  <SelectItem value="prev_month">{t('spendingChart.lastMonth')}</SelectItem>
+                  <SelectItem value="quarter">{t('spendingChart.last3Months')}</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -121,7 +130,7 @@ export function SpendingCategoryChart({ currency = 'USD' }: { currency?: string 
           {isLoading ? (
             <Skeleton className="h-full w-full" />
           ) : chartData.length === 0 ? (
-            <div className="text-center text-gray-500">No spending data for this period.</div>
+            <div className="text-center text-gray-500">{t('spendingChart.noData')}</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height="100%">
