@@ -7,6 +7,17 @@ const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../../../serv
 const { calculateTotalInvested } = require('../../../utils/portfolioItemStateCalculator');
 
 
+// Prisma Accelerate enforces a 10-second execution timeout per query (P6004).
+// Assets with long histories (e.g. 2,600+ days) produce large arrays that exceed
+// this limit in a single createMany call. Batching keeps each call well under it.
+const BATCH_SIZE = 500;
+async function batchCreateMany(model, data, options = {}) {
+    for (let i = 0; i < data.length; i += BATCH_SIZE) {
+        const batch = data.slice(i, i + BATCH_SIZE);
+        await model.createMany({ data: batch, ...options });
+    }
+}
+
 /**
  * Generates historical portfolio valuations for all assets of a tenant.
  * This is the new, optimized version that avoids N+1 query problems.
@@ -217,10 +228,7 @@ const generatePortfolioValuation = async (job) => {
                     }
 
                     if (valueHistoryToCreate.length > 0) {
-                        await prisma.portfolioValueHistory.createMany({
-                            data: valueHistoryToCreate,
-                            skipDuplicates: true,
-                        });
+                        await batchCreateMany(prisma.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true });
                         totalSnapshotsCreated += valueHistoryToCreate.length;
                         logger.info(`[Valuation] Created ${valueHistoryToCreate.length} history records for cash asset ${asset.symbol} (forward-filled to present)`);
                     }
@@ -381,22 +389,18 @@ const generatePortfolioValuation = async (job) => {
                 logger.info(`[Valuation] Used cost basis fallback for ${asset.symbol} for ${fallbackLogState.count} days, starting from ${fallbackLogState.startDate}.`, { tenantId, assetId: asset.id });
             }
 
-            if (holdingsToCreate.length > 0) {
-                await prisma.portfolioHolding.createMany({
-                    data: holdingsToCreate,
-                    skipDuplicates: true,
-                });
+            if (holdingsToCreate.length > 0 || valueHistoryToCreate.length > 0) {
+                await prisma.$transaction(async (tx) => {
+                    if (holdingsToCreate.length > 0) {
+                        await batchCreateMany(tx.portfolioHolding, holdingsToCreate, { skipDuplicates: true });
+                    }
+                    if (valueHistoryToCreate.length > 0) {
+                        await batchCreateMany(tx.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true });
+                    }
+                }, { timeout: 60000 });
                 totalHoldingsCreated += holdingsToCreate.length;
-                logger.info(`[Valuation] Created ${holdingsToCreate.length} holding records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
-            }
-
-            if (valueHistoryToCreate.length > 0) {
-                await prisma.portfolioValueHistory.createMany({
-                    data: valueHistoryToCreate,
-                    skipDuplicates: true,
-                });
                 totalSnapshotsCreated += valueHistoryToCreate.length;
-                logger.info(`[Valuation] Created ${valueHistoryToCreate.length} history records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
+                logger.info(`[Valuation] Created ${holdingsToCreate.length} holding records and ${valueHistoryToCreate.length} history records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
             }
 
             // --- Final Step: Update the master PortfolioItem with the final calculated state ---
