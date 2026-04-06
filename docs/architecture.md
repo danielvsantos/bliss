@@ -6,7 +6,7 @@ Bliss Finance is a self-hostable financial dashboard built as a monorepo with
 three application services, one PostgreSQL database (with pgvector), and a Redis
 instance for job queues and caching.
 
-![Bliss Architecture](/images/blissarchitecture.jpg)
+![Bliss Architecture](/images/blissarchitecture.svg)
 
 ```
                         Browser (React SPA)
@@ -16,8 +16,8 @@ instance for job queues and caching.
               +---------------+---------------+
               |                               |
          Next.js API (:3000)          Express Backend (:3001)
-         - Auth (JWT + cookies)       - BullMQ workers (10)
-         - REST endpoints             - AI classification
+         - Auth (JWT + cookies)       - 10 BullMQ workers
+         - 60+ REST endpoints         - AI classification
          - Prisma ORM                 - Portfolio valuation
          - File upload                - Plaid sync
               |                               |
@@ -256,10 +256,10 @@ database. This is handled transparently by Prisma middleware:
 
 ---
 
-## AI Classification Pipeline (3-Tier Waterfall)
+## AI Classification Pipeline (4-Tier Waterfall)
 
 Every incoming transaction (Plaid or CSV import) is classified into a category
-using a three-tier waterfall. Each tier is progressively more expensive:
+using a four-tier waterfall. Each tier is progressively more expensive:
 
 ```
   Transaction Description
@@ -272,8 +272,8 @@ using a three-tier waterfall. Each tier is progressively more expensive:
           |                                       source: EXACT_MATCH
           NO
           |
-     [Tier 2: VECTOR_MATCH]
-     pgvector cosine similarity search
+     [Tier 2: VECTOR_MATCH (tenant)]
+     pgvector cosine similarity search on TransactionEmbedding
      Gemini embedding-001, 768 dimensions
      Top-1 result above reviewThreshold
           |
@@ -281,9 +281,18 @@ using a three-tier waterfall. Each tier is progressively more expensive:
           |                                  source: VECTOR_MATCH
           NO
           |
-     [Tier 3: LLM]
+     [Tier 3: VECTOR_MATCH (global)]
+     Cross-tenant GlobalEmbedding table
+     Same cosine search, discounted by 0.92x
+          |
+     adjusted similarity >= reviewThreshold? --YES--> classified
+          |                                           source: VECTOR_MATCH
+          NO
+          |
+     [Tier 4: LLM]
      Gemini Flash with structured prompt
      Full transaction context + tenant categories
+     Confidence hard-capped at 0.85
           |
      --> classified
          source: LLM
@@ -481,6 +490,20 @@ Bliss uses **query-level tenant isolation** (shared database, shared schema):
 There is no row-level security (RLS) in PostgreSQL. Isolation is enforced
 entirely in the application layer through Prisma query scoping. Every query
 that touches tenant data must include `tenantId` in its `where` clause.
+
+---
+
+## Internationalization
+
+The frontend (`apps/web`) uses **react-i18next** for client-side internationalization. The API and backend operate in English — all user-facing text is translated on the client.
+
+**Supported languages:** English (`en`), Spanish (`es`), French (`fr`), Portuguese (`pt`), Italian (`it`).
+
+Translation files are TypeScript objects in `apps/web/src/i18n/locales/`. System category names (seeded from `defaultCategories.js`) are translated on the frontend using the stable `defaultCategoryCode` field as the i18n lookup key. Custom user-created categories are stored and displayed in whatever language the user entered them.
+
+Language preference is auto-detected from the browser and persisted in `localStorage`. Users can switch via the language selector in the header.
+
+See `docs/specs/frontend/00-design-system.md` section 12 for implementation details.
 
 ---
 

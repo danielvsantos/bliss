@@ -9,8 +9,8 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#features">Features</a> &bull;
-  <a href="#develop-with-claude-code">Claude Code</a> &bull;
-  <a href="docs/guides">Guides</a> &bull;
+  <a href="https://docs.blissfinance.co">Docs</a> &bull;
+  <a href="https://app.blissfinance.co/auth?origin=docs-site">Live Demo</a> &bull;
   <a href="docs/architecture.md">Architecture</a> &bull;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -42,13 +42,14 @@ Bliss was built using a strict Spec-Driven Development framework. Every feature,
 
 ### AI-Powered Transaction Classification
 
-Bliss uses a three-tier classification waterfall that learns from your behavior and gets smarter over time:
+Bliss uses a 4-tier classification waterfall that learns from your behavior and gets smarter over time:
 
 | Tier | Method | Speed | How it works |
 |------|--------|-------|-------------|
 | **1. Exact Match** | In-memory cache | < 1ms | O(1) lookup against your transaction history. Instantly recognizes recurring merchants. |
-| **2. Vector Similarity** | pgvector cosine search | ~10ms | Semantic matching using Gemini embeddings (768-dim). Catches variations like "AMZN" vs "Amazon.com". |
-| **3. LLM Fallback** | Gemini Flash | ~500ms | Full AI classification with reasoning for truly novel transactions. |
+| **2. Vector Match (tenant)** | pgvector cosine search | ~10ms | Semantic matching using Gemini embeddings (768-dim). Catches variations like "AMZN" vs "Amazon.com". |
+| **3. Vector Match (global)** | Cross-tenant pgvector | ~10ms | Falls back to global embeddings, discounted by 0.92x, for new tenants with sparse data. |
+| **4. LLM Fallback** | Gemini Flash | ~500ms | Full AI classification with reasoning for truly novel transactions. |
 
 Every time you correct a classification, the system learns immediately — your override updates the cache and generates a new embedding, so the same merchant is auto-classified next time. Configurable confidence thresholds let you control the balance between automation and manual review.
 
@@ -84,7 +85,7 @@ Not on Plaid? No problem. Bliss has a sophisticated import pipeline for any bank
 
 1. **Adapter auto-detection** — Upload your CSV and Bliss identifies the format by matching column headers
 2. **Custom adapter builder** — Define column mappings for any bank's export format
-3. **AI classification** — Every imported row goes through the same 3-tier classification engine
+3. **AI classification** — Every imported row goes through the same 4-tier classification engine
 4. **Investment enrichment** — Automatically detects stock/crypto transactions and fetches current prices
 5. **Duplicate detection** — SHA-256 hash-based dedup with a 90-day sliding window
 6. **Staged review** — Preview all classifications before committing to your ledger
@@ -110,26 +111,26 @@ Bliss analyzes your financial patterns and generates actionable insights:
 ## Architecture
 
 ```
-                    Browser (React SPA)
-                         |
-                    :8080 (nginx)
-                         |
-         +---------------+---------------+
-         |                               |
-    Next.js API (:3000)          Express Backend (:3001)
-    - Auth (JWT + cookies)       - BullMQ workers (9)
-    - REST endpoints             - AI classification
-    - Prisma ORM                 - Portfolio valuation
-    - File upload                - Plaid sync
-         |                               |
-         +----------- PostgreSQL ---------+
-                     (pgvector)
-                         |
-                       Redis
-                   (queues + cache)
+                       Browser (React SPA)
+                              |
+                         :8080 (nginx)
+                              |
+              +---------------+---------------+
+              |                               |
+         Next.js API (:3000)          Express Backend (:3001)
+         - Auth (JWT + cookies)       - 10 BullMQ workers
+         - 60+ REST endpoints         - AI classification
+         - Prisma ORM                 - Portfolio valuation
+         - File upload                - Plaid sync
+              |                               |
+              +----------- PostgreSQL ---------+
+                          (pgvector)
+                              |
+                            Redis
+                        (queues + cache)
 ```
 
-**Three services, one database, one queue.** The API layer handles auth and CRUD. The backend service runs 9 async workers for heavy computation — AI classification, portfolio revaluation, Plaid sync, analytics caching, and more. Both share the same Prisma schema and PostgreSQL instance.
+**Three services, one database, one queue.** The API layer exposes 60+ REST endpoints handling auth, transactions, portfolios, and reporting. The backend service runs 10 async workers for heavy computation — AI classification, portfolio revaluation, Plaid sync, analytics caching, and more. Both share the same Prisma schema and PostgreSQL instance.
 
 See [docs/architecture.md](docs/architecture.md) for the full deep dive.
 
@@ -153,7 +154,7 @@ Even though Bliss is self-hosted, it encrypts sensitive data at rest — because
 Three commands to a running instance:
 
 ```bash
-git clone https://github.com/your-org/bliss.git && cd bliss
+git clone https://github.com/danielvsantos/bliss.git && cd bliss
 ./scripts/setup.sh        # generates secrets, creates .env
 docker compose up --build  # starts all services
 ```
@@ -165,7 +166,7 @@ Open **http://localhost:8080** and create your account. The database is automati
 Prerequisites: Node.js 20+, pnpm 9+, PostgreSQL 16 with pgvector, Redis 7+
 
 ```bash
-git clone https://github.com/your-org/bliss.git && cd bliss
+git clone https://github.com/danielvsantos/bliss.git && cd bliss
 cp .env.example .env       # edit DATABASE_URL and REDIS_URL for your local setup
 ./scripts/setup.sh          # generates secrets (skip if you already have .env)
 pnpm install                # installs all workspace dependencies
@@ -178,7 +179,7 @@ pnpm dev                    # starts all three services in parallel
 - API: http://localhost:3000
 - Backend: http://localhost:3001
 
-See the [Guides](apps/docs/content/guides) for detailed setup instructions.
+See the [Guides](docs/guides) for detailed setup instructions.
 
 ### Develop with Claude Code
 
@@ -209,7 +210,7 @@ Claude Code loads the root file everywhere, plus the app-specific file when you'
 |---------|------|------|------|
 | **web** | React + Vite + shadcn/ui | 8080 | SPA frontend served by nginx (Docker) or Vite dev server |
 | **api** | Next.js | 3000 | Auth, REST API, Prisma ORM, file uploads |
-| **backend** | Express + BullMQ | 3001 | 9 async workers: AI classification, portfolio valuation, Plaid sync, analytics |
+| **backend** | Express + BullMQ | 3001 | 10 async workers: AI classification, portfolio valuation, Plaid sync, analytics |
 | **postgres** | PostgreSQL 16 + pgvector | 5432 | Primary datastore with vector similarity search |
 | **redis** | Redis 7 | 6379 | Job queues (BullMQ) and caching |
 
@@ -222,7 +223,7 @@ Bliss works out of the box with just a database. Enable additional features by a
 | Feature | Provider | Env Var | What it unlocks |
 |---------|----------|---------|----------------|
 | Bank sync | [Plaid](https://plaid.com) | `PLAID_CLIENT_ID` | One-click bank account linking and automatic transaction sync |
-| AI classification | [Google Gemini](https://ai.google.dev) | `GEMINI_API_KEY` | 3-tier classification waterfall (vector search + LLM fallback) |
+| AI classification | [Google Gemini](https://ai.google.dev) | `GEMINI_API_KEY` | 4-tier classification waterfall (vector search + LLM fallback) |
 | Stock prices | [Twelve Data](https://twelvedata.com) | `TWELVE_DATA_API_KEY` | Real-time and historical pricing for 10,000+ symbols |
 | Error tracking | [Sentry](https://sentry.io) | `SENTRY_DSN` | Production error monitoring and performance tracing |
 
@@ -234,7 +235,7 @@ Without these keys, Bliss still provides full manual transaction management, CSV
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19, TypeScript, Vite, TanStack Query, Recharts, shadcn/ui, Tailwind CSS, Framer Motion |
+| Frontend | React 18, TypeScript, Vite, TanStack Query, Recharts, shadcn/ui, Tailwind CSS, Framer Motion |
 | API | Next.js, NextAuth.js, Prisma ORM |
 | Backend | Express, BullMQ, Google Generative AI SDK |
 | Database | PostgreSQL 16 with pgvector extension |
