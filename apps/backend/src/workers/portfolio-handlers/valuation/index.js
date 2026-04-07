@@ -389,18 +389,16 @@ const generatePortfolioValuation = async (job) => {
                 logger.info(`[Valuation] Used cost basis fallback for ${asset.symbol} for ${fallbackLogState.count} days, starting from ${fallbackLogState.startDate}.`, { tenantId, assetId: asset.id });
             }
 
-            if (holdingsToCreate.length > 0 || valueHistoryToCreate.length > 0) {
-                await prisma.$transaction(async (tx) => {
-                    if (holdingsToCreate.length > 0) {
-                        await batchCreateMany(tx.portfolioHolding, holdingsToCreate, { skipDuplicates: true });
-                    }
-                    if (valueHistoryToCreate.length > 0) {
-                        await batchCreateMany(tx.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true });
-                    }
-                }, { timeout: 60000 });
+            if (holdingsToCreate.length > 0) {
+                await batchCreateMany(prisma.portfolioHolding, holdingsToCreate, { skipDuplicates: true });
                 totalHoldingsCreated += holdingsToCreate.length;
+                logger.info(`[Valuation] Created ${holdingsToCreate.length} holding records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
+            }
+
+            if (valueHistoryToCreate.length > 0) {
+                await batchCreateMany(prisma.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true });
                 totalSnapshotsCreated += valueHistoryToCreate.length;
-                logger.info(`[Valuation] Created ${holdingsToCreate.length} holding records and ${valueHistoryToCreate.length} history records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
+                logger.info(`[Valuation] Created ${valueHistoryToCreate.length} history records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
             }
 
             // --- Final Step: Update the master PortfolioItem with the final calculated state ---
