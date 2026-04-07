@@ -10,7 +10,7 @@ Get Bliss running locally in under 5 minutes.
 ## Start everything
 
 ```bash
-git clone https://github.com/your-org/bliss.git && cd bliss
+git clone https://github.com/danielvsantos/bliss.git && cd bliss
 ./scripts/setup.sh          # generates secrets, creates .env
 docker compose up --build   # starts all 5 services
 ```
@@ -78,7 +78,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ### Setup
 
 ```bash
-git clone https://github.com/your-org/bliss.git && cd bliss
+git clone https://github.com/danielvsantos/bliss.git && cd bliss
 cp .env.example .env
 ./scripts/setup.sh          # generates secrets
 pnpm install

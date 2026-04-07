@@ -8,26 +8,6 @@ instance for job queues and caching.
 
 ![Bliss Architecture](/images/blissarchitecture.svg)
 
-```
-                        Browser (React SPA)
-                              |
-                         :8080 (nginx)
-                              |
-              +---------------+---------------+
-              |                               |
-         Next.js API (:3000)          Express Backend (:3001)
-         - Auth (JWT + cookies)       - 10 BullMQ workers
-         - 60+ REST endpoints         - AI classification
-         - Prisma ORM                 - Portfolio valuation
-         - File upload                - Plaid sync
-              |                               |
-              +----------- PostgreSQL ---------+
-                          (pgvector)
-                              |
-                            Redis
-                        (queues + cache)
-```
-
 **Key properties:**
 
 - The **Next.js API** is the only service exposed to the browser. It handles
@@ -386,7 +366,7 @@ the Next.js API config. Temp files are cleaned up after upload completes.
 | smartImportWorker         | smart-import       | 1           | CSV parse, dedup, classify, stage rows            |
 | plaidSyncWorker           | plaid-sync         | 3           | Incremental transaction fetch from Plaid          |
 | plaidProcessorWorker      | plaid-processor    | 1           | Classify and persist Plaid transactions            |
-| classificationWorker      | classification     | 5           | 3-tier AI classification pipeline                  |
+| classificationWorker      | classification     | 5           | 4-tier AI classification pipeline                  |
 | portfolioValuationWorker  | portfolio-valuation| 1           | Fetch prices, calculate holdings P&L               |
 | eventSchedulerWorker      | event-scheduler    | 3           | Route typed events to appropriate queues           |
 | analyticsWorker           | analytics          | 1           | Compute and cache spending analytics               |

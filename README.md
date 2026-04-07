@@ -2,16 +2,16 @@
   <img src="apps/api/assets/logoblissgh.png" alt="Bliss Finance" width="400" />
 </p>
 <p align="center">
-  <strong>The open-source financial control panel for global professionals.</strong><br>
-  Multi-currency wealth tracking, AI-powered transaction classification, and portfolio management — unified in one calm, powerful interface.
+  <strong>Self-Hosted Personal Finance for Global Citizens.</strong><br>
+  AI-powered transaction classification, real-time portfolio tracking, and event-driven analytics.<br>
+  Secured by AES-256 encryption. Open-source and designed for global wealth.
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &bull;
-  <a href="#features">Features</a> &bull;
-  <a href="https://docs.blissfinance.co">Docs</a> &bull;
+  <a href="https://blissfinance.co/docs">Documentation</a> &bull;
   <a href="https://app.blissfinance.co/auth?origin=docs-site">Live Demo</a> &bull;
-  <a href="docs/architecture.md">Architecture</a> &bull;
+  <a href="https://blissfinance.co/docs/architecture">Architecture</a> &bull;
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -22,27 +22,29 @@
   <img src="https://img.shields.io/badge/Claude%20Code-ready-6D657A?logo=anthropic&logoColor=white" alt="Claude Code Ready" />
 </p>
 
+<p align="center">
+  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss Finance — Portfolio Holdings dashboard showing net worth chart, multi-asset breakdown, and real-time pricing" width="720" />
+</p>
+
 ---
 
 ## Why Bliss?
 
-Most financial tools force you to choose: basic budgeting apps that can't handle investments, or trading platforms drowning in noise. If your financial life crosses borders — multiple currencies, banks in different countries, a mix of stocks, crypto, and everyday expenses — you're left stitching it all together in spreadsheets.
+Most financial tools force you to trade privacy for convenience. If your financial footprint spans multiple countries, currencies, and asset classes, you're usually handing your most sensitive data to a third-party SaaS — or stitching it together in spreadsheets.
 
-**Bliss eliminates that.** It's a single, self-hostable dashboard that unifies your entire financial picture: bank accounts across countries, investment portfolios, expense tracking, and P&L reporting — all normalized to your chosen currency, all classified by AI, all updated automatically.
+**Bliss is the open-source alternative.** A single, self-hostable dashboard that unifies bank accounts, investment portfolios, expense tracking, and P&L reporting across borders. Everything runs on your infrastructure, classified by AI, normalized to your chosen currency, and encrypted at rest.
 
----
-
-## Built with Spec-Driven Development
-
-Bliss was built using a strict Spec-Driven Development framework. Every feature, from the Plaid sync engine to the AI classification waterfall, was documented in detailed technical specifications before a single line of code was written. This approach ensures a decoupled architecture, predictable state management, and a codebase that is easy to reason about and extend.
+> Built with [Spec-Driven Development](https://blissfinance.co/docs/specifications) — every feature was documented in detailed technical specs before a line of code was written.
 
 ---
 
 ## Features
 
-### AI-Powered Transaction Classification
+### The Intelligence Pipeline
 
-Bliss uses a 4-tier classification waterfall that learns from your behavior and gets smarter over time:
+#### 4-Tier Classification Engine
+
+A deterministic AI waterfall that learns from your behavior and gets smarter over time:
 
 | Tier | Method | Speed | How it works |
 |------|--------|-------|-------------|
@@ -51,99 +53,102 @@ Bliss uses a 4-tier classification waterfall that learns from your behavior and 
 | **3. Vector Match (global)** | Cross-tenant pgvector | ~10ms | Falls back to global embeddings, discounted by 0.92x, for new tenants with sparse data. |
 | **4. LLM Fallback** | Gemini Flash | ~500ms | Full AI classification with reasoning for truly novel transactions. |
 
-Every time you correct a classification, the system learns immediately — your override updates the cache and generates a new embedding, so the same merchant is auto-classified next time. Configurable confidence thresholds let you control the balance between automation and manual review.
+Every correction feeds the loop immediately — your override updates the in-memory cache and generates a new vector embedding, so the same merchant is auto-classified next time.
 
-### Multi-Currency, Multi-Country P&L
+#### Smart CSV/XLSX Import
 
-**Your personal income statement, across borders and currencies.** Bliss organizes your finances using the same structure as a corporate P&L — Income flows down through Essentials, Lifestyle, and Growth spending to produce Gross Profit, Operating Profit, and Net Profit figures. This isn't a pie chart of "where your money went." It's a structured view of whether your financial life is actually profitable.
+Adapter-driven ingestion for any bank's export format:
 
-- **115+ pre-built categories across 9 types** — A ready-made chart of accounts (Income, Essentials, Lifestyle, Growth, Ventures, Investments, Debt, Transfers, Assets) so classification works from day one
-- **Automatic currency normalization** — Transactions in EUR, USD, BRL, or any currency are converted to your chosen display currency using historical exchange rates from the transaction date
-- **Drill down by year, quarter, or month** — Expand any P&L section to see group-level breakdowns, compare periods side by side, and spot trends
-- **Filter by country** — See your full global P&L or isolate a single country's financial activity
+1. **Adapter auto-detection** — Upload a CSV and Bliss identifies the format by matching column headers
+2. **Custom adapter builder** — Define column mappings for any bank format via a TypeScript interface
+3. **AI classification** — Every imported row goes through the same 4-tier classification engine
+4. **Investment enrichment** — Automatically detects stock/crypto transactions and fetches current prices
+5. **SHA-256 deduplication** — Hash-based dedup with a 90-day sliding window prevents double-counting
+6. **Staged review** — Preview all classifications before committing to your ledger
 
-### Portfolio & Investment Tracking
+#### AI-Generated Insights
+
+Seven financial lenses analyze your patterns and surface actionable insights: spending velocity, category concentration, income stability, savings rate, portfolio exposure, debt health, and net worth trajectory. Data-hash deduplication skips regeneration when underlying data hasn't changed.
+
+### The Global Ledger
+
+#### Multi-Currency, Multi-Country P&L
+
+Your personal income statement, across borders and currencies. Bliss organizes finances like a corporate P&L — Income flows through Essentials, Lifestyle, and Growth spending to produce Gross Profit, Operating Profit, and Net Profit.
+
+- **115+ pre-built categories across 9 types** — A ready-made chart of accounts so classification works from day one
+- **Automatic currency normalization** — Every transaction converted to your display currency using historical FX rates from the transaction date
+- **Drill down by year, quarter, or month** — Group-level breakdowns, period comparisons, and trend spotting
+- **Filter by country** — See your full global P&L or isolate a single country's activity
+
+#### Real-Time Portfolio Tracking
 
 - **Stocks, ETFs, crypto, mutual funds** — Real-time pricing via TwelveData (10,000+ symbols)
-- **Average cost basis calculation** — Automatic lot tracking from your transaction history
+- **FIFO lot tracking** — Automatic cost-basis calculation with historical FX rates per buy lot
 - **Realized & unrealized P&L** — Per-holding and aggregate, in both native and display currencies
 - **Sector and geography analysis** — Break down your equity portfolio by industry, sector, or country
 - **Debt tracking** — Model amortizing loans with interest rates, terms, and paydown schedules
 - **Manual asset support** — Track illiquid assets (real estate, private equity) with user-provided valuations
 
-### Bank Integration via Plaid
+#### Secure Bank Sync via Plaid
 
 - **One-click bank linking** — Connect checking, savings, credit cards, and investment accounts
-- **Automatic transaction sync** — Cursor-based incremental sync keeps your data current
-- **Historical fetch** — Pull up to 2 years of transaction history on first connect
-- **Multi-institution support** — Link accounts from thousands of financial institutions
-- **Connection health monitoring** — Sync logs, re-auth handling, token rotation
+- **Cursor-based incremental sync** — Automatic transaction fetching with up to 2 years of history on first connect
+- **Multi-institution support** — Thousands of financial institutions across countries
+- **Connection health monitoring** — Sync logs, re-auth handling, automated token rotation
+- **Encrypted at rest** — Plaid access tokens and raw payloads stored with AES-256-GCM
 
-### Smart CSV/XLSX Import
+### Self-Hosted Infrastructure
 
-Not on Plaid? No problem. Bliss has a sophisticated import pipeline for any bank's export format:
+#### Multi-Tenant, Multi-User
 
-1. **Adapter auto-detection** — Upload your CSV and Bliss identifies the format by matching column headers
-2. **Custom adapter builder** — Define column mappings for any bank's export format
-3. **AI classification** — Every imported row goes through the same 4-tier classification engine
-4. **Investment enrichment** — Automatically detects stock/crypto transactions and fetches current prices
-5. **Duplicate detection** — SHA-256 hash-based dedup with a 90-day sliding window
-6. **Staged review** — Preview all classifications before committing to your ledger
+Host completely isolated financial environments for family, friends, or a partner from a single deployment. Every database query includes `tenantId` — strict query-level isolation with no data leakage between users. View-only access lets you share visibility without giving control.
 
-### Reporting & Analytics
+#### AES-256-GCM Encryption at Rest
 
-- **Monthly P&L statements** — Income vs. expenses broken down by category type
-- **Category analytics** — See where your money goes with type/group breakdowns
-- **Tag-based budgeting** — Create tags like "Japan Trip" or "Home Renovation" with optional budgets and date ranges
-- **Portfolio equity analysis** — Holdings grouped by sector, industry, or country with weighted metrics
-- **CSV/XLSX export** — Export filtered transaction data for tax prep or external analysis
+Self-hosted doesn't mean risk-free. Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database. Classification lookup tables use SHA-256 hashes instead of plaintext for performance indexes. No telemetry, no cloud sync, no third-party analytics — every byte stays on your hardware.
 
-### AI-Generated Insights
+#### Event-Driven Analytics
 
-Bliss analyzes your financial patterns and generates actionable insights:
-- Spending velocity changes and category concentration warnings
-- Income stability analysis
-- Configurable severity levels (info, warning, positive, critical)
-- Dismissible cards — acknowledge and move on
+Every transaction triggers a scoped analytics update. Monthly aggregations across categories, tags, currencies, and countries are computed incrementally — never a full table scan. Tag-based budgeting lets you create tags like "Japan Trip" or "Home Renovation" with optional budgets and date ranges. Export filtered data as CSV/XLSX for tax prep or external analysis.
 
 ---
 
-## Architecture
+## Production-Grade Architecture
 
+Three services. Ten asynchronous workers. Sixty endpoints. One configuration file.
+
+```text
+[ ENTRYPOINT: Nginx :8080 (Docker) ]
+│
+├──► /     [ FRONTEND SPA ]
+│           ├── React 18, Vite 6, shadcn/ui
+│           └── Communicates via REST (JWT in HttpOnly Cookie)
+│
+├──► /api/ [ API LAYER ]
+│           ├── Next.js 15 (Pages Router), NextAuth
+│           ├── >60 Endpoints (Transactions, Reports, Users)
+│           └── Communicates via Internal REST (API Key Auth)
+│
+└──► /svc/ [ EXPRESS BACKEND :3001 ]
+            ├── Event-Driven Architecture
+            ├── 10 Asynchronous BullMQ Workers
+            │
+            ├─► Redis 7 (Cache + Job Queues)
+            │
+            ├─► Database: PostgreSQL 16 + pgvector
+            │   ├── Secure Store: AES-256-GCM Encryption
+            │   └── AI Embeddings: 768-dim Vectors
+            │
+            └─► 3rd Party Integrations:
+                ├─► AI: Gemini LLM (Classification)
+                ├─► Banks: Plaid (Sync + Tokens)
+                ├─► Prices: TwelveData (Real-time Stocks)
+                ├─► FX: CurrencyLayer (Historical Rates)
+                └─► Ops: Sentry (Observability)
 ```
-                       Browser (React SPA)
-                              |
-                         :8080 (nginx)
-                              |
-              +---------------+---------------+
-              |                               |
-         Next.js API (:3000)          Express Backend (:3001)
-         - Auth (JWT + cookies)       - 10 BullMQ workers
-         - 60+ REST endpoints         - AI classification
-         - Prisma ORM                 - Portfolio valuation
-         - File upload                - Plaid sync
-              |                               |
-              +----------- PostgreSQL ---------+
-                          (pgvector)
-                              |
-                            Redis
-                        (queues + cache)
-```
 
-**Three services, one database, one queue.** The API layer exposes 60+ REST endpoints handling auth, transactions, portfolios, and reporting. The backend service runs 10 async workers for heavy computation — AI classification, portfolio revaluation, Plaid sync, analytics caching, and more. Both share the same Prisma schema and PostgreSQL instance.
-
-See [docs/architecture.md](docs/architecture.md) for the full deep dive.
-
----
-
-## Security & Privacy
-
-Even though Bliss is self-hosted, it encrypts sensitive data at rest — because self-hosted doesn't mean risk-free. Database credentials leak, backups end up in the wrong place, and old disks get recycled. Bliss protects against all of these scenarios.
-
-- **AES-256-GCM encryption at rest** — Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database. Even if the database is compromised, sensitive fields remain unreadable without the encryption key.
-- **Financial data is uniquely sensitive** — Merchant names, payment recipients, and salary sources can enable identity theft and financial fraud. Bliss treats this data with the seriousness it deserves.
-- **Your data never leaves your infrastructure** — No telemetry, no cloud sync, no third-party analytics. Every byte stays on your hardware.
-- **One-way hashing for performance indexes** — Classification lookup tables use SHA-256 hashes instead of plaintext, so the system stays fast without exposing encrypted data.
+See the full [Architecture Documentation](https://blissfinance.co/docs/architecture) for the deep dive.
 
 ---
 
@@ -179,11 +184,11 @@ pnpm dev                    # starts all three services in parallel
 - API: http://localhost:3000
 - Backend: http://localhost:3001
 
-See the [Guides](docs/guides) for detailed setup instructions.
+See the [Guides](https://blissfinance.co/docs/guides) for detailed setup instructions.
 
 ### Develop with Claude Code
 
-Bliss ships with carefully crafted [`CLAUDE.md`](CLAUDE.md) files that give AI assistants full context on the architecture, conventions, and subsystems. If you use [Claude Code](https://claude.ai/code), just open the repo and start working -- it already knows the codebase.
+Bliss ships with carefully crafted [`CLAUDE.md`](CLAUDE.md) files that give AI assistants full context on the architecture, conventions, and subsystems. Combined with 43 technical specification files and 19 OpenAPI YAML definitions, the repo is designed for AI coding agents to onboard instantly. If you use [Claude Code](https://claude.ai/code), just open the repo and start working -- it already knows the codebase.
 
 ```bash
 cd bliss
@@ -284,7 +289,7 @@ pnpm test:web          # 206 tests (Vitest + MSW) — 45 files covering hooks, p
 
 ## Configuration
 
-All environment variables are documented in [`.env.example`](.env.example) and explained in detail in [docs/configuration.md](docs/configuration.md).
+All environment variables are documented in [`.env.example`](.env.example) and explained in detail in the [Configuration Reference](https://blissfinance.co/docs/configuration).
 
 The single root `.env` file is the source of truth for local development. Docker Compose reads from it automatically. For production, each deployment platform (Vercel, Cloud Run) manages its own environment variables.
 
