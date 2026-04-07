@@ -1,6 +1,6 @@
 # Guides
 
-Step-by-step walkthroughs for getting the most out of Bliss Finance. Start with Docker Quick Start and follow the guides in order, or jump to the topic you need.
+Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Quick Start and follow the guides in order, or jump to the topic you need.
 
 | Guide | What you'll learn |
 |-------|-------------------|

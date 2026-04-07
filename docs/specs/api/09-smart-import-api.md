@@ -2,7 +2,7 @@
 
 This module provides the API layer for the intelligent CSV/XLSX import pipeline. It handles adapter detection, file upload, staged import retrieval, row-level overrides, and commit/cancel actions.
 
-See `bliss-backend-service/specs/09-smart-import.md` for the backend worker pipeline that processes uploaded files.
+See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that processes uploaded files.
 
 ---
 
@@ -139,7 +139,7 @@ See `bliss-backend-service/specs/09-smart-import.md` for the backend worker pipe
 - **Frontend polling**: The frontend polls `GET /api/imports/:id` while `status === 'COMMITTING'`. The backend `commitWorker` updates `StagedImport.progress` (0→85% batch processing, 90% embeddings, 100% done) and stores the final result in `StagedImport.errorDetails.commitResult` as `{ transactionCount: N, remaining: M }`.
 - **Status lifecycle**: `PROCESSING → READY → COMMITTING → COMMITTED` (all rows done) or `COMMITTING → READY` (partial commit with remaining rows).
 
-> **Actual commit logic**: Transaction creation, tag linking, embedding feedback, and `TRANSACTIONS_IMPORTED` event emission all happen in the backend `commitWorker.js` (see `bliss-backend-service/specs/09-smart-import.md` §9.6). The API endpoint is a thin dispatcher.
+> **Actual commit logic**: Transaction creation, tag linking, embedding feedback, and `TRANSACTIONS_IMPORTED` event emission all happen in the backend `commitWorker.js` (see `docs/specs/backend/09-smart-import.md` §9.6). The API endpoint is a thin dispatcher.
 
 **POST** `/api/imports/:id?action=cancel`
 
@@ -181,8 +181,8 @@ See `bliss-backend-service/specs/09-smart-import.md` for the backend worker pipe
 
 ## Data Models
 
-- **`StagedImport`**: Import session record. See `bliss-backend-service/specs/09-smart-import.md` for full schema.
-- **`StagedImportRow`**: Individual staged row. See `bliss-backend-service/specs/09-smart-import.md` for full schema.
+- **`StagedImport`**: Import session record. See `docs/specs/backend/09-smart-import.md` for full schema.
+- **`StagedImportRow`**: Individual staged row. See `docs/specs/backend/09-smart-import.md` for full schema.
 - **`ImportAdapter`**: Adapter definition with `matchSignature`, `columnMappings`, `amountStrategy`, `dateFormat`. Can be global (`tenantId: null`) or tenant-specific.
 
 ---
@@ -256,5 +256,5 @@ When a Bliss Native CSV with an `id` column is re-imported, the Smart Import pip
 |-------|------|---------|-------------|
 | `updateCount` | `Int` | `0` | Count of rows targeting existing transactions. |
 
-See `bliss-backend-service/specs/17-transaction-export-update.md` for backend pipeline details.
+See `docs/specs/backend/17-transaction-export-update.md` for backend pipeline details.
 

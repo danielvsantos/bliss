@@ -97,7 +97,7 @@ The investment enrichment section is always visible as a collapsible `Accordion`
 
 The Transactions page header includes an **Export CSV** button (outline variant, `Download` icon from lucide-react) alongside the existing "Import CSV" link and "Add Transaction" button.
 
-See `bliss-backend-service/specs/17-transaction-export-update.md` for the backend pipeline and `bliss-finance-api/specs/17-transaction-export-update-api.md` for the API layer.
+See `docs/specs/backend/17-transaction-export-update.md` for the backend pipeline and `docs/specs/api/17-transaction-export-update-api.md` for the API layer.
 
 ### Export Scope Dialog
 

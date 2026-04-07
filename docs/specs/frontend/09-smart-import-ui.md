@@ -2,7 +2,7 @@
 
 The Smart Import feature provides an intelligent, guided wizard for importing financial transactions from CSV and XLSX/XLS files. It lives at `/agents/import` and is accessible from the sidebar nav (FileUp icon).
 
-See `bliss-backend-service/specs/09-smart-import.md` for the backend pipeline and `bliss-finance-api/specs/09-smart-import-api.md` for the API layer.
+See `docs/specs/backend/09-smart-import.md` for the backend pipeline and `docs/specs/api/09-smart-import-api.md` for the API layer.
 
 ---
 
@@ -166,7 +166,7 @@ Shown after a successful commit. The transition is triggered by a `useEffect` th
 
 Update rows are staged rows that modify an existing transaction (identified by a non-null `updateTargetId`) rather than creating a new one. The backend computes a field-level diff during processing; the frontend surfaces these diffs in the review step.
 
-See `bliss-backend-service/specs/17-transaction-export-update.md` for the backend pipeline and `bliss-finance-api/specs/17-transaction-export-update-api.md` for the API layer.
+See `docs/specs/backend/17-transaction-export-update.md` for the backend pipeline and `docs/specs/api/17-transaction-export-update-api.md` for the API layer.
 
 ### Quick Classify Behaviour
 

@@ -164,7 +164,7 @@ During profile refresh, the worker compares the MIC code returned by Twelve Data
 
 ## 19.8. Schema
 
-The SecurityMaster model is defined in `prisma/schema.prisma` (synced from `bliss-finance-api`). See the migration at `bliss-finance-api/prisma/migrations/20260313000000_add_security_master/migration.sql`.
+The SecurityMaster model is defined in `prisma/schema.prisma`. See the migration at `prisma/migrations/20260313000000_add_security_master/migration.sql`.
 
 Key design decisions:
 - Global table (not per-tenant) — stock fundamentals are universal

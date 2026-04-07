@@ -2,7 +2,7 @@
 
 ## 13.1 Overview
 
-This specification covers the testing infrastructure and error-logging strategy for the bliss-backend-service. The goals are:
+This specification covers the testing infrastructure and error-logging strategy for `apps/backend`. The goals are:
 
 1. **Prevent regressions** — a repeatable test suite that runs locally and in CI before every merge.
 2. **Verify contracts** — integration tests that exercise the real Express routes and Prisma layer end-to-end, catching issues that unit tests cannot (middleware order, query correctness, auth enforcement).
@@ -23,7 +23,7 @@ The backend uses a **two-layer test pyramid**:
 
 The backend test suite consists of **39 unit test files (395 tests)** and **8 integration test files (66 tests)** for a total of **461 tests across 47 files**. Run `pnpm test:backend` to execute all tests.
 
-E2E tests (Playwright, across all services) live in the `bliss-frontend` repository at `e2e/` — see `bliss-frontend/specs/13-automated-testing-and-error-logging.md §13.5`.
+E2E tests (Playwright, across all services) live at `e2e/` — see `docs/specs/frontend/13-automated-testing-and-error-logging.md §13.5`.
 
 ---
 
@@ -31,7 +31,7 @@ E2E tests (Playwright, across all services) live in the `bliss-frontend` reposit
 
 ### Framework
 
-Jest (CommonJS) is used throughout because the service runs as CJS (`require()`). Vitest is used by the `bliss-finance-api` (ESM) — the two frameworks are intentionally not mixed.
+Jest (CommonJS) is used throughout because the service runs as CJS (`require()`). Vitest is used by `apps/api` (ESM) — the two frameworks are intentionally not mixed.
 
 ### Configuration (`jest.config.js`)
 
@@ -265,14 +265,14 @@ The CI job runs `npx prisma migrate deploy` before executing tests to ensure the
 
 ## 13.7 E2E Scaffolding (Phase 4)
 
-E2E tests live in the **`bliss-frontend` repository** at `bliss-frontend/e2e/`. They are owned by the frontend CI workflow (`bliss-frontend/.github/workflows/ci.yml`) and run only on merges to `main`.
+E2E tests live at `e2e/`. They are owned by the frontend CI workflow (`.github/workflows/ci.yml`) and run only on merges to `main`.
 
-The E2E suite tests user-facing flows that span all three services (backend + finance-api + frontend), so it belongs in the repo closest to the user: `bliss-frontend`.
+The E2E suite tests user-facing flows that span all three services (backend + api + web).
 
 Full documentation for the E2E scaffolding, spec files, Playwright config, and next steps is in:
 
 ```
-bliss-frontend/specs/13-automated-testing-and-error-logging.md §13.5
+docs/specs/frontend/13-automated-testing-and-error-logging.md §13.5
 ```
 
 ### Current Status
@@ -283,12 +283,12 @@ All 13 test cases are `test.skip` stubs — they pass in CI (exit 0, all skipped
 
 ## 13.8 Frontend Test Infrastructure (Phase 5)
 
-The `bliss-frontend` package has a complete test infrastructure ready — no test files exist yet, but all tooling and configuration are in place.
+The `apps/web` package has a complete test infrastructure ready — no test files exist yet, but all tooling and configuration are in place.
 
 Full documentation for the frontend test stack, MSW handlers, CI workflow, untested features, and recommended starting points is in:
 
 ```
-bliss-frontend/specs/13-automated-testing-and-error-logging.md
+docs/specs/frontend/13-automated-testing-and-error-logging.md
 ```
 
 ### Summary
@@ -310,7 +310,7 @@ pnpm test:web         # run all frontend tests
 
 The table below tracks major feature areas and their current test status:
 
-#### Backend (`bliss-backend-service`)
+#### Backend (`apps/backend`)
 
 The backend has comprehensive unit test coverage across services, workers, utilities, valuation strategies, and middleware. Key areas with tests include:
 

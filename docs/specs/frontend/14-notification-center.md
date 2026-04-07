@@ -1,6 +1,6 @@
 # 14. Notification Center (Frontend)
 
-This document covers the Notification Center UI component, its hooks, and its integration with the application header. The notification center aggregates actionable signals from the API (see `bliss-finance-api/specs/14-notification-center.md`) and presents them in a popover.
+This document covers the Notification Center UI component, its hooks, and its integration with the application header. The notification center aggregates actionable signals from the API (see `docs/specs/api/14-notification-center.md`) and presents them in a popover.
 
 ---
 

@@ -1,6 +1,6 @@
 # 15. Insights (Frontend)
 
-This document covers the Insights page and its supporting hooks and components. Insights are AI-generated financial observations produced by the backend Gemini pipeline (see `bliss-backend-service/specs/15-insights-engine.md`) and served via the finance-api (see `bliss-finance-api/specs/15-insights.md`).
+This document covers the Insights page and its supporting hooks and components. Insights are AI-generated financial observations produced by the backend Gemini pipeline (see `docs/specs/backend/15-insights-engine.md`) and served via the finance-api (see `docs/specs/api/15-insights.md`).
 
 ---
 

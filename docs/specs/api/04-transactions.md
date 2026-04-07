@@ -1,6 +1,6 @@
 # 4. Transactions (API)
 
-This document outlines the API implementation for managing transactions, which form the core ledger of the Bliss Finance application.
+This document outlines the API implementation for managing transactions, which form the core ledger of the Bliss application.
 
 ---
 
@@ -61,7 +61,7 @@ See the Smart Import API docs (`/api/imports/*`) and backend spec `09-smart-impo
 
 ### Analytics Event Production
 
-A key responsibility of the transaction endpoints is to produce events for the backend analytics engine. Whenever a transaction is created, updated, or deleted, a `MANUAL_TRANSACTION_MODIFIED` event is sent to the `/api/events` endpoint of the `bliss-backend-service`. This event contains a rich payload of data about the transaction, which allows the backend to efficiently update the analytics cache without needing to make additional queries back to the API.
+A key responsibility of the transaction endpoints is to produce events for the backend analytics engine. Whenever a transaction is created, updated, or deleted, a `MANUAL_TRANSACTION_MODIFIED` event is sent to the `/api/events` endpoint of `apps/backend`. This event contains a rich payload of data about the transaction, which allows the backend to efficiently update the analytics cache without needing to make additional queries back to the API.
 
 ---
 

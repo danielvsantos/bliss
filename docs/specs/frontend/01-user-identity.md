@@ -336,7 +336,7 @@ sequenceDiagram
     participant User
     participant AuthPage as src/pages/auth/index.tsx
     participant AuthContext as AuthContext.tsx
-    participant API as API (bliss-finance-api)
+    participant API as API (apps/api)
     participant Google as Google OAuth
     participant CallbackPage as src/pages/auth/callback.tsx
 

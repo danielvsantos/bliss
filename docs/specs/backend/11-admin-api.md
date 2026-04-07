@@ -2,7 +2,7 @@
 
 Internal administration endpoints for managing default categories and the cross-tenant classification system. These endpoints are **not user-facing** — they are used by Bliss operations staff for category provisioning, metadata maintenance, and embedding quality management.
 
-The admin endpoints live in the Next.js API (`bliss-finance-api`) and are documented here for cross-repo context since the backend service owns the classification pipeline that produces and consumes `GlobalEmbedding` data.
+The admin endpoints live in the Next.js API (`apps/api`) and are documented here for cross-repo context since the backend service owns the classification pipeline that produces and consumes `GlobalEmbedding` data.
 
 ---
 
@@ -11,7 +11,7 @@ The admin endpoints live in the Next.js API (`bliss-finance-api`) and are docume
 All admin endpoints use a static API key, **not** a user JWT session.
 
 - **Header**: `x-admin-key: <value>`
-- **Env var**: `ADMIN_API_KEY` (in `bliss-finance-api`)
+- **Env var**: `ADMIN_API_KEY` (in `apps/api`)
 - Returns `401` if the header is missing, incorrect, or if `ADMIN_API_KEY` is not set.
 
 ---
@@ -38,7 +38,7 @@ The `classificationSource` on the resulting `PlaidTransaction` or `StagedImportR
 
 ---
 
-## Endpoints (in `bliss-finance-api`)
+## Endpoints (in `apps/api`)
 
 ### `GET /api/admin/default-categories`
 
@@ -62,7 +62,7 @@ Re-generates Gemini vectors for all `GlobalEmbedding` rows under this code. Sequ
 
 ### `defaultCategories.js`
 
-**File**: `bliss-finance-api/lib/defaultCategories.js`
+**File**: `apps/api/lib/defaultCategories.js`
 
 Source of truth for all default category definitions. Categories are provisioned from this file at tenant creation time. The admin API does not auto-sync this file — manual updates are required after provisioning or renaming.
 
@@ -122,4 +122,4 @@ Cannot be changed via the Admin API (returns 400 if attempted).
 | `src/services/categorizationService.js` | 4-tier waterfall classification + `recordFeedback()` which writes `GlobalEmbedding` |
 | `src/services/geminiService.js` | Gemini API wrapper for LLM classification + embedding generation |
 
-For the admin route files themselves, see `bliss-finance-api/specs/11-admin-api.md`.
+For the admin route files themselves, see `docs/specs/api/11-admin-api.md`.

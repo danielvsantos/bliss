@@ -1,6 +1,6 @@
 # 15. Insights API
 
-This document covers the Insights endpoints exposed by the finance-api. The backend service generates insights via Google Gemini (see `bliss-backend-service/specs/15-insights-engine.md`); the finance-api serves, filters, and manages their dismissal state.
+This document covers the Insights endpoints exposed by the finance-api. The backend service generates insights via Google Gemini (see `docs/specs/backend/15-insights-engine.md`); the finance-api serves, filters, and manages their dismissal state.
 
 ---
 

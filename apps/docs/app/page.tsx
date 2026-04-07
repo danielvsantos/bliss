@@ -192,7 +192,7 @@ export default function HomePage() {
             <div className="mx-auto" style={{ maxWidth: 1200 }}>
               <Image
                 src="/images/blissarchitecture.svg"
-                alt="Bliss Finance architecture: Nginx entrypoint routing to React SPA, Next.js API, and Express backend with 10 BullMQ workers, PostgreSQL with pgvector, Redis, and third-party integrations"
+                alt="Bliss architecture: Nginx entrypoint routing to React SPA, Next.js API, and Express backend with 10 BullMQ workers, PostgreSQL with pgvector, Redis, and third-party integrations"
                 width={1200}
                 height={700}
                 className="w-full h-auto"
@@ -755,7 +755,7 @@ export default function HomePage() {
       <footer className="py-10" style={{ borderTop: '1px solid #E2E8F0' }}>
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <span className="text-sm" style={{ color: '#5A5266' }}>
-            {new Date().getFullYear()} Bliss Finance. Open-source under AGPL-3.0 License.
+            {new Date().getFullYear()} Bliss. Open-source under AGPL-3.0 License.
           </span>
           <div className="flex items-center gap-6">
             <Link href="/docs" className="text-sm transition-colors hover:text-[#3A3542]" style={{ color: '#6D657A' }}>Docs</Link>

@@ -1,6 +1,6 @@
 # Bliss Backend Service
 
-This service is the asynchronous processing engine for the Bliss Finance platform. It handles all the heavy lifting, complex calculations, and third-party API interactions that would be too slow or unreliable to run in a synchronous web request. It operates independently from the other services and communicates via a shared Redis instance and PostgreSQL database.
+This service is the asynchronous processing engine for the Bliss platform. It handles all the heavy lifting, complex calculations, and third-party API interactions that would be too slow or unreliable to run in a synchronous web request. It operates independently from the other services and communicates via a shared Redis instance and PostgreSQL database.
 
 ## Core Purpose
 

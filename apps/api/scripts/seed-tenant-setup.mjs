@@ -11,6 +11,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { encrypt } from '@bliss/shared/encryption';
 
 const prisma = new PrismaClient();
 
@@ -44,15 +45,15 @@ const SEED_DATA = {
   // Accounts are matched by name + tenantId to avoid duplicates.
   // Replace these examples with your own accounts.
   accounts: [
-    { name: 'Chase Checking', accountNumber: '****4821', bank: 'Chase', country: 'USA', currency: 'USD' },
-    { name: 'Schwab Brokerage', accountNumber: '****7053', bank: 'Charles Schwab', country: 'USA', currency: 'USD' },
+    { name: 'Chase Checking', accountNumber: '19823821', bank: 'Chase', country: 'USA', currency: 'USD' },
+    { name: 'Schwab Brokerage', accountNumber: '331237053', bank: 'Charles Schwab', country: 'USA', currency: 'USD' },
     { name: 'Revolut Personal', accountNumber: 'ES12XXXX0001XXXX1234XX', bank: 'Revolut', country: 'ESP', currency: 'EUR' },
     { name: 'Revolut Joint', accountNumber: 'ES34XXXX0001XXXX5678XX', bank: 'Revolut', country: 'ESP', currency: 'EUR' },
     { name: 'Revolut Investments', accountNumber: '', bank: 'Revolut', country: 'ESP', currency: 'USD' },
     { name: 'N26 Current', accountNumber: 'ES56XXXX0001XXXX9012XX', bank: 'N26', country: 'ESP', currency: 'EUR' },
     { name: 'CaixaBank', accountNumber: 'ES78XXXX0001XXXX3456XX', bank: 'CaixaBank', country: 'ESP', currency: 'EUR' },
-    { name: 'Interactive Brokers', accountNumber: '****2847', bank: 'Interactive Brokers', country: 'USA', currency: 'USD' },
-    { name: 'Nubank Conta', accountNumber: '****9901', bank: 'Nubank', country: 'BRA', currency: 'BRL' },
+    { name: 'Interactive Brokers', accountNumber: '85592847', bank: 'Interactive Brokers', country: 'USA', currency: 'USD' },
+    { name: 'Nubank Conta', accountNumber: '189809901', bank: 'Nubank', country: 'BRA', currency: 'BRL' },
   ],
 
   // Tenant-specific categories (custom, beyond the default set).
@@ -200,7 +201,7 @@ async function main() {
     await prisma.account.create({
       data: {
         name: a.name,
-        accountNumber: a.accountNumber,
+        accountNumber: a.accountNumber ? encrypt(a.accountNumber) : '',
         bankId,
         countryId: a.country,
         currencyCode: a.currency,

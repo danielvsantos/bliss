@@ -1,6 +1,6 @@
 # 2. Core Entities (Frontend)
 
-This document describes the frontend implementation of two core data entities in the Bliss Finance application: **Accounts** and **Categories**.
+This document describes the frontend implementation of two core data entities in the Bliss application: **Accounts** and **Categories**.
 
 ---
 
@@ -100,7 +100,7 @@ Plaid items are fetched via a separate query (`accountListKeys.plaidItems()`) th
 
 ### Design System
 
-All status badges, borders, and interactive states use Bliss design tokens — never raw Tailwind color classes. See `bliss-frontend/CLAUDE.md` and `specs/00-design-system.md` for the full token reference.
+All status badges, borders, and interactive states use Bliss design tokens — never raw Tailwind color classes. See `apps/web/CLAUDE.md` and `specs/00-design-system.md` for the full token reference.
 
 ---
 
@@ -120,7 +120,7 @@ The 9 canonical types are defined in `apps/api/lib/constants.js` as `ALLOWED_CAT
 
 ### Default vs. Custom Categories
 
-Every tenant receives the full default category set at signup (seeded from `bliss-finance-api/lib/defaultCategories.js`). These are identified by a non-null `defaultCategoryCode` on the `Category` model.
+Every tenant receives the full default category set at signup (seeded from `apps/api/lib/defaultCategories.js`). These are identified by a non-null `defaultCategoryCode` on the `Category` model.
 
 | Attribute | Default Category | Custom Category |
 |---|---|---|

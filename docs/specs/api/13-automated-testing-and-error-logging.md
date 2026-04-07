@@ -2,7 +2,7 @@
 
 ## 13.1 Overview
 
-This specification covers the testing infrastructure and error-logging strategy for the `bliss-finance-api` layer.
+This specification covers the testing infrastructure and error-logging strategy for the `apps/api` layer.
 
 The finance-api is a Next.js application (ESM, `import/export`) built on top of Prisma ORM. Its API routes are standard Next.js handler functions — they do not run as a persistent Express server, which shapes the integration test approach (direct handler invocation rather than HTTP-level supertest).
 
@@ -27,7 +27,7 @@ The API test suite includes unit tests (in `__tests__/unit/`) and integration te
 
 ### Framework
 
-Vitest is used because the finance-api is pure ESM. The backend service (`bliss-backend-service`) uses Jest (CJS) — the two frameworks are intentionally not mixed across repos.
+Vitest is used because the finance-api is pure ESM. The backend service (`apps/backend`) uses Jest (CJS) — the two frameworks are intentionally not mixed.
 
 ### Configuration (`vitest.config.ts`)
 
@@ -267,9 +267,9 @@ This ensures:
 
 ## 13.5 MSW (Mock Service Worker)
 
-`msw@^2` is installed as a dev dependency. In the finance-api, MSW is available for API-level mocking when integration tests need to stub responses from the `bliss-backend-service` (e.g., stubbing `POST /api/feedback` responses without running the backend service).
+`msw@^2` is installed as a dev dependency. In the finance-api, MSW is available for API-level mocking when integration tests need to stub responses from `apps/backend` (e.g., stubbing `POST /api/feedback` responses without running the backend service).
 
-The `bliss-frontend` uses MSW's node server (`setupServer`) in its test setup (see the frontend test spec and `src/test/msw/server.ts`).
+`apps/web` uses MSW's node server (`setupServer`) in its test setup (see the frontend test spec and `src/test/msw/server.ts`).
 
 ```ts
 import { http, HttpResponse } from 'msw';
@@ -338,15 +338,15 @@ mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
 
 ## 13.8 E2E Scaffolding (Phase 4)
 
-E2E tests live in the **`bliss-frontend` repository** at `bliss-frontend/e2e/`, owned by the frontend CI workflow. They are not part of this repo's CI pipeline.
+E2E tests live at `e2e/`, owned by the frontend CI workflow. They are not part of this repo's CI pipeline.
 
 Full documentation is in:
 
 ```
-bliss-frontend/specs/13-automated-testing-and-error-logging.md §13.5
+docs/specs/frontend/13-automated-testing-and-error-logging.md §13.5
 ```
 
-All 13 E2E test cases are `test.skip` stubs — they pass in CI (exit 0, all skipped) and run only on merges to `main` in the `bliss-frontend` repo.
+All 13 E2E test cases are `test.skip` stubs — they pass in CI (exit 0, all skipped) and run only on merges to `main` in the monorepo CI.
 
 ---
 

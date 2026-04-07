@@ -1,6 +1,6 @@
 # Bliss Frontend
 
-This is the user-facing web application for the Bliss Finance platform. It is a rich, single-page application (SPA) built with React and Vite, providing a comprehensive and interactive experience for users to manage their finances.
+This is the user-facing web application for the Bliss platform. It is a rich, single-page application (SPA) built with React and Vite, providing a comprehensive and interactive experience for users to manage their finances.
 
 ## Core Purpose
 

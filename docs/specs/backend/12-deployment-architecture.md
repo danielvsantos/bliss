@@ -1,6 +1,6 @@
 # 12. Deployment Architecture
 
-This document specifies the deployment infrastructure for the Bliss Finance platform.
+This document specifies the deployment infrastructure for the Bliss platform.
 
 ## 12.1. Docker Compose (Primary)
 

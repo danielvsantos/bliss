@@ -1,4 +1,4 @@
-# Bliss Finance
+# Bliss
 
 Bliss is a multi-tenant personal finance platform. It ingests bank transactions (Plaid or CSV), classifies them with a 4-tier AI pipeline, tracks investment portfolios with real-time pricing, and generates AI-powered financial insights.
 

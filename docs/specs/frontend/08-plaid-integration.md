@@ -319,4 +319,4 @@ Accounts in the left panel (`account-list-panel.tsx`) are grouped by institution
 
 ## Admin Note — Hard Delete
 
-A permanent delete endpoint exists at `DELETE /api/plaid/items/hard-delete` but is **admin-only** (protected by `X-Admin-Key` header, not exposed in the UI). It calls `plaidClient.itemRemove()`, unlinks all associated `Account` records, and cascades-deletes `PlaidTransaction` and `PlaidSyncLog` records. Promoted `Transaction` records are preserved. See `bliss-finance-api/specs/08-plaid-integration.md` §12 for full details.
+A permanent delete endpoint exists at `DELETE /api/plaid/items/hard-delete` but is **admin-only** (protected by `X-Admin-Key` header, not exposed in the UI). It calls `plaidClient.itemRemove()`, unlinks all associated `Account` records, and cascades-deletes `PlaidTransaction` and `PlaidSyncLog` records. Promoted `Transaction` records are preserved. See `docs/specs/api/08-plaid-integration.md` §12 for full details.

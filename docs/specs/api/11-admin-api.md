@@ -18,7 +18,7 @@ This mirrors the pattern used by `DELETE /api/plaid/items/hard-delete`.
 
 ## OpenAPI Spec
 
-Full machine-readable spec: `bliss-finance-api/openapi/admin.yaml`
+Full machine-readable spec: `apps/api/openapi/admin.yaml`
 
 ---
 
@@ -129,7 +129,7 @@ Re-generates Gemini embedding vectors for all existing `GlobalEmbedding` rows un
 
 ### `defaultCategories.js`
 
-**File**: `bliss-finance-api/lib/defaultCategories.js`
+**File**: `apps/api/lib/defaultCategories.js`
 
 The source of truth for all default category definitions. Used to:
 1. Seed categories for new tenant sign-ups (at tenant creation time)
@@ -170,14 +170,14 @@ A system-managed field on `Category` that controls special processing behavior:
 
 ## Backend Admin Route
 
-The backend service (`bliss-backend-service`) exposes a single admin endpoint:
+The backend service (`apps/backend`) exposes a single admin endpoint:
 
 ### `POST /api/admin/regenerate-embedding`
 
 - **Auth**: `apiKeyAuth` middleware (`x-api-key` header)
 - **Body**: `{ description: string, defaultCategoryCode: string }`
 - **Purpose**: Regenerates a single Gemini embedding for a `GlobalEmbedding` row. Called sequentially by the finance-api's `regenerate-embeddings` endpoint for each row under a given category code.
-- **File**: `bliss-backend-service/src/routes/adminRoutes.js`
+- **File**: `apps/backend/src/routes/adminRoutes.js`
 - **Response**: `{ ok: true }`
 
 ---

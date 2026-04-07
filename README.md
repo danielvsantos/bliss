@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/api/assets/logoblissgh.png" alt="Bliss Finance" width="400" />
+  <img src="apps/api/assets/logoblissgh.png" alt="Bliss" width="400" />
 </p>
 <p align="center">
   <strong>Self-Hosted Personal Finance for Global Citizens.</strong><br>
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss Finance — Portfolio Holdings dashboard showing net worth chart, multi-asset breakdown, and real-time pricing" width="720" />
+  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss — Portfolio Holdings dashboard showing net worth chart, multi-asset breakdown, and real-time pricing" width="720" />
 </p>
 
 ---

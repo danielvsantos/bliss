@@ -132,7 +132,7 @@ The staging table for raw Plaid data, extended with AI classification and invest
 
 | Field | Default | Description |
 |---|---|---|
-| `autoPromoteThreshold` | `0.90` | Transactions at or above this confidence are auto-promoted, bypassing the review queue. Default matches `DEFAULT_AUTO_PROMOTE_THRESHOLD` in `bliss-backend-service/src/config/classificationConfig.js`. In practice only EXACT_MATCH (1.0) and high-confidence tenant-scoped VECTOR_MATCH routinely reach this threshold. LLM is hard-capped at 0.85. |
+| `autoPromoteThreshold` | `0.90` | Transactions at or above this confidence are auto-promoted, bypassing the review queue. Default matches `DEFAULT_AUTO_PROMOTE_THRESHOLD` in `apps/backend/src/config/classificationConfig.js`. In practice only EXACT_MATCH (1.0) and high-confidence tenant-scoped VECTOR_MATCH routinely reach this threshold. LLM is hard-capped at 0.85. |
 | `reviewThreshold` | `0.70` | Minimum confidence for a VECTOR_MATCH / VECTOR_MATCH_GLOBAL to be accepted. Rows below this threshold fall through to the next tier. Default matches `DEFAULT_REVIEW_THRESHOLD` in `classificationConfig.js`. |
 
 ---

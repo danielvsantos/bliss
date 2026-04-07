@@ -1,6 +1,6 @@
-# Contributing to Bliss Finance
+# Contributing to Bliss
 
-Thank you for your interest in contributing to Bliss Finance! This guide covers how we build, how the project is documented, and how to make your first contribution.
+Thank you for your interest in contributing to Bliss! This guide covers how we build, how the project is documented, and how to make your first contribution.
 
 ## How We Build: Spec-Driven Development
 
@@ -54,13 +54,13 @@ These files prevent the most common mistakes: using the wrong module system, har
 The fastest way to get started is Docker:
 
 ```bash
-git clone https://github.com/blissfinance/bliss.git
+git clone https://github.com/danielvsantos/bliss.git
 cd bliss
 ./scripts/setup.sh
 docker compose up --build
 ```
 
-Open http://localhost:8080 when all containers are healthy. See the [Docker Quick Start](apps/docs/content/guides/docker-quickstart.md) guide for details.
+Open http://localhost:8080 when all containers are healthy. See the [Docker Quick Start](https://blissfinance.co/docs/guides/docker-quickstart) guide for details.
 
 ### Local Development (without Docker)
 

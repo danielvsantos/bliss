@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bliss Finance — local development setup
+# Bliss — local development setup
 # Generates secrets and creates .env from .env.example
 set -euo pipefail
 

@@ -1,8 +1,8 @@
-# Bliss Finance -- Architecture
+# Bliss -- Architecture
 
 ## High-Level Overview
 
-Bliss Finance is a self-hostable financial dashboard built as a monorepo with
+Bliss is a self-hostable financial dashboard built as a monorepo with
 three application services, one PostgreSQL database (with pgvector), and a Redis
 instance for job queues and caching.
 
@@ -30,7 +30,7 @@ instance for job queues and caching.
 ## Monorepo Structure
 
 ```
-bliss-finance-monorepo/
+bliss/
 |
 +-- apps/
 |   +-- api/            Next.js Pages Router (ESM, "type": "module")

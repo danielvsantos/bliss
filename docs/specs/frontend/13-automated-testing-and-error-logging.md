@@ -2,7 +2,7 @@
 
 ## 13.1 Overview
 
-This specification covers the testing infrastructure for the `bliss-frontend` React application. The goals are:
+This specification covers the testing infrastructure for the `apps/web` React application. The goals are:
 
 1. **Catch regressions in UI logic** — hook and component tests that verify data-fetching, state transitions, and rendering without requiring a live backend.
 2. **Validate user flows end-to-end** — Playwright E2E tests (currently scaffolded as stubs) that will drive a real browser through auth, Plaid linking, and CSV import flows once implemented.
@@ -152,7 +152,7 @@ npm run test:coverage   # v8 coverage report, enforces 60/60/60 thresholds
 The E2E suite lives inside this repository at `e2e/`. This is its permanent home — E2E tests cover user-facing flows and belong in the frontend repo.
 
 ```
-bliss-frontend/
+bliss/
 └── e2e/
     ├── package.json               # standalone Node project, @playwright/test
     ├── playwright.config.ts       # Chromium only, baseURL from E2E_BASE_URL
@@ -197,9 +197,9 @@ E2E_BASE_URL=http://localhost:8080 npx playwright test
 
 ### CI
 
-The `e2e` job in `bliss-frontend/.github/workflows/ci.yml` runs **only on `main` branch merges** (`if: github.ref == 'refs/heads/main'`). It is excluded from feature branch runs while tests remain stubs. When real E2E tests are written, remove this guard so they run on every PR.
+The `e2e` job in `.github/workflows/ci.yml` runs **only on `main` branch merges** (`if: github.ref == 'refs/heads/main'`). It is excluded from feature branch runs while tests remain stubs. When real E2E tests are written, remove this guard so they run on every PR.
 
-When real tests are implemented, the CI job will also need to start `bliss-backend-service` and `bliss-finance-api` before Playwright runs. This can be done with additional checkout + `npm run dev` steps in the workflow, or via Docker Compose.
+When real tests are implemented, the CI job will also need to start `apps/backend` and `apps/api` before Playwright runs. This can be done with additional checkout + `npm run dev` steps in the workflow, or via Docker Compose.
 
 ---
 

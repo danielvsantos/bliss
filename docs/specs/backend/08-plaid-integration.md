@@ -14,7 +14,7 @@ This service handles the robust, asynchronous synchronisation of financial data 
 
 Controls two things simultaneously:
 
-1. **`days_requested` in the Plaid link token** (`bliss-finance-api/pages/api/plaid/create-link-token.js`) — tells Plaid how far back to initialise the item's transaction ledger when a bank is first connected.
+1. **`days_requested` in the Plaid link token** (`apps/api/pages/api/plaid/create-link-token.js`) — tells Plaid how far back to initialise the item's transaction ledger when a bank is first connected.
 
 2. **Resync date cutoff** (`plaidSyncWorker.js`) — when processing `transactionsSync` results, any `added` transaction whose `date` is earlier than `(PlaidItem.createdAt – plaidHistoryDays)` is silently dropped before DB insert. This prevents subsequent resyncs from pulling Plaid's backfilled history beyond the original window.
 
@@ -250,7 +250,7 @@ Processes the user's seed decisions.
 
 ## Manual Review & Promotion API
 
-See [`bliss-finance-api/specs/10-ai-classification-and-review.md`](../../bliss-finance-api/specs/10-ai-classification-and-review.md):
+See [`docs/specs/api/10-ai-classification-and-review.md`](../api/10-ai-classification-and-review.md):
 
 - **Category override** — `PUT /api/plaid/transactions/:id` with `suggestedCategoryId`
 - **Skip** — `PUT /api/plaid/transactions/:id` with `promotionStatus: 'SKIPPED'`
@@ -284,7 +284,7 @@ When a user connects a new bank, the initial sync retrieves only the last 30–9
 
 - **Token Encryption**: `accessToken` is AES-256-GCM encrypted at rest in `PlaidItem`. Decrypted automatically by Prisma middleware.
 - **Payload Encryption**: `PlaidTransaction.rawJson` is encrypted to protect PII while preserving the exact Plaid response.
-- **Webhook Verification**: `POST /api/plaid/webhook` verifies the `plaid-verification-jwt` header using Plaid's JWKS endpoint (`jose` library). Replay attacks are prevented by validating the `iat` claim (5-minute window). Verification is skipped in non-production for sandbox testing convenience. See `bliss-finance-api/specs/08-plaid-integration.md` for full webhook routing details.
+- **Webhook Verification**: `POST /api/plaid/webhook` verifies the `plaid-verification-jwt` header using Plaid's JWKS endpoint (`jose` library). Replay attacks are prevented by validating the `iat` claim (5-minute window). Verification is skipped in non-production for sandbox testing convenience. See `docs/specs/api/08-plaid-integration.md` for full webhook routing details.
 
 ---
 
@@ -299,7 +299,7 @@ When a user clicks **Reconnect Bank**:
 - Plaid Link opens in update mode (existing `accessToken` is still valid at Plaid).
 - On success, `PATCH /api/plaid/items` sets `status = 'ACTIVE'` and triggers an incremental sync.
 
-> **Admin Hard Delete**: A permanent delete endpoint is implemented at `DELETE /api/plaid/items/hard-delete` (admin-only, protected by `X-Admin-Key` header). It calls `plaidClient.itemRemove()`, nullifies linked `Account.plaidAccountId`/`plaidItemId`, and deletes the `PlaidItem` record (cascading `PlaidTransaction` and `PlaidSyncLog`). `Transaction` records are intentionally preserved. See `bliss-finance-api/specs/08-plaid-integration.md` §12 for full details.
+> **Admin Hard Delete**: A permanent delete endpoint is implemented at `DELETE /api/plaid/items/hard-delete` (admin-only, protected by `X-Admin-Key` header). It calls `plaidClient.itemRemove()`, nullifies linked `Account.plaidAccountId`/`plaidItemId`, and deletes the `PlaidItem` record (cascading `PlaidTransaction` and `PlaidSyncLog`). `Transaction` records are intentionally preserved. See `docs/specs/api/08-plaid-integration.md` §12 for full details.
 
 ---
 
@@ -339,7 +339,7 @@ All Plaid API calls are configured with a 30-second request timeout (`baseOption
 
 Moves all `SKIPPED` PlaidTransactions back to `CLASSIFIED` for re-review. Accepts an optional `plaidItemId` filter to scope the operation to a single Plaid connection. Returns `{ updated: number }` with the count of rows transitioned.
 
-See [`bliss-finance-api/specs/08-plaid-integration.md`](../../bliss-finance-api/specs/08-plaid-integration.md) for API-level details.
+See [`docs/specs/api/08-plaid-integration.md`](../api/08-plaid-integration.md) for API-level details.
 
 ---
 

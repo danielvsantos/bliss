@@ -1,6 +1,6 @@
 # Bliss Docs Site
 
-Public-facing documentation site for Bliss Finance, built with Nextra 4 on Next.js 15.
+Public-facing documentation site for Bliss, built with Nextra 4 on Next.js 15.
 
 ## Stack
 

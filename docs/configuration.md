@@ -1,6 +1,6 @@
 # Environment Variable Reference
 
-Bliss Finance uses a **single root `.env` file** as the source of truth for all services. Both the Next.js API layer and the Express backend service read from this shared file, ensuring configuration stays consistent across the stack.
+Bliss uses a **single root `.env` file** as the source of truth for all services. Both the Next.js API layer and the Express backend service read from this shared file, ensuring configuration stays consistent across the stack.
 
 ## How it works
 

@@ -1,6 +1,6 @@
-# Bliss Finance API
+# Bliss API
 
-This is the central API layer for the Bliss Finance platform. It serves as the backend-for-frontend (BFF) for the `bliss-frontend` application, handling user authentication, data querying, and acting as the primary gateway to the `bliss-backend-service`.
+This is the central API layer for the Bliss platform. It serves as the backend-for-frontend (BFF) for the `bliss-frontend` application, handling user authentication, data querying, and acting as the primary gateway to the `bliss-backend-service`.
 
 ## Core Purpose
 

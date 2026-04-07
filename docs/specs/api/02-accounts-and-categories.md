@@ -1,6 +1,6 @@
 # 2. Core Entities (API)
 
-This document outlines the API implementation for the core data entities in the Bliss Finance application: **Accounts** and **Categories**.
+This document outlines the API implementation for the core data entities in the Bliss application: **Accounts** and **Categories**.
 
 ---
 

@@ -163,7 +163,7 @@ Unclassified rows remain in the staging table with `status: 'PENDING'` and no `s
 
 ## 10.5. Feedback Loop (`categorizationService.recordFeedback`)
 
-When a user overrides a transaction's category (in Transaction Review, Smart Import review, or any other surface), the `bliss-finance-api` fires a fire-and-forget `POST /api/feedback` to the backend service.
+When a user overrides a transaction's category (in Transaction Review, Smart Import review, or any other surface), the `apps/api` fires a fire-and-forget `POST /api/feedback` to the backend service.
 
 **`recordFeedback(description, categoryId, tenantId, transactionId = null)`**:
 1. Normalises the description (lowercase, trim).
@@ -176,11 +176,11 @@ The next classification for the same tenant with the same description hits **Tie
 
 | Action | Trigger |
 |---|---|
-| User changes category on a Plaid transaction (`PUT /api/plaid/transactions/:id`) | `bliss-finance-api` |
-| User changes category on an import row (`PUT /api/imports/:id/rows/:rowId`) | `bliss-finance-api` |
-| User changes category on a manual transaction (`PUT/POST /api/transactions`) | `bliss-finance-api` |
+| User changes category on a Plaid transaction (`PUT /api/plaid/transactions/:id`) | `apps/api` |
+| User changes category on an import row (`PUT /api/imports/:id/rows/:rowId`) | `apps/api` |
+| User changes category on a manual transaction (`PUT/POST /api/transactions`) | `apps/api` |
 | Plaid auto-promote | `plaidProcessorWorker.js` (direct call, passes `transactionId`) |
-| Commit smart import (LLM and USER_OVERRIDE rows only) | `bliss-finance-api` commit endpoint (`POST /api/imports/:id?action=commit`) |
+| Commit smart import (LLM and USER_OVERRIDE rows only) | `apps/api` commit endpoint (`POST /api/imports/:id?action=commit`) |
 
 ---
 
@@ -291,7 +291,7 @@ All tuning constants for the four-tier waterfall live in `src/config/classificat
 | `DEFAULT_PLAID_HISTORY_DAYS` | `1` (from `PLAID_HISTORY_DAYS` env var) | Default days of Plaid transaction history fetched on initial connect; written to `Tenant.plaidHistoryDays` at creation |
 | `PHASE2_CONCURRENCY` | `5` | Phase 2 — p-limit concurrency cap for parallel LLM calls |
 
-**Note on Prisma schema sync**: The `Tenant` model in `bliss-finance-api/prisma/schema.prisma` also has `@default(0.90)` and `@default(0.70)` on `autoPromoteThreshold` and `reviewThreshold`. These must be kept in sync manually — Prisma schema cannot import this JS file.
+**Note on Prisma schema sync**: The `Tenant` model in `prisma/schema.prisma` also has `@default(0.90)` and `@default(0.70)` on `autoPromoteThreshold` and `reviewThreshold`. These must be kept in sync manually — Prisma schema cannot import this JS file.
 
 ---
 

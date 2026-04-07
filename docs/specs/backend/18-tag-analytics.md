@@ -82,7 +82,7 @@ Tag changes alone don't modify a transaction's financial data, so they may not t
 
 ## 18.4. Schema
 
-The `TagAnalyticsCacheMonthly` model is defined in the shared Prisma schema (`prisma/schema.prisma`). See `bliss-finance-api/specs/18-tag-analytics.md` section 18.2 for the full model definition.
+The `TagAnalyticsCacheMonthly` model is defined in the shared Prisma schema (`prisma/schema.prisma`). See `docs/specs/api/18-tag-analytics.md` section 18.2 for the full model definition.
 
 Key points:
 - Per-category granularity via `categoryId` + `categoryName` (not present in regular `AnalyticsCacheMonthly`)

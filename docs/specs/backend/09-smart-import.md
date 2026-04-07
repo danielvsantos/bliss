@@ -290,7 +290,7 @@ A downloadable template is available at `/templates/bliss-native-template.csv`.
 
 The Smart Import pipeline supports **updating existing transactions** via CSV round-trip. Users export transactions as a Bliss Native CSV (with a pre-populated `id` column), edit the file in a spreadsheet, and re-import it. Rows with a valid `id` update the existing transaction; rows without an `id` create new transactions (existing behaviour).
 
-The export endpoint (`bliss-finance-api/pages/api/transactions/export.js`) produces a CSV in the exact Bliss Native format, including the transaction `id` and all editable fields. This creates a full round-trip: Export → Edit → Re-import → Review → Commit.
+The export endpoint (`apps/api/pages/api/transactions/export.js`) produces a CSV in the exact Bliss Native format, including the transaction `id` and all editable fields. This creates a full round-trip: Export → Edit → Re-import → Review → Commit.
 
 The Bliss Native CSV adapter gains one new optional column:
 
@@ -300,7 +300,7 @@ The Bliss Native CSV adapter gains one new optional column:
 
 The `id` column is always the first column in exported CSVs. During import, column order does not matter — detection is header-based. All other columns remain unchanged (see § 9.7).
 
-See `bliss-finance-api/specs/17-transaction-export-update-api.md` for the API layer and `bliss-frontend/specs/17-transaction-export-update-ui.md` for the UI.
+See `docs/specs/api/17-transaction-export-update-api.md` for the API layer and `docs/specs/frontend/17-transaction-export-update-ui.md` for the UI.
 
 ---
 

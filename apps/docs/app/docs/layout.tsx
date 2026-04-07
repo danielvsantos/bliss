@@ -53,7 +53,7 @@ export default async function DocsLayout({
       footer={
         <Footer>
           <span className="text-sm" style={{ color: 'hsl(260 6% 61%)' }}>
-            {new Date().getFullYear()} Bliss Finance. Open-source under MIT
+            {new Date().getFullYear()} Bliss. Open-source under MIT
             License.
           </span>
         </Footer>
