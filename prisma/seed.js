@@ -14,41 +14,54 @@ const prisma = new PrismaClient();
 // ── Reference data ──────────────────────────────────────────────────────────
 
 const COUNTRIES = [
-  { id: 'BRA', iso2: 'BR', name: 'Brazil', emoji: '🇧🇷' },
-  { id: 'ESP', iso2: 'ES', name: 'Spain', emoji: '🇪🇸' },
-  { id: 'DEU', iso2: 'DE', name: 'Germany', emoji: '🇩🇪' },
   { id: 'USA', iso2: 'US', name: 'United States', emoji: '🇺🇸' },
   { id: 'GBR', iso2: 'GB', name: 'United Kingdom', emoji: '🇬🇧' },
+  { id: 'DEU', iso2: 'DE', name: 'Germany', emoji: '🇩🇪' },
   { id: 'FRA', iso2: 'FR', name: 'France', emoji: '🇫🇷' },
+  { id: 'ESP', iso2: 'ES', name: 'Spain', emoji: '🇪🇸' },
   { id: 'PRT', iso2: 'PT', name: 'Portugal', emoji: '🇵🇹' },
+  { id: 'BRA', iso2: 'BR', name: 'Brazil', emoji: '🇧🇷' },
   { id: 'CAN', iso2: 'CA', name: 'Canada', emoji: '🇨🇦' },
   { id: 'AUS', iso2: 'AU', name: 'Australia', emoji: '🇦🇺' },
   { id: 'JPN', iso2: 'JP', name: 'Japan', emoji: '🇯🇵' },
+  { id: 'CHE', iso2: 'CH', name: 'Switzerland', emoji: '🇨🇭' },
+  { id: 'MEX', iso2: 'MX', name: 'Mexico', emoji: '🇲🇽' },
+  { id: 'ITA', iso2: 'IT', name: 'Italy', emoji: '🇮🇹' },
+  { id: 'NLD', iso2: 'NL', name: 'Netherlands', emoji: '🇳🇱' },
+  { id: 'SGP', iso2: 'SG', name: 'Singapore', emoji: '🇸🇬' },
+  { id: 'IND', iso2: 'IN', name: 'India', emoji: '🇮🇳' },
 ];
 
 const CURRENCIES = [
-  { id: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
-  { id: 'EUR', name: 'Euro', symbol: '€' },
   { id: 'USD', name: 'US Dollar', symbol: '$' },
+  { id: 'EUR', name: 'Euro', symbol: '€' },
   { id: 'GBP', name: 'British Pound', symbol: '£' },
+  { id: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
   { id: 'CAD', name: 'Canadian Dollar', symbol: 'C$' },
   { id: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
   { id: 'JPY', name: 'Japanese Yen', symbol: '¥' },
   { id: 'CHF', name: 'Swiss Franc', symbol: 'CHF' },
+  { id: 'MXN', name: 'Mexican Peso', symbol: 'MX$' },
+  { id: 'SGD', name: 'Singapore Dollar', symbol: 'S$' },
+  { id: 'INR', name: 'Indian Rupee', symbol: '₹' },
 ];
 
 const BANKS = [
-  'Itaú',
-  'Bradesco',
-  'Clear',
-  'Flow',
-  'Nubank',
-  'XP',
+  'Chase',
+  'Bank of America',
   'Charles Schwab',
-  'eToro',
-  'N26',
-  'CaixaBank',
+  'Fidelity',
   'Revolut',
+  'N26',
+  'Barclays',
+  'HSBC',
+  'Nubank',
+  'Itaú',
+  'Wise',
+  'Interactive Brokers',
+  'Deutsche Bank',
+  'CaixaBank',
+  'Monzo',
 ];
 
 // ── Main ────────────────────────────────────────────────────────────────────

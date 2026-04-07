@@ -18,13 +18,6 @@ const ArrowRight = () => (
   </svg>
 );
 
-/* ── Star icon ───────────────────────────────────────────── */
-const StarIcon = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-  </svg>
-);
-
 export default function HomePage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -158,19 +151,6 @@ export default function HomePage() {
                 </a>
               </div>
 
-              {/* Social proof — GitHub star link */}
-              <div className="flex items-center justify-center md:justify-start">
-                <a
-                  href="https://github.com/danielvsantos/bliss"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:text-[#3A3542]"
-                  style={{ color: '#6D657A' }}
-                >
-                  <StarIcon size={14} />
-                  Star on GitHub
-                </a>
-              </div>
             </div>
 
             {/* Mascot */}

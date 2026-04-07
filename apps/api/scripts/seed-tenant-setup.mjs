@@ -18,55 +18,41 @@ const prisma = new PrismaClient();
 
 const SEED_DATA = {
   countries: [
-    { id: 'BRA', iso2: 'BR', name: 'Brazil', emoji: '🇧🇷', isDefault: true },
+    { id: 'USA', iso2: 'US', name: 'United States', emoji: '🇺🇸', isDefault: true },
     { id: 'ESP', iso2: 'ES', name: 'Spain', emoji: '🇪🇸' },
     { id: 'DEU', iso2: 'DE', name: 'Germany', emoji: '🇩🇪' },
-    { id: 'USA', iso2: 'US', name: 'United States', emoji: '🇺🇸' },
+    { id: 'BRA', iso2: 'BR', name: 'Brazil', emoji: '🇧🇷' },
   ],
 
   currencies: [
-    { id: 'BRL', name: 'Brazilian Real', symbol: 'R$', isDefault: true },
+    { id: 'USD', name: 'US Dollar', symbol: '$', isDefault: true },
     { id: 'EUR', name: 'Euro', symbol: '€' },
-    { id: 'USD', name: 'US Dollar', symbol: '$' },
+    { id: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
   ],
 
   banks: [
-    { name: 'Revolut (ES)' },
-    { name: 'eToro' },
-    { name: 'XP' }, 
+    { name: 'Chase' },
     { name: 'Charles Schwab' },
-    { name: 'Itaú' },
-    { name: 'Nubank' },
-    { name: 'Bradesco' },
-    { name: 'Clear' },
-    { name: 'Flow' },
-    { name: 'CaixaBank' },
+    { name: 'Revolut' },
     { name: 'N26' },
+    { name: 'Nubank' },
+    { name: 'Interactive Brokers' },
+    { name: 'CaixaBank' },
   ],
 
   // Each account references a bank (by name), country (by id), and currency (by id).
   // Accounts are matched by name + tenantId to avoid duplicates.
+  // Replace these examples with your own accounts.
   accounts: [
-    { name: 'Itaú Daniel', accountNumber: '****XXXX', bank: 'Itaú', country: 'BRA', currency: 'BRL' },
-    { name: 'Bradesco', accountNumber: '****XXXX', bank: 'Bradesco', country: 'BRA', currency: 'BRL' },
-    { name: 'Clear', accountNumber: 'N/A', bank: 'Clear', country: 'BRA', currency: 'BRL' },
-    { name: 'Flow', accountNumber: '****XXXX', bank: 'Flow', country: 'BRA', currency: 'BRL' },
-    { name: 'Itaú Patricia', accountNumber: 'N/A', bank: 'Itaú', country: 'BRA', currency: 'BRL' },
-    { name: 'Nubank Daniel', accountNumber: '****XXXX', bank: 'Nubank', country: 'BRA', currency: 'BRL' },
-    { name: 'Nubank Patricia', accountNumber: '****XXXX', bank: 'Nubank', country: 'BRA', currency: 'BRL' },
-    { name: 'XP', accountNumber: '****XXXX', bank: 'XP', country: 'BRA', currency: 'BRL' },
-    { name: 'LaCaixa', accountNumber: 'ESXX00000001XXXX000003', bank: 'CaixaBank', country: 'ESP', currency: 'EUR' },
-    { name: 'Schwab', accountNumber: '****XXXX', bank: 'Charles Schwab', country: 'USA', currency: 'USD' },
-    { name: 'eToro', accountNumber: '', bank: 'eToro', country: 'DEU', currency: 'USD' },
-    { name: 'eToro EUR', accountNumber: 'DEXX370400440532013000', bank: 'eToro', country: 'DEU', currency: 'EUR' },
-    { name: 'N26', accountNumber: 'ESXX00000001XXXX000004', bank: 'N26', country: 'ESP', currency: 'EUR' },
-    { name: 'Revolut Joint', accountNumber: 'ESXX00000001XXXX000002', bank: 'Revolut (ES)', country: 'ESP', currency: 'EUR' },
-    { name: 'Revolut Daniel', accountNumber: 'ESXX00000001XXXX000001', bank: 'Revolut (ES)', country: 'ESP', currency: 'EUR' },
-    { name: 'Revolut Patricia', accountNumber: 'ESXX00000001XXXX000005', bank: 'Revolut (ES)', country: 'ESP', currency: 'EUR' },
-    { name: 'Revolut Investment (USD)', accountNumber: '', bank: 'Revolut (ES)', country: 'ESP', currency: 'USD' },
-    { name: 'Revolut Investment (EUR)', accountNumber: '', bank: 'Revolut (ES)', country: 'ESP', currency: 'EUR' },
-    { name: 'eToro Patricia', accountNumber: '', bank: 'eToro', country: 'DEU', currency: 'USD' },
-    { name: 'eToro Patricia EUR', accountNumber: '', bank: 'eToro', country: 'DEU', currency: 'EUR' },
+    { name: 'Chase Checking', accountNumber: '****4821', bank: 'Chase', country: 'USA', currency: 'USD' },
+    { name: 'Schwab Brokerage', accountNumber: '****7053', bank: 'Charles Schwab', country: 'USA', currency: 'USD' },
+    { name: 'Revolut Personal', accountNumber: 'ES12XXXX0001XXXX1234XX', bank: 'Revolut', country: 'ESP', currency: 'EUR' },
+    { name: 'Revolut Joint', accountNumber: 'ES34XXXX0001XXXX5678XX', bank: 'Revolut', country: 'ESP', currency: 'EUR' },
+    { name: 'Revolut Investments', accountNumber: '', bank: 'Revolut', country: 'ESP', currency: 'USD' },
+    { name: 'N26 Current', accountNumber: 'ES56XXXX0001XXXX9012XX', bank: 'N26', country: 'ESP', currency: 'EUR' },
+    { name: 'CaixaBank', accountNumber: 'ES78XXXX0001XXXX3456XX', bank: 'CaixaBank', country: 'ESP', currency: 'EUR' },
+    { name: 'Interactive Brokers', accountNumber: '****2847', bank: 'Interactive Brokers', country: 'USA', currency: 'USD' },
+    { name: 'Nubank Conta', accountNumber: '****9901', bank: 'Nubank', country: 'BRA', currency: 'BRL' },
   ],
 
   // Tenant-specific categories (custom, beyond the default set).
@@ -74,7 +60,8 @@ const SEED_DATA = {
   // Fields: name (required), group (required), type (required), icon (optional), processingHint (optional)
   // Common types: 'Income' | 'Essentials' | 'Lifestyle' | 'Growth' | 'Investments' | 'Debt' | 'Transfers'
   categories: [
-    { name: 'Drugstore', group: 'Entertainment', type: 'Lifestyle', icon: '✨' },
+    { name: 'Coworking', group: 'Productivity', type: 'Growth', icon: '💼', processingHint: 'coworking space membership or day pass' },
+    { name: 'Language Lessons', group: 'Education', type: 'Growth', icon: '🗣️', processingHint: 'language school, tutoring, course subscription' },
   ],
 };
 

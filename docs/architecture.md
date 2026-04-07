@@ -21,6 +21,10 @@ instance for job queues and caching.
 - **Redis 7** acts as the message broker for BullMQ and provides ephemeral
   caching.
 
+### Architectural Decision: The Backend Runtime
+
+> *"Bliss uses Express.js for the worker backend. While newer edge-frameworks offer faster micro-benchmarks, we deliberately chose a battle-tested, highly predictable runtime to orchestrate our financial ledgers and BullMQ queues. In personal finance, reliability is a feature, and saving two milliseconds on an HTTP route is meaningless when orchestrating deterministic P&L math and LLM pipelines. We spent our innovation tokens on pgvector and AI; we chose rock-solid stability for the server."*
+
 ---
 
 ## Monorepo Structure
