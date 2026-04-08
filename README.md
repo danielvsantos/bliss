@@ -23,9 +23,8 @@
 </p>
 
 <p align="center">
-  <img src="https://blissfinance.co/images/dashboard.png" alt="Bliss — Dashboard with net worth, synced accounts, expense breakdown, and quick actions" width="420" />
-  &nbsp;&nbsp;
-  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss — Portfolio Holdings with stacked area chart, multi-asset breakdown, and real-time pricing" width="420" />
+  <img src="https://blissfinance.co/images/dashboard.png" alt="Bliss — Dashboard with net worth, synced accounts, expense breakdown, and quick actions" width="49%" />
+  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss — Portfolio Holdings with stacked area chart, multi-asset breakdown, and real-time pricing" width="49%" />
 </p>
 
 ---
