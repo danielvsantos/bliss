@@ -109,14 +109,17 @@ AI features (vector similarity classification, Gemini-powered categorization) ar
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GEMINI_API_KEY` | No | -- | Google Gemini API key. Enables the vector classification tier and AI-powered transaction categorization. |
+| `INSIGHT_MODEL` | No | `gemini-3-flash-preview` | Model used by the insights engine. Change to use a different Gemini model for AI-generated financial insights. |
 
 ## Market Data (optional)
 
-Stock price fetching is provided by [Twelve Data](https://twelvedata.com) and is disabled when the API key is not set.
+Stock price fetching is provided by [Twelve Data](https://twelvedata.com) by default and is disabled when no API key is set.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
+| `STOCK_PROVIDER` | No | `TWELVE_DATA` | Stock data provider. Supported values: `TWELVE_DATA` (recommended), `FINNHUB`. |
 | `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Enables real-time and historical pricing for stocks, ETFs, and funds (10,000+ symbols across 27+ markets). |
+| `FINNHUB_API_KEY` | No | -- | API key for Finnhub. Alternative stock data provider. |
 
 ## Currency Rates (optional)
 

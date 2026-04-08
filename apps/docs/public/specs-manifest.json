@@ -187,21 +187,13 @@
   },
   {
     "slug": "security-master",
-    "title": "Security Master",
-    "description": "Nightly stock fundamentals refresh from market data providers",
+    "title": "Security Master & Equity Analysis",
+    "description": "Nightly stock fundamentals refresh, equity deep-dive with earnings and dividends",
     "order": 19,
     "layers": {
       "api": "docs/specs/api/19-security-master-api.md",
-      "backend": "docs/specs/backend/19-security-master.md"
-    }
-  },
-  {
-    "slug": "equity-analysis",
-    "title": "Equity Analysis",
-    "description": "Equity deep-dive with fundamentals, earnings, and dividends",
-    "order": 20,
-    "layers": {
-      "frontend": "docs/specs/frontend/19-equity-analysis.md"
+      "backend": "docs/specs/backend/19-security-master.md",
+      "frontend": "docs/specs/frontend/19-security-master.md"
     }
   }
 ]

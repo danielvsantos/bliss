@@ -81,4 +81,4 @@ This `README.md` provides a high-level architectural overview. For detailed info
 -   **[10. AI Classification & Review UI](./specs/10-ai-classification-and-review.md)**
 -   **[14. Notification Center](./specs/14-notification-center.md)**
 -   **[15. Insights](./specs/15-insights.md)**
--   **[19. Equity Analysis](./specs/19-equity-analysis.md)**
+-   **[19. Security Master & Equity Analysis](../../docs/specs/frontend/19-security-master.md)**

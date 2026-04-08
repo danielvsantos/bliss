@@ -23,7 +23,9 @@
 </p>
 
 <p align="center">
-  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss — Portfolio Holdings dashboard showing net worth chart, multi-asset breakdown, and real-time pricing" width="720" />
+  <img src="https://blissfinance.co/images/dashboard.png" alt="Bliss — Dashboard with net worth, synced accounts, expense breakdown, and quick actions" width="420" />
+  &nbsp;&nbsp;
+  <img src="https://blissfinance.co/images/portfolio.png" alt="Bliss — Portfolio Holdings with stacked area chart, multi-asset breakdown, and real-time pricing" width="420" />
 </p>
 
 ---
@@ -230,9 +232,10 @@ Bliss works out of the box with just a database. Enable additional features by a
 | Bank sync | [Plaid](https://plaid.com) | `PLAID_CLIENT_ID` | One-click bank account linking and automatic transaction sync |
 | AI classification | [Google Gemini](https://ai.google.dev) | `GEMINI_API_KEY` | 4-tier classification waterfall (vector search + LLM fallback) |
 | Stock prices | [Twelve Data](https://twelvedata.com) | `TWELVE_DATA_API_KEY` | Real-time and historical pricing for 10,000+ symbols |
+| Currency rates | [CurrencyLayer](https://currencylayer.com) | `CURRENCYLAYER_API_KEY` | Live and historical FX rates for multi-currency conversion |
 | Error tracking | [Sentry](https://sentry.io) | `SENTRY_DSN` | Production error monitoring and performance tracing |
 
-Without these keys, Bliss still provides full manual transaction management, CSV import (with rule-based classification), multi-currency tracking, and portfolio management with manual valuations.
+Without these keys, Bliss still provides full manual transaction management, CSV import (with rule-based classification), and portfolio management with manual valuations.
 
 ---
 
@@ -248,6 +251,7 @@ Without these keys, Bliss still provides full manual transaction management, CSV
 | Storage | Local filesystem (default) or Google Cloud Storage |
 | AI/ML | Gemini Flash (classification), Gemini Embedding-001 (768-dim vectors) |
 | Market Data | Twelve Data |
+| Currency Rates | CurrencyLayer |
 | Banking | Plaid |
 | Observability | Sentry, OpenTelemetry |
 | Testing | Jest (backend), Vitest (API + frontend), MSW, Playwright (E2E stubs) |

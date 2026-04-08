@@ -46,8 +46,7 @@ const FEATURE_MAP = {
   'insights':                 { title: 'Insights Engine',            order: 15, description: 'AI-generated financial insights across 7 analysis lenses' },
   'dashboard-actions':        { title: 'Dashboard Actions',          order: 16, description: 'Dashboard widgets, quick actions, and onboarding checklist' },
   'tag-analytics':            { title: 'Tag Analytics',              order: 18, description: 'Multi-tag transaction analysis with dedicated cache tables' },
-  'security-master':          { title: 'Security Master',            order: 19, description: 'Nightly stock fundamentals refresh from market data providers' },
-  'equity-analysis':          { title: 'Equity Analysis',            order: 20, description: 'Equity deep-dive with fundamentals, earnings, and dividends' },
+  'security-master':          { title: 'Security Master & Equity Analysis', order: 19, description: 'Nightly stock fundamentals refresh, equity deep-dive with earnings and dividends' },
 };
 
 // Maps feature slugs to actual filenames per layer (from docs/specs/)
@@ -70,8 +69,7 @@ const LAYER_FILES = {
   'insights':                 { api: '15-insights.md', backend: '15-insights-engine.md', frontend: '15-insights.md' },
   'dashboard-actions':        { frontend: '16-dashboard-actions.md' },
   'tag-analytics':            { api: '18-tag-analytics.md', backend: '18-tag-analytics.md', frontend: '18-tag-analytics.md' },
-  'security-master':          { api: '19-security-master-api.md', backend: '19-security-master.md' },
-  'equity-analysis':          { frontend: '19-equity-analysis.md' },
+  'security-master':          { api: '19-security-master-api.md', backend: '19-security-master.md', frontend: '19-security-master.md' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────

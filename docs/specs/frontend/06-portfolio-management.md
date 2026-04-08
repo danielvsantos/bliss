@@ -38,7 +38,7 @@ A key architectural feature of the portfolio dashboard is its reliance on **serv
 
 - **Performance Chart**: A "Performance" tab displays a historical area chart of the user's net worth. Users can select time ranges via `TIME_RANGES`: 1M (1 month), 6M (6 months), 1Y (1 year), and ALL (full history). These are rendered as pill-shaped toggle buttons.
 - **Filtering and Sorting**: Users can filter the list of assets by their symbol and sort the holdings table by various columns.
-- **Equity Analysis**: Detailed stock equity analysis (P/E ratios, dividend yields, sector breakdowns) is documented in a separate spec (`19-equity-analysis.md`).
+- **Equity Analysis**: Detailed stock equity analysis (P/E ratios, dividend yields, sector breakdowns) is documented in a separate spec (`19-security-master.md`).
 
 ### 6.2.3. Data Fetching
 

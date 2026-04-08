@@ -21,9 +21,23 @@ instance for job queues and caching.
 - **Redis 7** acts as the message broker for BullMQ and provides ephemeral
   caching.
 
-### Architectural Decision: The Backend Runtime
+### Architectural Decisions
+
+#### The Backend Runtime — Express.js
 
 > *"Bliss uses Express.js for the worker backend. While newer edge-frameworks offer faster micro-benchmarks, we deliberately chose a battle-tested, highly predictable runtime to orchestrate our financial ledgers and BullMQ queues. In personal finance, reliability is a feature, and saving two milliseconds on an HTTP route is meaningless when orchestrating deterministic P&L math and LLM pipelines. We spent our innovation tokens on pgvector and AI; we chose rock-solid stability for the server."*
+
+#### Vector Search — pgvector over a Separate Vector DB
+
+> *"We embed transaction classification vectors directly in PostgreSQL via pgvector rather than running a dedicated vector database like Pinecone or Qdrant. A personal finance app has thousands of embeddings per tenant, not millions — well within what an IVFFlat index handles with sub-millisecond latency. Keeping vectors in Postgres means they participate in the same transactions, backups, and tenant-scoped queries as every other table. One fewer service to deploy, monitor, and secure — and for a self-hosted product, that simplicity is a feature."*
+
+#### Job Queue — BullMQ over Kafka or SQS
+
+> *"Financial pipelines need reliable exactly-once-ish delivery, not high-throughput streaming. BullMQ on Redis gives us persistent queues, configurable retries with exponential backoff, repeatable cron jobs, and a dead-letter pattern — all with zero additional infrastructure beyond the Redis instance we already run for caching. For a self-hosted product, asking users to stand up Kafka or connect to SQS would be a non-starter."*
+
+#### Single Prisma Schema — Shared Across Services
+
+> *"Both the Next.js API and the Express backend import the same `prisma/schema.prisma`. This eliminates schema drift between services and means every migration is atomic — there is no coordination problem. The trade-off is tighter coupling at the ORM layer, but for a monorepo where both services are deployed together, this is a net win."*
 
 ---
 
@@ -180,11 +194,15 @@ The database has 50+ migrations managed by Prisma. Key models:
     |--- User (1:N)
     |--- Account (1:N)
     |     |--- Transaction (1:N)
-    |     |--- Holding (1:N)
     |
     |--- Category (1:N, hierarchical via parentId)
     |--- Tag (1:N)
-    |--- Budget (1:N)
+    |
+    |--- PortfolioItem (1:N)
+    |     |--- PortfolioHolding (1:N)
+    |     |--- PortfolioValueHistory (1:N)
+    |     |--- ManualAssetValue (1:N)
+    |     |--- DebtTerms (1:1)
     |
     |--- PlaidItem (1:N)
     |     |--- PlaidSyncLog (1:N)
@@ -193,7 +211,19 @@ The database has 50+ migrations managed by Prisma. Key models:
     |     |--- StagedImportRow (1:N)
     |
     |--- TransactionEmbedding (1:N)
+    |--- DescriptionMapping (1:N)
     |--- ImportAdapter (1:N)
+    |--- AnalyticsCacheMonthly (1:N)
+    |--- TagAnalyticsCacheMonthly (1:N)
+    |--- Insight (1:N)
+
+  Shared (not tenant-scoped)
+    |--- Country / Currency / Bank (reference data)
+    |     |--- TenantCountry / TenantCurrency / TenantBank (junction tables)
+    |--- AssetPrice (historical prices by symbol + date)
+    |--- CurrencyRate (historical FX rates by date + pair)
+    |--- SecurityMaster (stock fundamentals from Twelve Data)
+    |--- GlobalEmbedding (cross-tenant vector search)
 ```
 
 ### pgvector
@@ -223,11 +253,12 @@ CREATE INDEX ON "TransactionEmbedding"
 Sensitive fields are encrypted with AES-256-GCM before being written to the
 database. This is handled transparently by Prisma middleware:
 
-| Model       | Encrypted Fields                |
-| ----------- | ------------------------------- |
-| Transaction | description, details            |
-| Account     | accountNumber                   |
-| PlaidItem   | accessToken                     |
+| Model       | Encrypted Fields                | Searchable |
+| ----------- | ------------------------------- | ---------- |
+| User        | email                           | Yes        |
+| Transaction | description, details            | No         |
+| Account     | accountNumber                   | No         |
+| PlaidItem   | accessToken                     | No         |
 
 - Encryption uses `@bliss/shared/encryption`, which reads `ENCRYPTION_SECRET`
   from the environment.
@@ -493,30 +524,50 @@ See `docs/specs/frontend/00-design-system.md` section 12 for implementation deta
 
 ## Environment Variables
 
-### Required (all services)
+All services read from a single `.env` file at the repo root. Run `./scripts/setup.sh` to generate all required secrets. See [Configuration Reference](/docs/configuration) for the full table with defaults and descriptions.
+
+### Required
 
 | Variable            | Service(s)    | Purpose                              |
 | ------------------- | ------------- | ------------------------------------ |
 | DATABASE_URL        | api, backend  | PostgreSQL connection string          |
+| POSTGRES_PASSWORD   | docker        | Postgres superuser password           |
 | REDIS_URL           | backend       | Redis connection string               |
-| ENCRYPTION_SECRET   | api, backend  | AES-256-GCM key (32 bytes, base64)   |
-| NEXTAUTH_SECRET     | api           | NextAuth.js JWT signing secret        |
+| REDIS_PASSWORD      | docker        | Redis password                        |
+| ENCRYPTION_SECRET   | api, backend  | AES-256-GCM key (min 32 chars)       |
+| JWT_SECRET_CURRENT  | api           | JWT signing secret                    |
+| NEXTAUTH_SECRET     | api           | NextAuth.js session signing secret    |
 | INTERNAL_API_KEY    | api, backend  | Shared secret for internal API calls  |
-| BACKEND_URL         | api           | URL of the Express backend            |
+| NEXTAUTH_URL        | api           | Public URL of the API layer           |
+| BACKEND_URL         | api           | Internal URL of the Express backend   |
+| NEXT_PUBLIC_API_URL | web           | API base URL baked into the SPA       |
+| FRONTEND_URL        | api           | Frontend URL for CORS whitelisting    |
 
-### Optional
+### Optional — Integrations
+
+| Variable                    | Default               | Purpose                            |
+| --------------------------- | --------------------- | ---------------------------------- |
+| PLAID_CLIENT_ID             | --                    | Plaid API client ID                  |
+| PLAID_SECRET                | --                    | Plaid API secret                     |
+| PLAID_ENV                   | sandbox               | Plaid environment                    |
+| PLAID_WEBHOOK_URL           | --                    | Plaid webhook delivery URL           |
+| GEMINI_API_KEY              | --                    | Google Gemini API key (AI + vectors) |
+| INSIGHT_MODEL               | gemini-3-flash-preview| Model for AI insights generation     |
+| TWELVE_DATA_API_KEY         | --                    | Stock prices and fundamentals        |
+| CURRENCYLAYER_API_KEY       | --                    | Historical FX rates                  |
+| SENTRY_DSN                  | --                    | Sentry error tracking                |
+
+### Optional — Infrastructure
 
 | Variable                    | Default          | Purpose                            |
 | --------------------------- | ---------------- | ---------------------------------- |
-| ENCRYPTION_SECRET_PREVIOUS  | (none)           | Previous key for rotation           |
+| ENCRYPTION_SECRET_PREVIOUS  | --               | Previous key for rotation           |
+| JWT_SECRET_PREVIOUS         | --               | Previous JWT key for rotation       |
 | STORAGE_BACKEND             | local            | "local" or "gcs"                    |
 | LOCAL_STORAGE_DIR           | ./data/uploads   | Path for local file storage         |
-| GCS_BUCKET_NAME             | (none)           | Google Cloud Storage bucket          |
-| PLAID_CLIENT_ID             | (none)           | Plaid API client ID                  |
-| PLAID_SECRET                | (none)           | Plaid API secret                     |
-| GEMINI_API_KEY              | (none)           | Google Gemini API key                |
-| REDIS_SKIP_TLS_CHECK        | false            | Skip TLS verification (dev only)     |
-| NEXT_PUBLIC_API_URL         | (none)           | API base URL for the frontend SPA    |
+| GCS_BUCKET_NAME             | --               | Google Cloud Storage bucket          |
+| REDIS_SKIP_TLS_CHECK        | false            | Skip TLS verification (dev only)    |
+| COOKIE_DOMAIN               | --               | Cookie domain for cross-subdomain   |
 
 ---
 
