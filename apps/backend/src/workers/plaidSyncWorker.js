@@ -6,6 +6,7 @@ const { encrypt } = require('../utils/encryption'); // Used for PlaidTransaction
 const { getRedisConnection } = require('../utils/redis');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const logger = require('../utils/logger');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 const QUEUE_NAME = 'plaid-sync';
 const PAGE_SIZE = 500;
@@ -332,18 +333,17 @@ const startPlaidSyncWorker = () => {
     }, { connection });
 
     worker.on('failed', (job, err) => {
-        logger.error(`Plaid sync job failed ${job.id}: ${err.message}`);
         // TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION is a known Plaid race condition —
-        // cursor is reset and BullMQ retries automatically. Not a bug, skip Sentry noise.
-        if (err.message?.includes('TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION')) return;
-        Sentry.withScope((scope) => {
-            scope.setTag('worker', 'plaidSyncWorker');
-            scope.setTag('jobName', job?.name);
-            scope.setExtra('jobId', job?.id);
-            scope.setExtra('plaidItemId', job?.data?.plaidItemId);
-            scope.setExtra('tenantId', job?.data?.tenantId);
-            scope.setExtra('attemptsMade', job?.attemptsMade);
-            Sentry.captureException(err);
+        // cursor is reset and BullMQ retries automatically. Not a bug, skip entirely.
+        if (err.message?.includes('TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION')) {
+            logger.warn(`Plaid sync race condition (will retry): ${job?.id}`);
+            return;
+        }
+        reportWorkerFailure({
+            workerName: 'plaidSyncWorker',
+            job,
+            error: err,
+            extra: { plaidItemId: job?.data?.plaidItemId },
         });
     });
 

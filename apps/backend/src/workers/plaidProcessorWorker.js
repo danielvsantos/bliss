@@ -9,6 +9,7 @@ const { getCategoriesForTenant } = require('../utils/categoryCache');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { isRateLimitError } = require('../services/geminiService');
 const { computeTransactionHash, buildDuplicateHashSet } = require('../utils/transactionHash');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const {
     DEFAULT_AUTO_PROMOTE_THRESHOLD,
     DEFAULT_REVIEW_THRESHOLD,
@@ -570,14 +571,11 @@ const startPlaidProcessorWorker = () => {
     });
 
     worker.on('failed', (job, err) => {
-        logger.error(`Plaid processor job failed ${job.id}: ${err.message}`);
-        Sentry.withScope((scope) => {
-            scope.setTag('worker', 'plaidProcessorWorker');
-            scope.setTag('jobName', job?.name);
-            scope.setExtra('jobId', job?.id);
-            scope.setExtra('plaidItemId', job?.data?.plaidItemId);
-            scope.setExtra('attemptsMade', job?.attemptsMade);
-            Sentry.captureException(err);
+        reportWorkerFailure({
+            workerName: 'plaidProcessorWorker',
+            job,
+            error: err,
+            extra: { plaidItemId: job?.data?.plaidItemId },
         });
     });
 

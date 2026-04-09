@@ -72,16 +72,18 @@ async function upsertFromProfile(symbol, profileData) {
         lastProfileUpdate: new Date(),
     };
 
-    try {
-        await prisma.securityMaster.upsert({
-            where: { symbol },
-            create: { symbol, ...data },
-            update: data,
-        });
-        logger.info(`[SecurityMaster] Upserted profile for ${symbol} (exchange=${exchange})`);
-    } catch (error) {
-        logger.error(`[SecurityMaster] Error upserting profile for ${symbol}`, { error: error.message });
-    }
+    // NOTE: Intentionally NOT catching errors here. A previous version swallowed
+    // them with `logger.error(...)` which caused silent failures: the worker's
+    // `result.profile` flag was still set to true, the `errors` counter stayed
+    // at zero, and stale SecurityMaster rows accumulated with no visibility.
+    // The caller (securityMasterWorker) is responsible for isolating profile
+    // failures so they don't block the fundamentals refresh.
+    await prisma.securityMaster.upsert({
+        where: { symbol },
+        create: { symbol, ...data },
+        update: data,
+    });
+    logger.info(`[SecurityMaster] Upserted profile for ${symbol} (exchange=${exchange})`);
 }
 
 /**

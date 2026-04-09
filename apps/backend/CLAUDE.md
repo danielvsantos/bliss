@@ -91,6 +91,7 @@ All workers follow this structure:
 const { Worker } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
 const logger = require('../utils/logger');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 const processJob = async (job) => {
   const { name, data } = job;
@@ -106,16 +107,41 @@ const startWorker = () => {
     connection: getRedisConnection(),
     concurrency: N,
   });
+  // Retry-aware failure reporting: `worker.on('failed', ...)` fires on EVERY
+  // failed attempt. The helper downgrades intermediate retries to `warn` and
+  // only reports to Sentry on the final exhausted attempt. Bypassing this
+  // helper (calling `Sentry.captureException` directly in `on('failed')`)
+  // causes false alarms whenever BullMQ recovers from a transient error.
   worker.on('failed', (job, err) => {
-    Sentry.withScope((scope) => {
-      scope.setTag('worker', WORKER_NAME);
-      scope.setContext('job', { name: job.name, tenantId: job.data.tenantId, attempt: job.attemptsMade });
-      Sentry.captureException(err);
+    reportWorkerFailure({
+      workerName: WORKER_NAME,
+      job,
+      error: err,
+      extra: { /* worker-specific context */ },
     });
   });
   return worker; // returned for graceful shutdown
 };
 ```
+
+### Failure reporting — MANDATORY pattern
+
+All workers **must** use `reportWorkerFailure` from `src/utils/workerFailureReporter.js`
+inside their `worker.on('failed', ...)` handler. Never call `Sentry.captureException`
+directly from that event — BullMQ fires `failed` on every retry, which produces false
+alarms for transient errors (Prisma Accelerate P6008 cold starts, P6004 query timeouts,
+Redis blips, Plaid race conditions).
+
+The helper:
+- Logs every attempt (intermediate attempts at `warn`, final at `error`)
+- Only calls `Sentry.captureException` when `attemptsMade >= opts.attempts`
+- Threads standard context (worker name, jobId, tenantId, attemptsMade) automatically
+- Accepts a `extra` object for worker-specific Sentry context
+
+Direct inline `Sentry.captureException` calls inside a worker's business logic
+(e.g. for per-record failures that don't bubble to the `failed` event) are fine and
+don't need the helper — those are real failures the caller decided to keep processing
+past.
 
 ## Services reference
 

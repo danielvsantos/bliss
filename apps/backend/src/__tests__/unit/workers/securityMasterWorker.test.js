@@ -185,7 +185,38 @@ describe('securityMasterWorker', () => {
       const result = await workerCallback(makeJob('refresh-all-fundamentals', {}));
 
       expect(result.errors).toBe(1);
+      expect(result.fundamentalsErrors).toBe(1);
       expect(result.refreshed).toBe(2); // AAPL and MSFT succeed
+      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('runs fundamentals even when profile upsert fails (isolated try/catch)', async () => {
+      // Regression test: previously, a P6004 timeout on the profile upsert was
+      // swallowed by the service — the worker saw no error and moved on. Now
+      // the service throws, and the worker's isolated try/catch around the
+      // profile block ensures fundamentals still run for the same symbol.
+      mockGetAllActiveStockSymbols.mockResolvedValue([
+        { symbol: 'RDDT', exchange: 'XNYS' },
+      ]);
+
+      // Profile upsert fails (simulating P6004 timeout)
+      mockUpsertFromProfile.mockRejectedValueOnce(new Error('P6004: query timeout'));
+
+      const result = await workerCallback(makeJob('refresh-all-fundamentals', {}));
+
+      // Fundamentals still ran despite the profile failure
+      expect(mockGetEarnings).toHaveBeenCalledWith('RDDT', expect.any(Object));
+      expect(mockGetDividends).toHaveBeenCalledWith('RDDT', expect.any(Object));
+      expect(mockUpsertFundamentals).toHaveBeenCalledWith('RDDT', expect.any(Object));
+
+      // Counters correctly reflect: profile failed, fundamentals succeeded
+      expect(result.profilesRefreshed).toBe(0);
+      expect(result.refreshed).toBe(1);
+      expect(result.profileErrors).toBe(1);
+      expect(result.fundamentalsErrors).toBe(0);
+      expect(result.errors).toBe(1); // legacy combined counter
+
+      // Sentry captured the profile failure with phase tag
       expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
     });
   });

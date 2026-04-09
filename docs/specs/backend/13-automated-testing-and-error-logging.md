@@ -181,52 +181,93 @@ Both unit and integration tests run with `npm test` (Jest picks up all `*.test.j
 
 `Sentry.setupExpressErrorHandler(app)` captures errors that flow through the Express middleware chain — i.e. exceptions thrown inside route handlers. BullMQ workers run in a completely separate process (or at least outside the Express request cycle). Worker failures are reported to BullMQ's internal event system, not to Express. As a result, no worker error would ever reach the Express Sentry handler.
 
-### Solution: `worker.on('failed')` + `withScope`
+### Solution: Retry-aware `reportWorkerFailure` helper
 
-Every BullMQ worker in `src/workers/` registers a `failed` event listener:
+Every BullMQ worker in `src/workers/` registers a `failed` event listener that delegates to a shared helper at `src/utils/workerFailureReporter.js`:
 
 ```js
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+
 worker.on('failed', (job, err) => {
-  logger.error(`Worker job failed ${job?.id}: ${err.message}`);
-
-  // (Optional) Filter known transient errors before sending to Sentry
-  if (err.message?.includes('TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION')) return;
-
-  Sentry.withScope((scope) => {
-    scope.setTag('worker', 'plaidSyncWorker');   // which worker
-    scope.setTag('jobName', job?.name);          // which job type
-    scope.setExtra('jobId', job?.id);
-    scope.setExtra('tenantId', job?.data?.tenantId);
-    scope.setExtra('attemptsMade', job?.attemptsMade);
-    Sentry.captureException(err);
+  reportWorkerFailure({
+    workerName: 'plaidSyncWorker',
+    job,
+    error: err,
+    extra: { plaidItemId: job?.data?.plaidItemId },
   });
 });
 ```
 
-`withScope` creates a temporary scope for one event, attaching structured context without polluting the global scope. This means every Sentry event for a worker failure includes the exact job, tenant, and retry count — sufficient to reproduce and diagnose the issue without reading logs.
+**Why a shared helper?** BullMQ's `failed` event fires on **every** failed attempt, including intermediate retries that later succeed. Calling `Sentry.captureException` unconditionally produces false alarms whenever BullMQ recovers from a transient error (Prisma Accelerate cold starts — `P6008` code `1016`, query timeouts — `P6004`, Redis blips, Plaid race conditions).
+
+The helper solves this by comparing `job.attemptsMade` against `job.opts.attempts`:
+
+```js
+// src/utils/workerFailureReporter.js (behavioural summary)
+function reportWorkerFailure({ workerName, job, error, extra = {} }) {
+  const totalAttempts = job?.opts?.attempts || 1;
+  const attemptsMade = job?.attemptsMade || 0;
+  const isFinalAttempt = attemptsMade >= totalAttempts;
+
+  if (isFinalAttempt) {
+    logger.error(`${workerName} job failed (final attempt)`, { ... });
+    Sentry.withScope((scope) => {
+      scope.setTag('worker', workerName);
+      scope.setTag('jobName', job?.name);
+      scope.setExtra('jobId', job?.id);
+      scope.setExtra('tenantId', job?.data?.tenantId);
+      scope.setExtra('attemptsMade', attemptsMade);
+      scope.setExtra('totalAttempts', totalAttempts);
+      for (const [key, value] of Object.entries(extra)) {
+        scope.setExtra(key, value);
+      }
+      Sentry.captureException(error);
+    });
+  } else {
+    // Intermediate attempt — log at warn level only, do NOT hit Sentry
+    logger.warn(`${workerName} job failed, will retry`, { ... });
+  }
+}
+```
+
+**Key behaviours:**
+- Intermediate retry attempts are logged at `warn` level only — never sent to Sentry
+- Only the **final exhausted attempt** fires `Sentry.captureException`
+- Standard context (worker name, job name, jobId, tenantId, attempt counter) is threaded automatically
+- Worker-specific context flows through the `extra` object
+
+**Direct `Sentry.captureException` in business logic is still allowed** for per-record failures that don't bubble up to the worker's `failed` event — those are real failures the caller decided to keep processing past (e.g. one symbol failing in a batch refresh, one tenant failing in `revalue-all-tenants`).
+
+### MANDATORY: Never call `Sentry.captureException` directly inside `worker.on('failed', ...)`
+
+This is a repeat-offender mistake that produces noisy, unactionable alerts every time BullMQ recovers from a transient error. The lint/review checklist must include: *"Does this worker's `failed` handler go through `reportWorkerFailure`?"*
 
 ### What Gets Sent to Sentry
 
 | Situation | Sent to Sentry? | Reason |
 |-----------|-----------------|--------|
-| Worker job throws unhandled exception | ✅ Yes | `worker.on('failed')` fires, `captureException` called |
+| Worker job fails on the **final** retry attempt | ✅ Yes | `isFinalAttempt === true`, `captureException` called |
+| Worker job fails on an intermediate attempt (BullMQ will retry) | ❌ No | Logged at `warn` only — avoids false alarms when retry succeeds |
 | Route handler throws 500 | ✅ Yes | Express error handler catches it |
 | Route returns 400 (validation failure) | ❌ No | Intentional return, no exception thrown |
 | Route returns 401/403 (auth failure) | ❌ No | Intentional return, no exception thrown |
-| `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` | ❌ Filtered | Known Plaid transient race, not actionable |
+| `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` | ❌ Filtered | Known Plaid transient race, early-return before helper (never reports) |
+| Per-record failure inside a batch job (e.g. one symbol in `refresh-all-fundamentals`) | ✅ Yes | Inline `Sentry.captureException` in business logic — these are real failures the batch decided to keep running past |
 
 ### Workers Instrumented
 
-All 6 BullMQ workers have `worker.on('failed')` Sentry handlers:
+All 8 BullMQ workers route `worker.on('failed')` through `reportWorkerFailure`:
 
 | Worker | Extra context fields |
 |--------|---------------------|
-| `plaidSyncWorker` | `plaidItemId`, `attemptsMade` |
-| `plaidProcessorWorker` | `plaidItemId`, `attemptsMade` |
-| `smartImportWorker` | `tenantId`, `stagedImportId`, `adapterId` |
-| `portfolioWorker` | `tenantId`, `jobName`, `jobData` |
-| `analyticsWorker` | `tenantId`, `jobName`, `scope` |
-| `eventSchedulerWorker` | `tenantId`, `jobName`, `jobData` |
+| `plaidSyncWorker` | `plaidItemId` (early-returns on `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` before calling helper) |
+| `plaidProcessorWorker` | `plaidItemId` |
+| `smartImportWorker` | `stagedImportId`, `adapterId` |
+| `portfolioWorker` | `stack` (tenantId/jobName threaded automatically) |
+| `analyticsWorker` | `scope`, `stack` |
+| `eventSchedulerWorker` | `jobData` |
+| `insightGeneratorWorker` | `stack` |
+| `securityMasterWorker` | `stack` |
 
 ---
 

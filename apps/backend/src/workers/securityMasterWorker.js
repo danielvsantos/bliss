@@ -5,6 +5,7 @@ const { getRedisConnection } = require('../utils/redis');
 const { SECURITY_MASTER_QUEUE_NAME, getSecurityMasterQueue } = require('../queues/securityMasterQueue');
 const prisma = require('../../prisma/prisma.js');
 const securityMasterService = require('../services/securityMasterService');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const {
     getSymbolProfile,
     getEarnings,
@@ -74,19 +75,29 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
     const micOpts = validMic ? { micCode: validMic } : {};
     const symbolStart = Date.now();
 
-    try {
-        // Check if profile needs refreshing
-        let needsProfile = forceProfile;
-        if (!forceProfile) {
+    // Check if profile needs refreshing
+    let needsProfile = forceProfile;
+    if (!forceProfile) {
+        try {
             const existing = await securityMasterService.getBySymbol(symbol);
             if (!existing || !existing.lastProfileUpdate ||
                 (Date.now() - existing.lastProfileUpdate.getTime()) > PROFILE_STALE_DAYS * 86400000) {
                 needsProfile = true;
             }
+        } catch (error) {
+            // If we can't even read the existing row, skip the profile refresh
+            // but still try fundamentals. Record the error so the caller sees it.
+            result.profileError = error.message;
+            logger.error(`[SecurityMaster] Error checking profile staleness for ${symbol}`, { error: error.message });
         }
+    }
 
-        // Profile refresh (if stale or forced) — 10 credits
-        if (needsProfile) {
+    // Profile refresh (if stale or forced) — 10 credits
+    // Wrapped in its own try/catch so a profile failure (e.g. transient P6004
+    // timeout on the upsert) does not prevent the fundamentals refresh, which
+    // is the more valuable data for downstream pricing.
+    if (needsProfile) {
+        try {
             const profile = await getSymbolProfile(symbol, micOpts);
             if (profile) {
                 // Pass the known MIC code so upsertFromProfile won't downgrade
@@ -111,8 +122,19 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
                     }
                 }
             }
+        } catch (error) {
+            result.profileError = error.message;
+            logger.error(`[SecurityMaster] Error refreshing profile for ${symbol}`, { error: error.message });
+            Sentry.withScope((scope) => {
+                scope.setTag('worker', 'securityMaster');
+                scope.setTag('phase', 'profile');
+                scope.setExtra('symbol', symbol);
+                Sentry.captureException(error);
+            });
         }
+    }
 
+    try {
         // All fundamentals calls run SEQUENTIALLY to avoid blowing
         // through independent throttle queues simultaneously.
 
@@ -128,13 +150,20 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         await securityMasterService.upsertFundamentals(symbol, { earnings, dividends, quote });
         result.fundamentals = true;
     } catch (error) {
-        result.error = error.message;
-        logger.error(`[SecurityMaster] Error refreshing ${symbol}`, { error: error.message });
+        result.fundamentalsError = error.message;
+        logger.error(`[SecurityMaster] Error refreshing fundamentals for ${symbol}`, { error: error.message });
         Sentry.withScope((scope) => {
             scope.setTag('worker', 'securityMaster');
+            scope.setTag('phase', 'fundamentals');
             scope.setExtra('symbol', symbol);
             Sentry.captureException(error);
         });
+    }
+
+    // Preserve the legacy `error` field for callers that still use it.
+    // Combines both phase errors into a single message.
+    if (result.profileError || result.fundamentalsError) {
+        result.error = [result.profileError, result.fundamentalsError].filter(Boolean).join(' | ');
     }
 
     // Enforce minimum time per symbol to stay within the global credit budget.
@@ -182,6 +211,8 @@ const processSecurityMasterJob = async (job) => {
                 let refreshed = 0;
                 let profilesRefreshed = 0;
                 let errors = 0;
+                let profileErrors = 0;
+                let fundamentalsErrors = 0;
 
                 for (let i = 0; i < holdings.length; i++) {
                     const { symbol, exchange } = holdings[i];
@@ -190,12 +221,15 @@ const processSecurityMasterJob = async (job) => {
                     if (result.fundamentals) refreshed++;
                     if (result.profile) profilesRefreshed++;
                     if (result.error) errors++;
+                    if (result.profileError) profileErrors++;
+                    if (result.fundamentalsError) fundamentalsErrors++;
 
                     logger.info(`[SecurityMaster] Refreshed ${i + 1}/${holdings.length}: ${symbol}`, {
                         exchange: exchange || undefined,
                         fundamentals: result.fundamentals,
                         profile: result.profile,
-                        error: result.error || undefined,
+                        profileError: result.profileError || undefined,
+                        fundamentalsError: result.fundamentalsError || undefined,
                     });
 
                     // Progress update for monitoring
@@ -209,9 +243,11 @@ const processSecurityMasterJob = async (job) => {
                     refreshed,
                     profilesRefreshed,
                     errors,
+                    profileErrors,
+                    fundamentalsErrors,
                     duration: `${duration}ms`,
                 });
-                return { success: true, totalSymbols: holdings.length, refreshed, profilesRefreshed, errors, duration };
+                return { success: true, totalSymbols: holdings.length, refreshed, profilesRefreshed, errors, profileErrors, fundamentalsErrors, duration };
             }
 
             case 'refresh-all-from-table': {
@@ -297,18 +333,11 @@ const startSecurityMasterWorker = () => {
     });
 
     worker.on('failed', (job, error) => {
-        logger.error('SecurityMaster job failed:', {
-            jobId: job.id,
-            name: job.name,
-            error: error.message,
-            stack: error.stack,
-        });
-        Sentry.withScope((scope) => {
-            scope.setTag('worker', 'securityMaster');
-            scope.setTag('jobName', job?.name);
-            scope.setExtra('jobId', job?.id);
-            scope.setExtra('attemptsMade', job?.attemptsMade);
-            Sentry.captureException(error);
+        reportWorkerFailure({
+            workerName: 'securityMaster',
+            job,
+            error,
+            extra: { stack: error?.stack },
         });
     });
 
