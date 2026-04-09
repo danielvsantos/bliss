@@ -9,6 +9,7 @@ const prisma = require('../../prisma/prisma');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { SMART_IMPORT_QUEUE_NAME } = require('../queues/smartImportQueue');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { parseFile } = require('../services/adapterEngine');
 const twelveDataService = require('../services/twelveDataService');
 const cryptoService = require('../services/cryptoService');
@@ -884,15 +885,14 @@ const startSmartImportWorker = () => {
     });
 
     worker.on('failed', (job, error) => {
-        logger.error(`Smart Import job failed`, { jobId: job.id, reason: error.message });
-        Sentry.withScope((scope) => {
-            scope.setTag('worker', 'smartImportWorker');
-            scope.setExtra('jobId', job?.id);
-            scope.setExtra('tenantId', job?.data?.tenantId);
-            scope.setExtra('stagedImportId', job?.data?.stagedImportId);
-            scope.setExtra('adapterId', job?.data?.adapterId);
-            scope.setExtra('attemptsMade', job?.attemptsMade);
-            Sentry.captureException(error);
+        reportWorkerFailure({
+            workerName: 'smartImportWorker',
+            job,
+            error,
+            extra: {
+                stagedImportId: job?.data?.stagedImportId,
+                adapterId: job?.data?.adapterId,
+            },
         });
     });
 

@@ -146,6 +146,18 @@ describe('securityMasterService', () => {
         })
       );
     });
+
+    it('propagates prisma errors to the caller (no silent swallow)', async () => {
+      // Regression test: a previous version caught and logged the error, causing
+      // silent failures where the worker's result.profile stayed true even though
+      // no row was written. The caller is now responsible for isolating profile
+      // failures, so the service MUST throw on upsert failure.
+      prisma.securityMaster.upsert.mockRejectedValue(new Error('P6004: query timeout'));
+
+      await expect(
+        upsertFromProfile('AAPL', { name: 'Apple Inc.', knownMicCode: 'XNAS' })
+      ).rejects.toThrow('P6004: query timeout');
+    });
   });
 
   // ─── upsertFundamentals ───────────────────────────────────────────────────

@@ -8,6 +8,7 @@ const axios = require('axios');
 const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/currencyService');
 const { getCategoryMaps } = require('../utils/categoryCache'); // Import category cache
 const { enqueueEvent } = require('../queues/eventsQueue'); // Corrected import path
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 const prisma = require('../../prisma/prisma.js');
 
@@ -543,20 +544,11 @@ const startAnalyticsWorker = () => {
     });
 
     worker.on('failed', (job, error) => {
-      logger.error('Analytics job failed:', {
-        jobId: job.id,
-        error: error.message,
-        data: job.data,
-        stack: error.stack
-      });
-      Sentry.withScope((scope) => {
-        scope.setTag('worker', 'analyticsWorker');
-        scope.setTag('jobName', job?.name);
-        scope.setExtra('jobId', job?.id);
-        scope.setExtra('tenantId', job?.data?.tenantId);
-        scope.setExtra('scope', job?.data?.scope);
-        scope.setExtra('attemptsMade', job?.attemptsMade);
-        Sentry.captureException(error);
+      reportWorkerFailure({
+        workerName: 'analyticsWorker',
+        job,
+        error,
+        extra: { scope: job?.data?.scope, stack: error?.stack },
       });
     });
 

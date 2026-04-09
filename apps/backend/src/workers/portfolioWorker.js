@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue } = require('../queues/portfolioQueue');
 const prisma = require('../../prisma/prisma');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 const recalculatePortfolioItem = require('./portfolio-handlers/recalculate-portfolio-item');
 const processPortfolioChanges = require('./portfolio-handlers/process-portfolio-changes');
@@ -252,15 +253,11 @@ const startPortfolioWorker = () => {
     });
 
     worker.on('failed', (job, error) => {
-      logger.error(`Portfolio job failed`, { jobName: job.name, jobId: job.id, error: error.message });
-      Sentry.withScope((scope) => {
-        scope.setTag('worker', 'portfolioWorker');
-        scope.setTag('jobName', job?.name);
-        scope.setExtra('jobId', job?.id);
-        scope.setExtra('tenantId', job?.data?.tenantId);
-        scope.setExtra('jobData', job?.data);
-        scope.setExtra('attemptsMade', job?.attemptsMade);
-        Sentry.captureException(error);
+      reportWorkerFailure({
+        workerName: 'portfolioWorker',
+        job,
+        error,
+        extra: { jobData: job?.data },
       });
     });
 

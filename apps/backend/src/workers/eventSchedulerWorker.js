@@ -8,6 +8,7 @@ const { getAnalyticsQueue } = require('../queues/analyticsQueue');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
 const { scheduleDebouncedJob } = require('../services/debounceService');
+const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 const DEBOUNCE_DELAY_SECONDS = 5; // 5 seconds
 
@@ -383,15 +384,11 @@ const startEventSchedulerWorker = () => {
 
     worker.on('completed', (job) => { logger.info(`Event job completed: ${job.name}`); });
     worker.on('failed', (job, err) => {
-        logger.error(`Event job failed: ${job.name}`, err);
-        Sentry.withScope((scope) => {
-            scope.setTag('worker', 'eventSchedulerWorker');
-            scope.setTag('jobName', job?.name);
-            scope.setExtra('jobId', job?.id);
-            scope.setExtra('tenantId', job?.data?.tenantId);
-            scope.setExtra('jobData', job?.data);
-            scope.setExtra('attemptsMade', job?.attemptsMade);
-            Sentry.captureException(err);
+        reportWorkerFailure({
+            workerName: 'eventSchedulerWorker',
+            job,
+            error: err,
+            extra: { jobData: job?.data },
         });
     });
 
