@@ -207,7 +207,7 @@ export default function PortfolioHoldingsPage() {
   // ── Data Fetching ──
   const { data: metadata, isLoading: metadataLoading, error: metadataError } = useMetadata();
   const { data: portfolioData, isLoading: itemsLoading, error: itemsError } = usePortfolioItems();
-  const portfolioItems = portfolioData?.items ?? [];
+  const portfolioItems = useMemo(() => portfolioData?.items ?? [], [portfolioData?.items]);
   const portfolioCurrency = portfolioData?.portfolioCurrency ?? "USD";
 
   const historyDateFilter = useMemo(() => {
@@ -225,7 +225,7 @@ export default function PortfolioHoldingsPage() {
     ...historyDateFilter,
     type: showDebt ? "Investments,Debt,Asset" : "Investments,Asset",
   });
-  const historyData = historyResponse?.history ?? [];
+  const historyData = useMemo(() => historyResponse?.history ?? [], [historyResponse?.history]);
   const categories = metadata?.categories ?? EMPTY_ARRAY;
 
   // ── Data Processing ──

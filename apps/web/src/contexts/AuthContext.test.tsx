@@ -2,7 +2,9 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import api from '@/lib/api';
 import React from 'react';
-import { AuthProvider, useAuth } from './AuthContext';
+import type { User } from '@/types/api';
+import { AuthProvider } from './AuthContext';
+import { useAuth } from '@/hooks/use-auth';
 
 vi.mock('@/lib/api', () => ({
   default: {
@@ -46,8 +48,8 @@ describe('useAuth', () => {
   });
 
   it('checks session on mount', async () => {
-    const mockUser = { id: 1, email: 'test@example.com', name: 'Test' };
-    vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser } as any);
+    const mockUser: User = { id: '1', email: 'test@example.com', name: 'Test' };
+    vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser });
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAuth(), { wrapper });
@@ -63,11 +65,11 @@ describe('useAuth', () => {
 
   it('signIn calls api.signin and refreshes session', async () => {
     // First call is mount checkSession, second is post-signin checkSession
-    const mockUser = { id: 1, email: 'test@example.com', name: 'Test' };
+    const mockUser: User = { id: '1', email: 'test@example.com', name: 'Test' };
     vi.mocked(api.getSession)
-      .mockResolvedValueOnce({ user: null } as any)   // mount
-      .mockResolvedValueOnce({ user: mockUser } as any); // after signin
-    vi.mocked(api.signin).mockResolvedValueOnce({ user: mockUser } as any);
+      .mockResolvedValueOnce(null)   // mount: no session yet
+      .mockResolvedValueOnce({ user: mockUser }); // after signin
+    vi.mocked(api.signin).mockResolvedValueOnce({ user: mockUser });
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAuth(), { wrapper });
@@ -86,9 +88,9 @@ describe('useAuth', () => {
   });
 
   it('signOut clears user state', async () => {
-    const mockUser = { id: 1, email: 'test@example.com', name: 'Test' };
-    vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser } as any);
-    vi.mocked(api.signout).mockResolvedValueOnce(undefined as any);
+    const mockUser: User = { id: '1', email: 'test@example.com', name: 'Test' };
+    vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser });
+    vi.mocked(api.signout).mockResolvedValueOnce(undefined);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAuth(), { wrapper });

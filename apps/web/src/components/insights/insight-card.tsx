@@ -2,17 +2,7 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { X } from "lucide-react";
-
-interface Insight {
-  id: string;
-  lens: string;
-  title: string;
-  body: string;
-  severity: string;
-  priority: number;
-  date: string;
-  metadata?: any;
-}
+import type { Insight } from "@/types/api";
 
 interface InsightCardProps {
   insight: Insight;

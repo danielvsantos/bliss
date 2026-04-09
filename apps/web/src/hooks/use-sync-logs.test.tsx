@@ -34,7 +34,9 @@ describe('useSyncLogs', () => {
       { id: 1, status: 'success', createdAt: '2024-01-15T10:00:00Z' },
       { id: 2, status: 'error', createdAt: '2024-01-14T10:00:00Z' },
     ];
-    vi.mocked(api.getPlaidSyncLogs).mockResolvedValueOnce(mockLogs as any);
+    vi.mocked(api.getPlaidSyncLogs).mockResolvedValueOnce(
+      mockLogs as unknown as Awaited<ReturnType<typeof api.getPlaidSyncLogs>>,
+    );
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useSyncLogs('plaid-item-123'), { wrapper });

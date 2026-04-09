@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDivider } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTransactions } from '@/hooks/use-transactions';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import type { Transaction } from '@/types/api';
 
 /* ── Background color by category type ── */
 function getCategoryBg(type?: string): string {
@@ -171,7 +172,7 @@ export function RecentTransactionsCard({ className }: RecentTransactionsCardProp
             {t('dashboard.noTransactionsYet')}
           </p>
         ) : (
-          transactions.map((tx: any, i: number) => {
+          transactions.map((tx: Transaction, i: number) => {
             const amount = (tx.credit ?? 0) - (tx.debit ?? 0);
             return (
               <div key={tx.id}>

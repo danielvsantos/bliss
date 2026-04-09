@@ -9,6 +9,7 @@ import {
   useNotificationSummary,
   useMarkNotificationsSeen,
 } from "@/hooks/use-notifications";
+import type { UserSignal } from "@/types/api";
 import {
   Bell,
   ClipboardCheck,
@@ -98,7 +99,7 @@ export function NotificationCenter() {
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto">
-            {signals.map((signal: any, index: number) => {
+            {signals.map((signal: UserSignal, index: number) => {
               const colorClass = SIGNAL_COLORS[signal.severity] || SIGNAL_COLORS.info;
               return (
                 <button

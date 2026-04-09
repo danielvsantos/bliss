@@ -3,6 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from '@/lib/api';
 import React from 'react';
+import type {
+  DetectAdapterResult,
+  StagedImportResponse,
+  CreateAdapterRequest,
+} from '@/types/api';
 import {
   useAdapters,
   useCreateAdapter,
@@ -35,26 +40,29 @@ describe('Smart Import Hooks', () => {
 
   describe('useAdapters', () => {
     it('fetches adapters successfully', async () => {
-      vi.mocked(api.getAdapters).mockResolvedValueOnce({ adapters: [{ id: 1, name: 'Chase' }] } as any);
+      const mockAdapters = [{ id: 1, name: 'Chase' }] as unknown as Awaited<ReturnType<typeof api.getAdapters>>;
+      vi.mocked(api.getAdapters).mockResolvedValueOnce(mockAdapters);
       const { wrapper } = createWrapper();
       const { result } = renderHook(() => useAdapters(), { wrapper });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(api.getAdapters).toHaveBeenCalled();
-      expect(result.current.data).toEqual({ adapters: [{ id: 1, name: 'Chase' }] });
+      expect(result.current.data).toEqual(mockAdapters);
     });
   });
 
   describe('useCreateAdapter', () => {
     it('creates adapter and invalidates adapters list', async () => {
-      vi.mocked(api.createAdapter).mockResolvedValueOnce({ success: true } as any);
+      const createdAdapter = { id: 2, name: 'Test' } as unknown as Awaited<ReturnType<typeof api.createAdapter>>;
+      vi.mocked(api.createAdapter).mockResolvedValueOnce(createdAdapter);
       const { wrapper, queryClient } = createWrapper();
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
       const { result } = renderHook(() => useCreateAdapter(), { wrapper });
 
+      const createRequest = { name: 'Test' } as unknown as CreateAdapterRequest;
       act(() => {
-        result.current.mutate({ name: 'Test' } as any);
+        result.current.mutate(createRequest);
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -65,10 +73,20 @@ describe('Smart Import Hooks', () => {
 
   describe('useDetectAdapter', () => {
     it('detects adapter from file', async () => {
-      const mockResult = { adapter: { id: 1, name: 'Native' }, confidence: 1 };
-      vi.mocked(api.detectAdapter).mockResolvedValueOnce(mockResult as any);
+      const mockResult: DetectAdapterResult = {
+        matched: true,
+        adapter: {
+          id: 1,
+          name: 'Native',
+          columnMapping: {},
+          amountStrategy: 'SINGLE_SIGNED',
+          skipRows: 0,
+        },
+        confidence: 1,
+      };
+      vi.mocked(api.detectAdapter).mockResolvedValueOnce(mockResult);
       const { wrapper } = createWrapper();
-      
+
       const { result } = renderHook(() => useDetectAdapter(), { wrapper });
       const testFile = new File(['text'], 'test.csv', { type: 'text/csv' });
 
@@ -91,9 +109,10 @@ describe('Smart Import Hooks', () => {
     });
 
     it('fetches staged import if id is present', async () => {
-      vi.mocked(api.getStagedImport).mockResolvedValueOnce({ import: { id: 'import-1' } } as any);
+      const stagedFixture = { import: { id: 'import-1' } } as unknown as StagedImportResponse;
+      vi.mocked(api.getStagedImport).mockResolvedValueOnce(stagedFixture);
       const { wrapper } = createWrapper();
-      
+
       const { result } = renderHook(() => useStagedImport('import-1'), { wrapper });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));

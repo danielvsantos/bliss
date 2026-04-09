@@ -13,7 +13,7 @@ vi.mock('@/lib/dashboard-actions', () => ({
       href: '/accounts',
       slot: 'onboarding',
       priority: 1,
-      visible: (signals: any, context: string) => context === 'onboarding' && signals.accountCount === 0,
+      visible: (signals: UserSignals, context: string) => context === 'onboarding' && signals.accountCount === 0,
     },
     {
       id: 'review-transactions',
@@ -23,7 +23,7 @@ vi.mock('@/lib/dashboard-actions', () => ({
       href: '/review',
       slot: 'quickAction',
       priority: 2,
-      visible: (signals: any) => signals.totalReviewCount > 0,
+      visible: (signals: UserSignals) => signals.totalReviewCount > 0,
     },
     {
       id: 'import-csv',

@@ -60,7 +60,16 @@ export function GroupCard({
         role="button"
         tabIndex={0}
         onClick={() => onToggle ? onToggle() : setInternalExpanded(!internalExpanded)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle ? onToggle() : setInternalExpanded(!internalExpanded); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (onToggle) {
+              onToggle();
+            } else {
+              setInternalExpanded(!internalExpanded);
+            }
+          }
+        }}
         className="w-full flex items-center flex-wrap gap-x-3 gap-y-2 px-4 py-3 text-left hover:bg-muted/30 transition-colors cursor-pointer select-none"
       >
         {expanded ? (

@@ -8,7 +8,7 @@ import api from '@/lib/api';
 import { AccountSelectionModal } from './account-selection-modal';
 
 interface PlaidConnectProps {
-    onSuccess?: (public_token?: string, metadata?: any) => Promise<void> | void;
+    onSuccess?: (public_token?: string, metadata?: Record<string, unknown>) => Promise<void> | void;
     /** Fires after the AccountSelectionModal closes (i.e., after full sync flow completes) */
     onComplete?: () => void;
     variant?: "default" | "outline" | "secondary" | "ghost" | "link";
@@ -33,7 +33,6 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
         try {
             // Pass plaidItemId for update mode (re-auth), or undefined for new connection
             const data = await api.createLinkToken(plaidItemId);
-            console.log("Plaid Link Token Created:", data);
             setToken(data.link_token);
         } catch (error) {
             console.error("Failed to create link token", error);
@@ -47,9 +46,7 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
         initializeLink();
     }, [initializeLink]);
 
-    const onPlaidSuccess = useCallback(async (public_token: string, metadata: any) => {
-        console.log("PlaidConnect: onPlaidSuccess triggered", { public_token, metadata, isUpdateMode });
-
+    const onPlaidSuccess = useCallback(async (public_token: string, metadata: Record<string, unknown>) => {
         if (isUpdateMode) {
             // In update mode, no token exchange is needed — Plaid just re-authenticates
             // Reset the item status to ACTIVE
@@ -74,7 +71,6 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
         }
 
         if (onSuccess) {
-            console.log("PlaidConnect: Calling parent onSuccess");
             await onSuccess(public_token, metadata);
             return;
         }
@@ -92,14 +88,13 @@ export function PlaidConnect({ onSuccess, onComplete, variant = "default", class
                 variant: "destructive",
             });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
     }, [toast, onSuccess, isUpdateMode, plaidItemId]);
 
-    const onExit = useCallback((error: any, metadata: any) => {
-        console.log("PlaidConnect: onExit", { error, metadata });
+    const onExit = useCallback((_error: unknown, _metadata: Record<string, unknown>) => {
     }, []);
 
-    const onEvent = useCallback((eventName: string, metadata: any) => {
-        console.log("PlaidConnect: onEvent", { eventName, metadata });
+    const onEvent = useCallback((_eventName: string, _metadata: Record<string, unknown>) => {
     }, []);
 
     const config: Parameters<typeof usePlaidLink>[0] = {

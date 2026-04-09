@@ -236,6 +236,38 @@ jobs:
         run: pnpm --filter @bliss/web test
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # Lint: ESLint across web and api (no infrastructure needed)
+  # apps/web uses --max-warnings 0 so any warning fails the job.
+  # ─────────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint — Web & API
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @bliss/shared build
+
+      - name: Lint web
+        run: pnpm --filter @bliss/web lint
+
+      - name: Lint API
+        run: pnpm --filter @bliss/api lint
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # Docker: Build & Smoke Test
   # Ensures the Docker Compose stack builds and starts correctly so that
   # self-hosters always have a working local setup as the app evolves.

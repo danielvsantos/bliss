@@ -38,11 +38,10 @@ export const useTransactions = (filters: TransactionFilters = {}) => {
     queryKey: [TRANSACTIONS_QUERY_KEY, filters],
     queryFn: () => {
       const { type, ...rest } = filters;
-      const apiFilters: any = { ...rest };
-      if (type && type !== 'all') {
-        apiFilters.type = type;
-      }
-      return api.getTransactions(apiFilters);
+      return api.getTransactions({
+        ...rest,
+        ...(type && type !== 'all' ? { type } : {}),
+      });
     },
   });
 }; 

@@ -31,13 +31,14 @@ describe('useInsights', () => {
   });
 
   it('fetches insights', async () => {
-    const mockInsights = {
+    const mockInsights: Awaited<ReturnType<typeof api.getInsights>> = {
       insights: [
         { id: 'ins-1', lens: 'spending_velocity', title: 'Spending up', severity: 'warning' },
       ],
       total: 1,
+      latestBatchDate: null,
     };
-    vi.mocked(api.getInsights).mockResolvedValueOnce(mockInsights as any);
+    vi.mocked(api.getInsights).mockResolvedValueOnce(mockInsights);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useInsights({ limit: 10 }), { wrapper });
@@ -55,7 +56,7 @@ describe('useDismissInsight', () => {
   });
 
   it('calls dismiss and invalidates', async () => {
-    vi.mocked(api.dismissInsight).mockResolvedValueOnce(undefined as any);
+    vi.mocked(api.dismissInsight).mockResolvedValueOnce(undefined);
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -78,7 +79,7 @@ describe('useGenerateInsights', () => {
   });
 
   it('triggers generation', async () => {
-    vi.mocked(api.generateInsights).mockResolvedValueOnce(undefined as any);
+    vi.mocked(api.generateInsights).mockResolvedValueOnce({ message: 'ok' });
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');

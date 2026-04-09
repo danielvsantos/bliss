@@ -24,7 +24,7 @@ export function NetWorthSparkline({
     const scaleY = (v: number) => height - ((v - min) / range) * height;
 
     const pts = dataPoints.map((v, i) => `${scaleX(i).toFixed(1)},${scaleY(v).toFixed(1)}`).join(' ');
-    const area = `0,${height} ${pts} ${width},${height} Z`;
+    const area = `M 0,${height} ${pts} ${width},${height} Z`;
 
     return { polyline: pts, areaPath: area };
   }, [dataPoints, width, height]);

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '@/hooks/use-auth';
 
 export function withAuth<P extends object>(WrappedComponent: React.ComponentType<P>) {
   return function WithAuthComponent(props: P) {

@@ -1,27 +1,10 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-
-type OnboardingStep = 'welcome' | 'connect' | 'create-account';
-
-interface OnboardingPreferences {
-  countries: string[];
-  currencies: string[];
-}
-
-interface OnboardingContextType {
-  currentStep: OnboardingStep;
-  setCurrentStep: (step: OnboardingStep) => void;
-  preferences: OnboardingPreferences;
-  setCountries: (countries: string[]) => void;
-  setCurrencies: (currencies: string[]) => void;
-  resetPreferences: () => void;
-}
-
-const defaultPreferences: OnboardingPreferences = {
-  countries: [],
-  currencies: [],
-};
-
-const OnboardingContext = createContext<OnboardingContextType | undefined>(undefined);
+import { useState, ReactNode } from "react";
+import {
+  OnboardingContext,
+  OnboardingStep,
+  OnboardingPreferences,
+  defaultPreferences,
+} from "./onboarding-context-value";
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
@@ -54,12 +37,4 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       {children}
     </OnboardingContext.Provider>
   );
-}
-
-export function useOnboarding() {
-  const context = useContext(OnboardingContext);
-  if (context === undefined) {
-    throw new Error("useOnboarding must be used within an OnboardingProvider");
-  }
-  return context;
 }

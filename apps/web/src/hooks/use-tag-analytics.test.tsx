@@ -27,7 +27,9 @@ describe('useTagAnalytics', () => {
     const mockAnalytics = {
       tags: [{ tagId: 1, name: 'Food', total: 500, breakdown: [] }],
     };
-    vi.mocked(api.getTagAnalytics).mockResolvedValueOnce(mockAnalytics as any);
+    vi.mocked(api.getTagAnalytics).mockResolvedValueOnce(
+      mockAnalytics as unknown as Awaited<ReturnType<typeof api.getTagAnalytics>>,
+    );
 
     const filters = { tagIds: [1, 2], view: 'year' as const, years: [2024] };
     const { wrapper } = createWrapper();

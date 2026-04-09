@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -42,7 +42,7 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
-import { Download, ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -106,15 +106,15 @@ export default function PnLAnalysisPage() {
   const [openCountries, setOpenCountries] = useState(false);
   const [openYears, setOpenYears] = useState(false);
 
-  const availableCountries: Country[] = tenantMeta?.countries || [];
-  const availableCurrencies: Currency[] = tenantMeta?.currencies || [];
+  const availableCountries: Country[] = useMemo(() => tenantMeta?.countries || [], [tenantMeta?.countries]);
+  const availableCurrencies: Currency[] = useMemo(() => tenantMeta?.currencies || [], [tenantMeta?.currencies]);
 
   // Initialize selected countries from tenant metadata
   useEffect(() => {
     if (availableCountries.length > 0 && selectedCountries.length === 0) {
       setSelectedCountries(availableCountries.map(c => c.id));
     }
-  }, [availableCountries]);
+  }, [availableCountries, selectedCountries]);
 
   // Sync currency to tenant's portfolioCurrency when settings load
   useEffect(() => {
@@ -145,24 +145,14 @@ export default function PnLAnalysisPage() {
       await fetchPnLData();
     };
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPnLData is defined below the effect; adding it would cause infinite re-renders
   }, [viewType, selectedYears, selectedCountries, selectedCurrency, startMonth, endMonth, startQuarter, endQuarter]);
 
   const fetchPnLData = async () => {
     setIsLoading(true);
     try {
-      console.log('Fetching P&L data with params:', {
-        viewType,
-        selectedYears,
-        selectedCountries,
-        selectedCurrency,
-        startMonth,
-        endMonth,
-        startQuarter,
-        endQuarter
-      });
-
       // Prepare API parameters based on view type
-      const apiParams: any = {
+      const apiParams: { view: 'year' | 'quarter' | 'month'; currency: string; countries: string[]; years?: number[]; startMonth?: string; endMonth?: string; startQuarter?: string; endQuarter?: string } = {
         view: viewType,
         currency: selectedCurrency,
         countries: selectedCountries,
@@ -184,7 +174,6 @@ export default function PnLAnalysisPage() {
 
       // Fetch main analytics data
       const analyticsResponse = await api.getAnalytics(apiParams);
-      console.log('Raw Analytics Response:', JSON.stringify(analyticsResponse, null, 2));
       const newTableColumns = Object.keys(analyticsResponse.data).sort();
       setTableColumns(newTableColumns);
 
@@ -206,8 +195,6 @@ export default function PnLAnalysisPage() {
         newTableColumns,
         viewType === 'month' ? monthlyAnalyticsResponse : null // Pass monthly data if applicable
       );
-      console.log('Processed P&L Data:', JSON.stringify(processedData, null, 2));
-
       setPnlData(processedData.statement);
       setMonthlyData(processedData.monthlyData);
     } catch (error) {
@@ -484,10 +471,6 @@ export default function PnLAnalysisPage() {
                 </div>
               )}
 
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                {t("common.export")}
-              </Button>
             </div>
 
             {/* Selected Items Display - This section is now removed */}
@@ -602,12 +585,6 @@ export default function PnLAnalysisPage() {
                   </TableBody>
                 </Table>
 
-                <div className="mt-4 text-center">
-                  <Button variant="outline" size="sm">
-                    <Download className="mr-2 h-4 w-4" />
-                    {t("pages.pnl.downloadStatement")}
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>

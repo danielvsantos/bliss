@@ -4,10 +4,11 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { TypeAnimation } from "react-type-animation";
 import { useToast } from "@/hooks/use-toast";
-import { useOnboarding } from "@/lib/onboarding-context";
+import { useOnboarding } from "@/hooks/use-onboarding";
 import api from "@/lib/api";
+import type { TenantUpdateRequest } from "@/types/api";
 import { updateTenantMetaFromAPI, getTenantMeta } from "@/utils/tenantMetaStorage";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
 import { useBanks } from "@/hooks/use-metadata";
 import { useCompleteOnboardingStep } from "@/hooks/use-onboarding-progress";
@@ -69,12 +70,12 @@ export default function OnboardingPage() {
   const [selectedCurrencies, setSelectedCurrencies] = useState<string[]>([]);
 
   const countries = useMemo(
-    () => metadata?.countries?.map((c: any) => ({ id: c.id, name: c.name, emoji: c.emoji || "🌐" })) || [],
+    () => metadata?.countries?.map((c) => ({ id: c.id, name: c.name, emoji: c.emoji || "🌐" })) || [],
     [metadata]
   );
 
   const currencies = useMemo(
-    () => metadata?.currencies?.map((c: any) => ({ id: c.id, name: c.name, symbol: c.symbol || "¤" })) || [],
+    () => metadata?.currencies?.map((c) => ({ id: c.id, name: c.name, symbol: c.symbol || "¤" })) || [],
     [metadata]
   );
 
@@ -91,7 +92,7 @@ export default function OnboardingPage() {
   };
 
   const getTenantId = () => {
-    let tenantId = (user as any)?.tenant?.id || user?.tenantId;
+    let tenantId = user?.tenant?.id || user?.tenantId;
     if (!tenantId) {
       const tenantMeta = getTenantMeta();
       tenantId = tenantMeta?.id;
@@ -112,7 +113,7 @@ export default function OnboardingPage() {
       if (!name || !plan) throw new Error(t("Tenant name or plan missing. Please contact support."));
 
       // Build payload — countries as array, currencies as array
-      const payload: any = { name, plan };
+      const payload: TenantUpdateRequest = { name, plan };
       if (selectedCountries.length > 0) payload.countries = selectedCountries;
       if (selectedCurrencies.length > 0) payload.currencies = selectedCurrencies;
 
@@ -127,10 +128,10 @@ export default function OnboardingPage() {
       completeStep.mutate({ step: "step1_profile" });
 
       setCurrentStep("connect");
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: t("Error"),
-        description: error.message || t("Could not save your preferences. Please try again."),
+        description: (error as Error).message || t("Could not save your preferences. Please try again."),
         variant: "destructive",
       });
     } finally {
@@ -159,10 +160,10 @@ export default function OnboardingPage() {
       await queryClient.invalidateQueries({ queryKey: ["banks"] });
       setSelectedBank({ id: bank.id, name: bank.name });
       setBankLinked(true);
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: t("Error"),
-        description: error.message || t("Could not add bank. Please try again."),
+        description: (error as Error).message || t("Could not add bank. Please try again."),
         variant: "destructive",
       });
     } finally {
@@ -212,7 +213,7 @@ export default function OnboardingPage() {
                         {t("Your countries")}
                       </label>
                       <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-40 overflow-y-auto pr-1">
-                        {countries.map((c: any) => (
+                        {countries.map((c) => (
                           <button
                             key={c.id}
                             onClick={() => toggleCountry(c.id)}
@@ -235,7 +236,7 @@ export default function OnboardingPage() {
                         {t("Your currencies")}
                       </label>
                       <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-1">
-                        {currencies.map((c: any) => (
+                        {currencies.map((c) => (
                           <button
                             key={c.id}
                             onClick={() => toggleCurrency(c.id)}
@@ -420,7 +421,7 @@ export default function OnboardingPage() {
                 {!bankLinked && (
                   <motion.div variants={itemVariants} className="space-y-3">
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
-                      {allBanks.map((bank: any) => (
+                      {allBanks.map((bank) => (
                         <button
                           key={bank.id}
                           onClick={() => linkBankAndContinue(bank.name)}

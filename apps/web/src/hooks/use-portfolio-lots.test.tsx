@@ -35,7 +35,9 @@ describe('usePortfolioLots', () => {
       { id: 1, quantity: 10, costBasis: 150, date: '2024-01-01' },
       { id: 2, quantity: 5, costBasis: 160, date: '2024-02-01' },
     ];
-    vi.mocked(api.getPortfolioLots).mockResolvedValueOnce(mockLots as any);
+    vi.mocked(api.getPortfolioLots).mockResolvedValueOnce(
+      mockLots as unknown as Awaited<ReturnType<typeof api.getPortfolioLots>>,
+    );
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => usePortfolioLots(42), { wrapper });

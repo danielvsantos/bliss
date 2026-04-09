@@ -21,7 +21,7 @@ This component serves as the primary user interface for both logging in and regi
 | Ambient radial gradients + 1px gradient right-edge border | — "or continue with email" separator |
 | | — Sign In or Sign Up form (see below) |
 | | — Tab switch prompt ("Don't have an account? Create one") |
-| | **Footer**: "Protected by enterprise-grade encryption. Privacy Policy" |
+| | **Footer**: "Protected by enterprise-grade encryption. License" |
 
 **Mobile (<900px)** — Stacked vertical column: Logo → Headline → Subheading → Illustration → Auth Card → Footer. Uses a `useIsDesktop()` hook with `window.matchMedia("(min-width: 900px)")`.
 
@@ -44,7 +44,7 @@ Note: The register form does **not** include a confirm-password field. Instead, 
 
 ### Sign In Form:
 - **Email address** input (`autoComplete="email"`)
-- **Password** input with a **"Forgot password?"** link button (right-aligned, hover transitions `--brand-primary` → `--brand-deep`)
+- **Password** input (`autoComplete="current-password"`)
 - **"Sign In"** primary button (full width, loading spinner when pending)
 - Error messages displayed inline
 
@@ -52,7 +52,7 @@ Note: The register form does **not** include a confirm-password field. Instead, 
 - **Full name** input (`autoComplete="name"`)
 - **Email address** input (`autoComplete="email"`)
 - **Password** input with hint text (`autoComplete="new-password"`)
-- **Terms & Privacy text**: "By creating an account you agree to our **Terms of Service** and **Privacy Policy**." — both are underlined clickable spans styled with `--brand-primary`.
+- **License text**: "By creating an account you agree to our **License**." — a single underlined `<a>` tag linking to `https://github.com/danielvsantos/bliss/blob/main/LICENSE`, styled with `--brand-primary`, opens in a new tab.
 - **"Create Account"** primary button (full width, loading spinner when pending)
 - Error messages displayed inline
 
@@ -115,9 +115,13 @@ A 3-step wizard with Framer Motion transitions and TypeAnimation text reveal tha
    - On account creation, calls `completeOnboardingStep('setupComplete')` which sets `Tenant.onboardingCompletedAt`.
    - Navigates to the main dashboard.
 
-### Context: `src/contexts/onboarding-context.tsx`
+### Context: `src/lib/onboarding-context.tsx`
 
-Manages wizard state across steps:
+Manages wizard state across steps. The context is split across three files so Fast Refresh can treat the provider as a refreshable component:
+
+- `src/lib/onboarding-context-value.ts` — `OnboardingContext`, types, defaults (non-component exports)
+- `src/lib/onboarding-context.tsx` — `OnboardingProvider` component
+- `src/hooks/use-onboarding.ts` — `useOnboarding()` hook
 
 | State | Type | Description |
 |-------|------|-------------|
@@ -284,7 +288,13 @@ Two separate APIs are used:
 
 ## 1.4. `src/contexts/AuthContext.tsx` - The Auth Logic Controller
 
-This context is the heart of the frontend's authentication system. It provides the `useAuth` hook, which abstracts away API interaction and state management for the rest of the application.
+This context is the heart of the frontend's authentication system. It is split across three files so Fast Refresh can treat the provider as a refreshable component:
+
+- `src/contexts/auth-context-value.ts` — `AuthContext`, interfaces (`SignUpData`, `SignInData`, `SignUpResponse`, `AuthContextType`) — non-component exports
+- `src/contexts/AuthContext.tsx` — `AuthProvider` component (the logic described below)
+- `src/hooks/use-auth.ts` — `useAuth()` hook consumed by pages and components
+
+Consumers import the hook from `@/hooks/use-auth`, never from `@/contexts/AuthContext`.
 
 ### Responsibilities:
 - **State Management**: Maintains the global authentication state including the `user` object.

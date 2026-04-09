@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
 import { SetupChecklist } from './setup-checklist';
 import * as OnboardingHooks from '@/hooks/use-onboarding-progress';
+import type { ReactNode } from 'react';
+import { mockQueryResult, mockQueryLoading } from '@/test/mock-helpers';
 
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
@@ -15,7 +17,9 @@ vi.mock('react-i18next', () => ({
 // Mock framer-motion to avoid animation issues in jsdom
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, className }: any) => <div className={className}>{children}</div>,
+    div: ({ children, className }: { children: ReactNode; className?: string }) => (
+      <div className={className}>{children}</div>
+    ),
   },
 }));
 
@@ -33,10 +37,7 @@ const mockActions = [
 
 describe('SetupChecklist Component', () => {
   it('renders nothing if loading', () => {
-    vi.mocked(OnboardingHooks.useOnboardingProgress).mockReturnValue({
-      data: undefined,
-      isLoading: true,
-    } as any);
+    vi.mocked(OnboardingHooks.useOnboardingProgress).mockReturnValue(mockQueryLoading());
 
     const { container } = render(
       <MemoryRouter>
@@ -47,8 +48,8 @@ describe('SetupChecklist Component', () => {
   });
 
   it('renders checklist items correctly, deduplicating shared keys', () => {
-    vi.mocked(OnboardingHooks.useOnboardingProgress).mockReturnValue({
-      data: {
+    vi.mocked(OnboardingHooks.useOnboardingProgress).mockReturnValue(
+      mockQueryResult({
         onboardingProgress: {
           checklistDismissed: false,
           checklist: {
@@ -56,9 +57,8 @@ describe('SetupChecklist Component', () => {
             exploreExpenses: { done: false },
           },
         },
-      },
-      isLoading: false,
-    } as any);
+      }),
+    );
 
     render(
       <MemoryRouter>
@@ -78,15 +78,14 @@ describe('SetupChecklist Component', () => {
   });
 
   it('renders nothing if checklist is dismissed', () => {
-    vi.mocked(OnboardingHooks.useOnboardingProgress).mockReturnValue({
-      data: {
+    vi.mocked(OnboardingHooks.useOnboardingProgress).mockReturnValue(
+      mockQueryResult({
         onboardingProgress: {
           checklistDismissed: true,
           checklist: { connectBank: { done: false } },
         },
-      },
-      isLoading: false,
-    } as any);
+      }),
+    );
 
     const { container } = render(
       <MemoryRouter>

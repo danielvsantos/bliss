@@ -6,13 +6,14 @@ import React from 'react';
 import { useDashboardMetrics } from './use-dashboard-metrics';
 import * as UsePortfolio from './use-portfolio-items';
 import * as PnLLib from '@/lib/pnl';
+import { mockQueryResult } from '@/test/mock-helpers';
 
 vi.mock('@/lib/api');
 vi.mock('./use-portfolio-items');
 vi.mock('@/lib/pnl');
 vi.mock('@/lib/portfolio-utils', () => ({
-  getDisplayData: (item: any) => ({ marketValue: item.currentPrice }),
-  parseDecimal: (val: any) => Number(val) || 0,
+  getDisplayData: (item: { currentPrice: number }) => ({ marketValue: item.currentPrice }),
+  parseDecimal: (val: unknown) => Number(val) || 0,
 }));
 
 const createWrapper = () => {
@@ -33,19 +34,20 @@ describe('useDashboardMetrics', () => {
 
   it('computes netWorth and PnL metrics correctly', async () => {
     // Mock Portfolio
-    vi.mocked(UsePortfolio.usePortfolioItems).mockReturnValue({
-      data: {
+    vi.mocked(UsePortfolio.usePortfolioItems).mockReturnValue(
+      mockQueryResult({
         portfolioCurrency: 'USD',
         items: [
           { id: 1, name: 'House', quantity: 1, currentPrice: 500000, currency: 'USD', category: { type: 'Asset' } },
           { id: 2, name: 'Mortgage', quantity: 1, currentPrice: -300000, currency: 'USD', category: { type: 'Debt' } },
         ]
-      },
-      isLoading: false,
-    } as any);
+      }),
+    );
 
-    // Mock API
-    vi.mocked(api.getAnalytics).mockResolvedValueOnce({} as any);
+    // Mock API — return shape doesn't matter since PnL processor is also mocked
+    vi.mocked(api.getAnalytics).mockResolvedValueOnce(
+      {} as unknown as Awaited<ReturnType<typeof api.getAnalytics>>,
+    );
 
     // Mock PnL processor heavily simplified
     vi.mocked(PnLLib.processAnalyticsIntoPnL).mockReturnValue({
@@ -57,7 +59,7 @@ describe('useDashboardMetrics', () => {
           { name: 'Growth', totals: { '2023': -1000 } },
         ]
       }
-    } as any);
+    } as unknown as ReturnType<typeof PnLLib.processAnalyticsIntoPnL>);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDashboardMetrics('2023', 'USD'), { wrapper });

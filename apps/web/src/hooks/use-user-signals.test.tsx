@@ -47,11 +47,11 @@ describe('useUserSignals', () => {
     // Override the specific mocks for this test
     vi.mocked(usePlaidTransactions).mockReturnValue({
       data: { summary: { classified: 5 } }
-    } as any);
+    } as unknown as ReturnType<typeof usePlaidTransactions>);
 
     vi.mocked(usePendingImports).mockReturnValue({
       data: { imports: [{ pendingRowCount: 3 }, { pendingRowCount: 2 }] }
-    } as any);
+    } as unknown as ReturnType<typeof usePendingImports>);
 
     const { result } = renderHook(() => useUserSignals());
 
@@ -67,7 +67,7 @@ describe('useUserSignals', () => {
         { status: 'synced', plaidItem: {} }
       ],
       isLoading: false
-    } as any);
+    } as unknown as ReturnType<typeof useAccountList>);
 
     const { result } = renderHook(() => useUserSignals());
     expect(result.current.signals.accountCount).toBe(2);
@@ -80,7 +80,7 @@ describe('useUserSignals', () => {
       data: { netWorth: 1000, netIncome: 50, grossProfit: 0, netProfit: 0 },
       portfolioCurrency: 'EUR',
       isLoading: false
-    } as any);
+    } as unknown as ReturnType<typeof useDashboardMetrics>);
 
     const { result } = renderHook(() => useUserSignals());
     expect(result.current.metrics?.netWorth).toBe(1000);

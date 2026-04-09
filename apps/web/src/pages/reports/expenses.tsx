@@ -96,7 +96,7 @@ const processAnalyticsData = (
   const top5 = sortedData.slice(0, 5);
   const otherValue = sortedData.slice(5).reduce((sum, item) => sum + item.value, 0);
 
-  let pieData = top5.map((item, index) => ({
+  const pieData = top5.map((item, index) => ({
     ...item,
     percentage: totalExpenses > 0 ? ((item.value / totalExpenses) * 100).toFixed(1) : "0.0",
     color: CHART_COLORS[index % CHART_COLORS.length],
@@ -125,8 +125,8 @@ export default function ExpenseTrackingPage() {
   const { data: tenantSettings } = useTenantSettings();
   const tenantMeta = getTenantMeta();
 
-  const availableCountries: Country[] = tenantMeta?.countries || [];
-  const availableCurrencies: Currency[] = tenantMeta?.currencies || [];
+  const availableCountries: Country[] = useMemo(() => tenantMeta?.countries || [], [tenantMeta?.countries]);
+  const availableCurrencies: Currency[] = useMemo(() => tenantMeta?.currencies || [], [tenantMeta?.currencies]);
 
   const defaultYear = (() => {
     const years = tenantMeta?.transactionYears;
@@ -148,7 +148,7 @@ export default function ExpenseTrackingPage() {
     if (availableCountries.length > 0 && selectedCountries.length === 0) {
       setSelectedCountries(availableCountries.map(c => c.id));
     }
-  }, [availableCountries]);
+  }, [availableCountries, selectedCountries]);
 
   // Sync currency to tenant's portfolioCurrency when settings load
   useEffect(() => {
@@ -175,7 +175,7 @@ export default function ExpenseTrackingPage() {
     if (!startDate || !selectedCurrency || selectedCountries.length === 0) {
       return { view: 'month' as const, types: typesParam };
     }
-    const filters: any = {
+    const filters: { view: 'month'; currency: string; countries: string[]; types: string[]; startMonth: string; endMonth?: string } = {
       view: 'month',
       currency: selectedCurrency,
       countries: selectedCountries,
@@ -188,6 +188,7 @@ export default function ExpenseTrackingPage() {
       filters.endMonth = filters.startMonth;
     }
     return filters;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ALLOWED_TYPES is a stable constant defined in component scope
   }, [startDate, endDate, selectedCurrency, selectedCountries, selectedCategoryType]);
 
   const { data: analyticsData, isLoading, isError } = useAnalytics(analyticsFilters);
@@ -195,7 +196,7 @@ export default function ExpenseTrackingPage() {
 
   const trendChartData = useMemo(() => {
     if (!analyticsData?.data || selectedGroupsForTrend.length === 0) return [];
-    const trendData: { [key: string]: any } = {};
+    const trendData: { [key: string]: Record<string, number | string> } = {};
     Object.keys(analyticsData.data).forEach(timeKey => {
       trendData[timeKey] = { name: timeKey };
       const periodData = analyticsData.data[timeKey];
@@ -213,7 +214,7 @@ export default function ExpenseTrackingPage() {
     return diff > 0 ? diff : 1;
   }, [startDate, endDate]);
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ dataKey: string; value: number; color?: string }> }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (

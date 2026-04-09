@@ -28,7 +28,7 @@ describe('usePortfolioHistory', () => {
       portfolioCurrency: 'USD',
       resolution: 'weekly',
       history: [{ date: '2023-01-01' }]
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof api.getPortfolioHistory>>);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => usePortfolioHistory({ from: '2023-01-01', resolution: 'weekly' }), { wrapper });

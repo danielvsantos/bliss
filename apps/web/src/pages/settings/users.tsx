@@ -129,6 +129,7 @@ export default function UserManagementPage() {
     };
 
     fetchUsers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [toast]);
 
   // Filter users based on filters

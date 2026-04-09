@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useTheme } from '@/lib/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useLocation } from 'react-router-dom';
 
 export function useForceTheme() {
