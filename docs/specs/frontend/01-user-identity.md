@@ -115,9 +115,13 @@ A 3-step wizard with Framer Motion transitions and TypeAnimation text reveal tha
    - On account creation, calls `completeOnboardingStep('setupComplete')` which sets `Tenant.onboardingCompletedAt`.
    - Navigates to the main dashboard.
 
-### Context: `src/contexts/onboarding-context.tsx`
+### Context: `src/lib/onboarding-context.tsx`
 
-Manages wizard state across steps:
+Manages wizard state across steps. The context is split across three files so Fast Refresh can treat the provider as a refreshable component:
+
+- `src/lib/onboarding-context-value.ts` — `OnboardingContext`, types, defaults (non-component exports)
+- `src/lib/onboarding-context.tsx` — `OnboardingProvider` component
+- `src/hooks/use-onboarding.ts` — `useOnboarding()` hook
 
 | State | Type | Description |
 |-------|------|-------------|
@@ -284,7 +288,13 @@ Two separate APIs are used:
 
 ## 1.4. `src/contexts/AuthContext.tsx` - The Auth Logic Controller
 
-This context is the heart of the frontend's authentication system. It provides the `useAuth` hook, which abstracts away API interaction and state management for the rest of the application.
+This context is the heart of the frontend's authentication system. It is split across three files so Fast Refresh can treat the provider as a refreshable component:
+
+- `src/contexts/auth-context-value.ts` — `AuthContext`, interfaces (`SignUpData`, `SignInData`, `SignUpResponse`, `AuthContextType`) — non-component exports
+- `src/contexts/AuthContext.tsx` — `AuthProvider` component (the logic described below)
+- `src/hooks/use-auth.ts` — `useAuth()` hook consumed by pages and components
+
+Consumers import the hook from `@/hooks/use-auth`, never from `@/contexts/AuthContext`.
 
 ### Responsibilities:
 - **State Management**: Maintains the global authentication state including the `user` object.

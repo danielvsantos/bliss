@@ -1,5 +1,4 @@
 import { useFormContext } from 'react-hook-form';
-import { z } from 'zod';
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -8,13 +7,6 @@ import { CalendarIcon } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-
-export const debtTermsSchema = z.object({
-  interestRate: z.coerce.number().min(0, 'Interest rate must be positive'),
-  termInMonths: z.coerce.number().min(1, 'Term must be at least 1 month').optional(),
-  originationDate: z.date(),
-  initialBalance: z.coerce.number().min(0, 'Initial balance must be positive'),
-});
 
 export function DebtTermsForm() {
   const form = useFormContext();

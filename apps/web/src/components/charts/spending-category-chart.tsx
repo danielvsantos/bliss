@@ -73,18 +73,20 @@ export function SpendingCategoryChart({ currency = 'USD' }: { currency?: string 
           startMonth: format(startOfMonth(now), 'yyyy-MM'),
           endMonth: format(endOfMonth(now), 'yyyy-MM'),
         };
-      case "prev_month":
+      case "prev_month": {
         const prevMonth = subMonths(now, 1);
         return {
           startMonth: format(startOfMonth(prevMonth), 'yyyy-MM'),
           endMonth: format(endOfMonth(prevMonth), 'yyyy-MM'),
         };
-      case "quarter":
+      }
+      case "quarter": {
         const lastQuarter = subMonths(now, 3);
         return {
           startMonth: format(startOfMonth(lastQuarter), 'yyyy-MM'),
           endMonth: format(endOfMonth(now), 'yyyy-MM'),
         };
+      }
     }
   }, [period]);
 

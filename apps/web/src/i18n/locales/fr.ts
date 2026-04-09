@@ -53,6 +53,8 @@ const fr = {
     group: "Groupe",
     viewReport: "Voir le rapport",
     other: "Autre",
+    selectCountries: "Sélectionner les pays",
+    noCountryFound: "Aucun pays trouvé.",
   },
 
   // Time related
@@ -251,6 +253,7 @@ const fr = {
     expenses: {
       title: "Suivi des dépenses",
       description: "Analysez vos habitudes de dépenses par catégorie",
+      selectCategoryType: "Sélectionner le type de catégorie",
       countriesSelected: "{{count}} pays sélectionnés",
       timeFrame: {
         label: "Période",
@@ -1001,6 +1004,9 @@ const fr = {
       Education: "Éducation",
       Travel: "Voyages",
       Donations: "Dons",
+      Other: "Autre",
+      Others: "Autres",
+      "N/A": "N/A",
     },
     types: {
       Income: "Revenus",

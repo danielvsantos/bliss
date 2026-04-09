@@ -1,51 +1,20 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { AxiosError } from 'axios';
-import type { User, Tenant } from '../types/api';
+import type { User } from '../types/api';
 import { updateTenantMetaFromAPI } from '@/utils/tenantMetaStorage';
 import { toast } from '@/hooks/use-toast';
-
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  error: string | null;
-  signUp: (data: SignUpData) => Promise<SignUpResponse>;
-  signIn: (data: SignInData) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
-  checkSession: () => Promise<void>;
-}
-
-interface SignUpData {
-  email: string;
-  password?: string;
-  name?: string;
-  tenantName: string;
-  countries: string[];
-  currencies: string[];
-  bankIds?: number[];
-}
-
-interface SignInData {
-  email: string;
-  password: string;
-}
-
-interface SignUpResponse {
-  user: User;
-  tenant: Tenant;
-}
-
-interface SignInResponse {
-  user: User;
-}
+import {
+  AuthContext,
+  type SignUpData,
+  type SignInData,
+  type SignUpResponse,
+} from './auth-context-value';
 
 interface APIErrorResponse {
   message: string;
   error?: string;
 }
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -197,11 +166,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-} 

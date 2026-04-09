@@ -47,7 +47,14 @@
       "Bash(npx next:*)",
       "Bash(pnpm build:*)",
       "Bash(PATH=\"/usr/local/bin:$PATH\" npx tsc --noEmit --pretty false)",
-      "Bash(npx --package=typescript tsc --noEmit --strict src/i18n/locales/pt.ts)"
+      "Bash(npx --package=typescript tsc --noEmit --strict src/i18n/locales/pt.ts)",
+      "Bash(pnpm --filter @bliss/web lint)",
+      "Bash(pnpm --filter @bliss/web test --run)",
+      "Bash(pnpm --filter @bliss/web build)",
+      "Bash(pnpm --filter @bliss/web exec tsc --noEmit)",
+      "Bash(git stash:*)",
+      "Bash(git update-index:*)",
+      "Bash(ls apps/web/src/contexts/ apps/web/src/lib/onboarding-context*.* apps/web/src/lib/theme*.* apps/web/src/hooks/use-auth.ts apps/web/src/hooks/use-theme.ts apps/web/src/hooks/use-onboarding.ts)"
     ]
   }
 }

@@ -5,7 +5,7 @@ import { useForceTheme } from './use-force-theme';
 
 // Mock dependencies
 const mockSetTheme = vi.fn();
-vi.mock('@/lib/theme', () => ({
+vi.mock('@/hooks/use-theme', () => ({
   useTheme: () => ({ setTheme: mockSetTheme }),
 }));
 

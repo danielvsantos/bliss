@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import AuthPage from './index';
-import * as AuthContext from '@/contexts/AuthContext';
+import * as AuthHook from '@/hooks/use-auth';
 import * as TenantMeta from '@/utils/tenantMetaStorage';
 
 // Mock translations
@@ -21,7 +21,7 @@ const mockSignIn = vi.fn();
 const mockSignUp = vi.fn();
 const mockSignInWithGoogle = vi.fn();
 
-vi.mock('@/contexts/AuthContext', () => ({
+vi.mock('@/hooks/use-auth', () => ({
   useAuth: vi.fn()
 }));
 
@@ -43,7 +43,7 @@ Object.defineProperty(window, 'matchMedia', {
 describe('AuthPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(AuthContext.useAuth).mockReturnValue({
+    vi.mocked(AuthHook.useAuth).mockReturnValue({
       signIn: mockSignIn,
       signUp: mockSignUp,
       signInWithGoogle: mockSignInWithGoogle,

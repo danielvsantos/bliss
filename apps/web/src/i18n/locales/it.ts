@@ -47,7 +47,9 @@ const it = {
     type: "Tipo",
     actions: "Azioni",
     viewReport: "Visualizza report",
-    other: "Altro"
+    other: "Altro",
+    selectCountries: "Seleziona paesi",
+    noCountryFound: "Nessun paese trovato.",
   },
 
   // Time related
@@ -263,6 +265,7 @@ const it = {
     expenses: {
       title: "Monitoraggio spese",
       description: "Analizza i tuoi modelli di spesa per categoria",
+      selectCategoryType: "Seleziona il tipo di categoria",
       countriesSelected: "{{count}} paesi selezionati",
       timeFrame: {
         label: "Periodo",
@@ -1014,6 +1017,9 @@ const it = {
       Education: "Istruzione",
       Travel: "Viaggi",
       Donations: "Donazioni",
+      Other: "Altro",
+      Others: "Altri",
+      "N/A": "N/D",
     },
     types: {
       Income: "Entrate",

@@ -25,5 +25,15 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-unused-vars": "off",
     },
+  },
+  {
+    // shadcn/ui primitives intentionally export both a component and a variants
+    // constant (e.g. buttonVariants alongside Button). This is the upstream
+    // shadcn convention and the re-export pattern is stable enough that losing
+    // Fast Refresh granularity on these files is an acceptable tradeoff.
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
   }
 );

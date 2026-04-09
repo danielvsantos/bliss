@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useCompleteOnboardingStep } from "@/hooks/use-onboarding-progress";
 import { usePlaidTransactions } from "@/hooks/use-plaid-review";
 import { usePendingImports } from "@/hooks/use-imports";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 
 // Map page paths to checklist step keys
 const PAGE_TO_CHECKLIST: Record<string, string> = {

@@ -12,7 +12,7 @@ import api from '@/lib/api';
 import { getTenantMeta } from '@/utils/tenantMetaStorage';
 import type { Account, Bank, Country, Currency, User } from '@/types/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/use-auth';
 import { Checkbox } from '../ui/checkbox';
 
 

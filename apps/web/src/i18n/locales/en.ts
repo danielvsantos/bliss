@@ -47,7 +47,9 @@ const en = {
     type: "Type",
     actions: "Actions",
     viewReport: "View Report",
-    other: "Other"
+    other: "Other",
+    selectCountries: "Select countries",
+    noCountryFound: "No country found.",
   },
 
   // Time related
@@ -263,6 +265,7 @@ const en = {
     expenses: {
       title: "Expense Tracking",
       description: "Analyze your spending patterns by category",
+      selectCategoryType: "Select category type",
       countriesSelected: "{{count}} countries selected",
       timeFrame: {
         label: "Time Frame",
@@ -1014,6 +1017,9 @@ const en = {
       Education: "Education",
       Travel: "Travel",
       Donations: "Donations",
+      Other: "Other",
+      Others: "Others",
+      "N/A": "N/A",
     },
     types: {
       Income: "Income",

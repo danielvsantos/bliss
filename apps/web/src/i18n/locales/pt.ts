@@ -47,7 +47,9 @@ const pt = {
     type: "Tipo",
     actions: "Ações",
     viewReport: "Ver Relatório",
-    other: "Outro"
+    other: "Outro",
+    selectCountries: "Selecionar países",
+    noCountryFound: "Nenhum país encontrado.",
   },
 
   // Relacionado ao tempo
@@ -263,6 +265,7 @@ const pt = {
     expenses: {
       title: "Controle de Despesas",
       description: "Analise seus padrões de gastos por categoria",
+      selectCategoryType: "Selecionar tipo de categoria",
       countriesSelected: "{{count}} países selecionados",
       timeFrame: {
         label: "Período",
@@ -1014,6 +1017,9 @@ const pt = {
       Education: "Educação",
       Travel: "Viagem",
       Donations: "Doações",
+      Other: "Outro",
+      Others: "Outros",
+      "N/A": "N/D",
     },
     types: {
       Income: "Receita",
