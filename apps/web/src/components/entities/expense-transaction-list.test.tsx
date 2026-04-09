@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ExpenseTransactionList } from './expense-transaction-list';
 import * as UseTransactions from '@/hooks/use-transactions';
+import { mockQueryResult, mockQueryLoading, mockQueryError } from '@/test/mock-helpers';
 
 // Mock the hook to control its return value directly without MSW here
 vi.mock('@/hooks/use-transactions');
@@ -28,44 +29,31 @@ describe('ExpenseTransactionList', () => {
   };
 
   it('renders loading skeleton', () => {
-    vi.mocked(UseTransactions.useTransactions).mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isError: false,
-      refetch: vi.fn()
-    } as any);
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryLoading());
 
     const { container } = renderComponent();
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('renders error state', () => {
-    vi.mocked(UseTransactions.useTransactions).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      refetch: vi.fn()
-    } as any);
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryError());
 
     renderComponent();
     expect(screen.getByText('Failed to load transactions.')).toBeInTheDocument();
   });
 
   it('renders empty state', () => {
-    vi.mocked(UseTransactions.useTransactions).mockReturnValue({
-      data: { transactions: [], total: 0, page: 1, limit: 100, totalPages: 1 },
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn()
-    } as any);
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(
+      mockQueryResult({ transactions: [], total: 0, page: 1, limit: 100, totalPages: 1 }),
+    );
 
     renderComponent();
     expect(screen.getByText('No transactions found for this category in the selected period.')).toBeInTheDocument();
   });
 
   it('renders transaction rows correctly', () => {
-    vi.mocked(UseTransactions.useTransactions).mockReturnValue({
-      data: {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(
+      mockQueryResult({
         transactions: [
           {
             id: 1,
@@ -80,11 +68,8 @@ describe('ExpenseTransactionList', () => {
         page: 1,
         limit: 100,
         totalPages: 1
-      },
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn()
-    } as any);
+      }),
+    );
 
     renderComponent();
 

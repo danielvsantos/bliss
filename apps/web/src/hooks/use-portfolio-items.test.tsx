@@ -27,7 +27,7 @@ describe('usePortfolioItems', () => {
     vi.mocked(api.getPortfolioItems).mockResolvedValueOnce({
       portfolioCurrency: 'USD',
       items: [{ id: 1, name: 'Apple' }]
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof api.getPortfolioItems>>);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => usePortfolioItems({ includeManualValues: true }), { wrapper });

@@ -47,7 +47,7 @@ describe('AuthPage', () => {
       signIn: mockSignIn,
       signUp: mockSignUp,
       signInWithGoogle: mockSignInWithGoogle,
-    } as any);
+    } as unknown as ReturnType<typeof AuthHook.useAuth>);
   });
 
   const renderAuthPage = () => {

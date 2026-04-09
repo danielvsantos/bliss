@@ -54,7 +54,18 @@
       "Bash(pnpm --filter @bliss/web exec tsc --noEmit)",
       "Bash(git stash:*)",
       "Bash(git update-index:*)",
-      "Bash(ls apps/web/src/contexts/ apps/web/src/lib/onboarding-context*.* apps/web/src/lib/theme*.* apps/web/src/hooks/use-auth.ts apps/web/src/hooks/use-theme.ts apps/web/src/hooks/use-onboarding.ts)"
+      "Bash(ls apps/web/src/contexts/ apps/web/src/lib/onboarding-context*.* apps/web/src/lib/theme*.* apps/web/src/hooks/use-auth.ts apps/web/src/hooks/use-theme.ts apps/web/src/hooks/use-onboarding.ts)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/hooks/use-insights.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/pages/smart-import.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/pages/reports/portfolio.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/pages/transactions.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/hooks/use-tags.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/hooks/use-imports.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/hooks/use-dashboard-metrics.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/components/accounts/account-list-panel.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/pages/dashboard.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/hooks/use-user-signals.test.tsx src/hooks/use-currency-rates.test.tsx src/components/review/merchant-history.test.tsx src/components/onboarding/setup-checklist.test.tsx src/components/entities/expense-transaction-list.test.tsx)",
+      "Bash(pnpm --filter @bliss/web exec vitest run src/hooks/use-tenant-settings.test.tsx src/hooks/use-portfolio-holdings.test.tsx src/hooks/use-notifications.test.tsx src/hooks/use-equity-analysis.test.tsx src/hooks/use-dashboard-actions.test.tsx src/components/plaid-connect.test.tsx)"
     ]
   }
 }

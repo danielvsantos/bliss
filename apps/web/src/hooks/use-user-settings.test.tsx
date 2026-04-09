@@ -33,11 +33,11 @@ describe('useUserSettings', () => {
 describe('useUpdateUserSettings', () => {
   it('updates settings and optimally sets query data', async () => {
     const mockUpdate = { autoPromoteThreshold: 90 };
-    let capturedRequest: any = null;
+    let capturedRequest: Record<string, unknown> | null = null;
 
     server.use(
       http.put('/api/tenants/settings', async ({ request }) => {
-        capturedRequest = await request.json();
+        capturedRequest = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ ...capturedRequest, portfolioCurrency: 'USD', reviewThreshold: 50 });
       })
     );

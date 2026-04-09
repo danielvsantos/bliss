@@ -28,7 +28,9 @@ describe('usePortfolioHoldings', () => {
       { id: 1, ticker: 'AAPL', quantity: 10, currentValue: 1500 },
       { id: 2, ticker: 'MSFT', quantity: 5, currentValue: 2000 },
     ];
-    vi.mocked(api.getPortfolioHoldings).mockResolvedValueOnce(mockHoldings as any);
+    vi.mocked(api.getPortfolioHoldings).mockResolvedValueOnce(
+      mockHoldings as unknown as Awaited<ReturnType<typeof api.getPortfolioHoldings>>,
+    );
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => usePortfolioHoldings(), { wrapper });
@@ -41,7 +43,9 @@ describe('usePortfolioHoldings', () => {
 
   it('passes filters to API call', async () => {
     const mockHoldings = [{ id: 1, ticker: 'AAPL', quantity: 10, currentValue: 1500 }];
-    vi.mocked(api.getPortfolioHoldings).mockResolvedValueOnce(mockHoldings as any);
+    vi.mocked(api.getPortfolioHoldings).mockResolvedValueOnce(
+      mockHoldings as unknown as Awaited<ReturnType<typeof api.getPortfolioHoldings>>,
+    );
 
     const filters = { account: 'brokerage', category: 'stocks', ticker: 'AAPL' };
     const { wrapper } = createWrapper();

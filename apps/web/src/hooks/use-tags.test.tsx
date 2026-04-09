@@ -29,7 +29,7 @@ describe('useTags', () => {
       { id: 1, name: 'Food', color: '#ff0000' },
       { id: 2, name: 'Travel', color: '#00ff00' },
     ];
-    vi.mocked(api.getTags).mockResolvedValueOnce(mockTags as any);
+    vi.mocked(api.getTags).mockResolvedValueOnce(mockTags);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useTags(), { wrapper });
@@ -42,7 +42,7 @@ describe('useTags', () => {
 
   it('does not refetch within staleTime', async () => {
     const mockTags = [{ id: 1, name: 'Food', color: '#ff0000' }];
-    vi.mocked(api.getTags).mockResolvedValue(mockTags as any);
+    vi.mocked(api.getTags).mockResolvedValue(mockTags);
 
     const { wrapper, queryClient } = createWrapper();
     const { result } = renderHook(() => useTags(), { wrapper });
@@ -67,7 +67,7 @@ describe('useCreateTag', () => {
 
   it('calls api.createTag and invalidates cache', async () => {
     const newTag = { id: 3, name: 'Gym', color: '#0000ff' };
-    vi.mocked(api.createTag).mockResolvedValueOnce(newTag as any);
+    vi.mocked(api.createTag).mockResolvedValueOnce(newTag);
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -75,7 +75,7 @@ describe('useCreateTag', () => {
     const { result } = renderHook(() => useCreateTag(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ name: 'Gym', color: '#0000ff' } as any);
+      await result.current.mutateAsync({ name: 'Gym', color: '#0000ff' });
     });
 
     expect(api.createTag).toHaveBeenCalledWith({ name: 'Gym', color: '#0000ff' });
@@ -90,7 +90,7 @@ describe('useUpdateTag', () => {
 
   it('calls api.updateTag and invalidates cache', async () => {
     const updatedTag = { id: 1, name: 'Groceries', color: '#ff0000' };
-    vi.mocked(api.updateTag).mockResolvedValueOnce(updatedTag as any);
+    vi.mocked(api.updateTag).mockResolvedValueOnce(updatedTag);
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -98,7 +98,7 @@ describe('useUpdateTag', () => {
     const { result } = renderHook(() => useUpdateTag(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ id: 1, data: { name: 'Groceries' } } as any);
+      await result.current.mutateAsync({ id: 1, data: { name: 'Groceries' } });
     });
 
     expect(api.updateTag).toHaveBeenCalledWith(1, { name: 'Groceries' });

@@ -49,7 +49,9 @@ describe('useEquityAnalysis', () => {
   });
 
   it('fetches equity analysis data', async () => {
-    vi.mocked(api.getEquityAnalysis).mockResolvedValueOnce(mockData as any);
+    vi.mocked(api.getEquityAnalysis).mockResolvedValueOnce(
+      mockData as unknown as Awaited<ReturnType<typeof api.getEquityAnalysis>>,
+    );
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useEquityAnalysis('sector'), { wrapper });
@@ -62,7 +64,9 @@ describe('useEquityAnalysis', () => {
   });
 
   it('re-groups by country when groupBy changes (client-side)', async () => {
-    vi.mocked(api.getEquityAnalysis).mockResolvedValueOnce(mockData as any);
+    vi.mocked(api.getEquityAnalysis).mockResolvedValueOnce(
+      mockData as unknown as Awaited<ReturnType<typeof api.getEquityAnalysis>>,
+    );
 
     const { wrapper } = createWrapper();
     // First render with sector (default fetch)

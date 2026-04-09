@@ -134,7 +134,69 @@ it('shows an error banner when accounts fail to load', async () => {
 
 ---
 
-## 13.4 Running Tests
+## 13.4 Hook-Level Mocking with Typed Helpers
+
+MSW intercepts at the HTTP layer, which is the right tool when a test renders a component that triggers real network calls (page tests, integration-style flows). For tests where the component reads from a custom hook and the hook itself is the unit of behavior worth controlling — most page and component tests in `apps/web` — it's simpler to mock the hook directly with `vi.mocked()` and skip the network layer entirely.
+
+The challenge: TanStack Query's `UseQueryResult<T>` and `UseMutationResult` interfaces have ~20 properties each, and tests usually only care about `data` / `mutate`. Building a full result object inline is verbose, and casting with `as any` defeats the type system.
+
+### Helper: `src/test/mock-helpers.ts`
+
+A small set of typed helpers that build minimal-but-valid `UseQueryResult` / `UseMutationResult` fakes via a single `as unknown as …` cast at the helper boundary, so test files stay clean and never need explicit `any`.
+
+```ts
+import { mockQueryResult, mockQueryLoading, mockQueryError, mockMutationResult } from '@/test/mock-helpers';
+
+// Successful query
+vi.mocked(useAdapters).mockReturnValue(
+  mockQueryResult([{ id: 1, name: 'Chase CSV' }])
+);
+
+// Loading state
+vi.mocked(useAdapters).mockReturnValue(mockQueryLoading());
+
+// Error state
+vi.mocked(useAdapters).mockReturnValue(mockQueryError(new Error('500')));
+
+// Mutation with custom mutate spy
+const uploadMock = vi.fn();
+vi.mocked(useUploadSmartImport).mockReturnValue(
+  mockMutationResult({ mutate: uploadMock })
+);
+```
+
+Each helper accepts an `overrides` argument when a test needs to set additional fields (e.g. `isFetching: true`). The cast through `unknown` keeps the public API type-safe without introducing `any` tokens that ESLint flags.
+
+### Choosing Between MSW and `vi.mocked` + Helpers
+
+| Use MSW when… | Use `vi.mocked` + helpers when… |
+|---|---|
+| The test renders a component that calls `fetch` directly | The test renders a component that reads from a custom hook |
+| You're testing the data-fetching layer itself (a `use-X.ts` hook) | You're testing how a component reacts to a hook's `data` / `isLoading` / `error` |
+| You need to assert the request shape (URL, body, query params) | You only care about the rendered output for a given hook return value |
+| The test spans multiple hooks that share an HTTP endpoint | You want to isolate one component from the entire data layer |
+
+Both approaches coexist. Hook tests under `src/hooks/*.test.tsx` typically use MSW because they're exercising the hook's actual `useQuery` plumbing. Page and component tests typically use `vi.mock('@/hooks/use-X')` + `mockQueryResult` because they don't need the network layer at all.
+
+### No `as any` in Test Fixtures
+
+ESLint's `@typescript-eslint/no-explicit-any` rule is enforced across `apps/web` (including test files) with `--max-warnings 0`. When you need to construct a mock fixture that doesn't satisfy a strict type, prefer one of the following in order of preference:
+
+1. **Build the full real type.** If the fixture is small (Tag, User, Adapter), spell it out. TypeScript catches drift when the real type changes.
+2. **Use the `mockQueryResult` / `mockMutationResult` helpers.** They handle the `UseQueryResult` / `UseMutationResult` envelope so you only have to provide `data`.
+3. **Cast through `unknown` to a `ReturnType` alias.** When the hook exposes a complex shape you don't want to fully reconstruct:
+   ```ts
+   vi.mocked(api.getStagedImport).mockResolvedValueOnce(
+     stagedFixture as unknown as Awaited<ReturnType<typeof api.getStagedImport>>
+   );
+   ```
+4. **Drop the cast entirely.** When the api method already returns `Promise<any>` or `Promise<void>`, no cast is needed — TypeScript accepts the mock value.
+
+`as any` is never the right answer in a test file. If none of the above patterns work, fix the type at its definition site instead of papering over it in the test.
+
+---
+
+## 13.5 Running Tests
 
 ```bash
 # Unit + component tests (no backend required)
@@ -145,7 +207,7 @@ npm run test:coverage   # v8 coverage report, enforces 60/60/60 thresholds
 
 ---
 
-## 13.5 E2E Scaffolding (Phase 4)
+## 13.6 E2E Scaffolding (Phase 4)
 
 ### Location
 
@@ -203,7 +265,7 @@ When real tests are implemented, the CI job will also need to start `apps/backen
 
 ---
 
-## 13.6 CI/CD
+## 13.7 CI/CD
 
 Frontend tests run as part of the unified monorepo CI workflow at `.github/workflows/ci.yml`.
 
@@ -224,7 +286,7 @@ The unified CI workflow triggers on every push and pull request to main/develop.
 
 ---
 
-## 13.7 Current Coverage Status
+## 13.8 Current Coverage Status
 
 ### Frontend Unit & Component Tests
 
@@ -232,8 +294,8 @@ The frontend test suite consists of **45 test files with 206 tests** covering th
 
 **Test categories:**
 
-- **Hook tests** (`src/hooks/*.test.tsx`): The largest group, covering data-fetching hooks including use-account-list, use-currency-rates, use-dashboard-actions, use-equity-analysis, use-force-theme, use-insights, use-notifications, use-onboarding-progress, use-portfolio-holdings, use-portfolio-lots, use-sync-logs, use-tag-analytics, use-tags, use-ticker-search, and more. These use `renderHook()` + MSW.
-- **Page tests** (`src/pages/*.test.tsx`): Component-level tests for accounts, categories, and settings pages using RTL + MSW.
+- **Hook tests** (`src/hooks/*.test.tsx`): The largest group, covering data-fetching hooks including use-account-list, use-currency-rates, use-dashboard-actions, use-equity-analysis, use-force-theme, use-insights, use-notifications, use-onboarding-progress, use-portfolio-holdings, use-portfolio-lots, use-sync-logs, use-tag-analytics, use-tags, use-ticker-search, and more. These use `renderHook()` and mock `api.X` directly with `vi.mocked()`.
+- **Page tests** (`src/pages/*.test.tsx`): Component-level tests for dashboard, smart-import, transactions, reports/portfolio, and settings pages. These use RTL + `vi.mock('@/hooks/use-X')` + the typed helpers from `src/test/mock-helpers.ts` (see §13.4).
 - **Context tests** (`src/contexts/*.test.tsx`): AuthContext provider tests.
 - **Library tests** (`src/lib/*.test.ts`): Pure utility tests for investment-utils, pnl, portfolio-utils, and general utils.
 
@@ -247,7 +309,7 @@ The frontend test suite consists of **45 test files with 206 tests** covering th
 
 ---
 
-## 13.8 Next Steps
+## 13.9 Next Steps
 
 1. **Implement Playwright Cases**: Begin fleshing out the `test.skip` stubs in `e2e/tests/`. Start with `auth.spec.ts` to establish reliable login mechanisms that other tests can leverage.
 2. **Enhance MSW Edge Cases**: Add more `.throws()` or `500` error intercepts in the existing tests to assert that global error banners and toast notifications correctly respond to backend instabilities.

@@ -34,8 +34,8 @@ describe('useNotificationSummary', () => {
   });
 
   it('fetches notification summary', async () => {
-    const mockSummary = { unseen: 3, total: 10 };
-    vi.mocked(api.getNotificationSummary).mockResolvedValueOnce(mockSummary as any);
+    const mockSummary = { totalUnseen: 3, lastSeenAt: null, signals: [] };
+    vi.mocked(api.getNotificationSummary).mockResolvedValueOnce(mockSummary);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useNotificationSummary(), { wrapper });
@@ -53,7 +53,7 @@ describe('useMarkNotificationsSeen', () => {
   });
 
   it('calls API and invalidates cache', async () => {
-    vi.mocked(api.markNotificationsSeen).mockResolvedValueOnce(undefined as any);
+    vi.mocked(api.markNotificationsSeen).mockResolvedValueOnce(undefined);
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');

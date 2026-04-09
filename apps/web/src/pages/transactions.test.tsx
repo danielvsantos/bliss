@@ -6,6 +6,7 @@ import TransactionsPage from './transactions';
 import * as UseTransactions from '@/hooks/use-transactions';
 import * as UseMetadata from '@/hooks/use-metadata';
 import * as UseExportTransactions from '@/hooks/use-export-transactions';
+import { mockQueryResult } from '@/test/mock-helpers';
 
 // Mock Translations
 vi.mock('react-i18next', () => ({
@@ -17,11 +18,11 @@ global.ResizeObserver = class {
   observe() {}
   unobserve() {}
   disconnect() {}
-} as any;
+} as unknown as typeof ResizeObserver;
 window.ResizeObserver = global.ResizeObserver;
 
 if (typeof window.PointerEvent === 'undefined') {
-  window.PointerEvent = class PointerEvent extends Event {} as any;
+  window.PointerEvent = class PointerEvent extends Event {} as unknown as typeof PointerEvent;
 }
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.hasPointerCapture = vi.fn();
@@ -35,7 +36,9 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: vi.fn(() => ({ toast: vi.fn() }))
 }));
 vi.mock('@/components/entities/transaction-form', () => ({
-  TransactionForm: ({ transaction }: any) => <div data-testid="transaction-form">{transaction?.description}</div>
+  TransactionForm: ({ transaction }: { transaction?: { description?: string } }) => (
+    <div data-testid="transaction-form">{transaction?.description}</div>
+  )
 }));
 
 describe('TransactionsPage', () => {
@@ -49,16 +52,15 @@ describe('TransactionsPage', () => {
       isExporting: false
     });
 
-    vi.mocked(UseMetadata.useMetadata).mockReturnValue({
-      data: {
+    vi.mocked(UseMetadata.useMetadata).mockReturnValue(
+      mockQueryResult({
         accounts: [{ id: 1, name: 'Checking Account' }],
         categories: [{ id: 10, name: 'Groceries', group: 'Food & Drink', type: 'Expense' }]
-      },
-      isLoading: false
-    } as any);
+      }),
+    );
 
-    vi.mocked(UseTransactions.useTransactions).mockReturnValue({
-      data: {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(
+      mockQueryResult({
         transactions: [
           {
             id: 100,
@@ -75,11 +77,8 @@ describe('TransactionsPage', () => {
         page: 1,
         limit: 25,
         totalPages: 1
-      },
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn()
-    } as any);
+      }),
+    );
   });
 
   const renderPage = () => {
@@ -102,11 +101,9 @@ describe('TransactionsPage', () => {
   });
 
   it('displays empty state when no transactions exist', () => {
-    vi.mocked(UseTransactions.useTransactions).mockReturnValue({
-      data: { transactions: [], total: 0, page: 1, limit: 25, totalPages: 1 },
-      isLoading: false,
-      isError: false,
-    } as any);
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(
+      mockQueryResult({ transactions: [], total: 0, page: 1, limit: 25, totalPages: 1 }),
+    );
 
     renderPage();
     expect(screen.getByText('pages.transactions.noTransactionsFound')).toBeInTheDocument();

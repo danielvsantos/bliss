@@ -9,16 +9,16 @@ vi.mock('react-i18next', () => ({
 
 import { MerchantHistory } from './merchant-history';
 import * as UseMerchantHistory from '@/hooks/use-merchant-history';
+import { mockQueryResult, mockQueryLoading } from '@/test/mock-helpers';
 
 vi.mock('@/hooks/use-merchant-history');
 
 describe('MerchantHistory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue({
-      data: undefined,
-      isLoading: false
-    } as any);
+    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue(
+      mockQueryResult(undefined),
+    );
   });
 
   it('renders nothing if description is absent', () => {
@@ -27,28 +27,22 @@ describe('MerchantHistory', () => {
   });
 
   it('renders loading state', () => {
-    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue({
-      data: undefined,
-      isLoading: true
-    } as any);
+    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue(mockQueryLoading());
 
     const { container } = render(<MerchantHistory description="Target" />);
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
   it('renders empty state if no history found', () => {
-    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue({
-      data: [],
-      isLoading: false
-    } as any);
+    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue(mockQueryResult([]));
 
     render(<MerchantHistory description="Target" />);
     expect(screen.getByText('review.noMerchantHistory')).toBeInTheDocument();
   });
 
   it('renders a list of transaction history correctly', () => {
-    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue({
-      data: [
+    vi.mocked(UseMerchantHistory.useMerchantHistory).mockReturnValue(
+      mockQueryResult([
         {
           id: 1,
           transaction_date: '2023-11-20',
@@ -65,9 +59,8 @@ describe('MerchantHistory', () => {
           currency: 'USD',
           category: null // Test fallback to 'Uncategorized'
         }
-      ],
-      isLoading: false
-    } as any);
+      ]),
+    );
 
     render(<MerchantHistory description="Target" />);
 

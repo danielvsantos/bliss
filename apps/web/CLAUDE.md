@@ -204,9 +204,11 @@ pnpm test:web
 
 **Patterns:**
 - Component tests render with necessary providers (QueryClient, Router, Auth)
-- API calls mocked via MSW handlers
+- Two valid mocking strategies: MSW handlers (HTTP-level, used by hook tests) or `vi.mock('@/hooks/use-X')` + `mockQueryResult` / `mockMutationResult` from `src/test/mock-helpers.ts` (hook-level, used by page/component tests)
+- Never use `as any` in test fixtures — use the typed helpers, build the real type, or cast through `as unknown as Awaited<ReturnType<typeof api.X>>`. ESLint enforces `--max-warnings 0` on test files.
 - Hook tests use `renderHook` from `@testing-library/react` with query client wrapper
 - Playwright e2e tests in `e2e/` directory (stubs only)
+- Full testing spec at `docs/specs/frontend/13-automated-testing-and-error-logging.md`
 
 ## Path aliases
 
