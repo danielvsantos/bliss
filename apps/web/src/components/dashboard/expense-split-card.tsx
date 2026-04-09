@@ -50,7 +50,7 @@ function renderPieLabel({
   );
 }
 
-function ChartTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; percentage: number } }> }) {
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;

@@ -241,6 +241,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     } else {
       form.clearErrors('ticker');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [watchedAssetCurrency, selectedAccount, isInvestment, form]);
 
   if (isLoading) {

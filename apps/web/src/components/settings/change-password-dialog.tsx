@@ -80,8 +80,9 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
         description: t('changePassword.passwordUpdatedDetail'),
       });
       handleOpenChange(false);
-    } catch (err: any) {
-      const message = err?.response?.data?.error || t('changePassword.changeFailed');
+    } catch (err) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      const message = axiosErr?.response?.data?.error || t('changePassword.changeFailed');
       toast({
         title: t('common.error'),
         description: message,

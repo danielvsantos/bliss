@@ -16,9 +16,9 @@ export type Tenant = {
   name: string;
   plan: string;
   createdAt: string;
-  countries: unknown[];
-  currencies: unknown[];
-  banks: unknown[];
+  countries: Country[];
+  currencies: Currency[];
+  banks: Bank[];
   transactionYears: number[];
   plaidLinkedBankIds?: number[];
 };
@@ -52,6 +52,7 @@ export type Account = {
   currencyCode: string;
   countryId: string;
   owners: { userId: string }[];
+  plaidAccountId?: string | null;
 };
 
 export type AccountRequest = {
@@ -479,6 +480,32 @@ export type PlaidSyncLog = {
     error?: string;
   } | null;
   createdAt: string;
+};
+
+// ─── Insights Types ────────────────────────────────────────────────────────────
+
+export type Insight = {
+  id: string;
+  lens: string;
+  title: string;
+  severity: string;
+  body?: string;
+  priority?: number;
+  date?: string;
+  tier?: string;
+  periodKey?: string;
+  dismissed?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+// ─── Notification Signal Types ─────────────────────────────────────────────────
+
+export type UserSignal = {
+  type: string;
+  severity: string;
+  href: string;
+  label: string;
+  isNew?: boolean;
 };
 
 // ─── Merchant History Types ────────────────────────────────────────────────────

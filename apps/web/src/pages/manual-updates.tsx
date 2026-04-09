@@ -75,7 +75,7 @@ type SortDir = "asc" | "desc";
 export default function ManualUpdatesPage() {
   const { t } = useTranslation();
   const { data, isLoading, error, refetch } = usePortfolioItems({ includeManualValues: true });
-  const assets = data?.items ?? [];
+  const assets = useMemo(() => data?.items ?? [], [data?.items]);
   const portfolioCurrency = data?.portfolioCurrency ?? "USD";
 
   const [selectedAsset, setSelectedAsset] = useState<PortfolioItem | null>(null);

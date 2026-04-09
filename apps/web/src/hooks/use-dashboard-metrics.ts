@@ -9,7 +9,7 @@ export const DASHBOARD_METRICS_QUERY_KEY = 'dashboard-metrics';
 
 export function useDashboardMetrics(year: string, currency?: string) {
   const { data: portfolioData, isLoading: areItemsLoading } = usePortfolioItems();
-  const portfolioItems = portfolioData?.items ?? [];
+  const portfolioItems = useMemo(() => portfolioData?.items ?? [], [portfolioData?.items]);
   const portfolioCurrency = portfolioData?.portfolioCurrency ?? 'USD';
 
   const selectedYear = parseInt(year, 10);

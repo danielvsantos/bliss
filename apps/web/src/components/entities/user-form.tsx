@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
 import api from '@/lib/api';
+import type { UserCreateRequest, UserUpdateRequest } from '@/types/api';
 
 interface User {
   id: string;
@@ -29,13 +30,14 @@ interface UserFormProps {
 }
 
 // Map form values to UserCreateRequest for API
-const mapToUserCreateRequest = (values: UserFormValues): any => ({
+const mapToUserCreateRequest = (values: UserFormValues): UserCreateRequest => ({
   email: values.email,
+  password: '',
   // Add other fields as needed (name, profilePictureUrl, etc.)
 });
 
 // Map form values to UserUpdateRequest for API
-const mapToUserUpdateRequest = (values: UserFormValues): any => ({
+const mapToUserUpdateRequest = (_values: UserFormValues): UserUpdateRequest => ({
   // Only include fields that are editable in the form
   // Add other fields as needed
 });

@@ -5,7 +5,7 @@ import type { PlaidTransactionsResponse, SeedItem } from '@/types/api';
 // Query keys
 export const plaidReviewKeys = {
   all: ['plaid-review'] as const,
-  transactions: (params: Record<string, any>) =>
+  transactions: (params: Record<string, unknown>) =>
     [...plaidReviewKeys.all, 'transactions', params] as const,
   seeds: (plaidItemId: string) =>
     [...plaidReviewKeys.all, 'seeds', plaidItemId] as const,

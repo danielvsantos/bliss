@@ -125,6 +125,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAccounts is defined below the effect; safe because callbacks only run after render
     }, [isOpen, plaidItemId]);
 
     const fetchAccounts = async () => {
@@ -148,9 +149,9 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
             setTenantCountries(plaidData.tenantCountries ?? []);
 
             // Manual accounts available for linking (no plaidAccountId)
-            const manual = (existingData.accounts as any[])
+            const manual = existingData.accounts
                 .filter(a => !a.plaidAccountId)
-                .map(a => ({ id: a.id, name: a.name, mask: a.mask || a.accountNumber, currencyCode: a.currencyCode }));
+                .map(a => ({ id: a.id, name: a.name, mask: a.accountNumber, currencyCode: a.currencyCode }));
             setLinkableAccounts(manual);
 
             // Initialize mappings (all create-new) and names (from Plaid)
@@ -276,7 +277,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                 console.error("Poll sync status failed:", err);
             }
         }, 3000);
-    }, [plaidItemId, selectedIds, invalidateAccountQueries]);
+    }, [plaidItemId, invalidateAccountQueries]);
 
     const handleSync = async () => {
         if (!plaidItemId || selectedIds.length === 0) return;

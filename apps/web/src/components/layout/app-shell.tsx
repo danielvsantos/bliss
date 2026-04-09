@@ -36,7 +36,7 @@ export function AppShell({ children }: AppShellProps) {
       trackedPaths.current.add(location.pathname);
       completeStep.mutate({ step });
     }
-  }, [location.pathname]);
+  }, [location.pathname, completeStep]);
 
   // Badge count in browser tab title
   const { data: plaidData } = usePlaidTransactions({ limit: 1 });

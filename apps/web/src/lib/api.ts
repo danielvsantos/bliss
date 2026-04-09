@@ -31,10 +31,13 @@ import type {
   ImportAdapter,
   DetectAdapterResult,
   StagedImportResponse,
+  StagedImportRow,
   CreateAdapterRequest,
   PlaidSyncLog,
   MerchantHistoryTransaction,
   SeedItem,
+  Insight,
+  UserSignal,
 } from '../types/api';
 
 export interface AggregatedPortfolioHistory {
@@ -61,7 +64,7 @@ const numericRegex = /^-?\d+(\.\d+)?$/;
  * @param data The data to parse (object, array, or primitive).
  * @returns The parsed data.
  */
-function recursiveNumericParser(data: any): any {
+function recursiveNumericParser(data: unknown): unknown {
   if (data === null || data === undefined) {
     return data;
   }
@@ -71,10 +74,10 @@ function recursiveNumericParser(data: any): any {
   }
 
   if (typeof data === 'object') {
-    return Object.entries(data).reduce((acc, [key, value]) => {
+    return Object.entries(data as Record<string, unknown>).reduce((acc, [key, value]) => {
       acc[key] = recursiveNumericParser(value);
       return acc;
-    }, {} as { [key: string]: any });
+    }, {} as Record<string, unknown>);
   }
 
   if (typeof data === 'string' && numericRegex.test(data)) {
@@ -115,6 +118,32 @@ interface Bank {
   name: string;
 }
 
+interface PlaidAccountDetail {
+  accountId: string;
+  name: string;
+  mask: string;
+  type: string;
+  subtype: string;
+  currentBalance: number;
+  isoCurrencyCode: string;
+  isCurrencySupported: boolean;
+}
+
+interface PlaidAccountsResponse {
+  accounts: PlaidAccountDetail[];
+  institution: string;
+  tenantId?: string;
+  institutionCountry?: string | null;
+  unsupportedCountry?: string | null;
+  unsupportedCountryId?: string | null;
+  unsupportedCurrencies?: string[];
+  tenantCurrencies?: string[];
+  tenantCountries?: Array<{ id: string; iso2: string | null }>;
+  earliestDate?: string | null;
+}
+
+type OnboardingProgress = Record<string, boolean>;
+
 // Module-level flag to fire session-expired event only once per page load
 let sessionExpiredFired = false;
 
@@ -146,16 +175,9 @@ class APIClient {
       }],
     });
 
-    // Request interceptor for logging (auth is handled via HttpOnly cookie)
-    this.client.interceptors.request.use((config) => {
-      console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`);
-      return config;
-    });
-
     // Response interceptor for handling errors
     this.client.interceptors.response.use(
       (response) => {
-        console.log(`[API Response] ${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`);
         return response;
       },
       (error: AxiosError<APIError>) => {
@@ -384,7 +406,7 @@ class APIClient {
     month?: number;
     currencyFrom?: string;
     currencyTo?: string;
-  }): Promise<any> {
+  }): Promise<CurrencyRate[]> {
     const response = await this.client.get('/api/currency-rates', { params });
     return response.data;
   }
@@ -397,7 +419,7 @@ class APIClient {
     currencyTo: string;
     value: number | string;
     provider?: string;
-  }): Promise<any> {
+  }): Promise<CurrencyRate> {
     const response = await this.client.post('/api/currency-rates', data);
     return response.data;
   }
@@ -410,7 +432,7 @@ class APIClient {
     currencyTo: string;
     value: number | string;
     provider?: string;
-  }): Promise<any> {
+  }): Promise<CurrencyRate> {
     const response = await this.client.put('/api/currency-rates', data, { params: { id } });
     return response.data;
   }
@@ -428,7 +450,7 @@ class APIClient {
     date?: string;
     forceRefresh?: boolean;
     cacheDuration?: number;
-  }): Promise<any> {
+  }): Promise<Record<string, unknown>> {
     const response = await this.client.get('/api/asset-price', { params });
     return response.data;
   }
@@ -595,17 +617,18 @@ class APIClient {
     return response.data;
   }
 
-  async exchangePublicToken(public_token: string, metadata: any, bankName?: string): Promise<{ plaidItemId: string }> {
+  async exchangePublicToken(public_token: string, metadata: Record<string, unknown>, bankName?: string): Promise<{ plaidItemId: string }> {
+    const institution = metadata.institution as { institution_id?: string; name?: string } | undefined;
     const response = await this.client.post('/api/plaid/exchange-public-token', {
       public_token,
-      institutionId: metadata.institution?.institution_id,
-      institutionName: metadata.institution?.name,
+      institutionId: institution?.institution_id,
+      institutionName: institution?.name,
       bankName: bankName, // Pass custom bank name if provided
     });
     return response.data;
   }
 
-  async getPlaidAccounts(plaidItemId: string): Promise<{ accounts: any[]; institution: string }> {
+  async getPlaidAccounts(plaidItemId: string): Promise<PlaidAccountsResponse> {
     const response = await this.client.get('/api/plaid/accounts', { params: { plaidItemId } });
     return response.data;
   }
@@ -678,7 +701,7 @@ class APIClient {
     ticker?: string | null;
     assetQuantity?: number | null;
     assetPrice?: number | null;
-  }): Promise<any> {
+  }): Promise<StagedImportRow> {
     const response = await this.client.put(`/api/imports/${importId}/rows/${rowId}`, data);
     return response.data;
   }
@@ -844,12 +867,12 @@ class APIClient {
 
   // --- Onboarding Progress ---
 
-  async getOnboardingProgress(): Promise<{ onboardingProgress: any; onboardingCompletedAt: string | null }> {
+  async getOnboardingProgress(): Promise<{ onboardingProgress: OnboardingProgress; onboardingCompletedAt: string | null }> {
     const response = await this.client.get('/api/onboarding/progress');
     return response.data;
   }
 
-  async completeOnboardingStep(step: string, data?: any): Promise<{ onboardingProgress: any; onboardingCompletedAt: string | null }> {
+  async completeOnboardingStep(step: string, data?: Record<string, unknown>): Promise<{ onboardingProgress: OnboardingProgress; onboardingCompletedAt: string | null }> {
     const response = await this.client.put('/api/onboarding/progress', { step, data });
     return response.data;
   }
@@ -862,12 +885,12 @@ class APIClient {
     lens?: string;
     severity?: string;
     includeDismissed?: boolean;
-  }): Promise<{ insights: any[]; total: number; latestBatchDate: string | null }> {
+  }): Promise<{ insights: Insight[]; total: number; latestBatchDate: string | null }> {
     const response = await this.client.get('/api/insights', { params });
     return response.data;
   }
 
-  async dismissInsight(insightId: string, dismissed: boolean): Promise<any> {
+  async dismissInsight(insightId: string, dismissed: boolean): Promise<void> {
     const response = await this.client.put('/api/insights', { insightId, dismissed });
     return response.data;
   }
@@ -879,7 +902,7 @@ class APIClient {
 
   // --- Notifications ---
 
-  async getNotificationSummary(): Promise<{ totalUnseen: number; lastSeenAt: string | null; signals: any[] }> {
+  async getNotificationSummary(): Promise<{ totalUnseen: number; lastSeenAt: string | null; signals: UserSignal[] }> {
     const response = await this.client.get('/api/notifications/summary');
     return response.data;
   }

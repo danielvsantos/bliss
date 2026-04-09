@@ -189,7 +189,7 @@ export function Sidebar({
   const { data: pendingData } = usePendingImports();
   const plaidPendingCount = plaidData?.summary?.classified ?? 0;
   const importPendingCount = (pendingData?.imports ?? []).reduce(
-    (sum: number, imp: any) => sum + (imp.pendingRowCount ?? 0),
+    (sum: number, imp) => sum + (imp.pendingRowCount ?? 0),
     0
   );
   const totalReviewCount = plaidPendingCount + importPendingCount;
@@ -203,7 +203,7 @@ export function Sidebar({
   };
 
   const NAV_ITEMS: Array<
-    | { type: 'link'; id: string; href: string; label: string; icon: any; badge: number; exact: boolean }
+    | { type: 'link'; id: string; href: string; label: string; icon: React.ComponentType<{ active?: boolean }>; badge: number; exact: boolean }
     | { type: 'section'; label: string }
   > = [
     // ── Main

@@ -75,7 +75,7 @@ export default function CurrencyRatesPage() {
     setError(null);
     try {
       const data = await api.getCurrencyRates();
-      setCurrencyRates(Array.isArray(data) ? data : data.rates || []);
+      setCurrencyRates(Array.isArray(data) ? data : []);
     } catch (e: unknown) {
       setError((e as { message?: string })?.message || "Failed to load currency rates");
     } finally {
@@ -309,7 +309,7 @@ export default function CurrencyRatesPage() {
                   <SelectValue placeholder={t('currencyRates.from')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableCurrencies.map((c: any) => (
+                  {availableCurrencies.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.symbol ? `${c.symbol} ` : ''}{c.id}
                     </SelectItem>
@@ -324,7 +324,7 @@ export default function CurrencyRatesPage() {
                   <SelectValue placeholder={t('currencyRates.to')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableCurrencies.map((c: any) => (
+                  {availableCurrencies.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.symbol ? `${c.symbol} ` : ''}{c.id}
                     </SelectItem>

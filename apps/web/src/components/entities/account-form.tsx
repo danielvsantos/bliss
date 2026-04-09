@@ -50,7 +50,7 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
   const currencies: Currency[] = tenantMeta?.currencies || [];
   const countries: Country[] = tenantMeta?.countries || [];
 
-  const tenantId = (currentUser as any)?.tenant?.id || currentUser?.tenantId;
+  const tenantId = currentUser?.tenant?.id || currentUser?.tenantId;
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ['users', tenantId],
     queryFn: () => api.getUsers(),

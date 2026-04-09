@@ -143,8 +143,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       await api.signout(); // Server clears the HttpOnly cookie
       setUser(null);
-    } catch (error: any) {
-      setError(error.message || 'Sign out failed');
+    } catch (error) {
+      setError((error as Error).message || 'Sign out failed');
       throw error;
     }
   };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInsights, useDismissInsight, useGenerateInsights } from "@/hooks/use-insights";
 import { InsightCard } from "@/components/insights/insight-card";
+import type { Insight } from "@/types/api";
 import { RefreshCw, Sparkles, Inbox } from "lucide-react";
 
 const SEVERITY_FILTERS = ["All", "POSITIVE", "INFO", "WARNING", "CRITICAL"] as const;
@@ -45,7 +46,7 @@ export default function InsightsPage() {
     if (isGenerating && latestBatchDate) {
       setIsGenerating(false);
     }
-  }, [latestBatchDate]);
+  }, [latestBatchDate, isGenerating]);
 
   const handleGenerate = useCallback(() => {
     setIsGenerating(true);
@@ -134,7 +135,7 @@ export default function InsightsPage() {
       ) : (
         <div className="space-y-4">
           <AnimatePresence mode="popLayout">
-            {insights.map((insight: any) => (
+            {insights.map((insight: Insight) => (
               <InsightCard
                 key={insight.id}
                 insight={insight}

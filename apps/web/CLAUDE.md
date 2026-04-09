@@ -45,7 +45,7 @@ apps/web/src/
   contexts/             # AuthContext (single context provider)
   lib/                  # Utility modules
     portfolio-utils.ts  # parseDecimal, getGroupColor, buildGroupColorMap, getGroupIcon
-  types/                # TypeScript type definitions
+  types/                # TypeScript type definitions (api.ts — all API response interfaces; equity-analysis.ts)
   i18n/                 # Internationalization (i18next, multiple locales)
 ```
 

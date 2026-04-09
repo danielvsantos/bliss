@@ -190,9 +190,9 @@ ESLint's `@typescript-eslint/no-explicit-any` rule is enforced across `apps/web`
      stagedFixture as unknown as Awaited<ReturnType<typeof api.getStagedImport>>
    );
    ```
-4. **Drop the cast entirely.** When the api method already returns `Promise<any>` or `Promise<void>`, no cast is needed — TypeScript accepts the mock value.
+4. **Use `Awaited<ReturnType<typeof api.X>>`** for `Promise<void>` returns — pass an empty object `{}` or `undefined` as needed since the test typically doesn't consume the resolved value.
 
-`as any` is never the right answer in a test file. If none of the above patterns work, fix the type at its definition site instead of papering over it in the test.
+`as any` is never the right answer in a test file. All `api.ts` methods now return fully-typed promises (`src/types/api.ts` holds the shared response interfaces). If none of the above patterns work, fix the type at its definition site instead of papering over it in the test.
 
 ---
 

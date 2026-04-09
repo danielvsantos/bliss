@@ -263,31 +263,7 @@ function SignInForm({ demoMode = false }: { demoMode?: boolean }) {
           name="password"
           render={({ field }) => (
             <FormItem>
-              <div className="flex items-center justify-between">
-                <FormLabel>{t("Password")}</FormLabel>
-                <button
-                  type="button"
-                  className="text-brand-primary hover:text-primary transition-colors duration-150"
-                  style={{
-                    all: "unset",
-                    cursor: "pointer",
-                    fontSize: "0.8125rem",
-                    color: "hsl(var(--brand-primary))",
-                    borderRadius: 4,
-                    transition: "color 0.13s",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.color =
-                      "hsl(var(--brand-deep))";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.color =
-                      "hsl(var(--brand-primary))";
-                  }}
-                >
-                  {t("Forgot password?")}
-                </button>
-              </div>
+              <FormLabel>{t("Password")}</FormLabel>
               <FormControl>
                 <Input
                   type="password"
@@ -444,19 +420,15 @@ function SignUpForm() {
           style={{ fontSize: "0.75rem", lineHeight: 1.6, margin: 0 }}
         >
           {t("By creating an account you agree to our")}{" "}
-          <span
-            className="cursor-pointer underline"
+          <a
+            href="https://github.com/danielvsantos/bliss/blob/main/LICENSE"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
             style={{ color: "hsl(var(--brand-primary))" }}
           >
-            {t("Terms of Service")}
-          </span>{" "}
-          {t("and")}{" "}
-          <span
-            className="cursor-pointer underline"
-            style={{ color: "hsl(var(--brand-primary))" }}
-          >
-            {t("Privacy Policy")}
-          </span>
+            License
+          </a>
           .
         </p>
 
@@ -773,12 +745,15 @@ function RightPanel() {
           style={{ margin: 0, fontSize: "0.75rem", lineHeight: 1.6 }}
         >
           {t("Protected by enterprise-grade encryption.")}{" "}
-          <span
-            className="cursor-pointer underline"
+          <a
+            href="https://github.com/danielvsantos/bliss/blob/main/LICENSE"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
             style={{ color: "hsl(var(--brand-primary))" }}
           >
-            {t("Privacy Policy")}
-          </span>
+            License
+          </a>
         </p>
       </div>
     </div>

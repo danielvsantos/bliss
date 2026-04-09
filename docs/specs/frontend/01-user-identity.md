@@ -21,7 +21,7 @@ This component serves as the primary user interface for both logging in and regi
 | Ambient radial gradients + 1px gradient right-edge border | — "or continue with email" separator |
 | | — Sign In or Sign Up form (see below) |
 | | — Tab switch prompt ("Don't have an account? Create one") |
-| | **Footer**: "Protected by enterprise-grade encryption. Privacy Policy" |
+| | **Footer**: "Protected by enterprise-grade encryption. License" |
 
 **Mobile (<900px)** — Stacked vertical column: Logo → Headline → Subheading → Illustration → Auth Card → Footer. Uses a `useIsDesktop()` hook with `window.matchMedia("(min-width: 900px)")`.
 
@@ -44,7 +44,7 @@ Note: The register form does **not** include a confirm-password field. Instead, 
 
 ### Sign In Form:
 - **Email address** input (`autoComplete="email"`)
-- **Password** input with a **"Forgot password?"** link button (right-aligned, hover transitions `--brand-primary` → `--brand-deep`)
+- **Password** input (`autoComplete="current-password"`)
 - **"Sign In"** primary button (full width, loading spinner when pending)
 - Error messages displayed inline
 
@@ -52,7 +52,7 @@ Note: The register form does **not** include a confirm-password field. Instead, 
 - **Full name** input (`autoComplete="name"`)
 - **Email address** input (`autoComplete="email"`)
 - **Password** input with hint text (`autoComplete="new-password"`)
-- **Terms & Privacy text**: "By creating an account you agree to our **Terms of Service** and **Privacy Policy**." — both are underlined clickable spans styled with `--brand-primary`.
+- **License text**: "By creating an account you agree to our **License**." — a single underlined `<a>` tag linking to `https://github.com/danielvsantos/bliss/blob/main/LICENSE`, styled with `--brand-primary`, opens in a new tab.
 - **"Create Account"** primary button (full width, loading spinner when pending)
 - Error messages displayed inline
 

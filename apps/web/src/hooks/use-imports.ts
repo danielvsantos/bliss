@@ -13,7 +13,7 @@ export const importKeys = {
   all: ['imports'] as const,
   adapters: () => [...importKeys.all, 'adapters'] as const,
   staged: (id: string) => [...importKeys.all, 'staged', id] as const,
-  stagedWithParams: (id: string, params: Record<string, any>) =>
+  stagedWithParams: (id: string, params: Record<string, unknown>) =>
     [...importKeys.all, 'staged', id, params] as const,
   pending: () => [...importKeys.all, 'pending'] as const,
   seeds: (id: string) => [...importKeys.all, 'seeds', id] as const,

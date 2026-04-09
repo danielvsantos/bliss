@@ -449,9 +449,9 @@ export default function CategoriesPage() {
       setShowDeleteConfirm(false);
       await queryClient.invalidateQueries({ queryKey: metadataKeys.all });
       await refetch();
-    } catch (err: any) {
+    } catch (err) {
       // API returns requiresMerge when category has transactions
-      const data = err?.response?.data;
+      const data = (err as { response?: { data?: { requiresMerge?: boolean; transactionCount?: number } } })?.response?.data;
       if (data?.requiresMerge) {
         setMergeRequired(true);
         setMergeTransactionCount(data.transactionCount || 0);

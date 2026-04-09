@@ -104,7 +104,7 @@ function processMonthlyTimeline(tagData: TagAnalyticsData | undefined) {
   return Object.values(monthlyTotals).sort((a, b) => a.month.localeCompare(b.month));
 }
 
-const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
+const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: { cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number; name: string }) => {
   if (percent < 0.05) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 1.4;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);

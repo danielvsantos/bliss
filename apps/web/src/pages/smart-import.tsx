@@ -233,7 +233,10 @@ export default function SmartImportPage() {
 
   // --- Adapter Manager ---
   const { data: adaptersData } = useAdapters();
-  const adapters: ImportAdapter[] = (adaptersData as { adapters?: ImportAdapter[] })?.adapters ?? (adaptersData as ImportAdapter[]) ?? [];
+  const adapters: ImportAdapter[] = useMemo(
+    () => (adaptersData as { adapters?: ImportAdapter[] })?.adapters ?? (adaptersData as ImportAdapter[]) ?? [],
+    [adaptersData],
+  );
   const createAdapter = useCreateAdapter();
   const updateAdapterMutation = useUpdateAdapter();
   const deleteAdapterMutation = useDeleteAdapter();
@@ -365,6 +368,7 @@ export default function SmartImportPage() {
     } finally {
       setIsConfirmingSeeds(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [stagedImportId, seedInterviewData, localSeedCategories, excludedSeeds, confirmSeedsMutation, stagedData, toast]);
 
   const handleImportSeedSkip = useCallback(() => {
@@ -374,6 +378,7 @@ export default function SmartImportPage() {
       description: t('smartImport.toast.rowsReady', { count: readyRowCount }),
     });
     setStep('review');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [stagedData, toast]);
 
   // --- Detect COMMITTING → COMMITTED/READY transition via polling ---
@@ -415,6 +420,7 @@ export default function SmartImportPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [importStatus, step, stagedData, toast, queryClient]);
 
   // --- File / Upload Handlers ---
@@ -442,6 +448,7 @@ export default function SmartImportPage() {
         });
       },
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [detectAdapter, toast]);
 
   const handleUpload = useCallback(() => {
@@ -464,6 +471,7 @@ export default function SmartImportPage() {
         },
       },
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t and isNativeAdapterSelected are stable; adding them would not change behavior
   }, [selectedFile, selectedAccountId, selectedAdapterId, uploadImport, toast]);
 
   const handleRowStatusChange = useCallback(
@@ -533,6 +541,7 @@ export default function SmartImportPage() {
         },
       );
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
     [updateRow, rows, categoriesMap, accountsMap, toast],
   );
 
@@ -593,6 +602,7 @@ export default function SmartImportPage() {
         toast({ title: t('smartImport.toast.commitFailed'), description: t('smartImport.toast.commitFailedDesc'), variant: 'destructive' });
       },
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [stagedImportId, commitImport, toast]);
 
   const handleReset = useCallback(() => {
@@ -621,6 +631,7 @@ export default function SmartImportPage() {
         toast({ title: t('smartImport.toast.cancelFailed'), variant: 'destructive' });
       },
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [stagedImportId, cancelImport, toast, handleReset]);
 
   const canUpload =

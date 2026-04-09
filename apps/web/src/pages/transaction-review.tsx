@@ -444,8 +444,8 @@ export default function TransactionReviewPage() {
         { id: tx.id, data: { promotionStatus: 'PROMOTED' } },
         {
           onSuccess: () => toast({ title: 'Transaction promoted' }),
-          onError: (err: any) => {
-            const data = err?.response?.data;
+          onError: (err: unknown) => {
+            const data = (err as { response?: { data?: { requiresEnrichment?: boolean } } })?.response?.data;
             if (data?.requiresEnrichment) {
               toast({
                 title: 'Investment enrichment required',

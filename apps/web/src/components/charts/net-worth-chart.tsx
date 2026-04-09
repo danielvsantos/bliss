@@ -47,7 +47,7 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
   }, [period]);
 
   const { data: historyResponse, isLoading } = usePortfolioHistory(historyDateFilter);
-  const history = historyResponse?.history ?? [];
+  const history = useMemo(() => historyResponse?.history ?? [], [historyResponse?.history]);
 
   const formattedHistoryData = useMemo(() => {
     const data = history as AggregatedPortfolioHistory[];

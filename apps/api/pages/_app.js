@@ -15,7 +15,7 @@ function AuthWrapper({ children }) {
     if (!isPublicPage && status === "unauthenticated") {
       router.push("/auth/login");
     }
-  }, [status, isPublicPage]);
+  }, [status, isPublicPage, router]);
 
   if (status === "loading") return <p>Loading...</p>;
 
