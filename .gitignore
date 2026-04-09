@@ -15,6 +15,11 @@ gcloud-service.json
 **/gcloud-*.json
 data
 
+# AI Assistant Local State
+.claude/
+*.local.json
+
+
 
 # Python virtual environments
 venv/
