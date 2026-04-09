@@ -3,10 +3,15 @@ info:
   title: Bliss API Layer - Insights
   description: |
     AI-generated financial insights endpoints. Insights are produced by the
-    backend service via Google Gemini and stored in the Insight table. This API
-    serves, filters, and manages their dismissal state, and provides an
-    on-demand generation trigger.
-  version: 1.0.0
+    backend service across five cadence tiers (DAILY, MONTHLY, QUARTERLY,
+    ANNUAL, PORTFOLIO) using Google Gemini, persisted additively in the
+    Insight table, and surfaced here with filtering, per-tier summaries, and
+    an on-demand generation trigger.
+
+    See `docs/specs/backend/15-insights-engine.md` for the generation pipeline
+    and `docs/specs/api/15-insights.md` for the API-layer contract this file
+    documents.
+  version: 2.0.0
 
 components:
   securitySchemes:
@@ -17,36 +22,124 @@ components:
       description: HttpOnly JWT cookie set at sign-in.
 
   schemas:
+    InsightTier:
+      type: string
+      description: Cadence tier that produced the insight.
+      enum:
+        - DAILY
+        - MONTHLY
+        - QUARTERLY
+        - ANNUAL
+        - PORTFOLIO
+
+    InsightCategory:
+      type: string
+      description: User-facing category grouping for insights.
+      enum:
+        - SPENDING
+        - INCOME
+        - SAVINGS
+        - PORTFOLIO
+        - DEBT
+        - NET_WORTH
+
+    InsightSeverity:
+      type: string
+      enum: [POSITIVE, INFO, WARNING, CRITICAL]
+
+    InsightLens:
+      type: string
+      description: The analysis lens that produced the insight.
+      enum:
+        - SPENDING_VELOCITY
+        - CATEGORY_CONCENTRATION
+        - UNUSUAL_SPENDING
+        - INCOME_STABILITY
+        - INCOME_DIVERSIFICATION
+        - SAVINGS_RATE
+        - SAVINGS_TREND
+        - PORTFOLIO_EXPOSURE
+        - SECTOR_CONCENTRATION
+        - VALUATION_RISK
+        - DIVIDEND_OPPORTUNITY
+        - DEBT_HEALTH
+        - DEBT_PAYOFF_TRAJECTORY
+        - NET_WORTH_TRAJECTORY
+        - NET_WORTH_MILESTONES
+
+    ActionType:
+      type: string
+      description: Metadata tag used for future goal-driven filtering.
+      enum:
+        - BUDGET_OPTIMIZATION
+        - TAX_EFFICIENCY
+        - PORTFOLIO_REBALANCE
+        - DEBT_REDUCTION
+        - SAVINGS_GOAL
+        - TRAVEL_PLANNING
+        - EMERGENCY_FUND
+        - INCOME_GROWTH
+
+    InsightMetadata:
+      type: object
+      description: |
+        Lens-specific data points plus v1 enrichment (action tags, related
+        lenses, suggested action). Unknown keys are allowed.
+      additionalProperties: true
+      properties:
+        actionTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionType'
+        relatedLenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightLens'
+        suggestedAction:
+          type: string
+          description: Optional short CTA string surfaced on the insight card.
+
     Insight:
       type: object
+      required:
+        - id
+        - lens
+        - tier
+        - category
+        - periodKey
+        - severity
+        - title
+        - body
+        - priority
+        - dismissed
+        - createdAt
       properties:
         id:
-          type: integer
-          description: Auto-incremented primary key.
-          example: 42
+          type: string
+          description: CUID primary key.
+          example: "ckv8p2q9r0000abcde12345"
         tenantId:
           type: string
           description: FK to the tenant that owns this insight.
-        batchId:
+        lens:
+          $ref: '#/components/schemas/InsightLens'
+        tier:
+          $ref: '#/components/schemas/InsightTier'
+        category:
+          $ref: '#/components/schemas/InsightCategory'
+        periodKey:
           type: string
-          description: Groups insights from the same generation run.
-          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+          description: |
+            Period identifier. Format varies by tier:
+            `YYYY-MM-DD` (DAILY), `YYYY-MM` (MONTHLY), `YYYY-Qn` (QUARTERLY),
+            `YYYY` (ANNUAL), `YYYY-Www` ISO week (PORTFOLIO).
+          example: "2026-Q1"
         date:
           type: string
           format: date-time
-          description: Generation date (midnight UTC).
-        lens:
-          type: string
-          description: The analysis lens that produced this insight.
-          enum:
-            - SPENDING_VELOCITY
-            - CATEGORY_CONCENTRATION
-            - INCOME_STABILITY
-            - SAVINGS_RATE
-            - PORTFOLIO_EXPOSURE
-            - DEBT_HEALTH
-            - NET_WORTH_TRAJECTORY
-          example: "SPENDING_VELOCITY"
+          description: Generation date (midnight UTC of the batch run).
+        severity:
+          $ref: '#/components/schemas/InsightSeverity'
         title:
           type: string
           description: Short title (max 255 chars, 8 words max).
@@ -55,35 +148,57 @@ components:
           type: string
           description: Detailed observation (2-4 sentences with specific numbers).
           example: "Your dining category increased from R$620 to R$763 this month, a 23% rise."
-        severity:
-          type: string
-          enum: [POSITIVE, INFO, WARNING, CRITICAL]
-          description: Severity level of the insight.
-          example: "WARNING"
         priority:
           type: integer
           minimum: 1
           maximum: 100
-          description: Priority score (higher = more important).
-          example: 78
+          description: Priority score (higher = more important). Drives sort order.
+          example: 72
+        metadata:
+          $ref: '#/components/schemas/InsightMetadata'
         dataHash:
           type: string
-          description: SHA-256 hash of the input data used for deduplication.
-        metadata:
-          type: object
-          nullable: true
-          description: Lens-specific data points used to generate this insight.
+          description: SHA-256 hex digest of the input data used for dedup.
         dismissed:
           type: boolean
           description: Whether the user has dismissed this insight.
           default: false
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            TTL cleanup timestamp. Null for ANNUAL (forever). DAILY=+90d,
+            MONTHLY=+2y, QUARTERLY=+5y, PORTFOLIO=+1y.
         createdAt:
           type: string
           format: date-time
-          description: Creation timestamp.
+          description: Row creation timestamp.
+
+    TierSummaryEntry:
+      type: object
+      description: |
+        Per-tier aggregate of the latest insight, used by the frontend to
+        render "last updated" labels and detect when a new batch has landed.
+      properties:
+        latestDate:
+          type: string
+          format: date
+          nullable: true
+          description: ISO date of the latest insight's generation date.
+        latestCreatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO timestamp of the latest insight's createdAt.
 
     InsightListResponse:
       type: object
+      required:
+        - insights
+        - total
+        - tierSummary
+        - categoryCounts
       properties:
         insights:
           type: array
@@ -91,15 +206,34 @@ components:
             $ref: '#/components/schemas/Insight'
         total:
           type: integer
-          description: Total number of insights matching the filters.
-          example: 7
-        latestBatchDate:
-          type: string
-          format: date-time
-          nullable: true
+          description: Total insights matching the active filter combination.
+          example: 42
+        tierSummary:
+          type: object
           description: |
-            The createdAt of the most recent insight for this tenant.
-            Used by the frontend to detect when a new batch has been generated.
+            Per-tier `{ latestDate, latestCreatedAt }`, computed across all
+            tenant insights (no filters applied). Tiers with no insights yet
+            are omitted.
+          additionalProperties:
+            $ref: '#/components/schemas/TierSummaryEntry'
+          example:
+            DAILY:
+              latestDate: "2026-04-09"
+              latestCreatedAt: "2026-04-09T06:05:00.000Z"
+            MONTHLY:
+              latestDate: "2026-03-31"
+              latestCreatedAt: "2026-04-02T06:05:00.000Z"
+        categoryCounts:
+          type: object
+          description: |
+            Per-category insight counts (only the `dismissed` filter is
+            applied). Drives the category tab badges in the frontend.
+          additionalProperties:
+            type: integer
+          example:
+            SPENDING: 12
+            PORTFOLIO: 8
+            NET_WORTH: 3
 
     DismissInsightRequest:
       type: object
@@ -108,20 +242,61 @@ components:
         - dismissed
       properties:
         insightId:
-          type: integer
-          description: The ID of the insight to dismiss or restore.
-          example: 42
+          type: string
+          description: CUID of the insight to dismiss or restore.
+          example: "ckv8p2q9r0000abcde12345"
         dismissed:
           type: boolean
           description: Set to true to dismiss, false to restore.
           example: true
 
+    GenerateInsightsRequest:
+      type: object
+      description: |
+        All fields optional. When `tier` is omitted, the backend runs DAILY.
+        Per-tier required params (`year`/`month`/`quarter`) are enforced by
+        the backend route, not the API layer.
+      properties:
+        tier:
+          $ref: '#/components/schemas/InsightTier'
+        year:
+          type: integer
+          description: Required by backend for MONTHLY / QUARTERLY / ANNUAL.
+          example: 2026
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Required by backend for MONTHLY.
+          example: 3
+        quarter:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: Required by backend for QUARTERLY.
+          example: 1
+        periodKey:
+          type: string
+          description: Optional — backend computes from year/month/quarter if omitted.
+          example: "2026-Q1"
+        force:
+          type: boolean
+          default: false
+          description: |
+            Bypass the backend's completeness gate and dedup check. Also
+            accepts the string `"true"`.
+
     GenerateInsightsResponse:
       type: object
+      required:
+        - message
+        - tier
       properties:
         message:
           type: string
           example: "Insight generation triggered"
+        tier:
+          $ref: '#/components/schemas/InsightTier'
 
     Error:
       type: object
@@ -139,8 +314,13 @@ paths:
         - Insights
       summary: List insights
       description: |
-        Fetches the tenant's insights with optional filtering by lens, severity,
-        and dismissal state. Results are ordered by priority DESC, createdAt DESC.
+        Lists the tenant's insights with optional filtering by tier, category,
+        lens, severity, period, and dismissal state. Also returns per-tier
+        summaries and per-category counts in the same payload.
+
+        Results are ordered by `priority DESC, createdAt DESC`. Invalid
+        `tier` or `category` values are silently dropped rather than
+        rejected — GET is forgiving to typos from query strings.
       parameters:
         - name: limit
           in: query
@@ -148,7 +328,7 @@ paths:
           description: Max results per page.
           schema:
             type: integer
-            default: 50
+            default: 20
         - name: offset
           in: query
           required: false
@@ -161,18 +341,46 @@ paths:
           required: false
           description: Filter by lens identifier.
           schema:
-            type: string
+            $ref: '#/components/schemas/InsightLens'
         - name: severity
           in: query
           required: false
           description: Filter by severity level.
           schema:
+            $ref: '#/components/schemas/InsightSeverity'
+        - name: tier
+          in: query
+          required: false
+          description: |
+            Filter by tier. Silently dropped if not one of the
+            `InsightTier` enum values.
+          schema:
+            $ref: '#/components/schemas/InsightTier'
+        - name: category
+          in: query
+          required: false
+          description: |
+            Filter by category. Silently dropped if not one of the
+            `InsightCategory` enum values.
+          schema:
+            $ref: '#/components/schemas/InsightCategory'
+        - name: periodKey
+          in: query
+          required: false
+          description: Filter by exact period key (see `Insight.periodKey`).
+          schema:
             type: string
-            enum: [POSITIVE, INFO, WARNING, CRITICAL]
         - name: includeDismissed
           in: query
           required: false
           description: Include dismissed insights.
+          schema:
+            type: boolean
+            default: false
+        - name: latestOnly
+          in: query
+          required: false
+          description: Reserved — currently only influences the default order.
           schema:
             type: boolean
             default: false
@@ -185,14 +393,20 @@ paths:
                 $ref: '#/components/schemas/InsightListResponse'
         '401':
           description: Unauthorized — missing or invalid JWT.
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     put:
       tags:
         - Insights
       summary: Dismiss or restore an insight
       description: |
-        Toggles the dismissed state of a specific insight. Validates that the
-        insight belongs to the authenticated user's tenant.
+        Toggles the dismissed state of a specific insight. Ownership is
+        validated via `tenantId` scoping before the update.
       requestBody:
         required: true
         content:
@@ -206,24 +420,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Insight'
-        '403':
-          description: Forbidden — insight does not belong to the user's tenant.
+        '400':
+          description: |
+            Bad request — `insightId` missing or `dismissed` not a boolean.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '401':
           description: Unauthorized — missing or invalid JWT.
+        '404':
+          description: Insight not found or belongs to a different tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     post:
       tags:
         - Insights
       summary: Trigger insight generation
       description: |
-        Triggers on-demand insight generation for the authenticated user's tenant.
-        Sends a fire-and-forget request to the backend service and returns 202
-        immediately. The frontend should poll GET /api/insights to detect when
-        the new batch is ready (via latestBatchDate change).
+        Triggers on-demand insight generation for the authenticated tenant.
+        The request is fire-and-forget: the API layer POSTs to the backend's
+        internal `/api/insights/generate` endpoint with `X-API-KEY` and
+        returns 202 without waiting for the job to finish.
+
+        When `tier` is omitted, the backend runs `DAILY`. Per-tier required
+        params (`year`/`month`/`quarter`) are validated by the backend, not
+        here.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateInsightsRequest'
       responses:
         '202':
           description: Generation job accepted.
@@ -231,6 +468,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenerateInsightsResponse'
+        '400':
+          description: |
+            Bad request — `tier` is not one of the `InsightTier` enum values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           description: Unauthorized — missing or invalid JWT.
         '500':

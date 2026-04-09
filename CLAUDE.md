@@ -195,13 +195,24 @@ Event-driven aggregation into `AnalyticsCacheMonthly` and `TagAnalyticsCacheMont
 - Pass 2: Transaction processing with multi-dimensional aggregation (year, month, currency, country, type, group)
 - Tag analytics computed in parallel -- multi-tagged transactions create one entry per tag
 
-### Insights engine
+### Insights engine (v1 — tiered architecture)
 
-AI-generated financial insights via daily cron (6 AM UTC) or on-demand:
+AI-generated financial insights with 5 cadence tiers:
 
-- 7 financial lenses: spending velocity, category concentration, income stability, savings rate, portfolio exposure, debt health, net worth trajectory
-- Data hash deduplication skips regeneration when underlying data is unchanged
-- Model: configurable via `INSIGHT_MODEL` env var (default Gemini)
+| Tier | Cadence | Model | Purpose |
+|------|---------|-------|---------|
+| DAILY | 6 AM UTC | Flash (`INSIGHT_MODEL_FAST`) | Anomaly detection, quick alerts |
+| MONTHLY | 2nd of month | Pro (`INSIGHT_MODEL`) | Monthly health check with MoM + YoY |
+| QUARTERLY | 3rd day after Q close | Pro | Seasonal trends, deep analysis |
+| ANNUAL | Jan 3rd | Pro | Comprehensive year-in-review |
+| PORTFOLIO | Weekly Mon 5 AM | Pro | Equity analysis via SecurityMaster |
+
+- 15 financial lenses across 6 categories (SPENDING, INCOME, SAVINGS, PORTFOLIO, DEBT, NET_WORTH)
+- Data completeness gating: each tier checks period coverage before generation
+- Additive persistence: old insights preserved, not replaced. Dedup by `(tenantId, tier, periodKey, dataHash)`
+- TTL retention: DAILY=90d, MONTHLY=2y, QUARTERLY=5y, ANNUAL=forever, PORTFOLIO=1y
+- Metadata enrichment: `actionTypes`, `relatedLenses`, `suggestedAction` for future goal integration
+- User can manually trigger any tier via POST `/api/insights` with `{ tier, year, month, quarter, force }`
 
 ### Security master
 
@@ -222,12 +233,12 @@ Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
 | `plaidProcessorWorker` | plaid-processor | 1 | Classify and persist Plaid transactions |
 | `portfolioWorker` | portfolio | 5 | FIFO lots, PnL, valuation, cash holdings, **nightly revaluation (4 AM UTC)** |
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
-| `insightGeneratorWorker` | insights | 1 | AI financial insights generation (cron 6 AM UTC) |
+| `insightGeneratorWorker` | insights | 1 | Tiered AI insights: daily pulse (6 AM), monthly/quarterly/annual (auto-triggered), portfolio intel (Mon 5 AM) |
 | `securityMasterWorker` | security-master | 1 | Nightly stock fundamentals refresh (cron 3 AM UTC) |
 
-**Nightly schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> insightGenerator (6 AM, AI insights).
+**Schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> portfolioIntel (Mon 5 AM, equity insights) -> insightGenerator (6 AM, daily pulse + auto-triggered monthly/quarterly/annual).
 
-All workers report failures to Sentry with structured context (worker name, job name, tenantId, attempt count). Graceful shutdown: close workers before Redis disconnect.
+All workers route their `worker.on('failed', ...)` handler through `reportWorkerFailure` in `apps/backend/src/utils/workerFailureReporter.js`. The helper only calls `Sentry.captureException` on the **final** exhausted retry attempt — intermediate retries are logged at `warn` level. This prevents false alarms when BullMQ recovers from transient errors (Prisma Accelerate cold starts, Redis blips, Plaid race conditions). Never call `Sentry.captureException` directly from `worker.on('failed')`. Graceful shutdown: close workers before Redis disconnect.
 
 ## Environment variables
 

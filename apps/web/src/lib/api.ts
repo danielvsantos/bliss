@@ -861,8 +861,16 @@ class APIClient {
     offset?: number;
     lens?: string;
     severity?: string;
+    tier?: string;
+    category?: string;
+    periodKey?: string;
     includeDismissed?: boolean;
-  }): Promise<{ insights: any[]; total: number; latestBatchDate: string | null }> {
+  }): Promise<{
+    insights: any[];
+    total: number;
+    tierSummary: Record<string, { latestDate: string; latestCreatedAt: string }>;
+    categoryCounts: Record<string, number>;
+  }> {
     const response = await this.client.get('/api/insights', { params });
     return response.data;
   }
@@ -872,8 +880,15 @@ class APIClient {
     return response.data;
   }
 
-  async generateInsights(): Promise<{ message: string }> {
-    const response = await this.client.post('/api/insights');
+  async generateInsights(options?: {
+    tier?: string;
+    year?: number;
+    month?: number;
+    quarter?: number;
+    periodKey?: string;
+    force?: boolean;
+  }): Promise<{ message: string; tier: string }> {
+    const response = await this.client.post('/api/insights', options || {});
     return response.data;
   }
 
