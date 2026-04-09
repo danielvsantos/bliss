@@ -53,8 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(null);
       }
-    } catch (error) {
-      console.error('Session check failed:', error);
+    } catch (error: unknown) {
+      // A 401 is expected when the user is not logged in — not worth logging.
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status !== 401) {
+        console.error('Session check failed:', error);
+      }
       setUser(null);
     } finally {
       setLoading(false);

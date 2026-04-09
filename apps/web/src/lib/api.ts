@@ -181,11 +181,16 @@ class APIClient {
         return response;
       },
       (error: AxiosError<APIError>) => {
-        console.error(`[API Error] ${error.response?.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
+        const isSessionCheck = error.config?.url === '/api/auth/session';
+        // A 401 on the session check is expected when the user is not logged in — don't log it.
+        if (!isSessionCheck) {
+          console.error(`[API Error] ${error.response?.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
+        }
         // On 401, emit a custom event so AuthContext can clear the user and show a toast.
         // Do NOT redirect here — window.location.href causes a full page reload
         // which remounts AuthContext → infinite loop. The withAuth HOC handles the redirect.
-        if (error.response?.status === 401 && !sessionExpiredFired) {
+        // Exclude the initial session check — a 401 there just means the user isn't logged in.
+        if (error.response?.status === 401 && !isSessionCheck && !sessionExpiredFired) {
           sessionExpiredFired = true;
           window.dispatchEvent(new Event('auth:session-expired'));
         }

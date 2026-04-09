@@ -56,7 +56,7 @@ function RoutedApp() {
 const App = () => (
   <>
     <Toaster />
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ErrorBoundary>
         <RoutedApp />
       </ErrorBoundary>
