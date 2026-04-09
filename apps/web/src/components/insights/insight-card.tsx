@@ -63,7 +63,6 @@ const LENS_LABELS: Record<string, string> = {
 };
 
 const TIER_BADGE_STYLES: Record<string, string> = {
-  DAILY: "bg-muted text-muted-foreground",
   MONTHLY: "bg-brand-primary/10 text-brand-primary",
   QUARTERLY: "bg-positive/10 text-positive",
   ANNUAL: "bg-warning/10 text-warning",
@@ -71,7 +70,6 @@ const TIER_BADGE_STYLES: Record<string, string> = {
 };
 
 const TIER_LABELS: Record<string, string> = {
-  DAILY: "Daily",
   MONTHLY: "Monthly",
   QUARTERLY: "Quarterly",
   ANNUAL: "Annual",
@@ -82,7 +80,7 @@ export function InsightCard({ insight, onDismiss, showTierBadge = true }: Insigh
   const { t } = useTranslation();
   const severityClass = SEVERITY_STYLES[insight.severity] || SEVERITY_STYLES.INFO;
   const dotClass = SEVERITY_DOT[insight.severity] || SEVERITY_DOT.INFO;
-  const tierBadgeClass = TIER_BADGE_STYLES[insight.tier] || TIER_BADGE_STYLES.DAILY;
+  const tierBadgeClass = TIER_BADGE_STYLES[insight.tier] || TIER_BADGE_STYLES.MONTHLY;
 
   return (
     <motion.div

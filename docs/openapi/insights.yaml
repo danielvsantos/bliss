@@ -3,15 +3,20 @@ info:
   title: Bliss API Layer - Insights
   description: |
     AI-generated financial insights endpoints. Insights are produced by the
-    backend service across five cadence tiers (DAILY, MONTHLY, QUARTERLY,
-    ANNUAL, PORTFOLIO) using Google Gemini, persisted additively in the
-    Insight table, and surfaced here with filtering, per-tier summaries, and
-    an on-demand generation trigger.
+    backend service across four cadence tiers (MONTHLY, QUARTERLY, ANNUAL,
+    PORTFOLIO) using Google Gemini, persisted additively in the Insight
+    table, and surfaced here with filtering, per-tier summaries, and an
+    on-demand generation trigger.
+
+    A fifth DAILY tier shipped briefly in v1 but was retired in v1.1 —
+    single-transaction deltas inflated into dramatic percentage changes and
+    MONTHLY insights already covered the same observations with a
+    full-period comparison. `tier: DAILY` is rejected by POST with 400.
 
     See `docs/specs/backend/15-insights-engine.md` for the generation pipeline
     and `docs/specs/api/15-insights.md` for the API-layer contract this file
     documents.
-  version: 2.0.0
+  version: 2.1.0
 
 components:
   securitySchemes:
@@ -24,9 +29,11 @@ components:
   schemas:
     InsightTier:
       type: string
-      description: Cadence tier that produced the insight.
+      description: |
+        Cadence tier that produced the insight. `DAILY` was retired in
+        v1.1 — it is rejected by POST with 400 and is not a valid value
+        anywhere in the API.
       enum:
-        - DAILY
         - MONTHLY
         - QUARTERLY
         - ANNUAL
@@ -131,8 +138,8 @@ components:
           type: string
           description: |
             Period identifier. Format varies by tier:
-            `YYYY-MM-DD` (DAILY), `YYYY-MM` (MONTHLY), `YYYY-Qn` (QUARTERLY),
-            `YYYY` (ANNUAL), `YYYY-Www` ISO week (PORTFOLIO).
+            `YYYY-MM` (MONTHLY), `YYYY-Qn` (QUARTERLY), `YYYY` (ANNUAL),
+            `YYYY-Www` ISO week (PORTFOLIO).
           example: "2026-Q1"
         date:
           type: string
@@ -168,8 +175,8 @@ components:
           format: date-time
           nullable: true
           description: |
-            TTL cleanup timestamp. Null for ANNUAL (forever). DAILY=+90d,
-            MONTHLY=+2y, QUARTERLY=+5y, PORTFOLIO=+1y.
+            TTL cleanup timestamp. Null for ANNUAL (forever). MONTHLY=+2y,
+            QUARTERLY=+5y, PORTFOLIO=+1y.
         createdAt:
           type: string
           format: date-time
@@ -217,12 +224,12 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/TierSummaryEntry'
           example:
-            DAILY:
-              latestDate: "2026-04-09"
-              latestCreatedAt: "2026-04-09T06:05:00.000Z"
             MONTHLY:
               latestDate: "2026-03-31"
               latestCreatedAt: "2026-04-02T06:05:00.000Z"
+            QUARTERLY:
+              latestDate: "2026-03-31"
+              latestCreatedAt: "2026-04-03T06:05:00.000Z"
         categoryCounts:
           type: object
           description: |
@@ -252,10 +259,13 @@ components:
 
     GenerateInsightsRequest:
       type: object
+      required:
+        - tier
       description: |
-        All fields optional. When `tier` is omitted, the backend runs DAILY.
-        Per-tier required params (`year`/`month`/`quarter`) are enforced by
-        the backend route, not the API layer.
+        `tier` is required — the retired DAILY fallback was removed in v1.1,
+        so the API layer rejects requests with no tier (or `tier: DAILY`)
+        with a 400. Per-tier required params (`year`/`month`/`quarter`) are
+        enforced by the backend route, not the API layer.
       properties:
         tier:
           $ref: '#/components/schemas/InsightTier'
@@ -452,11 +462,12 @@ paths:
         internal `/api/insights/generate` endpoint with `X-API-KEY` and
         returns 202 without waiting for the job to finish.
 
-        When `tier` is omitted, the backend runs `DAILY`. Per-tier required
-        params (`year`/`month`/`quarter`) are validated by the backend, not
-        here.
+        `tier` is required. The DAILY fallback was retired in v1.1 — requests
+        with no tier or `tier: DAILY` are rejected with a 400. Per-tier
+        required params (`year`/`month`/`quarter`) are validated by the
+        backend, not here.
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
@@ -470,7 +481,8 @@ paths:
                 $ref: '#/components/schemas/GenerateInsightsResponse'
         '400':
           description: |
-            Bad request — `tier` is not one of the `InsightTier` enum values.
+            Bad request — `tier` is missing, is `DAILY`, or is not one of
+            the remaining `InsightTier` enum values.
           content:
             application/json:
               schema:

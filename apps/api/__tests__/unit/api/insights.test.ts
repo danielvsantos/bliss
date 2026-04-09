@@ -126,9 +126,9 @@ describe('GET /api/insights', () => {
       {
         id: 'ins-1',
         lens: 'SPENDING_VELOCITY',
-        tier: 'DAILY',
+        tier: 'MONTHLY',
         category: 'SPENDING',
-        periodKey: '2026-04-09',
+        periodKey: '2026-03',
         severity: 'WARNING',
         title: 'Spending up',
         priority: 3,
@@ -140,8 +140,8 @@ describe('GET /api/insights', () => {
       total: 1,
       latestByTier: [
         {
-          tier: 'DAILY',
-          _max: { date: new Date('2026-04-09T00:00:00Z'), createdAt: new Date('2026-04-09T06:05:00Z') },
+          tier: 'MONTHLY',
+          _max: { date: new Date('2026-03-31T00:00:00Z'), createdAt: new Date('2026-04-02T06:05:00Z') },
         },
       ],
       categoryCounts: [{ category: 'SPENDING', _count: { id: 1 } }],
@@ -156,9 +156,9 @@ describe('GET /api/insights', () => {
     expect(res._body.insights).toEqual(insights);
     expect(res._body.total).toBe(1);
     expect(res._body).not.toHaveProperty('latestBatchDate');
-    expect(res._body.tierSummary.DAILY).toEqual({
-      latestDate: new Date('2026-04-09T00:00:00Z'),
-      latestCreatedAt: new Date('2026-04-09T06:05:00Z'),
+    expect(res._body.tierSummary.MONTHLY).toEqual({
+      latestDate: new Date('2026-03-31T00:00:00Z'),
+      latestCreatedAt: new Date('2026-04-02T06:05:00Z'),
     });
     expect(res._body.categoryCounts).toEqual({ SPENDING: 1 });
 
@@ -301,12 +301,12 @@ describe('GET /api/insights', () => {
     seedPrismaDefaults({
       latestByTier: [
         {
-          tier: 'DAILY',
-          _max: { date: new Date('2026-04-09T00:00:00Z'), createdAt: new Date('2026-04-09T06:00:00Z') },
-        },
-        {
           tier: 'MONTHLY',
           _max: { date: new Date('2026-03-31T00:00:00Z'), createdAt: new Date('2026-04-02T06:00:00Z') },
+        },
+        {
+          tier: 'QUARTERLY',
+          _max: { date: new Date('2026-03-31T00:00:00Z'), createdAt: new Date('2026-04-03T06:00:00Z') },
         },
       ],
     });
@@ -317,9 +317,9 @@ describe('GET /api/insights', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(200);
-    expect(Object.keys(res._body.tierSummary)).toEqual(['DAILY', 'MONTHLY']);
-    expect(res._body.tierSummary.DAILY.latestDate).toEqual(new Date('2026-04-09T00:00:00Z'));
-    expect(res._body.tierSummary.MONTHLY.latestCreatedAt).toEqual(new Date('2026-04-02T06:00:00Z'));
+    expect(Object.keys(res._body.tierSummary)).toEqual(['MONTHLY', 'QUARTERLY']);
+    expect(res._body.tierSummary.MONTHLY.latestDate).toEqual(new Date('2026-03-31T00:00:00Z'));
+    expect(res._body.tierSummary.QUARTERLY.latestCreatedAt).toEqual(new Date('2026-04-03T06:00:00Z'));
   });
 
   it('reduces categoryCounts groupBy into a flat map', async () => {
@@ -427,27 +427,26 @@ describe('PUT /api/insights', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/insights', () => {
-  it('returns 202 and fires-and-forgets to backend with default DAILY tier', async () => {
+  it('returns 400 when tier is missing (DAILY fallback was retired)', async () => {
     const req = makeReq({ method: 'POST', body: {} });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
-    expect(res._status).toBe(202);
-    expect(res._body).toMatchObject({
-      message: 'Insight generation started',
-      tier: 'DAILY',
-    });
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/tier is required/i);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 
-    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/api/insights/generate');
-    expect(init.method).toBe('POST');
-    const headers = init.headers as Record<string, string>;
-    expect(headers['X-API-KEY']).toBeDefined();
-    expect(headers['Content-Type']).toBe('application/json');
-    const body = JSON.parse(init.body as string);
-    expect(body).toMatchObject({ tenantId: 'test-tenant-123', force: false });
+  it('returns 400 when tier=DAILY (retired tier rejected)', async () => {
+    const req = makeReq({ method: 'POST', body: { tier: 'DAILY' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/Invalid tier/i);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('forwards tier, year, month, and force params in fetch body', async () => {
@@ -460,9 +459,18 @@ describe('POST /api/insights', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(202);
-    expect(res._body.tier).toBe('MONTHLY');
+    expect(res._body).toMatchObject({
+      message: 'Insight generation started',
+      tier: 'MONTHLY',
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/insights/generate');
+    expect(init.method).toBe('POST');
+    const headers = init.headers as Record<string, string>;
+    expect(headers['X-API-KEY']).toBeDefined();
+    expect(headers['Content-Type']).toBe('application/json');
     const body = JSON.parse(init.body as string);
     expect(body).toMatchObject({
       tenantId: 'test-tenant-123',

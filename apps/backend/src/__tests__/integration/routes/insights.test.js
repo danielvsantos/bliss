@@ -1,5 +1,6 @@
 /**
- * Integration tests for /api/insights routes (v1 — tiered architecture).
+ * Integration tests for /api/insights routes (v1 — tiered architecture,
+ * post-DAILY removal).
  *
  * Tests the full Express route stack: CORS middleware -> apiKeyAuth -> route handler.
  * The insightQueue and insightRetentionService are mocked so tests focus on the
@@ -7,9 +8,8 @@
  *
  * Routes covered:
  *   - POST /api/insights/generate
- *       * Legacy path (tenantId only → defaults to DAILY tier)
  *       * Tiered path (MONTHLY / QUARTERLY / ANNUAL / PORTFOLIO)
- *       * Tier validation (invalid, missing required params)
+ *       * Tier validation (missing, invalid, missing required params)
  *   - POST /api/insights/cleanup
  *       * Auth check
  *       * Happy path (returns deletedCount)
@@ -91,21 +91,15 @@ describe('/api/insights routes', () => {
       expect(enqueueInsightJob).not.toHaveBeenCalled();
     });
 
-    it('legacy path: enqueues with tenantId only and defaults to DAILY', async () => {
+    it('returns 400 when tier is missing (DAILY fallback was retired)', async () => {
       const res = await request(app)
         .post('/api/insights/generate')
         .set('X-API-KEY', API_KEY)
         .send({ tenantId: 'tenant-abc' });
 
-      expect(res.status).toBe(202);
-      expect(res.body).toMatchObject({
-        message: 'Insight generation job enqueued',
-        tier: 'DAILY',
-      });
-      expect(enqueueInsightJob).toHaveBeenCalledWith(
-        'generate-tenant-insights',
-        expect.objectContaining({ tenantId: 'tenant-abc' }),
-      );
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/tier is required/i);
+      expect(enqueueInsightJob).not.toHaveBeenCalled();
     });
 
     it('tiered path: MONTHLY with year+month enqueues and returns tier=MONTHLY', async () => {
@@ -176,12 +170,12 @@ describe('/api/insights routes', () => {
       const res = await request(app)
         .post('/api/insights/generate')
         .set('X-API-KEY', API_KEY)
-        .send({ tenantId: 'tenant-abc', tier: 'DAILY', force: true });
+        .send({ tenantId: 'tenant-abc', tier: 'PORTFOLIO', force: true });
 
       expect(res.status).toBe(202);
       expect(enqueueInsightJob).toHaveBeenCalledWith(
         'generate-tenant-insights',
-        expect.objectContaining({ tier: 'DAILY', force: true }),
+        expect.objectContaining({ tier: 'PORTFOLIO', force: true }),
       );
     });
 
@@ -194,11 +188,22 @@ describe('/api/insights routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/Invalid tier/i);
-      expect(res.body.error).toMatch(/DAILY/);
+      expect(res.body.error).not.toMatch(/DAILY/); // DAILY was removed
       expect(res.body.error).toMatch(/MONTHLY/);
       expect(res.body.error).toMatch(/QUARTERLY/);
       expect(res.body.error).toMatch(/ANNUAL/);
       expect(res.body.error).toMatch(/PORTFOLIO/);
+      expect(enqueueInsightJob).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when tier=DAILY (retired tier rejected)', async () => {
+      const res = await request(app)
+        .post('/api/insights/generate')
+        .set('X-API-KEY', API_KEY)
+        .send({ tenantId: 'tenant-abc', tier: 'DAILY' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/Invalid tier/i);
       expect(enqueueInsightJob).not.toHaveBeenCalled();
     });
 
@@ -259,7 +264,7 @@ describe('/api/insights routes', () => {
       const res = await request(app)
         .post('/api/insights/generate')
         .set('X-API-KEY', API_KEY)
-        .send({ tenantId: 'tenant-abc' });
+        .send({ tenantId: 'tenant-abc', tier: 'PORTFOLIO' });
 
       expect(res.status).toBe(500);
       expect(res.body.error).toMatch(/Failed to enqueue/i);

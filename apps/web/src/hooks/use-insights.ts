@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
-export type InsightTier = 'DAILY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
+export type InsightTier = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
 export type InsightCategory = 'SPENDING' | 'INCOME' | 'SAVINGS' | 'PORTFOLIO' | 'DEBT' | 'NET_WORTH';
 
 interface InsightParams {
@@ -9,8 +9,8 @@ interface InsightParams {
   offset?: number;
   lens?: string;
   severity?: string;
-  tier?: string;
-  category?: string;
+  tier?: InsightTier;
+  category?: InsightCategory;
   periodKey?: string;
   includeDismissed?: boolean;
 }
@@ -36,7 +36,7 @@ export function useDismissInsight() {
 }
 
 interface GenerateOptions {
-  tier?: string;
+  tier: InsightTier; // required — the retired DAILY fallback was removed in v1
   year?: number;
   month?: number;
   quarter?: number;
@@ -48,7 +48,7 @@ export function useGenerateInsights() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (options?: GenerateOptions) => api.generateInsights(options),
+    mutationFn: (options: GenerateOptions) => api.generateInsights(options),
     onSuccess: () => {
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['insights'] });

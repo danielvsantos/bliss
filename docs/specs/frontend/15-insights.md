@@ -4,25 +4,32 @@ This document specifies the frontend Insights page — the user-facing surface f
 
 ## 15.1. Overview
 
-The Insights page presents up to five tiers of AI-generated financial observations, grouped by category and filtered by severity. Users can browse by category tab, dismiss individual insights, and trigger on-demand generation for any tier via the "Generate" button.
+The Insights page presents the four insight tiers (MONTHLY, QUARTERLY, ANNUAL, PORTFOLIO) as **primary navigation**. At any time one tier is active; within the active tier the user picks a period from a dropdown and optionally filters the visible cards by one or more categories.
+
+> **Note — DAILY tier retired.** The v1 design also included a DAILY "pulse" tier backed by Gemini Flash. It was removed in v1.1 because single-transaction deltas inflated into dramatic percentage changes and MONTHLY insights already covered the same observations with a full-period comparison. The frontend no longer renders a DAILY tab, no DAILY label in `insight-card.tsx`, and the `InsightTier` union no longer contains `'DAILY'`.
 
 - **Route**: `/insights`
 - **File**: `src/pages/insights.tsx`
 - **Navigation**: "Insights" link in the main Sidebar
+- **Landing tier**: `MONTHLY` (highest-signal review that runs every month)
 
 Layout at a glance:
 
 ```
 InsightsPage
-  ├── Header (title + subtitle + Generate button)
-  ├── Category tab bar (All | Spending | Income | Savings | Portfolio | Debt | Net Worth)
-  ├── Severity filter chips (All | Positive | Info | Warning | Critical)
-  └── Insights grouped by tier, in order:
-         ANNUAL → QUARTERLY → MONTHLY → PORTFOLIO → DAILY
-         (each group renders InsightCard[])
-      + Empty state per category
+  ├── Header
+  │     ├── Title + subtitle + "last updated" label for the active tier
+  │     └── Right-side actions: Generate button + overflow menu (⋯)
+  ├── Tier navigation bar (Monthly | Quarterly | Annual | Portfolio)
+  ├── Period selector (Select dropdown — populated from distinct periodKeys in the active tier)
+  ├── Category chip row (multi-select: Spending, Income, Savings, Portfolio, Debt, Net Worth)
+  │     + "Clear filters" link when any chip is active
+  └── Insights list for (active tier, selected period, selected categories)
+      + Empty state per tier
       + Loading skeletons while generation is in flight
 ```
+
+Severity is expressed via the colored left-border on each `InsightCard` (not as a filter row). This keeps the filter surface focused on tier / period / category — the three axes users actually reason about — and avoids the earlier noise of a fifth filter that most users never touched.
 
 ## 15.2. Data Flow
 
@@ -42,22 +49,22 @@ All three methods serialize their inputs directly onto the request; no client-si
 - **Exports**:
 
 ```typescript
-export type InsightTier = 'DAILY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
+export type InsightTier = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
 export type InsightCategory = 'SPENDING' | 'INCOME' | 'SAVINGS' | 'PORTFOLIO' | 'DEBT' | 'NET_WORTH';
 
 interface InsightParams {
   limit?: number;
   offset?: number;
   lens?: string;
-  severity?: string;
-  tier?: string;
-  category?: string;
+  severity?: 'POSITIVE' | 'INFO' | 'WARNING' | 'CRITICAL';
+  tier?: InsightTier;
+  category?: InsightCategory;
   periodKey?: string;
   includeDismissed?: boolean;
 }
 
 interface GenerateOptions {
-  tier?: string;
+  tier: InsightTier;    // required — the retired DAILY fallback was removed in v1.1
   year?: number;
   month?: number;
   quarter?: number;
@@ -69,6 +76,8 @@ useInsights(params?: InsightParams)    // useQuery — 5min staleTime
 useDismissInsight()                     // useMutation — invalidates ['insights'] on success
 useGenerateInsights()                   // useMutation — invalidates ['insights'] after 5s delay
 ```
+
+`InsightTier` and `InsightCategory` are typed unions — TypeScript rejects `tier: 'DAILY'` at compile time. `GenerateOptions.tier` is mandatory because the backend route requires it; callers must pass an explicit tier when triggering generation.
 
 The 5-second delay on `useGenerateInsights` gives the backend time to enqueue, dequeue, and persist before the refetch. Both mutation hooks use query key `['insights']` for invalidation so any active `useInsights` call re-fetches.
 
@@ -87,48 +96,70 @@ The GET response (see `docs/specs/api/15-insights.md` section 15.3.2) is the sou
 
 - Title: `t('insights.title')`
 - Subtitle: `t('insights.v1Subtitle')`
-- Generate button: `t('insights.generateNew')` / `t('insights.generating')` during loading
-- Loading spinner (Loader2 from lucide-react) while `isGenerating`
+- "Last updated" label: `insights.lastUpdated` + formatted `tierSummary[activeTier].latestCreatedAt`
+- Primary action: `t('insights.refreshTier', { tier })` — regenerates the currently-selected period of the active tier with `force: true`
+- Overflow menu (`MoreHorizontal` icon): `t('insights.generateAll')` and `t('insights.reload')`
+- Spinner (Loader2 from lucide-react) while `isGenerating`
 
-### 15.3.2. Category Tabs
+### 15.3.2. Tier Navigation Bar
 
-Seven tabs rendered as a horizontal button bar. Each tab carries a Lucide icon and a count badge driven by `categoryCounts`:
+Four buttons rendered as a horizontal pill group. Each pill shows a Lucide icon, the i18n label, and a count derived from the tier's insight total:
 
-| Tab key      | i18n                              | Icon             |
+| Tier key     | i18n                              | Icon             |
 |--------------|-----------------------------------|------------------|
-| `all`        | `insights.categories.all`         | `Sparkles`       |
-| `SPENDING`   | `insights.categories.spending`    | `TrendingDown`   |
-| `INCOME`     | `insights.categories.income`      | `TrendingUp`     |
-| `SAVINGS`    | `insights.categories.savings`     | `PiggyBank`      |
-| `PORTFOLIO`  | `insights.categories.portfolio`   | `LineChart`      |
-| `DEBT`       | `insights.categories.debt`        | `Landmark`       |
-| `NET_WORTH`  | `insights.categories.netWorth`    | `Gem`            |
+| `MONTHLY`    | `insights.tiers.monthly`          | `CalendarDays`   |
+| `QUARTERLY`  | `insights.tiers.quarterly`        | `LineChart`      |
+| `ANNUAL`     | `insights.tiers.annual`           | `Crown`          |
+| `PORTFOLIO`  | `insights.tiers.portfolio`        | `Briefcase`      |
 
-Selecting a tab updates the `activeCategory` state and re-runs `useInsights` with the corresponding `category` filter. The `all` tab clears the category filter entirely.
+Selecting a tier sets `activeTier` state and triggers a re-fetch with `tier: activeTier`. Switching tiers also resets `selectedCategories` to the empty set — otherwise a filter leftover from the previous tier could leave the user staring at an empty screen in the new tier.
 
-### 15.3.3. Severity Filter
+### 15.3.3. Period Selector
 
-Five radio-like buttons: All | POSITIVE | INFO | WARNING | CRITICAL. Selecting one updates the `severityFilter` state and re-runs `useInsights` with the `severity` query param. Keys: `insights.severity.POSITIVE` etc.
+A shadcn/ui `Select` populated from distinct `periodKey` values in the current tier's insights, sorted newest-first. Format per tier:
 
-### 15.3.4. Insight Groups (by Tier)
+| Tier      | `periodKey` example | Display label            |
+|-----------|---------------------|--------------------------|
+| MONTHLY   | `2026-03`           | `March 2026`             |
+| QUARTERLY | `2026-Q1`           | `Q1 2026` (i18n: `period.q`) |
+| ANNUAL    | `2025`              | `2025`                   |
+| PORTFOLIO | `2026-W14`          | `2026 · W14`             |
 
-Within the active category, insights are grouped by tier in this display order:
+Helpers `comparePeriodsDesc()` and `formatPeriodLabel(tier, periodKey, t)` live inline in `insights.tsx`. When the active tier changes, `selectedPeriodKey` auto-defaults to the newest available period for that tier.
 
-1. `ANNUAL` (highest weight — year-in-review)
-2. `QUARTERLY`
-3. `MONTHLY`
-4. `PORTFOLIO`
-5. `DAILY`
+### 15.3.4. Category Chip Row
 
-Each group renders a section header with `insights.tiers.<tier>` and an `InsightCard[]` list. Empty tiers are not rendered.
+Six shadcn/ui `Badge`-based chips (one per category) rendered below the period selector. Each chip is multi-selectable — clicking toggles its membership in a `Set<InsightCategory>`. Each chip carries a count of matching insights in the currently-visible period.
 
-### 15.3.5. Empty State
+- Active chip: `bg-brand-primary text-white`
+- Inactive chip: `bg-muted text-muted-foreground hover:bg-accent`
+- When at least one chip is active, a `Clear` link (`t('insights.clearFilters')`) appears to reset the set.
 
-When the active category has no insights, the page renders `insights.noCategoryInsights` with a reassuring illustration. When the tenant has **no** insights at all, `insights.noInsightsYet` + `insights.noInsightsDesc` is shown.
+Only the selected chips filter the list. An empty set means "all categories visible".
 
-### 15.3.6. Loading Skeletons
+### 15.3.5. Insights List
 
-During generation, the page renders skeleton cards in place of the tier groups. The `isGenerating` state is set `true` when the Generate button is clicked, cleared when a refetch returns a new `tierSummary[tier].latestCreatedAt`, and force-cleared after 45 s to guard against stuck states.
+The visible cards are computed client-side from the already-fetched tier query:
+
+```typescript
+const visibleInsights = useMemo(() => {
+  const bucket = insights.filter((i) => i.periodKey === selectedPeriodKey);
+  if (selectedCategories.size === 0) return bucket;
+  return bucket.filter((i) => selectedCategories.has(i.category));
+}, [insights, selectedPeriodKey, selectedCategories]);
+```
+
+Each insight renders as an `InsightCard`. Severity shows up only as the card's left-border color — there is no separate severity filter row.
+
+### 15.3.6. Empty State
+
+- No insights in the active tier at all → `insights.noTierInsightsDesc` with a reassuring illustration and a "Regenerate tier" CTA.
+- Active tier has insights but the selected chips filter them all out → `insights.noCategoryInsights` + `Clear filters` link.
+- Tenant has no insights anywhere → `insights.noInsightsYet` + `insights.noInsightsDesc` (rendered above the tier bar).
+
+### 15.3.7. Loading Skeletons
+
+During generation, the page renders skeleton cards in place of the list. The `isGenerating` state is set `true` when any Generate action fires, the hook polls every 10 s while generating, and the state clears on the first refetch that shows a newer `tierSummary[activeTier].latestCreatedAt` or after a 45 s watchdog timeout.
 
 ## 15.4. `InsightCard` Component
 
@@ -171,13 +202,12 @@ interface InsightCardProps {
 
 | Tier      | Background           | Foreground token    |
 |-----------|----------------------|---------------------|
-| DAILY     | `bg-muted`           | `text-muted-foreground` |
 | MONTHLY   | `bg-brand-primary/10`| `text-brand-primary` |
 | QUARTERLY | `bg-positive/10`     | `text-positive`     |
 | ANNUAL    | `bg-warning/10`      | `text-warning`      |
 | PORTFOLIO | `bg-brand-deep/10`   | `text-brand-deep`   |
 
-All colors come from design tokens. Raw Tailwind color utilities (e.g. `green-500`, `amber-100`) are forbidden here — see the frontend design system spec for rationale.
+The fallback when a row carries an unknown `tier` is the `MONTHLY` style (the retired `DAILY` fallback was removed in v1.1). All colors come from design tokens. Raw Tailwind color utilities (e.g. `green-500`, `amber-100`) are forbidden here — see the frontend design system spec for rationale.
 
 ### 15.4.5. Animation
 
@@ -185,19 +215,28 @@ Each card enters with a framer-motion fade-up (`opacity 0→1`, `y 8→0`) with 
 
 ## 15.5. Internationalization
 
-All user-facing strings come from the i18n translation system (`react-i18next`, 5 locales: `en`, `es`, `fr`, `pt`, `it`). The Insights page adds the following key families:
+All user-facing strings come from the i18n translation system (`react-i18next`, 5 locales: `en`, `es`, `fr`, `pt`, `it`). The Insights page uses the following key families:
 
 ```
 insights.title
 insights.v1Subtitle
 insights.generating
 insights.generateNew
+insights.generateAll
+insights.refreshTier          // interpolation: { tier }
+insights.reload
+insights.clearFilters
+insights.moreActions
+insights.lastUpdated
 insights.noCategoryInsights
+insights.noTierInsightsDesc
 insights.noInsightsYet
 insights.noInsightsDesc
 insights.categories.{all, spending, income, savings, portfolio, debt, netWorth}
-insights.tiers.{daily, monthly, quarterly, annual, portfolio}
+insights.tiers.{monthly, quarterly, annual, portfolio}   // DAILY removed in v1.1
 insights.severity.{POSITIVE, INFO, WARNING, CRITICAL}
+insights.period.selectPlaceholder
+insights.period.q                                          // "Q" prefix used in Q1/Q2/Q3/Q4 labels
 insights.lenses.{SPENDING_VELOCITY, CATEGORY_CONCENTRATION, UNUSUAL_SPENDING,
                  INCOME_STABILITY, INCOME_DIVERSIFICATION,
                  SAVINGS_RATE, SAVINGS_TREND,
@@ -206,33 +245,44 @@ insights.lenses.{SPENDING_VELOCITY, CATEGORY_CONCENTRATION, UNUSUAL_SPENDING,
                  NET_WORTH_TRAJECTORY, NET_WORTH_MILESTONES}
 ```
 
+All five locales (`en.ts`, `es.ts`, `fr.ts`, `pt.ts`, `it.ts`) must carry the full set. In v1.1 the `insights.tiers.daily` key was removed from every locale and the new period / action keys were added in lockstep.
+
 ## 15.6. On-Demand Generation Flow
 
-The "Generate" button kicks off the full refresh cycle:
+### 15.6.1. Primary Refresh (Active Tier)
 
-1. User clicks `t('insights.generateNew')`.
-2. `useGenerateInsights().mutate()` is called. By default (no options), the backend runs `generateTieredInsights(tenantId, 'DAILY')`.
-3. `isGenerating` state is set `true` and skeleton cards replace the tier groups.
-4. After the mutation resolves, `setTimeout(() => invalidateQueries(['insights']), 5000)` schedules a refetch 5 s later.
-5. When the refetch returns, `isGenerating` is cleared (or force-cleared after 45 s).
+The primary action button regenerates the active tier's currently-selected period:
 
-### 15.6.1. Per-Tier Manual Refresh (Future)
+1. User clicks `t('insights.refreshTier', { tier })`.
+2. `handleGenerateActive()` parses `selectedPeriodKey` back into `{ year, month? | quarter? }` depending on the active tier's format.
+3. `useGenerateInsights().mutate({ tier: activeTier, year, month?, quarter?, periodKey, force: true })` is called. `tier` is always explicit — the hook's `GenerateOptions.tier` field is non-optional.
+4. `isGenerating` state is set `true` and skeleton cards replace the list.
+5. After the mutation resolves, `setTimeout(() => invalidateQueries(['insights']), 5000)` schedules a refetch 5 s later. The page also polls every 10 s while `isGenerating` is true.
+6. When the refetch returns a newer `tierSummary[activeTier].latestCreatedAt`, `isGenerating` is cleared (or force-cleared after 45 s).
 
-The `useGenerateInsights` hook accepts `GenerateOptions` so future UI can add per-tier "Regenerate Q1 Review" buttons:
+### 15.6.2. Generate All Tiers
+
+The overflow menu exposes `t('insights.generateAll')`, which fires four generations back-to-back — one per tier — with sensible default periods computed in UTC:
 
 ```typescript
-const { mutate: regenerate } = useGenerateInsights();
-regenerate({ tier: 'QUARTERLY', year: 2026, quarter: 1, force: true });
+await Promise.all([
+  generate({ tier: 'MONTHLY',   year: priorMonth.y,   month: priorMonth.m,       force: true }),
+  generate({ tier: 'QUARTERLY', year: priorQuarter.y, quarter: priorQuarter.q,   force: true }),
+  generate({ tier: 'ANNUAL',    year: priorYear,                                  force: true }),
+  generate({ tier: 'PORTFOLIO',                                                   force: true }),
+]);
 ```
 
 The `force: true` flag bypasses the backend's completeness gate and dedup, which is useful when a user knows they've just finished backfilling data for a period.
 
+> The retired DAILY tier is intentionally not part of `handleGenerateAll`. Invoking `generate({ tier: 'DAILY' })` fails the TypeScript check and would be rejected by the API layer with a 400.
+
 ## 15.7. Tests
 
 - **File**: `src/hooks/use-insights.test.tsx`
-  - `useInsights`: default (empty filter), limit/offset passthrough, tier/category/periodKey/includeDismissed filters, combined filters, cache isolation per filter combination
+  - `useInsights`: default (empty filter), limit/offset passthrough, tier/category/periodKey/includeDismissed filters, combined filters, cache isolation per filter combination (asserted with MONTHLY → QUARTERLY rerender — DAILY is no longer a member of the union)
   - `useDismissInsight`: dismiss + restore, cache invalidation
-  - `useGenerateInsights`: no-options call, per-tier payloads (MONTHLY/QUARTERLY/ANNUAL/PORTFOLIO), `force: true` manual refresh flow, 5-second invalidation delay
+  - `useGenerateInsights`: required-tier payload (MONTHLY) with 5-second invalidation delay, per-tier payloads (MONTHLY/QUARTERLY/ANNUAL/PORTFOLIO), `force: true` manual refresh flow
 
 Test pattern: `renderHook` + `@testing-library/react` wrapper with a `QueryClientProvider`. The `api` module is mocked with `vi.mock('@/lib/api', ...)`.
 

@@ -2,14 +2,18 @@
  * Unit tests for insightService (v1 — tiered architecture).
  *
  * Covers:
- *   - generateTieredInsights() for each of the 5 tiers (DAILY/MONTHLY/QUARTERLY/ANNUAL/PORTFOLIO)
- *   - generateAllDueTiers() calendar gating (daily always runs, monthly on days 1-3, etc.)
- *   - generateInsights() legacy wrapper (delegates to DAILY)
+ *   - generateTieredInsights() for each of the 4 tiers
+ *     (MONTHLY / QUARTERLY / ANNUAL / PORTFOLIO)
+ *   - generateAllDueTiers() calendar gating (monthly on days 1-3,
+ *     quarterly on first 5 days of Jan/Apr/Jul/Oct, annual on first 5 of Jan)
  *   - Completeness gating (canRun=false → skipped unless force=true)
  *   - Additive persistence + dedup via (tenantId, tier, periodKey, dataHash)
  *   - Dismissed state preservation across regenerations
  *   - filterActiveLenses() tier/data-dependent lens selection
  *   - Severity/priority validation + category assignment
+ *
+ * Note: the DAILY tier was retired. The daily 6 AM UTC cron is kept purely
+ * as a scheduling heartbeat for the calendar-gated tiers.
  */
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
@@ -23,7 +27,7 @@ jest.mock('../../../utils/logger', () => ({
 const mockTenantFindUnique = jest.fn();
 const mockAnalyticsFindMany = jest.fn();
 const mockPortfolioItemFindMany = jest.fn();
-const mockPortfolioHistoryFindMany = jest.fn();
+const mockPortfolioHistoryGroupBy = jest.fn();
 const mockSecurityMasterFindMany = jest.fn();
 const mockInsightFindFirst = jest.fn();
 const mockInsightFindMany = jest.fn();
@@ -39,7 +43,10 @@ jest.mock('../../../../prisma/prisma.js', () => ({
     findMany: (...args) => mockPortfolioItemFindMany(...args),
   },
   portfolioValueHistory: {
-    findMany: (...args) => mockPortfolioHistoryFindMany(...args),
+    // `gatherNetWorthHistory` aggregates server-side via groupBy — see the
+    // P6009 payload-size fix in insightService.js. Tests must mock groupBy,
+    // not findMany.
+    groupBy: (...args) => mockPortfolioHistoryGroupBy(...args),
   },
   securityMaster: {
     findMany: (...args) => mockSecurityMasterFindMany(...args),
@@ -57,8 +64,11 @@ jest.mock('../../../services/geminiService', () => ({
   generateInsightContent: (...args) => mockGenerateInsightContent(...args),
 }));
 
+// insightService (v2) must be a pure read consumer of CurrencyRate. It only
+// calls `getRatesForDateRange` (bulk range scan) via `prefetchRatesForTier`.
+// `getOrCreateCurrencyRate` is forbidden — see insightService.hygiene.test.js
+// for the structural invariant that enforces this.
 jest.mock('../../../services/currencyService', () => ({
-  getOrCreateCurrencyRate: jest.fn().mockResolvedValue(1.0),
   getRatesForDateRange: jest.fn().mockResolvedValue(new Map()),
 }));
 
@@ -74,8 +84,9 @@ jest.mock('../../../services/dataCompletenessService', () => ({
 
 const {
   generateTieredInsights,
-  generateInsights,
   generateAllDueTiers,
+  derivePeriodKey,
+  gatherEquityFundamentals,
   filterActiveLenses,
   TIER_LENSES,
   LENS_CATEGORY_MAP,
@@ -85,8 +96,9 @@ const {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Seeds the Prisma mocks so that DAILY/MONTHLY data gathering produces a
- * tenant with both transactions and a portfolio item (used by filterActiveLenses).
+ * Seeds the Prisma mocks so that MONTHLY / QUARTERLY / ANNUAL / PORTFOLIO
+ * data gathering produces a tenant with both transactions and a portfolio
+ * item (used by filterActiveLenses).
  */
 function setupBasicTenantData() {
   mockTenantFindUnique.mockResolvedValue({ portfolioCurrency: 'USD' });
@@ -103,16 +115,18 @@ function setupBasicTenantData() {
 
   mockPortfolioItemFindMany.mockResolvedValue([
     {
-      name: 'AAPL', ticker: 'AAPL', symbol: 'AAPL', currency: 'USD',
+      name: 'AAPL', symbol: 'AAPL', currency: 'USD',
       currentValue: 10000, costBasis: 8000, quantity: 50, realizedPnL: 0,
       category: { name: 'Stocks', group: 'Equities', type: 'Investments' },
       debtTerms: null,
     },
   ]);
 
-  mockPortfolioHistoryFindMany.mockResolvedValue([
-    { date: new Date('2026-03-01'), valueInUSD: 50000 },
-    { date: new Date('2026-03-15'), valueInUSD: 52000 },
+  // Matches the shape returned by
+  // `prisma.portfolioValueHistory.groupBy({ by: ['date'], _sum: { valueInUSD } })`.
+  mockPortfolioHistoryGroupBy.mockResolvedValue([
+    { date: new Date('2026-03-01'), _sum: { valueInUSD: 50000 } },
+    { date: new Date('2026-03-15'), _sum: { valueInUSD: 52000 } },
   ]);
 
   mockSecurityMasterFindMany.mockResolvedValue([
@@ -156,8 +170,12 @@ describe('insightService (v1)', () => {
 
   // ── Constants & static exports ───────────────────────────────────────────
   describe('exports', () => {
-    it('exposes VALID_TIERS with all 5 tiers', () => {
-      expect(VALID_TIERS).toEqual(['DAILY', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO']);
+    it('exposes VALID_TIERS with the 4 active tiers (no DAILY)', () => {
+      expect(VALID_TIERS).toEqual(['MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO']);
+    });
+
+    it('does not expose a DAILY tier key in TIER_LENSES', () => {
+      expect(TIER_LENSES.DAILY).toBeUndefined();
     });
 
     it('TIER_LENSES has entries for every valid tier', () => {
@@ -205,70 +223,9 @@ describe('insightService (v1)', () => {
     });
   });
 
-  // ── generateTieredInsights — DAILY ───────────────────────────────────────
-  describe('generateTieredInsights(DAILY)', () => {
-    it('uses Flash model (useFastModel: true) and inserts insights', async () => {
-      setupBasicTenantData();
-      completenessPasses();
-
-      mockGenerateInsightContent.mockResolvedValue([
-        { lens: 'SPENDING_VELOCITY', title: 'Dining up', body: 'Dining rose 15%.', severity: 'WARNING', priority: 70, metadata: {} },
-      ]);
-
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
-
-      expect(mockCheckTierCompleteness).toHaveBeenCalledWith('tenant-1', 'DAILY', expect.any(Object));
-      expect(mockGenerateInsightContent).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ useFastModel: true }),
-      );
-      expect(mockInsightCreateMany).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.arrayContaining([
-          expect.objectContaining({
-            lens: 'SPENDING_VELOCITY',
-            tier: 'DAILY',
-            category: 'SPENDING',
-            severity: 'WARNING',
-            periodKey: expect.any(String),
-          }),
-        ]),
-      }));
-      expect(result.insights).toHaveLength(1);
-      expect(result.batchId).toBeDefined();
-      expect(result.periodKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    });
-
-    it('skips when completeness check fails', async () => {
-      completenessFails('Too few days');
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
-      expect(result.skipped).toBe(true);
-      expect(result.reason).toBe('Too few days');
-      expect(mockGenerateInsightContent).not.toHaveBeenCalled();
-      expect(mockInsightCreateMany).not.toHaveBeenCalled();
-    });
-
-    it('bypasses completeness when force=true', async () => {
-      setupBasicTenantData();
-      // force=true goes through checkTierCompleteness but the caller doesn't rely on its result
-      // In the real implementation, completeness service returns canRun:true when force.
-      mockCheckTierCompleteness.mockResolvedValue({ canRun: true, forced: true, details: null, comparisonAvailable: true });
-
-      mockGenerateInsightContent.mockResolvedValue([
-        { lens: 'SPENDING_VELOCITY', title: 'x', body: 'y', severity: 'INFO', priority: 50 },
-      ]);
-
-      const result = await generateTieredInsights('tenant-1', 'DAILY', { force: true });
-      expect(mockCheckTierCompleteness).toHaveBeenCalledWith(
-        'tenant-1', 'DAILY',
-        expect.objectContaining({ force: true }),
-      );
-      expect(result.insights).toHaveLength(1);
-    });
-  });
-
   // ── generateTieredInsights — MONTHLY ─────────────────────────────────────
   describe('generateTieredInsights(MONTHLY)', () => {
-    it('uses Pro model (useFastModel: false) and emits YYYY-MM period key', async () => {
+    it('emits a YYYY-MM period key and persists the insight with tier=MONTHLY', async () => {
       setupBasicTenantData();
       completenessPasses({ comparisonAvailable: { previousMonth: true, sameMonthLastYear: false } });
 
@@ -280,10 +237,12 @@ describe('insightService (v1)', () => {
         year: 2026, month: 3, periodKey: '2026-03',
       });
 
-      expect(mockGenerateInsightContent).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ useFastModel: false }),
+      expect(mockCheckTierCompleteness).toHaveBeenCalledWith(
+        'tenant-1', 'MONTHLY', expect.any(Object),
       );
+      // The Flash model path was retired with DAILY; generateInsightContent
+      // is called with a single positional argument (the prompt).
+      expect(mockGenerateInsightContent).toHaveBeenCalledWith(expect.any(String));
       expect(result.periodKey).toBe('2026-03');
       expect(mockInsightCreateMany).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.arrayContaining([
@@ -291,11 +250,42 @@ describe('insightService (v1)', () => {
         ]),
       }));
     });
+
+    it('skips when completeness check fails', async () => {
+      completenessFails('Month is not yet closed');
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3,
+      });
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toBe('Month is not yet closed');
+      expect(mockGenerateInsightContent).not.toHaveBeenCalled();
+      expect(mockInsightCreateMany).not.toHaveBeenCalled();
+    });
+
+    it('bypasses completeness when force=true', async () => {
+      setupBasicTenantData();
+      mockCheckTierCompleteness.mockResolvedValue({
+        canRun: true, forced: true, details: null, comparisonAvailable: true,
+      });
+
+      mockGenerateInsightContent.mockResolvedValue([
+        { lens: 'SPENDING_VELOCITY', title: 'x', body: 'y', severity: 'INFO', priority: 50 },
+      ]);
+
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3, force: true,
+      });
+      expect(mockCheckTierCompleteness).toHaveBeenCalledWith(
+        'tenant-1', 'MONTHLY',
+        expect.objectContaining({ force: true }),
+      );
+      expect(result.insights).toHaveLength(1);
+    });
   });
 
   // ── generateTieredInsights — QUARTERLY ───────────────────────────────────
   describe('generateTieredInsights(QUARTERLY)', () => {
-    it('emits YYYY-Qn period key and uses Pro model', async () => {
+    it('emits YYYY-Qn period key', async () => {
       setupBasicTenantData();
       completenessPasses({
         comparisonAvailable: { previousQuarter: true, sameQuarterLastYear: true },
@@ -309,10 +299,7 @@ describe('insightService (v1)', () => {
         year: 2026, quarter: 1, periodKey: '2026-Q1',
       });
 
-      expect(mockGenerateInsightContent).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ useFastModel: false }),
-      );
+      expect(mockGenerateInsightContent).toHaveBeenCalledWith(expect.any(String));
       expect(result.periodKey).toBe('2026-Q1');
     });
   });
@@ -379,7 +366,9 @@ describe('insightService (v1)', () => {
       completenessPasses();
       mockInsightFindFirst.mockResolvedValue({ id: 1, batchId: 'existing-batch' });
 
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3, periodKey: '2026-03',
+      });
 
       expect(result.skipped).toBe(true);
       expect(result.reason).toMatch(/unchanged/i);
@@ -396,7 +385,9 @@ describe('insightService (v1)', () => {
         { lens: 'SPENDING_VELOCITY', title: 'x', body: 'y', severity: 'INFO', priority: 50 },
       ]);
 
-      const result = await generateTieredInsights('tenant-1', 'DAILY', { force: true });
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3, periodKey: '2026-03', force: true,
+      });
 
       expect(result.insights).toHaveLength(1);
       expect(mockInsightCreateMany).toHaveBeenCalled();
@@ -417,7 +408,9 @@ describe('insightService (v1)', () => {
         { lens: 'INCOME_STABILITY', title: 'a', body: 'b', severity: 'INFO', priority: 50 },
       ]);
 
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3, periodKey: '2026-03',
+      });
 
       // SPENDING_VELOCITY should inherit dismissed=true; INCOME_STABILITY should not
       const dismissed = result.insights.find((i) => i.lens === 'SPENDING_VELOCITY');
@@ -437,7 +430,9 @@ describe('insightService (v1)', () => {
         { lens: 'SPENDING_VELOCITY', title: 'x', body: 'y', severity: 'BOGUS', priority: 9999 },
       ]);
 
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3,
+      });
       expect(result.insights).toHaveLength(1);
       expect(result.insights[0].severity).toBe('INFO');
       expect(result.insights[0].priority).toBe(100);
@@ -451,7 +446,9 @@ describe('insightService (v1)', () => {
         { lens: 'SAVINGS_RATE', title: 'x', body: 'y', severity: 'POSITIVE', priority: 50 },
       ]);
 
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3,
+      });
       expect(result.insights[0].category).toBe(LENS_CATEGORY_MAP.SAVINGS_RATE);
     });
 
@@ -460,32 +457,11 @@ describe('insightService (v1)', () => {
       completenessPasses();
       mockGenerateInsightContent.mockResolvedValue([]);
 
-      const result = await generateTieredInsights('tenant-1', 'DAILY');
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3,
+      });
       expect(result.insights).toEqual([]);
       expect(mockInsightCreateMany).not.toHaveBeenCalled();
-    });
-  });
-
-  // ── Legacy generateInsights() wrapper ────────────────────────────────────
-  describe('generateInsights() (legacy wrapper)', () => {
-    it('delegates to DAILY tier', async () => {
-      setupBasicTenantData();
-      completenessPasses();
-      mockGenerateInsightContent.mockResolvedValue([
-        { lens: 'SPENDING_VELOCITY', title: 'x', body: 'y', severity: 'INFO', priority: 50 },
-      ]);
-
-      const result = await generateInsights('tenant-1');
-
-      expect(mockCheckTierCompleteness).toHaveBeenCalledWith('tenant-1', 'DAILY', expect.any(Object));
-      expect(result.insights).toHaveLength(1);
-      // Confirm object shape (not array)
-      expect(Array.isArray(result)).toBe(false);
-      expect(result).toEqual(expect.objectContaining({
-        insights: expect.any(Array),
-        batchId: expect.any(String),
-        periodKey: expect.any(String),
-      }));
     });
   });
 
@@ -512,7 +488,7 @@ describe('insightService (v1)', () => {
       global.Date = MockDate;
     }
 
-    it('always runs DAILY', async () => {
+    it('returns empty results mid-month when no tier window is open', async () => {
       freezeNow('2026-05-15T12:00:00Z'); // mid-month, nothing else due
       setupBasicTenantData();
       completenessPasses();
@@ -522,7 +498,8 @@ describe('insightService (v1)', () => {
 
       const results = await generateAllDueTiers('tenant-1');
 
-      expect(results.DAILY).toBeDefined();
+      // DAILY tier was retired; mid-month produces no tiered output
+      expect(results.DAILY).toBeUndefined();
       expect(results.MONTHLY).toBeUndefined();
       expect(results.QUARTERLY).toBeUndefined();
       expect(results.ANNUAL).toBeUndefined();
@@ -592,6 +569,205 @@ describe('insightService (v1)', () => {
 
       const results = await generateAllDueTiers('tenant-1');
       expect(results.MONTHLY).toBeUndefined();
+    });
+  });
+
+  // ── derivePeriodKey — regression for v1.1 period-selector bug ────────────
+  //
+  // The frontend's "Generate all" and per-tier refresh send explicit
+  // year/month/quarter but no periodKey. Before the fix, the service fell
+  // back to `getPeriodKey(tier, new Date())` which used *today's* period
+  // — an ANNUAL report about 2025 landed under 2026, a QUARTERLY Q1 under
+  // Q2, a MONTHLY March under April. Lock this down at the helper level.
+  describe('derivePeriodKey()', () => {
+    it('prefers an explicit periodKey when provided', () => {
+      expect(derivePeriodKey('MONTHLY', { periodKey: '2099-12', year: 2026, month: 3 }))
+        .toBe('2099-12');
+    });
+
+    it('derives a MONTHLY key from year+month (not today)', () => {
+      expect(derivePeriodKey('MONTHLY', { year: 2026, month: 3 })).toBe('2026-03');
+      expect(derivePeriodKey('MONTHLY', { year: 2025, month: 12 })).toBe('2025-12');
+    });
+
+    it('derives a QUARTERLY key from year+quarter (not today)', () => {
+      expect(derivePeriodKey('QUARTERLY', { year: 2026, quarter: 1 })).toBe('2026-Q1');
+      expect(derivePeriodKey('QUARTERLY', { year: 2025, quarter: 4 })).toBe('2025-Q4');
+    });
+
+    it('derives an ANNUAL key from year (not today)', () => {
+      expect(derivePeriodKey('ANNUAL', { year: 2025 })).toBe('2025');
+    });
+
+    it('falls back to the current ISO week for PORTFOLIO (current-state tier)', () => {
+      const key = derivePeriodKey('PORTFOLIO', {});
+      // ISO week format: YYYY-Www
+      expect(key).toMatch(/^\d{4}-W\d{2}$/);
+    });
+  });
+
+  describe('generateTieredInsights periodKey derivation (v1.1 regression)', () => {
+    it('ANNUAL generated during 2026 for year=2025 lands under periodKey "2025", not "2026"', async () => {
+      setupBasicTenantData();
+      completenessPasses({ comparisonAvailable: { previousYear: true, twoYearsAgo: false } });
+      mockGenerateInsightContent.mockResolvedValue([
+        { lens: 'NET_WORTH_TRAJECTORY', title: 'x', body: 'y', severity: 'POSITIVE', priority: 50 },
+      ]);
+
+      // Frontend sends year but NO periodKey — this was the bug path.
+      const result = await generateTieredInsights('tenant-1', 'ANNUAL', { year: 2025, force: true });
+
+      expect(result.periodKey).toBe('2025');
+      expect(mockInsightCreateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ tier: 'ANNUAL', periodKey: '2025' }),
+        ]),
+      }));
+    });
+
+    it('QUARTERLY generated during Q2 for Q1 lands under "2026-Q1", not "2026-Q2"', async () => {
+      setupBasicTenantData();
+      completenessPasses();
+      mockGenerateInsightContent.mockResolvedValue([
+        { lens: 'SAVINGS_RATE', title: 'x', body: 'y', severity: 'POSITIVE', priority: 50 },
+      ]);
+
+      const result = await generateTieredInsights('tenant-1', 'QUARTERLY', {
+        year: 2026, quarter: 1, force: true,
+      });
+
+      expect(result.periodKey).toBe('2026-Q1');
+      expect(mockInsightCreateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ tier: 'QUARTERLY', periodKey: '2026-Q1' }),
+        ]),
+      }));
+    });
+
+    it('MONTHLY generated during April for March lands under "2026-03", not "2026-04"', async () => {
+      setupBasicTenantData();
+      completenessPasses();
+      mockGenerateInsightContent.mockResolvedValue([
+        { lens: 'SPENDING_VELOCITY', title: 'x', body: 'y', severity: 'INFO', priority: 50 },
+      ]);
+
+      const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
+        year: 2026, month: 3, force: true,
+      });
+
+      expect(result.periodKey).toBe('2026-03');
+      expect(mockInsightCreateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ tier: 'MONTHLY', periodKey: '2026-03' }),
+        ]),
+      }));
+    });
+  });
+
+  // ── gatherEquityFundamentals — currency conversion (v1.1 regression) ────
+  //
+  // Bug: Brazilian tenant reports in BRL but holds a BRL asset with
+  // currentValue=1_000_000 (R$1M). Before the fix, the function shipped
+  // raw `currentValue` to Gemini without routing it through the rate
+  // cache, and a downstream BRL→BRL identity pass meant nothing broke —
+  // but the cross-currency case (BRL reporter holding a USD asset) shipped
+  // the raw USD value labeled as BRL in the prompt.
+  describe('gatherEquityFundamentals() currency conversion', () => {
+    beforeEach(() => {
+      mockPortfolioItemFindMany.mockReset();
+      mockSecurityMasterFindMany.mockReset();
+    });
+
+    it('converts currentValue/costBasis/realizedPnL from native currency to portfolio currency', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([
+        {
+          id: 1, symbol: 'AAPL', currency: 'USD',
+          currentValue: 1000, costBasis: 800, quantity: 5, realizedPnL: 50,
+        },
+      ]);
+      mockSecurityMasterFindMany.mockResolvedValue([
+        { symbol: 'AAPL', name: 'Apple Inc', sector: 'Technology', industry: 'Consumer Electronics',
+          country: 'US', peRatio: 28.5, dividendYield: 0.5, trailingEps: 6.5,
+          latestEpsActual: null, latestEpsSurprise: null, week52High: 200, week52Low: 150,
+          averageVolume: null, assetType: 'EQUITY' },
+      ]);
+
+      // Rate cache: 1 USD = 5 BRL on today's date
+      const today = new Date().toISOString().slice(0, 10);
+      const rateCache = { [`${today}_USD_BRL`]: 5 };
+
+      const result = await gatherEquityFundamentals('tenant-1', 'BRL', rateCache);
+
+      expect(result.holdings).toHaveLength(1);
+      const [h] = result.holdings;
+      expect(h.nativeCurrency).toBe('USD');
+      // $1000 @ 5 = R$5000
+      expect(h.currentValue).toBe(5000);
+      // $800 @ 5 = R$4000
+      expect(h.costBasis).toBe(4000);
+      // $50 @ 5 = R$250
+      expect(h.realizedPnL).toBe(250);
+      // unrealized = currentValue - costBasis (already in BRL)
+      expect(h.unrealizedPnL).toBe(1000);
+      // Sector allocation and totalValue should also use converted values
+      expect(result.totalValue).toBe(5000);
+      expect(result.sectorAllocation.Technology.value).toBe(5000);
+      expect(result.sectorAllocation.Technology.percent).toBe(100);
+    });
+
+    it('is a no-op when native currency equals portfolio currency', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([
+        {
+          id: 1, symbol: 'VALE3', currency: 'BRL',
+          currentValue: 1_000_000, costBasis: 900_000, quantity: 100, realizedPnL: 0,
+        },
+      ]);
+      mockSecurityMasterFindMany.mockResolvedValue([
+        { symbol: 'VALE3', name: 'Vale SA', sector: 'Basic Materials', industry: 'Steel',
+          country: 'BR', peRatio: 5.2, dividendYield: 10.2, trailingEps: 3.1,
+          latestEpsActual: null, latestEpsSurprise: null, week52High: 90, week52Low: 50,
+          averageVolume: null, assetType: 'EQUITY' },
+      ]);
+
+      // Empty cache — conversion should short-circuit since from === to
+      const result = await gatherEquityFundamentals('tenant-1', 'BRL', {});
+
+      const [h] = result.holdings;
+      expect(h.nativeCurrency).toBe('BRL');
+      expect(h.currentValue).toBe(1_000_000);
+      expect(h.costBasis).toBe(900_000);
+      expect(h.unrealizedPnL).toBe(100_000);
+    });
+
+    it('returns an empty structure when tenant has no investment holdings', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([]);
+      mockSecurityMasterFindMany.mockResolvedValue([]);
+
+      const result = await gatherEquityFundamentals('tenant-empty', 'USD', {});
+      expect(result.holdings).toEqual([]);
+      expect(result.totalValue).toBe(0);
+    });
+
+    it('degrades gracefully (keeps native value) on a rate cache miss for a cross-currency holding', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([
+        { id: 1, symbol: 'AAPL', currency: 'USD',
+          currentValue: 1000, costBasis: 800, quantity: 5, realizedPnL: 0 },
+      ]);
+      mockSecurityMasterFindMany.mockResolvedValue([
+        { symbol: 'AAPL', name: 'Apple Inc', sector: 'Technology', industry: 'Consumer Electronics',
+          country: 'US', peRatio: null, dividendYield: null, trailingEps: null,
+          latestEpsActual: null, latestEpsSurprise: null, week52High: null, week52Low: null,
+          averageVolume: null, assetType: 'EQUITY' },
+      ]);
+
+      // Empty cache — convertAmount will return the raw amount unchanged.
+      const result = await gatherEquityFundamentals('tenant-1', 'BRL', {});
+
+      const [h] = result.holdings;
+      // Fallback behavior: unconverted value, not zero — same graceful
+      // fallback the rest of the service uses.
+      expect(h.currentValue).toBe(1000);
+      expect(h.costBasis).toBe(800);
     });
   });
 });

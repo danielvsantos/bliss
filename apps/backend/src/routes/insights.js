@@ -12,12 +12,12 @@ const logger = require('../utils/logger');
  * Internal endpoint to trigger insight generation for a tenant.
  * Body: {
  *   tenantId: string (required),
- *   tier: string (optional — DAILY | MONTHLY | QUARTERLY | ANNUAL | PORTFOLIO),
- *   year: number (optional — required for MONTHLY/QUARTERLY/ANNUAL),
- *   month: number (optional — required for MONTHLY),
- *   quarter: number (optional — required for QUARTERLY),
+ *   tier:     string (required — MONTHLY | QUARTERLY | ANNUAL | PORTFOLIO),
+ *   year:     number (required for MONTHLY / QUARTERLY / ANNUAL),
+ *   month:    number (required for MONTHLY),
+ *   quarter:  number (required for QUARTERLY),
  *   periodKey: string (optional — auto-computed if not provided),
- *   force: boolean (optional — bypass completeness check)
+ *   force:    boolean (optional — bypass completeness check)
  * }
  *
  * Returns 202 (accepted) immediately; generation happens async in worker.
@@ -29,8 +29,12 @@ router.post('/generate', apiKeyAuth, async (req, res) => {
       return res.status(400).json({ error: 'tenantId is required' });
     }
 
-    // Validate tier if provided
-    if (tier && !VALID_TIERS.includes(tier)) {
+    if (!tier) {
+      return res.status(400).json({
+        error: `tier is required. Must be one of: ${VALID_TIERS.join(', ')}`,
+      });
+    }
+    if (!VALID_TIERS.includes(tier)) {
       return res.status(400).json({
         error: `Invalid tier: ${tier}. Must be one of: ${VALID_TIERS.join(', ')}`,
       });
@@ -51,10 +55,10 @@ router.post('/generate', apiKeyAuth, async (req, res) => {
       tenantId, tier, year, month, quarter, periodKey, force,
     });
 
-    logger.info('Insight generation job enqueued:', { tenantId, tier: tier || 'DAILY' });
+    logger.info('Insight generation job enqueued:', { tenantId, tier });
     return res.status(202).json({
       message: 'Insight generation job enqueued',
-      tier: tier || 'DAILY',
+      tier,
     });
   } catch (error) {
     logger.error('Error enqueuing insight job:', { error: error.message });

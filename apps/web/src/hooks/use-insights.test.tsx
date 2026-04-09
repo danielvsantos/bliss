@@ -22,7 +22,7 @@ const emptyListResponse = {
 };
 
 const dismissOk = { id: 'ins-1', dismissed: true };
-const generateOk = { message: 'Insight generation triggered', tier: 'DAILY' };
+const generateOk = { message: 'Insight generation triggered', tier: 'MONTHLY' };
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -51,15 +51,15 @@ describe('useInsights', () => {
         {
           id: 'ins-1',
           lens: 'SPENDING_VELOCITY',
-          tier: 'DAILY',
+          tier: 'MONTHLY',
           category: 'SPENDING',
-          periodKey: '2026-04-09',
+          periodKey: '2026-03',
           severity: 'WARNING',
           title: 'Spending up',
         },
       ],
       total: 1,
-      tierSummary: { DAILY: { latestDate: '2026-04-09', latestCreatedAt: '2026-04-09T06:00:00Z' } },
+      tierSummary: { MONTHLY: { latestDate: '2026-04-02', latestCreatedAt: '2026-04-02T06:00:00Z' } },
       categoryCounts: { SPENDING: 1 },
     };
     vi.mocked(api.getInsights).mockResolvedValueOnce(mockResponse);
@@ -166,15 +166,15 @@ describe('useInsights', () => {
     const { wrapper } = createWrapper();
     const { rerender, result } = renderHook(
       ({ tier }: { tier: InsightTier }) => useInsights({ tier }),
-      { wrapper, initialProps: { tier: 'DAILY' as InsightTier } },
+      { wrapper, initialProps: { tier: 'MONTHLY' as InsightTier } },
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    rerender({ tier: 'MONTHLY' });
+    rerender({ tier: 'QUARTERLY' });
     await waitFor(() => expect(api.getInsights).toHaveBeenCalledTimes(2));
 
-    expect(api.getInsights).toHaveBeenNthCalledWith(1, { tier: 'DAILY' });
-    expect(api.getInsights).toHaveBeenNthCalledWith(2, { tier: 'MONTHLY' });
+    expect(api.getInsights).toHaveBeenNthCalledWith(1, { tier: 'MONTHLY' });
+    expect(api.getInsights).toHaveBeenNthCalledWith(2, { tier: 'QUARTERLY' });
   });
 });
 
@@ -231,7 +231,7 @@ describe('useGenerateInsights', () => {
     vi.useRealTimers();
   });
 
-  it('triggers generation without options and invalidates after 5s', async () => {
+  it('triggers generation with a required tier and invalidates after 5s', async () => {
     vi.mocked(api.generateInsights).mockResolvedValueOnce(generateOk);
 
     const { wrapper, queryClient } = createWrapper();
@@ -240,11 +240,15 @@ describe('useGenerateInsights', () => {
     const { result } = renderHook(() => useGenerateInsights(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync(undefined);
+      await result.current.mutateAsync({ tier: 'MONTHLY', year: 2026, month: 3 });
     });
 
     expect(api.generateInsights).toHaveBeenCalledOnce();
-    expect(api.generateInsights).toHaveBeenCalledWith(undefined);
+    expect(api.generateInsights).toHaveBeenCalledWith({
+      tier: 'MONTHLY',
+      year: 2026,
+      month: 3,
+    });
 
     // Invalidation happens after a 5-second setTimeout
     expect(invalidateSpy).not.toHaveBeenCalled();

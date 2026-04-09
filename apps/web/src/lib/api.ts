@@ -880,15 +880,16 @@ class APIClient {
     return response.data;
   }
 
-  async generateInsights(options?: {
-    tier?: string;
+  async generateInsights(options: {
+    // `tier` is required — the retired DAILY fallback was removed in v1.
+    tier: 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
     year?: number;
     month?: number;
     quarter?: number;
     periodKey?: string;
     force?: boolean;
   }): Promise<{ message: string; tier: string }> {
-    const response = await this.client.post('/api/insights', options || {});
+    const response = await this.client.post('/api/insights', options);
     return response.data;
   }
 

@@ -14,7 +14,6 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 const EMBEDDING_MODEL = 'gemini-embedding-001';  // 3072-dim by default; outputDimensionality: 768 applied at call time
 const CLASSIFICATION_MODEL = 'gemini-3-flash-preview';  // Fast + cheap for high-volume classification
 const INSIGHT_MODEL = process.env.INSIGHT_MODEL || 'gemini-3.1-pro-preview';  // Quality prose for monthly/quarterly/annual/portfolio
-const INSIGHT_MODEL_FAST = process.env.INSIGHT_MODEL_FAST || 'gemini-3-flash-preview';  // Fast + cheap for daily pulse anomaly detection
 
 // ─── Rate-limit / retry config ────────────────────────────────────────────────
 const MAX_RETRIES = 5;                   // More attempts to survive quota windows
@@ -240,20 +239,19 @@ Respond with this exact JSON schema:
 }
 
 /**
- * Generates financial insight content using the appropriate model for the tier.
+ * Generates financial insight content for a tiered insight run.
  * Takes a pre-built prompt (system + data) and returns parsed JSON array.
  *
  * @param {string} prompt — Full prompt including system instructions and data
  * @param {Object} [options] — Optional configuration
- * @param {boolean} [options.useFastModel=false] — Use Flash model for daily pulse tier
  * @param {number} [options.temperature=0.4] — Temperature for generation
  * @returns {Promise<Array>} — Parsed JSON array of insight objects
  */
 async function generateInsightContent(prompt, options = {}) {
   if (!genAI) throw new Error('Gemini API key not configured');
 
-  const { useFastModel = false, temperature = 0.4 } = options;
-  const modelId = useFastModel ? INSIGHT_MODEL_FAST : INSIGHT_MODEL;
+  const { temperature = 0.4 } = options;
+  const modelId = INSIGHT_MODEL;
 
   const model = genAI.getGenerativeModel({
     model: modelId,
@@ -263,7 +261,7 @@ async function generateInsightContent(prompt, options = {}) {
     },
   });
 
-  const INSIGHT_TIMEOUT_MS = useFastModel ? 30_000 : 60_000;
+  const INSIGHT_TIMEOUT_MS = 60_000;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {

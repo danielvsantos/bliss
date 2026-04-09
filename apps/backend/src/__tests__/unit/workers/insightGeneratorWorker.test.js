@@ -1,11 +1,9 @@
 /**
- * Unit tests for insightGeneratorWorker (v1 — tiered architecture).
+ * Unit tests for insightGeneratorWorker (v1 — tiered architecture, post-DAILY removal).
  *
  * Job types covered:
- *   - generate-tenant-insights (legacy, no tier → delegates to generateInsights)
- *   - generate-tenant-insights WITH tier → generateTieredInsights
- *   - generate-all-insights (daily cron → generateAllDueTiers per tenant)
- *   - generate-daily-pulse (DAILY-only per tenant via generateTieredInsights)
+ *   - generate-tenant-insights (requires tier → generateTieredInsights)
+ *   - generate-all-insights (daily cron heartbeat → generateAllDueTiers per tenant)
  *   - generate-portfolio-intel (weekly Monday cron over equity-holding tenants)
  *   - unknown job name → throws
  *
@@ -52,11 +50,9 @@ jest.mock('@sentry/node', () => ({
   captureException: jest.fn(),
 }));
 
-const mockGenerateInsights = jest.fn();
 const mockGenerateTieredInsights = jest.fn();
 const mockGenerateAllDueTiers = jest.fn();
 jest.mock('../../../services/insightService', () => ({
-  generateInsights: (...args) => mockGenerateInsights(...args),
   generateTieredInsights: (...args) => mockGenerateTieredInsights(...args),
   generateAllDueTiers: (...args) => mockGenerateAllDueTiers(...args),
 }));
@@ -125,7 +121,7 @@ describe('insightGeneratorWorker', () => {
       const fakeJob = {
         id: 'j1',
         name: 'generate-tenant-insights',
-        data: { tenantId: 't-1', tier: 'DAILY', periodKey: '2026-04-09' },
+        data: { tenantId: 't-1', tier: 'MONTHLY', periodKey: '2026-03' },
         attemptsMade: 1,
         opts: { attempts: 3 },
       };
@@ -137,29 +133,14 @@ describe('insightGeneratorWorker', () => {
         workerName: 'insightGenerator',
         job: fakeJob,
         error: fakeErr,
-        extra: expect.objectContaining({ tier: 'DAILY', periodKey: '2026-04-09' }),
+        extra: expect.objectContaining({ tier: 'MONTHLY', periodKey: '2026-03' }),
       }));
     });
   });
 
   // ── generate-tenant-insights ─────────────────────────────────────────────
   describe('generate-tenant-insights', () => {
-    it('legacy path (no tier): delegates to generateInsights and returns insightCount', async () => {
-      mockGenerateInsights.mockResolvedValue({
-        insights: [{ lens: 'SPENDING_VELOCITY', title: 'Test' }],
-        batchId: 'b1',
-        periodKey: '2026-04-09',
-      });
-
-      const result = await workerCallback(makeJob('generate-tenant-insights', { tenantId: 'tenant-1' }));
-
-      expect(mockGenerateInsights).toHaveBeenCalledWith('tenant-1');
-      expect(mockGenerateTieredInsights).not.toHaveBeenCalled();
-      expect(result.success).toBe(true);
-      expect(result.insightCount).toBe(1);
-    });
-
-    it('tiered path: delegates to generateTieredInsights with options', async () => {
+    it('delegates to generateTieredInsights with options', async () => {
       mockGenerateTieredInsights.mockResolvedValue({
         insights: [{ lens: 'INCOME_STABILITY' }, { lens: 'SAVINGS_RATE' }],
         batchId: 'b1',
@@ -182,17 +163,16 @@ describe('insightGeneratorWorker', () => {
         'MONTHLY',
         expect.objectContaining({ year: 2026, month: 3, periodKey: '2026-03', force: false }),
       );
-      expect(mockGenerateInsights).not.toHaveBeenCalled();
       expect(result.success).toBe(true);
       expect(result.insights).toHaveLength(2);
       expect(result.periodKey).toBe('2026-03');
     });
 
-    it('tiered path: returns skipped result without throwing when tier skipped', async () => {
+    it('returns skipped result without throwing when tier skipped', async () => {
       mockGenerateTieredInsights.mockResolvedValue({ skipped: true, reason: 'Data unchanged' });
 
       const result = await workerCallback(
-        makeJob('generate-tenant-insights', { tenantId: 'tenant-1', tier: 'DAILY' }),
+        makeJob('generate-tenant-insights', { tenantId: 'tenant-1', tier: 'MONTHLY', year: 2026, month: 3 }),
       );
 
       expect(result.success).toBe(true);
@@ -205,6 +185,13 @@ describe('insightGeneratorWorker', () => {
         workerCallback(makeJob('generate-tenant-insights', {})),
       ).rejects.toThrow('tenantId is required');
     });
+
+    it('throws when tier is missing (DAILY fallback was retired)', async () => {
+      await expect(
+        workerCallback(makeJob('generate-tenant-insights', { tenantId: 'tenant-1' })),
+      ).rejects.toThrow(/tier is required/);
+      expect(mockGenerateTieredInsights).not.toHaveBeenCalled();
+    });
   });
 
   // ── generate-all-insights (daily cron) ───────────────────────────────────
@@ -213,11 +200,11 @@ describe('insightGeneratorWorker', () => {
       mockTenantFindMany.mockResolvedValue([{ id: 'tenant-a' }, { id: 'tenant-b' }]);
       mockGenerateAllDueTiers
         .mockResolvedValueOnce({
-          DAILY: { insights: [{ lens: 'SPENDING_VELOCITY' }] },
           MONTHLY: { insights: [{ lens: 'INCOME_STABILITY' }, { lens: 'SAVINGS_RATE' }] },
+          QUARTERLY: { insights: [{ lens: 'CATEGORY_CONCENTRATION' }] },
         })
         .mockResolvedValueOnce({
-          DAILY: { insights: [{ lens: 'CATEGORY_CONCENTRATION' }] },
+          MONTHLY: { insights: [{ lens: 'SPENDING_VELOCITY' }] },
         });
 
       const result = await workerCallback(makeJob('generate-all-insights', {}));
@@ -230,25 +217,25 @@ describe('insightGeneratorWorker', () => {
       expect(mockGenerateAllDueTiers).toHaveBeenCalledWith('tenant-b');
 
       expect(result.totalTenants).toBe(2);
-      expect(result.totalInsights).toBe(4); // 1 + 2 + 1
+      expect(result.totalInsights).toBe(4); // 2 + 1 + 1
       expect(result.errors).toBe(0);
 
       // Per-tier aggregation
-      expect(result.tierResults.DAILY).toEqual({ generated: 2, skipped: 0 });
-      expect(result.tierResults.MONTHLY).toEqual({ generated: 1, skipped: 0 });
+      expect(result.tierResults.MONTHLY).toEqual({ generated: 2, skipped: 0 });
+      expect(result.tierResults.QUARTERLY).toEqual({ generated: 1, skipped: 0 });
     });
 
     it('counts skipped tiers separately from generated', async () => {
       mockTenantFindMany.mockResolvedValue([{ id: 'tenant-a' }]);
       mockGenerateAllDueTiers.mockResolvedValueOnce({
-        DAILY: { skipped: true, reason: 'Dedup' },
         MONTHLY: { insights: [{ lens: 'INCOME_STABILITY' }] },
+        QUARTERLY: { skipped: true, reason: 'Dedup' },
       });
 
       const result = await workerCallback(makeJob('generate-all-insights', {}));
 
-      expect(result.tierResults.DAILY).toEqual({ generated: 0, skipped: 1 });
       expect(result.tierResults.MONTHLY).toEqual({ generated: 1, skipped: 0 });
+      expect(result.tierResults.QUARTERLY).toEqual({ generated: 0, skipped: 1 });
       expect(result.totalInsights).toBe(1);
     });
 
@@ -259,9 +246,9 @@ describe('insightGeneratorWorker', () => {
         { id: 'tenant-ok2' },
       ]);
       mockGenerateAllDueTiers
-        .mockResolvedValueOnce({ DAILY: { insights: [{ lens: 'SPENDING_VELOCITY' }] } })
+        .mockResolvedValueOnce({ MONTHLY: { insights: [{ lens: 'SPENDING_VELOCITY' }] } })
         .mockRejectedValueOnce(new Error('Gemini timeout'))
-        .mockResolvedValueOnce({ DAILY: { insights: [{ lens: 'DEBT_HEALTH' }] } });
+        .mockResolvedValueOnce({ MONTHLY: { insights: [{ lens: 'DEBT_HEALTH' }] } });
 
       const result = await workerCallback(makeJob('generate-all-insights', {}));
 
@@ -281,34 +268,6 @@ describe('insightGeneratorWorker', () => {
       expect(mockGenerateAllDueTiers).not.toHaveBeenCalled();
       expect(result.totalTenants).toBe(0);
       expect(result.totalInsights).toBe(0);
-    });
-  });
-
-  // ── generate-daily-pulse ─────────────────────────────────────────────────
-  describe('generate-daily-pulse', () => {
-    it('calls generateTieredInsights(DAILY) per tenant', async () => {
-      mockTenantFindMany.mockResolvedValue([{ id: 'tenant-a' }, { id: 'tenant-b' }]);
-      mockGenerateTieredInsights
-        .mockResolvedValueOnce({ insights: [{ lens: 'SPENDING_VELOCITY' }] })
-        .mockResolvedValueOnce({ insights: [{ lens: 'UNUSUAL_SPENDING' }] });
-
-      const result = await workerCallback(makeJob('generate-daily-pulse', {}));
-
-      expect(mockGenerateAllDueTiers).not.toHaveBeenCalled();
-      expect(mockGenerateTieredInsights).toHaveBeenCalledTimes(2);
-      expect(mockGenerateTieredInsights).toHaveBeenCalledWith('tenant-a', 'DAILY');
-      expect(mockGenerateTieredInsights).toHaveBeenCalledWith('tenant-b', 'DAILY');
-      expect(result.totalInsights).toBe(2);
-    });
-
-    it('counts skipped daily runs without incrementing totalInsights', async () => {
-      mockTenantFindMany.mockResolvedValue([{ id: 'tenant-a' }, { id: 'tenant-b' }]);
-      mockGenerateTieredInsights
-        .mockResolvedValueOnce({ skipped: true, reason: 'Dedup' })
-        .mockResolvedValueOnce({ insights: [{ lens: 'SPENDING_VELOCITY' }] });
-
-      const result = await workerCallback(makeJob('generate-daily-pulse', {}));
-      expect(result.totalInsights).toBe(1);
     });
   });
 

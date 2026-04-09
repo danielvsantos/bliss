@@ -3,8 +3,7 @@ const logger = require('../utils/logger');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const MIN_DAILY_COVERAGE = 0.80; // 80% of weekdays must have transactions
-const MIN_DAILY_PULSE_DAYS = 15; // At least 15 days of data for daily pulse
+const MIN_DAILY_COVERAGE = 0.80; // 80% of weekdays in a month must have transactions
 const MIN_MONTHLY_COMPLETENESS = 10; // At least 10 complete months for annual
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,8 +56,6 @@ function getPeriodKey(tier, date) {
   const month = d.getMonth() + 1;
 
   switch (tier) {
-    case 'DAILY':
-      return `${year}-${String(month).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     case 'MONTHLY':
       return `${year}-${String(month).padStart(2, '0')}`;
     case 'QUARTERLY':
@@ -209,30 +206,6 @@ async function checkYearCompleteness(tenantId, year) {
 }
 
 // ─── Tier-Specific Completeness Gates ────────────────────────────────────────
-
-/**
- * Check if Daily Pulse tier can run.
- * Requires >= 15 days of transactions in the last 30 days.
- */
-async function checkDailyPulseCompleteness(tenantId) {
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const distinctDays = await prisma.transaction.groupBy({
-    by: ['date'],
-    where: {
-      tenantId,
-      date: { gte: thirtyDaysAgo, lte: now },
-    },
-  });
-
-  return {
-    complete: distinctDays.length >= MIN_DAILY_PULSE_DAYS,
-    transactionDays: distinctDays.length,
-    requiredDays: MIN_DAILY_PULSE_DAYS,
-  };
-}
 
 /**
  * Check if Monthly tier can run for a given month.
@@ -398,15 +371,6 @@ async function checkTierCompleteness(tenantId, tier, params = {}) {
 
   try {
     switch (tier) {
-      case 'DAILY': {
-        const result = await checkDailyPulseCompleteness(tenantId);
-        return {
-          canRun: result.complete,
-          details: result,
-          comparisonAvailable: true, // daily always compares last 30 vs prior 30
-        };
-      }
-
       case 'MONTHLY': {
         if (!year || !month) throw new Error('year and month required for MONTHLY tier');
         const result = await checkMonthlyTierCompleteness(tenantId, year, month);
@@ -469,7 +433,6 @@ module.exports = {
   checkMonthCompleteness,
   checkQuarterCompleteness,
   checkYearCompleteness,
-  checkDailyPulseCompleteness,
   checkPortfolioTierCompleteness,
   getPeriodKey,
   getPreviousPeriod,

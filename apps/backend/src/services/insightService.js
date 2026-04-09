@@ -2,12 +2,19 @@ const crypto = require('crypto');
 const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
 const { generateInsightContent } = require('./geminiService');
-const { getOrCreateCurrencyRate, getRatesForDateRange } = require('./currencyService');
+// IMPORTANT: the insights engine is a pure read consumer. It must NEVER
+// import getOrCreateCurrencyRate — that helper is a write-through cache that
+// hits CurrencyLayer and inserts rows into CurrencyRate on a miss. Only the
+// valuation pipeline (portfolioWorker, price-fetcher) is authorized to
+// populate CurrencyRate. Reads from this service must use getRatesForDateRange
+// + the in-memory lookupCurrencyRate() fallback defined below.
+// See insights-v2 refactor: docs/specs/backend/15-insights-engine.md
+const { getRatesForDateRange } = require('./currencyService');
 const { checkTierCompleteness, getPeriodKey, getQuarterMonths, getQuarterFromMonth } = require('./dataCompletenessService');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const VALID_TIERS = ['DAILY', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO'];
+const VALID_TIERS = ['MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO'];
 
 const VALID_CATEGORIES = ['SPENDING', 'INCOME', 'SAVINGS', 'PORTFOLIO', 'DEBT', 'NET_WORTH'];
 
@@ -40,9 +47,8 @@ const LENS_CATEGORY_MAP = {
 
 // Lenses available per tier
 const TIER_LENSES = {
-  DAILY: ['SPENDING_VELOCITY', 'UNUSUAL_SPENDING', 'CATEGORY_CONCENTRATION'],
   MONTHLY: [
-    'SPENDING_VELOCITY', 'CATEGORY_CONCENTRATION',
+    'SPENDING_VELOCITY', 'CATEGORY_CONCENTRATION', 'UNUSUAL_SPENDING',
     'INCOME_STABILITY', 'SAVINGS_RATE',
     'DEBT_HEALTH', 'NET_WORTH_TRAJECTORY', 'NET_WORTH_MILESTONES',
   ],
@@ -68,7 +74,6 @@ const TIER_LENSES = {
 
 // TTL per tier
 const TIER_TTL_DAYS = {
-  DAILY: 90,
   MONTHLY: 730,      // ~2 years
   QUARTERLY: 1825,   // ~5 years
   ANNUAL: null,       // forever
@@ -82,11 +87,120 @@ const CURRENCY_SYMBOLS = {
   AUD: 'A$', CAD: 'C$', CHF: 'CHF', INR: '₹', KRW: '₩', MXN: 'MX$',
 };
 
-async function convertAmount(amount, fromCurrency, toCurrency, date, rateCache) {
+/**
+ * Resolve a currency rate from the job-local cache. Pure function — never
+ * queries the DB, never calls external APIs. The cache must have been
+ * populated up front by prefetchRatesForTier() before this is called.
+ *
+ * On an exact miss, scans the cache for the most recent prior rate for the
+ * same currency pair (handles weekends, holidays, and other gaps in the
+ * CurrencyRate table — standard financial practice). Returns null on a
+ * true miss; callers are responsible for degrading gracefully.
+ */
+function lookupCurrencyRate(dateObj, currencyFrom, currencyTo, rateCache) {
+  if (!currencyFrom || currencyFrom === currencyTo) return 1;
+
+  const dateStr = dateObj.toISOString().slice(0, 10);
+  const exactKey = `${dateStr}_${currencyFrom}_${currencyTo}`;
+  if (rateCache[exactKey] != null) return Number(rateCache[exactKey]);
+
+  // Nearest-prior scan: find the most recent cached rate for this pair
+  // whose date is on or before the requested date.
+  const suffix = `_${currencyFrom}_${currencyTo}`;
+  let bestDate = null;
+  let bestRate = null;
+  for (const key of Object.keys(rateCache)) {
+    if (!key.endsWith(suffix)) continue;
+    const d = key.slice(0, 10);
+    if (d <= dateStr && (bestDate === null || d > bestDate) && rateCache[key] != null) {
+      bestDate = d;
+      bestRate = rateCache[key];
+    }
+  }
+  return bestRate != null ? Number(bestRate) : null;
+}
+
+/**
+ * Synchronous currency conversion. Expects the rate cache to have been
+ * populated by prefetchRatesForTier. On a true cache miss returns the
+ * unconverted amount — same graceful fallback as the pre-v2 implementation.
+ */
+function convertAmount(amount, fromCurrency, toCurrency, date, rateCache) {
   if (!fromCurrency || fromCurrency === toCurrency || amount === 0) return amount;
-  const rate = await getOrCreateCurrencyRate(date, fromCurrency, toCurrency, rateCache);
-  if (!rate) return amount;
-  return Number(rate) * amount;
+  const rate = lookupCurrencyRate(date, fromCurrency, toCurrency, rateCache);
+  if (rate == null) return amount;
+  return rate * amount;
+}
+
+/**
+ * Pre-fetch every currency rate a tier run will need, in a bounded number
+ * of bulk range queries. After this returns, convertAmount() is guaranteed
+ * to be an in-memory cache lookup with zero DB roundtrips and zero external
+ * API calls for the remainder of the tier run.
+ *
+ * Pairs are derived from the tenant's distinct portfolio-item currencies
+ * plus USD (for PortfolioValueHistory.valueInUSD). A 30-day floor is
+ * applied to the fetch window so short-window tiers (PORTFOLIO reads
+ * current state only) still have weekend/holiday fallback candidates in
+ * the cache for lookupCurrencyRate's nearest-prior scan.
+ */
+async function prefetchRatesForTier({ tenantId, portfolioCurrency, startDate, endDate, rateCache }) {
+  // Discover distinct currencies used by the tenant's portfolio items.
+  // `PortfolioItem.currency` is declared `String` (non-nullable) in the
+  // Prisma schema, so `{ not: null }` would be rejected by Prisma's
+  // validator — and every row has a value by construction, so the filter
+  // is redundant anyway.
+  const positions = await prisma.portfolioItem.findMany({
+    where: { tenantId },
+    select: { currency: true },
+    distinct: ['currency'],
+  });
+
+  const pairs = new Set();
+  // PortfolioValueHistory stores valueInUSD, so we always need USD -> portfolioCurrency
+  // unless the tenant already reports in USD.
+  if (portfolioCurrency !== 'USD') {
+    pairs.add(`USD|${portfolioCurrency}`);
+  }
+  for (const p of positions) {
+    if (p.currency && p.currency !== portfolioCurrency) {
+      pairs.add(`${p.currency}|${portfolioCurrency}`);
+    }
+  }
+
+  if (pairs.size === 0) {
+    logger.info('Insights rate prefetch: no conversion needed', { tenantId, portfolioCurrency });
+    return;
+  }
+
+  // Apply a 30-day floor on the fetch window. This guarantees
+  // lookupCurrencyRate's nearest-prior scan has candidates for weekend and
+  // holiday dates even when the caller's window is very narrow (e.g.
+  // PORTFOLIO tier passes today..today).
+  const floorDate = new Date(endDate);
+  floorDate.setUTCDate(floorDate.getUTCDate() - 30);
+  const effectiveStart = startDate < floorDate ? startDate : floorDate;
+
+  await Promise.all(
+    [...pairs].map(async (pairKey) => {
+      const [from, to] = pairKey.split('|');
+      const rates = await getRatesForDateRange(effectiveStart, endDate, from, to);
+      for (const [dateStr, rate] of rates.entries()) {
+        rateCache[`${dateStr}_${from}_${to}`] = rate;
+      }
+    }),
+  );
+
+  logger.info('Insights rate prefetch complete', {
+    tenantId,
+    portfolioCurrency,
+    pairs: [...pairs],
+    window: {
+      startDate: effectiveStart.toISOString().slice(0, 10),
+      endDate: endDate.toISOString().slice(0, 10),
+    },
+    cachedEntries: Object.keys(rateCache).length,
+  });
 }
 
 // ─── Data Gathering Functions ────────────────────────────────────────────────
@@ -215,29 +329,26 @@ async function gatherPortfolioData(tenantId, portfolioCurrency, rateCache) {
     },
   });
 
-  // Pre-fetch rates for portfolio items
+  // Rate cache is populated up front by prefetchRatesForTier(). All
+  // convertAmount() calls below are pure in-memory lookups — no DB, no
+  // external API, no side effects.
   const today = new Date();
-  for (const p of portfolioItems) {
-    if (p.currency && p.currency !== portfolioCurrency) {
-      const key = `${p.currency}->${portfolioCurrency}`;
-      const ratesMap = await getRatesForDateRange(today, today, p.currency, portfolioCurrency);
-      for (const [dateStr, rate] of ratesMap.entries()) {
-        rateCache[`${dateStr}_${p.currency}_${portfolioCurrency}`] = rate;
-      }
-    }
-  }
 
   // Portfolio exposure
   const investments = portfolioItems.filter((p) => p.category?.type === 'Investments');
-  const investmentValues = await Promise.all(investments.map(async (p) => {
+  const investmentValues = investments.map((p) => {
     const rawValue = Math.abs(Number(p.currentValue || 0));
-    const converted = await convertAmount(rawValue, p.currency, portfolioCurrency, today, rateCache);
+    const converted = convertAmount(rawValue, p.currency, portfolioCurrency, today, rateCache);
     return { item: p, value: converted };
-  }));
+  });
   const totalInvestmentValue = investmentValues.reduce((sum, iv) => sum + iv.value, 0);
+  // `PortfolioItem` has no `name` column — `symbol` is the canonical
+  // identifier. Historically this mapping read `iv.item.name` which silently
+  // resolved to `undefined` and shipped `null` to the LLM prompt. See the
+  // same pattern fixed in `gatherEquityFundamentals`.
   const portfolioExposure = investmentValues.map((iv) => ({
-    name: iv.item.name,
-    symbol: iv.item.ticker || iv.item.symbol,
+    name: iv.item.symbol,
+    symbol: iv.item.symbol,
     value: Math.round(iv.value * 100) / 100,
     percent: totalInvestmentValue > 0
       ? Math.round((iv.value / totalInvestmentValue) * 10000) / 100
@@ -246,22 +357,24 @@ async function gatherPortfolioData(tenantId, portfolioCurrency, rateCache) {
 
   // Debt health
   const debts = portfolioItems.filter((p) => p.category?.type === 'Debt');
-  const debtHealth = await Promise.all(debts.map(async (p) => {
+  const debtHealth = debts.map((p) => {
     const rawBalance = Math.abs(Number(p.currentValue || 0));
-    const convertedBalance = await convertAmount(rawBalance, p.currency, portfolioCurrency, today, rateCache);
+    const convertedBalance = convertAmount(rawBalance, p.currency, portfolioCurrency, today, rateCache);
     const rawMinPayment = p.debtTerms?.minimumPayment ? Number(p.debtTerms.minimumPayment) : null;
     const convertedMinPayment = rawMinPayment !== null
-      ? await convertAmount(rawMinPayment, p.currency, portfolioCurrency, today, rateCache)
+      ? convertAmount(rawMinPayment, p.currency, portfolioCurrency, today, rateCache)
       : null;
     return {
-      name: p.name,
+      // `PortfolioItem.name` doesn't exist — use `symbol` (the user's chosen
+      // identifier for manual debts, e.g. "mortgage-girassol-52").
+      name: p.symbol,
       balance: Math.round(convertedBalance * 100) / 100,
       interestRate: p.debtTerms?.interestRate ? Number(p.debtTerms.interestRate) : null,
       minimumPayment: convertedMinPayment !== null ? Math.round(convertedMinPayment * 100) / 100 : null,
       termInMonths: p.debtTerms?.termInMonths ? Number(p.debtTerms.termInMonths) : null,
       originationDate: p.debtTerms?.originationDate || null,
     };
-  }));
+  });
 
   return {
     portfolioExposure,
@@ -275,54 +388,74 @@ async function gatherPortfolioData(tenantId, portfolioCurrency, rateCache) {
 
 /**
  * Gather net worth history for a date range.
+ *
+ * `PortfolioValueHistory` stores one row per asset per day, so a naive
+ * `findMany()` over a 15-month quarterly window for a tenant with ~50
+ * assets ships ~22k rows × 9 decimal columns back from Prisma — blowing
+ * through Prisma Accelerate's 5MB response limit (P6009) and, more
+ * importantly, returning duplicate date entries that were never really
+ * "net worth". Aggregating server-side via `groupBy({ by: ['date'] })`
+ * collapses each day to a single sum across all assets and ships only
+ * two values per row (date + `_sum.valueInUSD`).
  */
 async function gatherNetWorthHistory(tenantId, startDate, portfolioCurrency, rateCache) {
-  const portfolioHistory = await prisma.portfolioValueHistory.findMany({
+  const aggregated = await prisma.portfolioValueHistory.groupBy({
+    by: ['date'],
     where: {
       asset: { tenantId },
       date: { gte: startDate },
     },
+    _sum: { valueInUSD: true },
     orderBy: { date: 'asc' },
   });
 
-  // Pre-fetch USD -> portfolio currency rates if needed
-  if (portfolioCurrency !== 'USD' && portfolioHistory.length > 0) {
-    const minDate = new Date(portfolioHistory[0].date);
-    const maxDate = new Date(portfolioHistory[portfolioHistory.length - 1].date);
-    const ratesMap = await getRatesForDateRange(minDate, maxDate, 'USD', portfolioCurrency);
-    for (const [dateStr, rate] of ratesMap.entries()) {
-      rateCache[`${dateStr}_USD_${portfolioCurrency}`] = rate;
-    }
-  }
-
-  const netWorthHistory = await Promise.all(portfolioHistory.map(async (h) => {
-    const usdValue = Number(h.valueInUSD || 0);
-    const convertedValue = await convertAmount(usdValue, 'USD', portfolioCurrency, h.date, rateCache);
+  // Rate cache is populated up front by prefetchRatesForTier() with the
+  // USD -> portfolioCurrency pair covering the full net-worth window.
+  // convertAmount() below is a pure in-memory lookup.
+  return aggregated.map((row) => {
+    const usdValue = Number(row._sum?.valueInUSD || 0);
+    const convertedValue = convertAmount(usdValue, 'USD', portfolioCurrency, row.date, rateCache);
     return {
-      date: h.date.toISOString().slice(0, 10),
+      date: row.date.toISOString().slice(0, 10),
       value: Math.round(convertedValue * 100) / 100,
     };
-  }));
-
-  return netWorthHistory;
+  });
 }
 
 /**
  * Gather SecurityMaster fundamentals for portfolio holdings.
  * Used by PORTFOLIO tier.
+ *
+ * NOTE: `PortfolioItem` has no `ticker` column — the ticker symbol is
+ * stored in the `symbol` field (which is non-nullable). Historically this
+ * function referenced a phantom `ticker` field that silently fell back to
+ * `symbol` at runtime; under strict Prisma validation the filter now
+ * crashes. Keep everything on `symbol`.
+ *
+ * CURRENCY: every monetary value returned by this function is expressed
+ * in `portfolioCurrency`. The tenant may hold assets in multiple native
+ * currencies (e.g. a Brazilian investor holding VALE3 in BRL and AAPL in
+ * USD while reporting in BRL). Historically this function shipped raw
+ * `PortfolioItem.currentValue` / `costBasis` / `realizedPnL` to the prompt
+ * without conversion, so Gemini saw mixed-currency numbers it couldn't
+ * reconcile — a R$1M holding was described as "a $1 million position".
+ * We now convert each holding's monetary fields through the shared
+ * `rateCache` (populated by `prefetchRatesForTier`) before building the
+ * sector allocation, total value, and returned holdings array.
  */
-async function gatherEquityFundamentals(tenantId) {
+async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) {
+  // `PortfolioItem` has no `name` column — only `symbol`, `isin`, `exchange`.
+  // The human-readable asset name comes from the joined `SecurityMaster.name`
+  // (e.g. "Apple Inc"), which is already selected below. For holdings without
+  // a SecurityMaster row we fall back to the symbol.
   const holdings = await prisma.portfolioItem.findMany({
     where: {
       tenantId,
       quantity: { gt: 0 },
-      ticker: { not: null },
       category: { type: 'Investments' },
     },
     select: {
       id: true,
-      name: true,
-      ticker: true,
       symbol: true,
       currency: true,
       currentValue: true,
@@ -332,11 +465,11 @@ async function gatherEquityFundamentals(tenantId) {
     },
   });
 
-  const tickers = holdings.map((h) => h.ticker).filter(Boolean);
-  if (tickers.length === 0) return { holdings: [], fundamentals: [] };
+  const symbols = holdings.map((h) => h.symbol).filter(Boolean);
+  if (symbols.length === 0) return { holdings: [], sectorAllocation: {}, totalValue: 0 };
 
   const fundamentals = await prisma.securityMaster.findMany({
-    where: { symbol: { in: tickers } },
+    where: { symbol: { in: symbols } },
     select: {
       symbol: true,
       name: true,
@@ -355,17 +488,36 @@ async function gatherEquityFundamentals(tenantId) {
     },
   });
 
-  // Merge holdings with fundamentals
+  // Merge holdings with fundamentals + convert every monetary field to the
+  // tenant's portfolio currency. The rate cache is expected to have been
+  // populated up front by prefetchRatesForTier, so each convertAmount() is
+  // a pure in-memory lookup (nearest-prior fallback for weekends/holidays).
+  //
+  // Per-security quote fields (peRatio, dividendYield, week52High/Low,
+  // trailingEps) are intentionally *not* converted: those are fundamentals
+  // from SecurityMaster that are already quoted in the security's listing
+  // currency and don't get rolled up into tenant-level totals. We pass them
+  // through as-is for context, tagged with the holding's native currency.
   const fundamentalsMap = new Map(fundamentals.map((f) => [f.symbol, f]));
+  const today = new Date();
   const enrichedHoldings = holdings.map((h) => {
-    const f = fundamentalsMap.get(h.ticker) || {};
+    const f = fundamentalsMap.get(h.symbol) || {};
+    const nativeCurrency = h.currency || portfolioCurrency;
+    const rawCurrentValue = Number(h.currentValue || 0);
+    const rawCostBasis = Number(h.costBasis || 0);
+    const rawRealizedPnL = Number(h.realizedPnL || 0);
+    const convertedCurrentValue = convertAmount(rawCurrentValue, nativeCurrency, portfolioCurrency, today, rateCache);
+    const convertedCostBasis = convertAmount(rawCostBasis, nativeCurrency, portfolioCurrency, today, rateCache);
+    const convertedRealizedPnL = convertAmount(rawRealizedPnL, nativeCurrency, portfolioCurrency, today, rateCache);
     return {
-      symbol: h.ticker,
-      name: h.name,
-      currentValue: Number(h.currentValue || 0),
-      costBasis: Number(h.costBasis || 0),
+      symbol: h.symbol,
+      name: f.name || h.symbol,
+      nativeCurrency,
+      currentValue: Math.round(convertedCurrentValue * 100) / 100,
+      costBasis: Math.round(convertedCostBasis * 100) / 100,
       quantity: Number(h.quantity || 0),
-      unrealizedPnL: Number(h.currentValue || 0) - Number(h.costBasis || 0),
+      unrealizedPnL: Math.round((convertedCurrentValue - convertedCostBasis) * 100) / 100,
+      realizedPnL: Math.round(convertedRealizedPnL * 100) / 100,
       sector: f.sector || 'Unknown',
       industry: f.industry || 'Unknown',
       country: f.country || 'Unknown',
@@ -378,7 +530,7 @@ async function gatherEquityFundamentals(tenantId) {
     };
   });
 
-  // Compute sector allocation
+  // Compute sector allocation using the already-converted values.
   const totalValue = enrichedHoldings.reduce((sum, h) => sum + Math.abs(h.currentValue), 0);
   const sectorAllocation = {};
   for (const h of enrichedHoldings) {
@@ -389,6 +541,7 @@ async function gatherEquityFundamentals(tenantId) {
     sectorAllocation[sector].holdings.push(h.symbol);
   }
   for (const sector of Object.keys(sectorAllocation)) {
+    sectorAllocation[sector].value = Math.round(sectorAllocation[sector].value * 100) / 100;
     sectorAllocation[sector].percent = totalValue > 0
       ? Math.round((sectorAllocation[sector].value / totalValue) * 10000) / 100
       : 0;
@@ -404,44 +557,23 @@ async function gatherEquityFundamentals(tenantId) {
 // ─── Tier-Specific Data Gathering ────────────────────────────────────────────
 
 /**
- * Gather data for Daily Pulse tier.
- * Lightweight: last 30 days vs prior 30 days.
- */
-async function gatherDailyData(tenantId) {
-  const ctx = await getTenantContext(tenantId);
-  const now = new Date();
-
-  // Build month list covering last 60 days
-  const months = [];
-  for (let i = 0; i < 3; i++) {
-    let m = now.getMonth() + 1 - i;
-    let y = now.getFullYear();
-    if (m <= 0) { m += 12; y -= 1; }
-    months.push({ year: y, month: m });
-  }
-
-  const analytics = await gatherAnalyticsData(tenantId, months, ctx.portfolioCurrency);
-  const spendingVelocity = computeSpendingVelocity(analytics.monthlyData, analytics.sortedMonths, 3);
-
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const categoryConcentration = computeCategoryConcentration(analytics.monthlyData, currentMonthKey);
-
-  return {
-    tier: 'DAILY',
-    portfolioCurrency: ctx.portfolioCurrency,
-    months: analytics.sortedMonths,
-    spendingVelocity,
-    categoryConcentration,
-    hasTransactions: analytics.hasTransactions,
-  };
-}
-
-/**
  * Gather data for Monthly Review tier.
  * Full month data with comparisons to prior month and same month last year.
  */
 async function gatherMonthlyData(tenantId, year, month, comparisonAvailable) {
   const ctx = await getTenantContext(tenantId);
+
+  // Prefetch all currency rates this tier run will need up front. After
+  // this, every convertAmount() call is an in-memory cache lookup with
+  // zero DB roundtrips and zero external API calls.
+  const sixMonthsAgo = new Date(year, month - 7, 1);
+  await prefetchRatesForTier({
+    tenantId,
+    portfolioCurrency: ctx.portfolioCurrency,
+    startDate: sixMonthsAgo,
+    endDate: new Date(),
+    rateCache: ctx.rateCache,
+  });
 
   // Build month list: target month + prior month + same month last year + 2 months before for velocity
   const monthList = [
@@ -469,8 +601,7 @@ async function gatherMonthlyData(tenantId, year, month, comparisonAvailable) {
   // Portfolio + debt
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
-  // Net worth (6 months back)
-  const sixMonthsAgo = new Date(year, month - 7, 1);
+  // Net worth (6 months back — same window we pre-fetched above)
   const netWorthHistory = await gatherNetWorthHistory(tenantId, sixMonthsAgo, ctx.portfolioCurrency, ctx.rateCache);
 
   // Same month last year data for comparison
@@ -505,6 +636,18 @@ async function gatherMonthlyData(tenantId, year, month, comparisonAvailable) {
  */
 async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable) {
   const ctx = await getTenantContext(tenantId);
+
+  // Prefetch rates up front — covers the full 12-month net-worth window
+  // that gatherNetWorthHistory will read below.
+  const firstTargetMonth = getQuarterMonths(quarter)[0];
+  const twelveMonthsAgo = new Date(year, firstTargetMonth - 13, 1);
+  await prefetchRatesForTier({
+    tenantId,
+    portfolioCurrency: ctx.portfolioCurrency,
+    startDate: twelveMonthsAgo,
+    endDate: new Date(),
+    rateCache: ctx.rateCache,
+  });
 
   // Build month list: target quarter + prior quarter + same quarter last year + 3 months before
   const targetMonths = getQuarterMonths(quarter);
@@ -549,8 +692,7 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
   const { incomeHistory, savingsHistory } = computeIncomeAndSavings(analytics.monthlyData, analytics.sortedMonths);
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
-  // Net worth (12 months back for quarterly context)
-  const twelveMonthsAgo = new Date(year, targetMonths[0] - 13, 1);
+  // Net worth (12 months back — same window we pre-fetched above)
   const netWorthHistory = await gatherNetWorthHistory(tenantId, twelveMonthsAgo, ctx.portfolioCurrency, ctx.rateCache);
 
   return {
@@ -576,6 +718,17 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
  */
 async function gatherAnnualData(tenantId, year, comparisonAvailable) {
   const ctx = await getTenantContext(tenantId);
+
+  // Prefetch rates up front — covers the full 3-year net-worth window
+  // that gatherNetWorthHistory reads below, plus all intermediate months.
+  const threeYearsAgo = new Date(year - 2, 0, 1);
+  await prefetchRatesForTier({
+    tenantId,
+    portfolioCurrency: ctx.portfolioCurrency,
+    startDate: threeYearsAgo,
+    endDate: new Date(),
+    rateCache: ctx.rateCache,
+  });
 
   // Build month list: target year + 2 prior years
   const monthList = [];
@@ -614,8 +767,7 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
   const { incomeHistory, savingsHistory } = computeIncomeAndSavings(analytics.monthlyData, analytics.sortedMonths);
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
-  // Net worth (3 years back)
-  const threeYearsAgo = new Date(year - 2, 0, 1);
+  // Net worth (3 years back — same window we pre-fetched above)
   const netWorthHistory = await gatherNetWorthHistory(tenantId, threeYearsAgo, ctx.portfolioCurrency, ctx.rateCache);
 
   return {
@@ -640,8 +792,23 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
  */
 async function gatherPortfolioIntelligenceData(tenantId) {
   const ctx = await getTenantContext(tenantId);
+
+  // PORTFOLIO tier reads current state only, but gatherPortfolioData
+  // still needs to convert each holding's currentValue into the
+  // portfolio currency. Pre-fetch with today..today — the 30-day floor
+  // inside prefetchRatesForTier expands the window so weekend/holiday
+  // runs still have nearest-prior candidates in the cache.
+  const now = new Date();
+  await prefetchRatesForTier({
+    tenantId,
+    portfolioCurrency: ctx.portfolioCurrency,
+    startDate: now,
+    endDate: now,
+    rateCache: ctx.rateCache,
+  });
+
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
-  const equityData = await gatherEquityFundamentals(tenantId);
+  const equityData = await gatherEquityFundamentals(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
   return {
     tier: 'PORTFOLIO',
@@ -688,23 +855,6 @@ Example: "Consider reviewing your dining budget based on the 3-month average."`;
 }
 
 const PROMPT_TEMPLATES = {
-  DAILY: (symbol, currency) => `You are Bliss, a financial intelligence system running a DAILY PULSE scan.
-Your job: detect anomalies and notable changes in the last 30 days. Be brief and alert-focused.
-
-${getBaseVoiceRules(symbol, currency)}
-
-DAILY PULSE RULES:
-- Only produce insights if something is GENUINELY notable (>15% swing, new pattern, unusual spike).
-- If nothing stands out, return an empty array []. Do NOT force insights.
-- Maximum 3 insights. Most days should produce 0-1.
-- Each insight: 1-2 sentences. Alert-style. "${symbol}X amount spent on Y this week — that's Z% above your 90-day average."
-- Title: 6 words max.
-
-${getActionTypeInstructions()}
-
-Return a JSON array where each insight has:
-{ "lens", "title" (6 words max), "body" (1-2 sentences), "severity", "priority" (1-100), "category", "metadata": { "dataPoints": {...}, "actionTypes": [...], "relatedLenses": [...], "suggestedAction": "..." } }`,
-
   MONTHLY: (symbol, currency) => `You are Bliss, a financial intelligence system producing a MONTHLY REVIEW.
 Analyze the completed month comprehensively. Compare to prior month and same month last year when available.
 
@@ -842,6 +992,35 @@ function computeExpiresAt(tier) {
 // ─── Orchestration ───────────────────────────────────────────────────────────
 
 /**
+ * Derive the correct period key for a tier + params bundle.
+ *
+ * The frontend's "Generate all tiers" flow and per-tier refresh both send
+ * explicit `year`/`month`/`quarter` but not `periodKey`. The legacy fallback
+ * of `getPeriodKey(tier, new Date())` silently used *today's* period, which
+ * caused an ANNUAL report about 2025 to land under `2026`, a QUARTERLY Q1
+ * to land under Q2, and a MONTHLY March report to land under April — see
+ * the Insights v1.1 bug report. Deriving from the explicit year/month/quarter
+ * first ensures the generated insights are always stored against the period
+ * they actually describe.
+ */
+function derivePeriodKey(tier, params) {
+  if (params.periodKey) return params.periodKey;
+  const { year, month, quarter } = params;
+  if (tier === 'MONTHLY' && year && month) {
+    return `${year}-${String(month).padStart(2, '0')}`;
+  }
+  if (tier === 'QUARTERLY' && year && quarter) {
+    return `${year}-Q${quarter}`;
+  }
+  if (tier === 'ANNUAL' && year) {
+    return `${year}`;
+  }
+  // PORTFOLIO (current-state tier) and any tier called with no period args:
+  // the ISO-week / current-period derivation from `new Date()` is correct.
+  return getPeriodKey(tier, new Date());
+}
+
+/**
  * Generate insights for a specific tier.
  * This is the main entry point for the worker.
  */
@@ -861,9 +1040,6 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
   // 2. Gather tier-specific data
   let tenantData;
   switch (tier) {
-    case 'DAILY':
-      tenantData = await gatherDailyData(tenantId);
-      break;
     case 'MONTHLY':
       tenantData = await gatherMonthlyData(tenantId, year, month, completeness.comparisonAvailable);
       break;
@@ -893,7 +1069,10 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
   // 3. Compute data hash for dedup
   const hashInput = JSON.stringify(tenantData);
   const dataHash = crypto.createHash('sha256').update(hashInput).digest('hex');
-  const periodKey = params.periodKey || getPeriodKey(tier, new Date());
+  // Derive from explicit params first — see derivePeriodKey JSDoc for why
+  // falling back to `new Date()` was causing the "April 2026 → March 2026"
+  // off-by-one reported by the v1.1 period-selector bug.
+  const periodKey = derivePeriodKey(tier, params);
 
   // Check dedup: same tier + same period + same data = skip
   const existingInsight = await prisma.insight.findFirst({
@@ -917,8 +1096,7 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
 
   // 5. Build prompt and call LLM
   const prompt = buildTieredPrompt(tier, tenantData, activeLenses);
-  const useFastModel = tier === 'DAILY';
-  const rawInsights = await generateInsightContent(prompt, { useFastModel });
+  const rawInsights = await generateInsightContent(prompt);
 
   if (!Array.isArray(rawInsights) || rawInsights.length === 0) {
     logger.warn('LLM returned no insights:', { tenantId, tier });
@@ -1003,23 +1181,16 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
 }
 
 /**
- * Legacy compatibility: generate insights using the old v0 flow.
- * Maps to DAILY tier with automatic period key.
- */
-async function generateInsights(tenantId) {
-  return generateTieredInsights(tenantId, 'DAILY');
-}
-
-/**
  * Generate all tiers that are due for a tenant.
  * Called by the daily cron — checks which tiers should run today.
+ *
+ * Note: the daily cron is retained purely as a scheduling heartbeat so
+ * monthly / quarterly / annual tiers can auto-trigger on their calendar
+ * windows. There is no DAILY tier any more.
  */
 async function generateAllDueTiers(tenantId) {
   const now = new Date();
   const results = {};
-
-  // Daily always runs
-  results.DAILY = await generateTieredInsights(tenantId, 'DAILY');
 
   // Monthly: check if yesterday was the last day of a month
   const yesterday = new Date(now);
@@ -1064,9 +1235,8 @@ async function generateAllDueTiers(tenantId) {
 
 module.exports = {
   generateTieredInsights,
-  generateInsights,
   generateAllDueTiers,
-  gatherDailyData,
+  derivePeriodKey,
   gatherMonthlyData,
   gatherQuarterlyData,
   gatherAnnualData,

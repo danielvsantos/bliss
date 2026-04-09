@@ -8,7 +8,7 @@ import { withAuth } from '../../utils/withAuth.js';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
 
-const VALID_TIERS = ['DAILY', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO'];
+const VALID_TIERS = ['MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO'];
 const VALID_CATEGORIES = ['SPENDING', 'INCOME', 'SAVINGS', 'PORTFOLIO', 'DEBT', 'NET_WORTH'];
 
 /**
@@ -136,8 +136,13 @@ export default withAuth(async function handler(req, res) {
     if (req.method === 'POST') {
       const { tier, year, month, quarter, periodKey, force } = req.body || {};
 
-      // Validate tier if provided
-      if (tier && !VALID_TIERS.includes(tier)) {
+      // Tier is required — the retired DAILY fallback was removed in v1.
+      if (!tier) {
+        return res.status(StatusCodes.BAD_REQUEST).json({
+          error: `tier is required. Must be one of: ${VALID_TIERS.join(', ')}`,
+        });
+      }
+      if (!VALID_TIERS.includes(tier)) {
         return res.status(StatusCodes.BAD_REQUEST).json({
           error: `Invalid tier. Must be one of: ${VALID_TIERS.join(', ')}`,
         });
@@ -169,7 +174,7 @@ export default withAuth(async function handler(req, res) {
 
       return res.status(StatusCodes.ACCEPTED).json({
         message: 'Insight generation started',
-        tier: tier || 'DAILY',
+        tier,
       });
     }
 

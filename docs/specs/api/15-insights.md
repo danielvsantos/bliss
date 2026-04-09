@@ -21,14 +21,14 @@ Multi-tenant isolation is enforced at the query level — every Prisma query inc
 
 ## 15.2. Validation Constants
 
-Two server-side whitelists gate filter inputs. Values outside the whitelist are silently dropped (not rejected) so the GET endpoint stays forgiving to typos from query strings, while the POST endpoint rejects invalid tier values with a 400.
+Two server-side whitelists gate filter inputs. Values outside the whitelist are silently dropped (not rejected) on GET so the endpoint stays forgiving to typos from query strings, while the POST endpoint rejects missing or invalid tier values with a 400.
 
 ```javascript
-const VALID_TIERS = ['DAILY', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO'];
+const VALID_TIERS = ['MONTHLY', 'QUARTERLY', 'ANNUAL', 'PORTFOLIO'];
 const VALID_CATEGORIES = ['SPENDING', 'INCOME', 'SAVINGS', 'PORTFOLIO', 'DEBT', 'NET_WORTH'];
 ```
 
-These constants mirror the backend `insightService.js` exports and the frontend `InsightTier` / `InsightCategory` type unions.
+These constants mirror the backend `insightService.js` exports and the frontend `InsightTier` / `InsightCategory` type unions. `DAILY` is **not** a member — the retired tier is explicitly rejected by POST with a 400.
 
 ## 15.3. `GET /api/insights`
 
@@ -58,11 +58,11 @@ The default order is `[{ priority: 'desc' }, { createdAt: 'desc' }]`.
     {
       "id": "cuid",
       "lens": "SPENDING_VELOCITY",
-      "tier": "DAILY",
+      "tier": "MONTHLY",
       "category": "SPENDING",
-      "periodKey": "2026-04-09",
+      "periodKey": "2026-03",
       "severity": "WARNING",
-      "title": "Dining spend spiked",
+      "title": "Dining spend up 42% vs February",
       "body": "…",
       "priority": 72,
       "metadata": {
@@ -72,14 +72,14 @@ The default order is `[{ priority: 'desc' }, { createdAt: 'desc' }]`.
       },
       "dataHash": "sha256-hex",
       "dismissed": false,
-      "expiresAt": "2026-07-08T06:05:00.000Z",
-      "createdAt": "2026-04-09T06:05:00.000Z"
+      "expiresAt": "2028-04-02T06:05:00.000Z",
+      "createdAt": "2026-04-02T06:05:00.000Z"
     }
   ],
   "total": 42,
   "tierSummary": {
-    "DAILY":     { "latestDate": "2026-04-09", "latestCreatedAt": "2026-04-09T06:05:00.000Z" },
-    "MONTHLY":   { "latestDate": "2026-03-31", "latestCreatedAt": "2026-04-02T06:05:00.000Z" }
+    "MONTHLY":   { "latestDate": "2026-03-31", "latestCreatedAt": "2026-04-02T06:05:00.000Z" },
+    "QUARTERLY": { "latestDate": "2026-03-31", "latestCreatedAt": "2026-04-03T06:05:00.000Z" }
   },
   "categoryCounts": {
     "SPENDING": 12,
@@ -131,27 +131,25 @@ Triggers on-demand insight generation for the authenticated tenant. The request 
 
 ### 15.5.1. Request Body
 
-All fields optional:
+| Field       | Type      | Required | Notes                                                              |
+|-------------|-----------|----------|--------------------------------------------------------------------|
+| `tier`      | `string`  | ✅       | Must be in `VALID_TIERS`. No default — the DAILY fallback was retired in v1.1 |
+| `year`      | `int`     |          | Required by backend for `MONTHLY` / `QUARTERLY` / `ANNUAL` tiers   |
+| `month`     | `int`     |          | Required by backend for `MONTHLY`                                  |
+| `quarter`   | `int`     |          | Required by backend for `QUARTERLY`                                |
+| `periodKey` | `string`  |          | Optional — backend computes from year/month/quarter if omitted     |
+| `force`     | `boolean` |          | Bypass completeness gate + dedup. Also accepts `"true"` string     |
 
-| Field       | Type      | Notes                                                              |
-|-------------|-----------|--------------------------------------------------------------------|
-| `tier`      | `string`  | Must be in `VALID_TIERS`. Defaults to `DAILY` when omitted.        |
-| `year`      | `int`     | Required by backend for `MONTHLY` / `QUARTERLY` / `ANNUAL` tiers   |
-| `month`     | `int`     | Required by backend for `MONTHLY`                                  |
-| `quarter`   | `int`     | Required by backend for `QUARTERLY`                                |
-| `periodKey` | `string`  | Optional — backend computes from year/month/quarter if omitted     |
-| `force`     | `boolean` | Bypass completeness gate + dedup. Also accepts `"true"` string     |
-
-Per-tier required params are **not** validated at the API layer — the backend route enforces them (see `docs/specs/backend/15-insights-engine.md` section 15.9.1 and the backend `POST /api/insights/generate` route). The API layer only validates the `tier` enum.
+Per-tier required params (year/month/quarter) are **not** validated at the API layer — the backend route enforces them (see `docs/specs/backend/15-insights-engine.md` section 15.9.1 and the backend `POST /api/insights/generate` route). The API layer validates that `tier` is present and a member of `VALID_TIERS`.
 
 ### 15.5.2. Responses
 
-| Status | Condition                          |
-|--------|------------------------------------|
-| 202    | `{ message, tier }` — dispatched   |
-| 400    | `tier` not in `VALID_TIERS`        |
-| 401    | Unauthorized                       |
-| 500    | Server error                       |
+| Status | Condition                                                         |
+|--------|-------------------------------------------------------------------|
+| 202    | `{ message, tier }` — dispatched                                  |
+| 400    | `tier` missing OR `tier` not in `VALID_TIERS` (includes `DAILY`)  |
+| 401    | Unauthorized                                                      |
+| 500    | Server error                                                      |
 
 ### 15.5.3. Backend Dispatch
 
@@ -187,7 +185,7 @@ Unsupported methods return 405 with the `Allow: GET, PUT, POST` header.
   - GET: `tierSummary` aggregation from `insight.groupBy` results
   - GET: `categoryCounts` reduction into flat map
   - PUT: dismiss/restore happy path, missing `insightId`, non-boolean `dismissed`, ownership check (404)
-  - POST: default DAILY, tiered params (MONTHLY/QUARTERLY/ANNUAL/PORTFOLIO), `force` passthrough, invalid tier rejection
+  - POST: missing tier → 400, `tier=DAILY` → 400 (retired tier rejected), tiered params (MONTHLY/QUARTERLY/ANNUAL/PORTFOLIO), `force` passthrough, invalid tier rejection
   - 405 on unsupported methods
 
 Test pattern: mocked-handler approach (`vi.mock` for `withAuth`, `prisma`, `rateLimit`, `cors`, `@sentry/nextjs`, and global `fetch`).

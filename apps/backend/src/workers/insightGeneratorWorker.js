@@ -3,24 +3,23 @@ const { Worker } = require('bullmq');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { INSIGHT_QUEUE_NAME, getInsightQueue } = require('../queues/insightQueue');
-const { generateTieredInsights, generateAllDueTiers, generateInsights } = require('../services/insightService');
+const { generateTieredInsights, generateAllDueTiers } = require('../services/insightService');
 const prisma = require('../../prisma/prisma.js');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 /**
- * Processes insight generation jobs across 5 tiers.
+ * Processes insight generation jobs across 4 tiers.
  *
  * Job types:
- * - generate-daily-pulse:         Daily anomaly detection (Flash model, 6 AM UTC)
- * - generate-monthly-review:      Monthly health check (Pro model, 2nd of month)
- * - generate-quarterly-deep-dive: Quarterly trend analysis (Pro model, after quarter close)
- * - generate-annual-report:       Annual comprehensive review (Pro model, Jan 3)
- * - generate-portfolio-intel:     Portfolio fundamentals analysis (Pro model, weekly Monday)
- * - generate-tenant-insights:     On-demand single-tier trigger for one tenant
- * - generate-all-insights:        Daily cron: runs daily pulse + checks if other tiers are due
- *
- * Legacy compatibility:
- * - generate-tenant-insights without tier → defaults to DAILY
+ * - generate-tenant-insights:     On-demand single-tier trigger for one tenant.
+ *                                 Requires `tier` in data — one of
+ *                                 MONTHLY | QUARTERLY | ANNUAL | PORTFOLIO.
+ * - generate-all-insights:        Daily cron (6 AM UTC): scheduling heartbeat.
+ *                                 Checks each tenant for due MONTHLY /
+ *                                 QUARTERLY / ANNUAL windows and runs them.
+ * - generate-portfolio-intel:     Weekly Monday cron (5 AM UTC).
+ *                                 Runs PORTFOLIO tier for tenants with equity
+ *                                 holdings.
  */
 const processInsightJob = async (job) => {
   const { name, data } = job;
@@ -34,31 +33,27 @@ const processInsightJob = async (job) => {
       case 'generate-tenant-insights': {
         const { tenantId, tier, year, month, quarter, periodKey, force } = data;
         if (!tenantId) throw new Error('tenantId is required');
-
-        // If tier specified, generate that specific tier
-        if (tier) {
-          const result = await generateTieredInsights(tenantId, tier, {
-            year, month, quarter, periodKey, force,
-          });
-          const duration = Date.now() - startTime;
-          logger.info('Single-tenant tiered insight generation complete:', {
-            jobId: job.id, tenantId, tier,
-            insightCount: result.insights?.length || 0,
-            skipped: result.skipped || false,
-            duration: `${duration}ms`,
-          });
-          return { success: true, ...result, duration };
+        if (!tier) {
+          throw new Error(
+            'tier is required for generate-tenant-insights — one of MONTHLY | QUARTERLY | ANNUAL | PORTFOLIO',
+          );
         }
 
-        // Legacy: no tier specified → run daily pulse
-        const result = await generateInsights(tenantId);
+        const result = await generateTieredInsights(tenantId, tier, {
+          year, month, quarter, periodKey, force,
+        });
         const duration = Date.now() - startTime;
-        return { success: true, insightCount: result.insights?.length || 0, duration };
+        logger.info('Single-tenant tiered insight generation complete:', {
+          jobId: job.id, tenantId, tier,
+          insightCount: result.insights?.length || 0,
+          skipped: result.skipped || false,
+          duration: `${duration}ms`,
+        });
+        return { success: true, ...result, duration };
       }
 
-      // ── Daily cron: daily pulse + check other due tiers ──────────
-      case 'generate-all-insights':
-      case 'generate-daily-pulse': {
+      // ── Daily cron: scheduling heartbeat for MONTHLY/QUARTERLY/ANNUAL ──
+      case 'generate-all-insights': {
         const tenants = await prisma.tenant.findMany({
           where: { transactions: { some: {} } },
           select: { id: true },
@@ -72,22 +67,13 @@ const processInsightJob = async (job) => {
 
         for (const tenant of tenants) {
           try {
-            // For the main daily cron, check all due tiers
-            if (name === 'generate-all-insights') {
-              const results = await generateAllDueTiers(tenant.id);
-              for (const [tier, result] of Object.entries(results)) {
-                if (!tierResults[tier]) tierResults[tier] = { generated: 0, skipped: 0 };
-                if (result.skipped) {
-                  tierResults[tier].skipped++;
-                } else {
-                  tierResults[tier].generated++;
-                  totalInsights += result.insights?.length || 0;
-                }
-              }
-            } else {
-              // Just daily pulse
-              const result = await generateTieredInsights(tenant.id, 'DAILY');
-              if (!result.skipped) {
+            const results = await generateAllDueTiers(tenant.id);
+            for (const [tier, result] of Object.entries(results)) {
+              if (!tierResults[tier]) tierResults[tier] = { generated: 0, skipped: 0 };
+              if (result.skipped) {
+                tierResults[tier].skipped++;
+              } else {
+                tierResults[tier].generated++;
                 totalInsights += result.insights?.length || 0;
               }
             }
@@ -204,7 +190,10 @@ const startInsightGeneratorWorker = () => {
   const queue = getInsightQueue();
 
   // ── Cron Jobs ────────────────────────────────────────────────────
-  // Daily: 6 AM UTC — runs daily pulse + checks monthly/quarterly/annual triggers
+  // Daily 6 AM UTC — scheduling heartbeat. Fires generateAllDueTiers for
+  // every tenant so MONTHLY / QUARTERLY / ANNUAL can auto-trigger when their
+  // calendar window opens. The DAILY tier was retired; this cron no longer
+  // produces per-day insights.
   queue.add(
     'generate-all-insights',
     {},
