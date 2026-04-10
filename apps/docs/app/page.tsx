@@ -278,54 +278,18 @@ export default function HomePage() {
           </p>
 
           <div className="flex flex-col lg:flex-row gap-10 items-center">
-            {/* Left: Two-image overlap */}
-            <div className="flex-1 w-full">
-              {/* Desktop: portfolio front, expenses behind-right */}
-              <div className="hidden md:block relative w-full" style={{ height: '440px' }}>
-                {/* Back — Expenses (offset right and down, slight rotation) */}
-                <div
-                  className="absolute rounded-xl overflow-hidden transition-transform duration-300"
-                  style={{
-                    width: '78%',
-                    top: '8%',
-                    right: 0,
-                    transform: 'rotate(2deg)',
-                    boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
-                    border: '1px solid #E2E8F0',
-                    zIndex: 10,
-                  }}
-                >
-                  <Image src="/images/expenses.png" alt="Expense tracking with category breakdown and monthly totals" width={700} height={500} className="w-full h-auto" />
-                </div>
-                {/* Front — Portfolio (anchored left, no rotation, stronger shadow) */}
-                <div
-                  className="absolute rounded-xl overflow-hidden transition-transform duration-300"
-                  style={{
-                    width: '78%',
-                    top: '4%',
-                    left: 0,
-                    boxShadow: '0 25px 60px -15px rgba(0,0,0,0.18)',
-                    border: '1px solid #E2E8F0',
-                    zIndex: 20,
-                  }}
-                >
-                  <Image src="/images/portfolio.png" alt="Portfolio holdings with area chart showing net worth growth across stocks, ETFs, bonds, and private equity" width={700} height={500} className="w-full h-auto" />
-                </div>
+            {/* Left: Screenshots stacked vertically */}
+            <div className="w-full flex-1 flex flex-col gap-4">
+              <div className="rounded-xl overflow-hidden" style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.08)', border: '1px solid #E2E8F0' }}>
+                <Image src="/images/portfolio.png" alt="Portfolio holdings with area chart showing net worth growth across stocks, ETFs, bonds, and private equity" width={700} height={500} className="w-full h-auto" />
               </div>
-
-              {/* Mobile: simple stack */}
-              <div className="md:hidden space-y-4">
-                <div className="glass-card overflow-hidden">
-                  <Image src="/images/portfolio.png" alt="Portfolio holdings dashboard" width={600} height={400} className="w-full h-auto" />
-                </div>
-                <div className="glass-card overflow-hidden">
-                  <Image src="/images/expenses.png" alt="Expense tracking" width={600} height={400} className="w-full h-auto" />
-                </div>
+              <div className="rounded-xl overflow-hidden" style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.08)', border: '1px solid #E2E8F0' }}>
+                <Image src="/images/expenses.png" alt="Expense tracking with category breakdown and monthly totals" width={700} height={500} className="w-full h-auto" />
               </div>
             </div>
 
             {/* Right: Features */}
-            <div className="flex-1 lg:max-w-sm">
+            <div className="flex-1">
               <div className="space-y-8">
                 <div>
                   <h3 className="text-base font-semibold mb-2" style={{ color: '#3A3542' }}>
@@ -350,11 +314,22 @@ export default function HomePage() {
 
                 <div>
                   <h3 className="text-base font-semibold mb-2" style={{ color: '#3A3542' }}>
-                    Event-Driven Analytics
+                    Equity Analysis
                   </h3>
                   <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                    Every transaction triggers a scoped analytics update. Monthly aggregations across categories,
-                    tags, currencies, and countries are computed incrementally — never a full table scan.
+                    Break down your stock portfolio by sector, industry, and country. Weighted fundamental
+                    metrics — P/E ratio, dividend yield, EPS — surface concentration risk and income opportunities
+                    at a glance.
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-base font-semibold mb-2" style={{ color: '#3A3542' }}>
+                    Expense Reporting
+                  </h3>
+                  <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
+                    Category breakdowns, monthly totals, and tag-based budgets across currencies and countries.
+                    Every transaction triggers an incremental analytics update — never a full table scan.
                   </p>
                 </div>
 
@@ -375,11 +350,12 @@ export default function HomePage() {
       <section className="py-16 md:py-24" style={{ borderTop: '1px solid #E2E8F0' }}>
         <div className="max-w-6xl mx-auto px-6">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3" style={{ color: '#3A3542' }}>
-            Eradicate Manual Data Entry
+            Quiet Intelligence, Built In.
           </h2>
           <p className="text-base leading-relaxed mb-12 max-w-3xl" style={{ color: '#5A5266' }}>
-            A multi-tier classification waterfall deterministically routes and categorizes your
-            transactions without relying entirely on expensive LLM calls.
+            AI that works in the background so you don&apos;t have to. Transactions classify themselves,
+            bank data syncs overnight, imports map automatically, and financial insights surface
+            without you asking.
           </p>
 
           {/* Grid with stretch so bottom edges align */}
@@ -504,6 +480,70 @@ export default function HomePage() {
                 />
               </div>
             </div>
+
+            {/* Box 4: Financial Insights */}
+            <div className="glass-card overflow-hidden md:col-span-2">
+              {/* Mobile: text then stacked screenshots */}
+              <div className="flex flex-col md:hidden">
+                <div className="p-6 pb-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3A3542" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <h3 className="text-lg font-semibold" style={{ color: '#3A3542' }}>
+                      AI Financial Insights
+                    </h3>
+                  </div>
+                  <p className="text-sm leading-relaxed mb-2" style={{ color: '#5A5266' }}>
+                    Actionable reports on four cadences — monthly, quarterly, annual, and weekly portfolio intelligence.
+                  </p>
+                  <Link
+                    href="/docs/guides/financial-insights"
+                    className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-[#3A3542]"
+                    style={{ color: '#6D657A' }}
+                  >
+                    Insights guide <ArrowRight />
+                  </Link>
+                </div>
+                <div className="flex flex-col gap-4 px-6 pb-6">
+                  <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <Image src="/images/cropinsight1.png" alt="Quarterly savings insight card with warning severity" width={500} height={200} className="w-full h-auto" />
+                  </div>
+                  <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <Image src="/images/cropinsight2.png" alt="Portfolio holdings concentration insight card" width={500} height={300} className="w-full h-auto" />
+                  </div>
+                </div>
+              </div>
+              {/* Desktop: three columns — text | screenshot | screenshot */}
+              <div className="hidden md:grid md:grid-cols-3 gap-4 p-6 items-center">
+                <div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3A3542" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <h3 className="text-lg font-semibold" style={{ color: '#3A3542' }}>
+                      AI Financial Insights
+                    </h3>
+                  </div>
+                  <p className="text-sm leading-relaxed mb-3" style={{ color: '#5A5266' }}>
+                    Actionable reports on four cadences — monthly, quarterly, annual, and weekly portfolio intelligence.
+                  </p>
+                  <Link
+                    href="/docs/guides/financial-insights"
+                    className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-[#3A3542]"
+                    style={{ color: '#6D657A' }}
+                  >
+                    Insights guide <ArrowRight />
+                  </Link>
+                </div>
+                <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <Image src="/images/cropinsight1.png" alt="Quarterly savings insight card with warning severity" width={500} height={200} className="w-full h-auto" />
+                </div>
+                <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <Image src="/images/cropinsight2.png" alt="Portfolio holdings concentration insight card" width={500} height={300} className="w-full h-auto" />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -590,7 +630,7 @@ export default function HomePage() {
                   Bulletproof Reliability
                 </h3>
                 <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                  Orchestrated by 10 independent BullMQ workers and protected by over 1,000 automated CI pipeline tests.
+                  Orchestrated by 8 independent BullMQ workers and protected by over 1,000 automated CI pipeline tests.
                 </p>
               </div>
             </div>

@@ -172,15 +172,33 @@ Always create a migration when modifying the schema -- do not apply changes with
 - Use **BullMQ** for async work. Never perform heavy computation directly in API route handlers.
 - Internal service-to-service communication uses HTTP endpoints protected by `INTERNAL_API_KEY`.
 
+## CI Pipeline
+
+Every push and pull request triggers a GitHub Actions pipeline with 7 jobs:
+
+| Job | What it checks |
+|-----|----------------|
+| API — Unit Tests | Vitest unit tests for API routes |
+| API — Integration Tests | Vitest + real Postgres + pgvector |
+| Backend — Unit Tests | Jest unit tests for workers and services |
+| Backend — Integration Tests | Jest + real Postgres + Redis |
+| Web — Unit Tests | Vitest + MSW for hooks, pages, and components |
+| Lint — Web & API | ESLint across both apps (`--max-warnings 0` for web) |
+| Docker — Build & Health Check | Full `docker compose` build + service health checks |
+
+**All 7 jobs must pass before a PR can be merged.** Run `pnpm test` and `pnpm --filter @bliss/web lint && pnpm --filter @bliss/api lint` locally before pushing to catch issues early.
+
 ## Pull Request Process
 
 1. Fork the repository and create a feature branch from `main`.
 2. Read the relevant spec files and CLAUDE.md before making changes.
 3. Make your changes, following the module system rules and code style of the existing codebase.
 4. Update specs and/or CLAUDE.md if your change modifies behavior or introduces new patterns.
-5. Ensure all tests pass:
+5. Ensure all tests and lint checks pass locally:
    ```bash
    pnpm test
+   pnpm --filter @bliss/web lint
+   pnpm --filter @bliss/api lint
    ```
 6. Write clear, descriptive commit messages.
 7. Open a pull request against the `main` branch with a description of your changes.

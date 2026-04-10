@@ -7,5 +7,6 @@ export default {
   'investment-portfolios': 'Investment Portfolios',
   'plaid-bank-sync': 'Bank Sync with Plaid',
   'ai-classification': 'AI Classification',
+  'financial-insights': 'Financial Insights',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
 };

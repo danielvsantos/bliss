@@ -104,7 +104,8 @@ export function CategoryCombobox({
         <Command className="rounded-lg overflow-visible">
           <CommandInput placeholder={t('categoryCombobox.search')} />
           <CommandList
-            style={{ maxHeight: 280, overscrollBehavior: 'contain' }}
+            style={{ maxHeight: 280 }}
+            onWheel={(e) => e.nativeEvent.stopImmediatePropagation()}
           >
             <CommandEmpty>{t('categoryCombobox.noResults')}</CommandEmpty>
             {groupedCategories.map(([type, cats]) => (

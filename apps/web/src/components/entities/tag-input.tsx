@@ -94,7 +94,10 @@ export function TagInput({ selectedTagIds, onChange }: TagInputProps) {
               value={search}
               onValueChange={setSearch}
             />
-            <CommandList style={{ maxHeight: 200, overscrollBehavior: 'contain' }}>
+            <CommandList
+              style={{ maxHeight: 200 }}
+              onWheel={(e) => e.nativeEvent.stopImmediatePropagation()}
+            >
               <CommandEmpty>
                 {search.trim() && !exactMatch ? (
                   <button

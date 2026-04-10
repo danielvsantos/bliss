@@ -460,8 +460,7 @@ function SignUpForm() {
 function useDemoMode(): boolean {
   const [isDemo, setIsDemo] = useState(false);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setIsDemo(params.get("origin") === "docs-site");
+    setIsDemo(window.location.hostname === "app.blissfinance.co");
   }, []);
   return isDemo;
 }
