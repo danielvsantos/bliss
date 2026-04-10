@@ -25,7 +25,7 @@ describe('useCurrencyRates', () => {
 
   it('fetches rates for non-USD currencies', async () => {
     const mockRates = [{ currencyFrom: 'EUR', currencyTo: 'USD', rate: 1.08, date: '2024-01-15' }];
-    vi.mocked(api.getCurrencyRates).mockResolvedValueOnce(mockRates as any);
+    vi.mocked(api.getCurrencyRates).mockResolvedValueOnce(mockRates);
 
     const { wrapper } = createWrapper();
     const testDate = new Date('2024-01-15T00:00:00Z');
@@ -45,7 +45,7 @@ describe('useCurrencyRates', () => {
 
   it('filters out USD from query list', async () => {
     const mockRates = [{ currencyFrom: 'GBP', currencyTo: 'USD', rate: 1.27, date: '2024-01-15' }];
-    vi.mocked(api.getCurrencyRates).mockResolvedValueOnce(mockRates as any);
+    vi.mocked(api.getCurrencyRates).mockResolvedValueOnce(mockRates);
 
     const { wrapper } = createWrapper();
     const testDate = new Date('2024-01-15T00:00:00Z');
@@ -64,8 +64,8 @@ describe('useCurrencyRates', () => {
     const eurRates = [{ currencyFrom: 'EUR', currencyTo: 'USD', rate: 1.08 }];
     const gbpRates = [{ currencyFrom: 'GBP', currencyTo: 'USD', rate: 1.27 }];
     vi.mocked(api.getCurrencyRates)
-      .mockResolvedValueOnce(eurRates as any)
-      .mockResolvedValueOnce(gbpRates as any);
+      .mockResolvedValueOnce(eurRates)
+      .mockResolvedValueOnce(gbpRates);
 
     const { wrapper } = createWrapper();
     const testDate = new Date('2024-01-15T00:00:00Z');

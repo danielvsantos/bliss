@@ -19,7 +19,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import type { Transaction as ApiTransaction } from '@/types/api';
-import { DebtTermsForm, debtTermsSchema } from './DebtTermsForm';
+import { DebtTermsForm } from './DebtTermsForm';
+import { debtTermsSchema } from './debt-terms-schema';
 import { useTickerSearch, type TickerResult } from '@/hooks/use-ticker-search';
 import { CategoryCombobox } from './category-combobox';
 import { TagInput } from './tag-input';
@@ -240,6 +241,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     } else {
       form.clearErrors('ticker');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [watchedAssetCurrency, selectedAccount, isInvestment, form]);
 
   if (isLoading) {

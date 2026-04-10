@@ -32,7 +32,6 @@ export function useMetadata() {
   return useQuery({
     queryKey: metadataKeys.all,
     queryFn: async (): Promise<Metadata> => {
-      console.log('🔄 Fetching all metadata');
       // The `api.getUserPreferences()` call was removed as it does not exist.
       // A proper user preferences store should be implemented separately.
       const [countries, currencies, banks, categoriesResponse, accountsResponse] = await Promise.all([
@@ -113,16 +112,13 @@ export function useCountries() {
   return useQuery({
     queryKey: metadataKeys.countries(),
     queryFn: async () => {
-      console.log('🔄 Fetching countries');
       const data = await api.getCountries();
-      const enhancedData = data.map(c => ({
+      return data.map(c => ({
         ...c,
         isDefault: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }));
-      console.log('✅ Countries fetched:', enhancedData.length);
-      return enhancedData;
     },
     staleTime: 1000 * 60 * 60 * 24, // Consider countries fresh for 24 hours
   });
@@ -132,16 +128,13 @@ export function useCurrencies() {
   return useQuery({
     queryKey: metadataKeys.currencies(),
     queryFn: async () => {
-      console.log('🔄 Fetching currencies');
       const data = await api.getCurrencies();
-      const enhancedData = data.map(c => ({
+      return data.map(c => ({
         ...c,
         isDefault: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }));
-      console.log('✅ Currencies fetched:', enhancedData.length);
-      return enhancedData;
     },
     staleTime: 1000 * 60 * 60 * 24, // Consider currencies fresh for 24 hours
   });
@@ -151,15 +144,12 @@ export function useBanks() {
   return useQuery({
     queryKey: metadataKeys.banks(),
     queryFn: async () => {
-      console.log('🔄 Fetching banks');
       const data = await api.getBanks();
-      const enhancedData = data.map(b => ({
+      return data.map(b => ({
         ...b,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }));
-      console.log('✅ Banks fetched:', enhancedData.length);
-      return enhancedData;
     },
     staleTime: 1000 * 60 * 60, // Consider banks fresh for 1 hour
   });

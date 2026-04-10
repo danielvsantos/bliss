@@ -23,11 +23,11 @@ const mockAccounts: EnrichedAccount[] = [
     healthLabel: 'Healthy',
     healthColor: 'positive',
     lastSync: null,
-    plaidItem: { id: 'p1' } as any,
+    plaidItem: { id: 'p1' } as unknown as EnrichedAccount['plaidItem'],
     plaidAccountId: 100,
     historicalSyncComplete: true,
     earliestTransactionDate: null,
-    originalAccount: {} as any,
+    originalAccount: {} as EnrichedAccount['originalAccount'],
   },
   {
     id: 2,
@@ -41,11 +41,11 @@ const mockAccounts: EnrichedAccount[] = [
     healthLabel: 'Disconnected',
     healthColor: 'muted',
     lastSync: null,
-    plaidItem: { id: 'p2' } as any,
+    plaidItem: { id: 'p2' } as unknown as EnrichedAccount['plaidItem'],
     plaidAccountId: 101,
     historicalSyncComplete: true,
     earliestTransactionDate: null,
-    originalAccount: {} as any,
+    originalAccount: {} as EnrichedAccount['originalAccount'],
   },
   {
     id: 3,
@@ -63,7 +63,7 @@ const mockAccounts: EnrichedAccount[] = [
     plaidAccountId: null,
     historicalSyncComplete: true,
     earliestTransactionDate: null,
-    originalAccount: {} as any,
+    originalAccount: {} as EnrichedAccount['originalAccount'],
   },
 ];
 

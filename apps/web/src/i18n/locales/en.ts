@@ -47,7 +47,9 @@ const en = {
     type: "Type",
     actions: "Actions",
     viewReport: "View Report",
-    other: "Other"
+    other: "Other",
+    selectCountries: "Select countries",
+    noCountryFound: "No country found.",
   },
 
   // Time related
@@ -117,6 +119,7 @@ const en = {
       recentTransactions: "Recent Transactions",
       quickActions: "Quick Actions",
       insights: "Insights",
+      totalNetWorth: "Total Net Worth",
     },
     accounts: {
       title: "Accounts",
@@ -263,6 +266,7 @@ const en = {
     expenses: {
       title: "Expense Tracking",
       description: "Analyze your spending patterns by category",
+      selectCategoryType: "Select category type",
       countriesSelected: "{{count}} countries selected",
       timeFrame: {
         label: "Time Frame",
@@ -300,6 +304,7 @@ const en = {
     settings: {
       title: "Account Settings",
       description: "Manage your account preferences and settings",
+      language: "Language",
       error_loading_reference_data: "Failed to load reference data. Please refresh the page.",
       error_saving_no_id: "Could not find your user ID to save settings.",
       error_saving_generic: "An unknown error occurred while saving.",
@@ -376,7 +381,6 @@ const en = {
     login: {
       title: "Login",
       subtitle: "Sign in to your account",
-      forgotPassword: "Forgot password?",
       noAccount: "Don't have an account?",
       signUp: "Sign up",
       rememberMe: "Remember me",
@@ -802,6 +806,9 @@ const en = {
     updateAccount: "Update Account",
     createError: "Failed to create account. Please try again.",
     updateError: "Failed to update account. Please try again.",
+    selectBank: "Select a bank",
+    selectCurrency: "Select a currency",
+    selectCountry: "Select a country",
   },
   categoryForm: {
     name: "Category Name",
@@ -1014,6 +1021,9 @@ const en = {
       Education: "Education",
       Travel: "Travel",
       Donations: "Donations",
+      Other: "Other",
+      Others: "Others",
+      "N/A": "N/A",
     },
     types: {
       Income: "Income",
@@ -1921,6 +1931,63 @@ const en = {
     noTimelineData: "No timeline data",
     monthly: "Monthly",
   },
+
+  // Auth page — flat string keys (components call t("literal string"))
+  "Sign In": "Sign In",
+  "Sign Up": "Sign Up",
+  "Sign in with Google": "Sign in with Google",
+  "Sign up with Google": "Sign up with Google",
+  "or continue with email": "or continue with email",
+  "Email address": "Email address",
+  "Password": "Password",
+  "Signing in...": "Signing in...",
+  "Login failed": "Login failed",
+  "Full name": "Full name",
+  "Use at least 8 characters, including a number.": "Use at least 8 characters, including a number.",
+  "By creating an account you agree to our": "By creating an account you agree to our",
+  "and": "and",
+  "Registration failed": "Registration failed",
+  "Creating account...": "Creating account...",
+  "Create Account": "Create Account",
+  "Don't have an account?": "Don't have an account?",
+  "Create one": "Create one",
+  "Already have an account?": "Already have an account?",
+  "Sign in": "Sign in",
+  "Welcome to the Bliss demo. Use the credentials below to sign in and explore.": "Welcome to the Bliss demo. Use the credentials below to sign in and explore.",
+  "The quiet intelligence behind your global wealth.": "The quiet intelligence behind your global wealth.",
+  "Financial clarity, without borders.": "Financial clarity, without borders.",
+  "Bliss capybara in a turtleneck, seated in a mid-century chair beside a stack of currency coins": "Bliss capybara in a turtleneck, seated in a mid-century chair beside a stack of currency coins",
+  "Bliss capybara mascot seated in a mid-century chair": "Bliss capybara mascot seated in a mid-century chair",
+  "Welcome back": "Welcome back",
+  "Protected by enterprise-grade encryption.": "Protected by enterprise-grade encryption.",
+
+  // Dashboard actions — flat string keys
+  "Fix Bank Connection": "Fix Bank Connection",
+  "A bank connection needs your attention": "A bank connection needs your attention",
+  "Review Pending Transactions": "Review Pending Transactions",
+  "Check and categorize imported transactions": "Check and categorize imported transactions",
+  "Update Asset Prices": "Update Asset Prices",
+  "Some manual assets need a price refresh": "Some manual assets need a price refresh",
+  "Connect Bank": "Connect Bank",
+  "Link your bank for automatic sync": "Link your bank for automatic sync",
+  "Add Manual Account": "Add Manual Account",
+  "Manually track an account or asset": "Manually track an account or asset",
+  "Import Transactions": "Import Transactions",
+  "Upload a CSV file to import transactions": "Upload a CSV file to import transactions",
+  "View Insights": "View Insights",
+  "See AI-generated financial observations": "See AI-generated financial observations",
+  "Explore Expenses": "Explore Expenses",
+  "See how your spending breaks down": "See how your spending breaks down",
+  "View P&L": "View P&L",
+  "View income vs expenses over time": "View income vs expenses over time",
+  "View Accounts": "View Accounts",
+  "See all your connected accounts": "See all your connected accounts",
+
+  // Setup checklist — flat string keys
+  "Get started with Bliss": "Get started with Bliss",
+  "of": "of",
+  "complete": "complete",
+  "Dismiss": "Dismiss",
 };
 
 export default en;

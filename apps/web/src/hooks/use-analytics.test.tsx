@@ -41,7 +41,7 @@ describe('useAnalytics', () => {
       quarterlyBreakdown: [],
       groupBreakdown: [],
       typeBreakdown: [],
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof api.getAnalytics>>);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAnalytics({ view: 'year', years: [2023] }), { wrapper });

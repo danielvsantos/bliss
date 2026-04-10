@@ -16,9 +16,9 @@ export type Tenant = {
   name: string;
   plan: string;
   createdAt: string;
-  countries: unknown[];
-  currencies: unknown[];
-  banks: unknown[];
+  countries: Country[];
+  currencies: Currency[];
+  banks: Bank[];
   transactionYears: number[];
   plaidLinkedBankIds?: number[];
 };
@@ -52,6 +52,7 @@ export type Account = {
   currencyCode: string;
   countryId: string;
   owners: { userId: string }[];
+  plaidAccountId?: string | null;
 };
 
 export type AccountRequest = {
@@ -479,6 +480,55 @@ export type PlaidSyncLog = {
     error?: string;
   } | null;
   createdAt: string;
+};
+
+// ─── Insights Types ────────────────────────────────────────────────────────────
+
+/** Cadence tier that produced the insight. DAILY was retired in v1.1. */
+export type InsightTier = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
+
+/** Insight category grouping (drives the frontend tab bar and chip filters). */
+export type InsightCategory =
+  | 'SPENDING'
+  | 'INCOME'
+  | 'SAVINGS'
+  | 'PORTFOLIO'
+  | 'DEBT'
+  | 'NET_WORTH';
+
+export type InsightSeverity = 'POSITIVE' | 'INFO' | 'WARNING' | 'CRITICAL';
+
+export type InsightMetadata = {
+  actionTypes?: string[];
+  relatedLenses?: string[];
+  suggestedAction?: string;
+  dataPoints?: Record<string, unknown>;
+} & Record<string, unknown>;
+
+export type Insight = {
+  id: string;
+  lens: string;
+  tier: InsightTier;
+  category: InsightCategory;
+  periodKey: string;
+  severity: InsightSeverity;
+  title: string;
+  body: string;
+  priority: number;
+  date?: string;
+  dismissed?: boolean;
+  metadata?: InsightMetadata;
+  createdAt?: string;
+};
+
+// ─── Notification Signal Types ─────────────────────────────────────────────────
+
+export type UserSignal = {
+  type: string;
+  severity: string;
+  href: string;
+  label: string;
+  isNew?: boolean;
 };
 
 // ─── Merchant History Types ────────────────────────────────────────────────────

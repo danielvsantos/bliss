@@ -13,7 +13,7 @@ export function useCompleteOnboardingStep() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ step, data }: { step: string; data?: any }) =>
+    mutationFn: ({ step, data }: { step: string; data?: Record<string, unknown> }) =>
       api.completeOnboardingStep(step, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-progress'] });

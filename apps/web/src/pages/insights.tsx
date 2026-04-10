@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useInsights, useDismissInsight, useGenerateInsights } from "@/hooks/use-insights";
-import type { InsightTier, InsightCategory } from "@/hooks/use-insights";
+import type { InsightTier, InsightCategory, Insight } from "@/types/api";
 import { InsightCard } from "@/components/insights/insight-card";
 import {
   RefreshCw,
@@ -54,20 +54,6 @@ const CATEGORIES: { key: InsightCategory; icon: typeof Receipt; label: string }[
   { key: "DEBT", icon: CreditCard, label: "insights.categories.debt" },
   { key: "NET_WORTH", icon: Landmark, label: "insights.categories.netWorth" },
 ];
-
-type Insight = {
-  id: string;
-  lens: string;
-  tier: InsightTier;
-  category: InsightCategory;
-  periodKey: string;
-  severity: string;
-  priority: number;
-  title: string;
-  body: string;
-  date: string;
-  metadata?: Record<string, unknown>;
-};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -140,8 +126,16 @@ export default function InsightsPage() {
   const dismissMutation = useDismissInsight();
   const generateMutation = useGenerateInsights();
 
-  const allTierInsights: Insight[] = data?.insights || [];
-  const tierSummary = data?.tierSummary || {};
+  // Memoize the raw insight list so hooks depending on it don't invalidate on
+  // every render (data?.insights || [] creates a new array reference each time).
+  const allTierInsights = useMemo<Insight[]>(
+    () => data?.insights ?? [],
+    [data?.insights],
+  );
+  const tierSummary = useMemo(
+    () => data?.tierSummary ?? {},
+    [data?.tierSummary],
+  );
 
   // Distinct period keys present in this tier's insights, sorted newest-first.
   const availablePeriods = useMemo(() => {
@@ -491,10 +485,10 @@ export default function InsightsPage() {
       ) : (
         <div className="space-y-3">
           <AnimatePresence mode="popLayout">
-            {filteredInsights.map((insight) => (
+            {filteredInsights.map((insight: Insight) => (
               <InsightCard
                 key={insight.id}
-                insight={insight as never}
+                insight={insight}
                 onDismiss={handleDismiss}
                 showTierBadge={false}
               />

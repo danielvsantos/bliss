@@ -16,10 +16,16 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: vi.fn(() => ({ toast: vi.fn() }))
 }));
 
+// Minimal shape of the Plaid config callback that the component passes in.
+interface CapturedPlaidConfig {
+  token: string | null;
+  onSuccess: (publicToken: string, metadata: unknown) => void | Promise<void>;
+}
+
 // We must store the configuration passed to usePlaidLink to simulate an onSuccess callback
-let capturedPlaidConfig: any;
+let capturedPlaidConfig: CapturedPlaidConfig | undefined;
 vi.mock('react-plaid-link', () => ({
-  usePlaidLink: vi.fn((config) => {
+  usePlaidLink: vi.fn((config: CapturedPlaidConfig) => {
     capturedPlaidConfig = config;
     return {
       open: vi.fn(),
@@ -30,11 +36,12 @@ vi.mock('react-plaid-link', () => ({
 
 // Mock the child modal
 vi.mock('./account-selection-modal', () => ({
-  AccountSelectionModal: ({ isOpen, onClose }: any) => isOpen ? (
-    <div data-testid="mock-account-modal">
-      <button onClick={onClose}>Close Modal</button>
-    </div>
-  ) : null
+  AccountSelectionModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
+    isOpen ? (
+      <div data-testid="mock-account-modal">
+        <button onClick={onClose}>Close Modal</button>
+      </div>
+    ) : null
 }));
 
 describe('PlaidConnect', () => {
@@ -70,7 +77,7 @@ describe('PlaidConnect', () => {
 
     // Simulate react-plaid-link `onSuccess` firing internally
     expect(capturedPlaidConfig).toBeDefined();
-    await capturedPlaidConfig.onSuccess('public-token-abc', { institution: { name: 'Chase' } });
+    await capturedPlaidConfig!.onSuccess('public-token-abc', { institution: { name: 'Chase' } });
 
     expect(api.exchangePublicToken).toHaveBeenCalledWith('public-token-abc', { institution: { name: 'Chase' } });
     
@@ -89,7 +96,7 @@ describe('PlaidConnect', () => {
     expect(screen.getByText('plaidConnect.reconnect')).toBeInTheDocument();
 
     // Simulate react-plaid-link returning success (e.g user typed in their updated bank password)
-    await capturedPlaidConfig.onSuccess('public-token-123', {});
+    await capturedPlaidConfig!.onSuccess('public-token-123', {});
 
     // For updates, the item goes to ACTIVE status
     expect(api.updatePlaidItem).toHaveBeenCalledWith('existing-item-999', { status: 'ACTIVE' });
@@ -106,7 +113,7 @@ describe('PlaidConnect', () => {
     render(<PlaidConnect plaidItemId="item-existing" onSuccess={customSuccess} />);
     
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());
-    await capturedPlaidConfig.onSuccess('custom-public-token', { myData: true });
+    await capturedPlaidConfig!.onSuccess('custom-public-token', { myData: true });
 
     // Validate we called both the background re-auth logic AND the custom
     expect(api.updatePlaidItem).toHaveBeenCalled();

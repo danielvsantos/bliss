@@ -79,11 +79,11 @@ describe('ChangePasswordDialog', () => {
   });
 
   it('calls the API on valid submit and shows success toast', async () => {
-    let capturedBody: any = null;
+    let capturedBody: Record<string, unknown> | null = null;
 
     server.use(
       http.put('/api/auth/change-password', async ({ request }) => {
-        capturedBody = await request.json();
+        capturedBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ message: 'Password updated successfully' });
       })
     );

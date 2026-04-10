@@ -36,7 +36,7 @@ describe('useUpdateTenantSettings', () => {
   it('invalidates portfolio queries when portfolioCurrency is updated', async () => {
     server.use(
       http.put('/api/tenants/settings', async ({ request }) => {
-        const body = await request.json() as any;
+        const body = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ ...body, autoPromoteThreshold: 80, reviewThreshold: 50 });
       })
     );
@@ -66,7 +66,7 @@ describe('useUpdateTenantSettings', () => {
   it('does NOT invalidate portfolio queries if portfolioCurrency is NOT in the payload', async () => {
     server.use(
       http.put('/api/tenants/settings', async ({ request }) => {
-        const body = await request.json() as any;
+        const body = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ portfolioCurrency: 'USD', ...body }); // Server returns it, but payload lacked it!
       })
     );

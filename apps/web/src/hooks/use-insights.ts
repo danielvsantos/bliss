@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import type { InsightTier, InsightCategory } from '@/types/api';
 
-export type InsightTier = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
-export type InsightCategory = 'SPENDING' | 'INCOME' | 'SAVINGS' | 'PORTFOLIO' | 'DEBT' | 'NET_WORTH';
+// Re-export shared insight type unions so existing imports from '@/hooks/use-insights' still compile.
+export type { InsightTier, InsightCategory };
 
 interface InsightParams {
   limit?: number;

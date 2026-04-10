@@ -12,7 +12,7 @@ import api from '@/lib/api';
 import { getTenantMeta } from '@/utils/tenantMetaStorage';
 import type { Account, Bank, Country, Currency, User } from '@/types/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/use-auth';
 import { Checkbox } from '../ui/checkbox';
 
 
@@ -50,7 +50,7 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
   const currencies: Currency[] = tenantMeta?.currencies || [];
   const countries: Country[] = tenantMeta?.countries || [];
 
-  const tenantId = (currentUser as any)?.tenant?.id || currentUser?.tenantId;
+  const tenantId = currentUser?.tenant?.id || currentUser?.tenantId;
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ['users', tenantId],
     queryFn: () => api.getUsers(),

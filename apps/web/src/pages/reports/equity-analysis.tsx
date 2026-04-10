@@ -36,7 +36,14 @@ function SortChevron({ dir }: { dir: 'asc' | 'desc' | null }) {
 
 /* ── Custom Pie label ── */
 const RADIAN = Math.PI / 180;
-function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) {
+
+interface PieLabelProps {
+  cx: number; cy: number; midAngle: number;
+  innerRadius: number; outerRadius: number;
+  percent: number; name: string;
+}
+
+function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: PieLabelProps) {
   if (percent < 0.04) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 1.3;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -49,7 +56,13 @@ function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent
 }
 
 /* ── Custom Tooltip ── */
-function ChartTooltip({ active, payload, currency }: any) {
+interface ChartTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: { name: string; value: number; weight: number } }>;
+  currency?: string;
+}
+
+function ChartTooltip({ active, payload, currency }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   const { name, value, weight } = payload[0].payload;
   return (
@@ -70,7 +83,7 @@ export default function EquityAnalysisPage() {
 
   const portfolioCurrency = data?.portfolioCurrency ?? 'USD';
   const summary = data?.summary;
-  const groups = data?.groups ?? [];
+  const groups = useMemo(() => data?.groups ?? [], [data?.groups]);
 
   // Flatten all holdings for the table
   const allHoldings = useMemo(() => {

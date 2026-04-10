@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SmartImportPage from './smart-import';
 import * as UseImports from '@/hooks/use-imports';
 import * as UseMetadata from '@/hooks/use-metadata';
+import { mockQueryResult, mockMutationResult } from '@/test/mock-helpers';
 
 // Mocks
 vi.mock('react-i18next', () => ({
@@ -23,10 +24,10 @@ global.ResizeObserver = class {
   observe() {}
   unobserve() {}
   disconnect() {}
-} as any;
+} as unknown as typeof ResizeObserver;
 window.ResizeObserver = global.ResizeObserver;
 if (typeof window.PointerEvent === 'undefined') {
-  window.PointerEvent = class PointerEvent extends Event {} as any;
+  window.PointerEvent = class PointerEvent extends Event {} as unknown as typeof PointerEvent;
 }
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.hasPointerCapture = vi.fn();
@@ -39,46 +40,39 @@ describe('SmartImportPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(UseMetadata.useAccounts).mockReturnValue({
-      data: [{ id: 1, name: 'Bank of America' }],
-    } as any);
-    
-    vi.mocked(UseMetadata.useCategories).mockReturnValue({
-      data: [{ id: 10, name: 'Food' }],
-    } as any);
+    vi.mocked(UseMetadata.useAccounts).mockReturnValue(
+      mockQueryResult([{ id: 1, name: 'Bank of America' }]),
+    );
 
-    vi.mocked(UseImports.useAdapters).mockReturnValue({
-      data: [{ id: 100, name: 'Chase CSV', matchSignature: { isNative: false } }],
-    } as any);
+    vi.mocked(UseMetadata.useCategories).mockReturnValue(
+      mockQueryResult([{ id: 10, name: 'Food' }]),
+    );
 
-    vi.mocked(UseImports.useDetectAdapter).mockReturnValue({
-      mutate: detectAdapterMock,
-      isPending: false,
-    } as any);
+    vi.mocked(UseImports.useAdapters).mockReturnValue(
+      mockQueryResult([{ id: 100, name: 'Chase CSV', matchSignature: { isNative: false } }]),
+    );
 
-    vi.mocked(UseImports.useUploadSmartImport).mockReturnValue({
-      mutate: uploadMock,
-      isPending: false,
-    } as any);
+    vi.mocked(UseImports.useDetectAdapter).mockReturnValue(
+      mockMutationResult({ mutate: detectAdapterMock }),
+    );
 
-    vi.mocked(UseImports.useCreateAdapter).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
-    vi.mocked(UseImports.useUpdateAdapter).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
-    vi.mocked(UseImports.useDeleteAdapter).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
+    vi.mocked(UseImports.useUploadSmartImport).mockReturnValue(
+      mockMutationResult({ mutate: uploadMock }),
+    );
+
+    vi.mocked(UseImports.useCreateAdapter).mockReturnValue(mockMutationResult());
+    vi.mocked(UseImports.useUpdateAdapter).mockReturnValue(mockMutationResult());
+    vi.mocked(UseImports.useDeleteAdapter).mockReturnValue(mockMutationResult());
 
     // Default staged data to nothing
-    vi.mocked(UseImports.useStagedImport).mockReturnValue({
-      data: null,
-      isLoading: false,
-    } as any);
-    
-    vi.mocked(UseImports.useImportSeeds).mockReturnValue({
-      data: null,
-    } as any);
+    vi.mocked(UseImports.useStagedImport).mockReturnValue(mockQueryResult(null));
+
+    vi.mocked(UseImports.useImportSeeds).mockReturnValue(mockQueryResult(null));
 
     // Other mutations needing dummies
-    vi.mocked(UseImports.useUpdateImportRow).mockReturnValue({ mutate: vi.fn() } as any);
-    vi.mocked(UseImports.useCommitImport).mockReturnValue({ mutate: vi.fn() } as any);
-    vi.mocked(UseImports.useCancelImport).mockReturnValue({ mutate: vi.fn() } as any);
+    vi.mocked(UseImports.useUpdateImportRow).mockReturnValue(mockMutationResult());
+    vi.mocked(UseImports.useCommitImport).mockReturnValue(mockMutationResult());
+    vi.mocked(UseImports.useCancelImport).mockReturnValue(mockMutationResult());
   });
 
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -122,13 +116,12 @@ describe('SmartImportPage', () => {
     // Let's directly fake the useStagedImport mock to return a PROCESSING import
     // Note: step is controlled via state in component; we would need to simulate upload success
     // Instead we can test review state directly by returning `stagedData` with `status: 'READY'`
-    vi.mocked(UseImports.useStagedImport).mockReturnValue({
-      data: {
+    vi.mocked(UseImports.useStagedImport).mockReturnValue(
+      mockQueryResult({
         import: { status: 'READY', totalRows: 5 },
         rows: [],
-      },
-      isLoading: false,
-    } as any);
+      }),
+    );
 
     renderPage();
 

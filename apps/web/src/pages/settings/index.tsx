@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
 import {
   getTenantMeta,
@@ -138,18 +138,18 @@ export default function SettingsPage() {
     error: referenceDataError,
   } = useMetadata();
 
-  const availableCountries = metadata?.countries ?? [];
-  const availableCurrencies = metadata?.currencies ?? [];
-  const availableBanks = metadata?.banks ?? [];
+  const availableCountries = useMemo(() => metadata?.countries ?? [], [metadata?.countries]);
+  const availableCurrencies = useMemo(() => metadata?.currencies ?? [], [metadata?.currencies]);
+  const availableBanks = useMemo(() => metadata?.banks ?? [], [metadata?.banks]);
 
-  const syncStateFromMeta = (meta: any) => {
+  const syncStateFromMeta = (meta: { name: string; plan?: string; countries: Country[]; currencies: Currency[]; banks: Bank[]; plaidLinkedBankIds?: number[] } | null) => {
     if (meta) {
       setSettings({
         name: meta.name,
         plan: meta.plan ?? "FREE",
-        countries: meta.countries?.map((c: any) => c.id) ?? [],
-        currencies: meta.currencies?.map((c: any) => c.id) ?? [],
-        bankIds: meta.banks?.map((b: any) => b.id) ?? [],
+        countries: meta.countries?.map((c) => c.id) ?? [],
+        currencies: meta.currencies?.map((c) => c.id) ?? [],
+        bankIds: meta.banks?.map((b) => b.id) ?? [],
         plaidLinkedBankIds: meta.plaidLinkedBankIds ?? [],
       });
     }
@@ -167,7 +167,7 @@ export default function SettingsPage() {
     init();
   }, [user]);
 
-  const handleSettingsChange = (field: keyof TenantSettingsData, value: any) => {
+  const handleSettingsChange = (field: keyof TenantSettingsData, value: TenantSettingsData[keyof TenantSettingsData]) => {
     setSettings((prev) => (prev ? { ...prev, [field]: value } : null));
   };
 
@@ -190,9 +190,9 @@ export default function SettingsPage() {
       setSettings({
         name: updatedTenant.name,
         plan: updatedTenant.plan ?? "FREE",
-        countries: updatedTenant.countries.map((c: any) => c.id),
-        currencies: updatedTenant.currencies.map((c: any) => c.id),
-        bankIds: updatedTenant.banks.map((b: any) => b.id),
+        countries: updatedTenant.countries.map((c) => c.id),
+        currencies: updatedTenant.currencies.map((c) => c.id),
+        bankIds: updatedTenant.banks.map((b) => b.id),
       });
       onSuccess?.();
     } catch (error) {

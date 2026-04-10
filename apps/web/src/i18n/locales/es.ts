@@ -53,6 +53,8 @@ const es = {
     group: "Grupo",
     viewReport: "Ver informe",
     other: "Otro",
+    selectCountries: "Seleccionar países",
+    noCountryFound: "No se encontró ningún país.",
   },
 
   // Time related
@@ -122,6 +124,7 @@ const es = {
       recentTransactions: "Transacciones recientes",
       quickActions: "Acciones rápidas",
       insights: "Análisis",
+      totalNetWorth: "Patrimonio neto total",
     },
     accounts: {
       title: "Cuentas",
@@ -251,6 +254,7 @@ const es = {
     expenses: {
       title: "Seguimiento de gastos",
       description: "Analiza tus patrones de gasto por categoría",
+      selectCategoryType: "Seleccionar tipo de categoría",
       countriesSelected: "{{count}} países seleccionados",
       timeFrame: {
         label: "Período de tiempo",
@@ -283,6 +287,7 @@ const es = {
     settings: {
       title: "Configuración de cuenta",
       description: "Gestiona las preferencias y configuración de tu cuenta",
+      language: "Idioma",
       error_loading_reference_data: "Error al cargar datos de referencia. Actualiza la página.",
       error_saving_no_id: "No se pudo encontrar tu ID de usuario para guardar la configuración.",
       error_saving_generic: "Ocurrió un error desconocido al guardar.",
@@ -359,7 +364,6 @@ const es = {
     login: {
       title: "Iniciar sesión",
       subtitle: "Accede a tu cuenta",
-      forgotPassword: "¿Olvidaste tu contraseña?",
       noAccount: "¿No tienes cuenta?",
       signUp: "Regístrate",
       rememberMe: "Recuérdame",
@@ -784,6 +788,9 @@ const es = {
     updateAccount: "Actualizar cuenta",
     createError: "No se pudo crear la cuenta. Por favor, inténtalo de nuevo.",
     updateError: "No se pudo actualizar la cuenta. Por favor, inténtalo de nuevo.",
+    selectBank: "Selecciona un banco",
+    selectCurrency: "Selecciona una moneda",
+    selectCountry: "Selecciona un país",
   },
   categoryForm: {
     name: "Nombre de la categoría",
@@ -995,6 +1002,9 @@ const es = {
       Education: "Educación",
       Travel: "Viajes",
       Donations: "Donaciones",
+      Other: "Otro",
+      Others: "Otros",
+      "N/A": "N/A",
     },
     types: {
       Income: "Ingresos",
@@ -1875,6 +1885,63 @@ const es = {
     noTimelineData: "No hay datos de línea de tiempo",
     monthly: "Mensual",
   },
+
+  // Auth page — flat string keys
+  "Sign In": "Iniciar sesión",
+  "Sign Up": "Registrarse",
+  "Sign in with Google": "Iniciar sesión con Google",
+  "Sign up with Google": "Registrarse con Google",
+  "or continue with email": "o continúa con correo electrónico",
+  "Email address": "Correo electrónico",
+  "Password": "Contraseña",
+  "Signing in...": "Iniciando sesión...",
+  "Login failed": "Error al iniciar sesión",
+  "Full name": "Nombre completo",
+  "Use at least 8 characters, including a number.": "Usa al menos 8 caracteres, incluyendo un número.",
+  "By creating an account you agree to our": "Al crear una cuenta aceptas nuestros",
+  "and": "y",
+  "Registration failed": "Error de registro",
+  "Creating account...": "Creando cuenta...",
+  "Create Account": "Crear cuenta",
+  "Don't have an account?": "¿No tienes una cuenta?",
+  "Create one": "Créala",
+  "Already have an account?": "¿Ya tienes una cuenta?",
+  "Sign in": "Inicia sesión",
+  "Welcome to the Bliss demo. Use the credentials below to sign in and explore.": "Bienvenido a la demo de Bliss. Usa las credenciales a continuación para iniciar sesión y explorar.",
+  "The quiet intelligence behind your global wealth.": "La inteligencia silenciosa detrás de tu patrimonio global.",
+  "Financial clarity, without borders.": "Claridad financiera, sin fronteras.",
+  "Bliss capybara in a turtleneck, seated in a mid-century chair beside a stack of currency coins": "Capibara de Bliss con cuello de tortuga, sentado en una silla de mediados de siglo junto a monedas",
+  "Bliss capybara mascot seated in a mid-century chair": "Mascota capibara de Bliss sentada en una silla de mediados de siglo",
+  "Welcome back": "Bienvenido de nuevo",
+  "Protected by enterprise-grade encryption.": "Protegido con cifrado de nivel empresarial.",
+
+  // Dashboard actions — flat string keys
+  "Fix Bank Connection": "Reparar conexión bancaria",
+  "A bank connection needs your attention": "Una conexión bancaria requiere tu atención",
+  "Review Pending Transactions": "Revisar transacciones pendientes",
+  "Check and categorize imported transactions": "Revisa y categoriza las transacciones importadas",
+  "Update Asset Prices": "Actualizar precios de activos",
+  "Some manual assets need a price refresh": "Algunos activos manuales necesitan actualización de precio",
+  "Connect Bank": "Conectar banco",
+  "Link your bank for automatic sync": "Vincula tu banco para sincronización automática",
+  "Add Manual Account": "Agregar cuenta manual",
+  "Manually track an account or asset": "Rastrea manualmente una cuenta o activo",
+  "Import Transactions": "Importar transacciones",
+  "Upload a CSV file to import transactions": "Sube un archivo CSV para importar transacciones",
+  "View Insights": "Ver perspectivas",
+  "See AI-generated financial observations": "Ver observaciones financieras generadas por IA",
+  "Explore Expenses": "Explorar gastos",
+  "See how your spending breaks down": "Ve cómo se distribuyen tus gastos",
+  "View P&L": "Ver P&G",
+  "View income vs expenses over time": "Ver ingresos vs gastos a lo largo del tiempo",
+  "View Accounts": "Ver cuentas",
+  "See all your connected accounts": "Ver todas tus cuentas conectadas",
+
+  // Setup checklist — flat string keys
+  "Get started with Bliss": "Comienza con Bliss",
+  "of": "de",
+  "complete": "completado",
+  "Dismiss": "Descartar",
 };
 
 export default es;

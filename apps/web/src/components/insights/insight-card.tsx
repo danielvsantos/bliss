@@ -3,26 +3,7 @@ import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { X } from "lucide-react";
-import type { InsightTier } from "@/hooks/use-insights";
-
-interface Insight {
-  id: string;
-  lens: string;
-  title: string;
-  body: string;
-  severity: string;
-  priority: number;
-  date: string;
-  tier: InsightTier;
-  category: string;
-  periodKey: string;
-  metadata?: {
-    actionTypes?: string[];
-    suggestedAction?: string;
-    relatedLenses?: string[];
-    dataPoints?: Record<string, any>;
-  };
-}
+import type { Insight } from "@/types/api";
 
 interface InsightCardProps {
   insight: Insight;

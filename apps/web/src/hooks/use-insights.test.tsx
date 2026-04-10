@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import api from '@/lib/api';
 import React from 'react';
 import { useInsights, useDismissInsight, useGenerateInsights } from './use-insights';
-import type { InsightTier, InsightCategory } from './use-insights';
+import type { InsightTier, InsightCategory } from '@/types/api';
 
 vi.mock('@/lib/api', () => ({
   default: {
@@ -14,15 +14,20 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-const emptyListResponse = {
+type InsightListResponse = Awaited<ReturnType<typeof api.getInsights>>;
+type GenerateResponse = Awaited<ReturnType<typeof api.generateInsights>>;
+
+const emptyListResponse: InsightListResponse = {
   insights: [],
   total: 0,
   tierSummary: {},
   categoryCounts: {},
 };
 
-const dismissOk = { id: 'ins-1', dismissed: true };
-const generateOk = { message: 'Insight generation triggered', tier: 'MONTHLY' };
+const generateOk: GenerateResponse = {
+  message: 'Insight generation triggered',
+  tier: 'MONTHLY',
+};
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -46,7 +51,7 @@ describe('useInsights', () => {
   });
 
   it('fetches insights with the default (empty filter) payload', async () => {
-    const mockResponse = {
+    const mockResponse: InsightListResponse = {
       insights: [
         {
           id: 'ins-1',
@@ -56,10 +61,14 @@ describe('useInsights', () => {
           periodKey: '2026-03',
           severity: 'WARNING',
           title: 'Spending up',
+          body: 'Your spending is up 12% month over month.',
+          priority: 50,
         },
       ],
       total: 1,
-      tierSummary: { MONTHLY: { latestDate: '2026-04-02', latestCreatedAt: '2026-04-02T06:00:00Z' } },
+      tierSummary: {
+        MONTHLY: { latestDate: '2026-04-02', latestCreatedAt: '2026-04-02T06:00:00Z' },
+      },
       categoryCounts: { SPENDING: 1 },
     };
     vi.mocked(api.getInsights).mockResolvedValueOnce(mockResponse);
@@ -188,7 +197,7 @@ describe('useDismissInsight', () => {
   });
 
   it('calls dismiss and invalidates the insights cache', async () => {
-    vi.mocked(api.dismissInsight).mockResolvedValueOnce(dismissOk);
+    vi.mocked(api.dismissInsight).mockResolvedValueOnce(undefined);
 
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -204,7 +213,7 @@ describe('useDismissInsight', () => {
   });
 
   it('supports restoring (dismissed=false) as well', async () => {
-    vi.mocked(api.dismissInsight).mockResolvedValueOnce(dismissOk);
+    vi.mocked(api.dismissInsight).mockResolvedValueOnce(undefined);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDismissInsight(), { wrapper });

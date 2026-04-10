@@ -27,8 +27,12 @@ describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(UseActions.useDashboardActions).mockReturnValue({ quickActions: [], onboardingActions: [] } as any);
-    vi.mocked(UsePortfolioHistory.usePortfolioHistory).mockReturnValue({ data: { history: [] } } as any);
+    vi.mocked(UseActions.useDashboardActions).mockReturnValue(
+      { quickActions: [], onboardingActions: [] } as ReturnType<typeof UseActions.useDashboardActions>,
+    );
+    vi.mocked(UsePortfolioHistory.usePortfolioHistory).mockReturnValue(
+      { data: { history: [] } } as unknown as ReturnType<typeof UsePortfolioHistory.usePortfolioHistory>,
+    );
   });
 
   it('renders an empty state when metrics and accounts are zero', () => {
@@ -39,7 +43,7 @@ describe('Dashboard', () => {
       portfolioCurrency: 'USD',
       metricsLoading: false,
       accountsLoading: false,
-    } as any);
+    } as unknown as ReturnType<typeof UseSignals.useUserSignals>);
 
     render(<Dashboard />);
 
@@ -59,7 +63,7 @@ describe('Dashboard', () => {
       portfolioCurrency: 'USD',
       metricsLoading: false,
       accountsLoading: false,
-    } as any);
+    } as unknown as ReturnType<typeof UseSignals.useUserSignals>);
 
     render(<Dashboard />);
     

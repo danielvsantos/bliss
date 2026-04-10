@@ -164,7 +164,7 @@ Maps action IDs to onboarding checklist keys for completion tracking. Deduplicat
 ## 16.7. How to Add a New Action
 
 1. Define the action in `DASHBOARD_ACTIONS` array in `src/lib/dashboard-actions.tsx`
-2. Create an SVG icon component (or reuse an existing one)
+2. Inline the SVG directly as a JSX literal in the `icon` field (do **not** wrap it in a local component function — `dashboard-actions.tsx` is kept as a pure data module so Fast Refresh stays granular on the consumer components)
 3. Set `slot`, `priority`, and `visible()` rule
 4. If it's an onboarding action, add a mapping in `SetupChecklist`'s `actionToChecklistKey` record and ensure the corresponding key exists in the tenant's `onboardingProgress.checklist`
 5. If it needs a badge, add a `badge()` function and ensure the signal is available in `UserSignals`
