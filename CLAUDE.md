@@ -87,10 +87,10 @@ Open http://localhost:8080. Plaid, Gemini, and Twelve Data API keys are optional
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 1,076 tests across 152 files |
-| API | `pnpm test:api` | Vitest (ESM) | 46 unit files (288 tests) + 14 integration files (121 tests) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 39 unit files (395 tests) + 8 integration files (66 tests) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 45 files (206 tests) |
+| All | `pnpm test` | -- | 1,178 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 428 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 531 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 219 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 

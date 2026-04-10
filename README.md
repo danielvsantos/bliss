@@ -17,7 +17,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/tests-1076%20passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-1178%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/Claude%20Code-ready-6D657A?logo=anthropic&logoColor=white" alt="Claude Code Ready" />
 </p>
@@ -69,7 +69,14 @@ Adapter-driven ingestion for any bank's export format:
 
 #### AI-Generated Insights
 
-Seven financial lenses analyze your patterns and surface actionable insights: spending velocity, category concentration, income stability, savings rate, portfolio exposure, debt health, and net worth trajectory. Data-hash deduplication skips regeneration when underlying data hasn't changed.
+Fifteen financial lenses organized into six categories (Spending, Income, Savings, Portfolio, Debt, Net Worth) analyze your patterns across four cadence tiers:
+
+- **Monthly Review** — Month-over-month and year-over-year health check, triggered on the 2nd of every month
+- **Quarterly Deep Dive** — Seasonal trend analysis, triggered three days after each quarter closes
+- **Annual Report** — Comprehensive year-in-review, triggered on January 3rd
+- **Portfolio Intelligence** — Equity-specific analysis (sector concentration, valuation risk, dividend opportunities) using `SecurityMaster` fundamentals, triggered every Monday
+
+Each tier is calendar-gated and runs a data-completeness check before generation, so partial periods never get compared to full ones. Insights are persisted additively — old batches are kept for historical context and deduplicated by `(tier, periodKey, dataHash)` so identical data never regenerates. Tiered TTL retention keeps monthlies for 2 years, quarterlies for 5 years, and annual reports forever. Dismissed state persists across regenerations, and you can manually refresh any tier for any period from the UI.
 
 ### The Global Ledger
 
@@ -282,10 +289,10 @@ bliss/
 ## Testing
 
 ```bash
-pnpm test              # run all 1,076 tests across all apps
-pnpm test:api          # 409 tests (Vitest) — 46 unit + 14 integration files
-pnpm test:backend      # 461 tests (Jest) — 39 unit + 8 integration files
-pnpm test:web          # 206 tests (Vitest + MSW) — 45 files covering hooks, pages, contexts
+pnpm test              # run all 1,178 tests across all apps
+pnpm test:api          # 428 tests (Vitest) — unit + integration
+pnpm test:backend      # 531 tests (Jest) — unit + integration
+pnpm test:web          # 219 tests (Vitest + MSW) — hooks, pages, components, contexts
 ```
 
 ---
