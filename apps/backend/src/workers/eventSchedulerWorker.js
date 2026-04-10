@@ -14,7 +14,17 @@ const DEBOUNCE_DELAY_SECONDS = 5; // 5 seconds
 
 const processEventJob = async (job) => {
     const { name, data } = job;
-    logger.info(`Processing event: ${name}`, { data });
+    // Structured event log — exposes tenantId + source + jobId up front so
+    // downstream triggers (e.g. portfolio rebuilds) can be traced back to
+    // their originating API route, worker, or cron. If `source` is missing
+    // here, the producer should be updated to pass it through.
+    logger.info('Event received', {
+        type: name,
+        jobId: job.id,
+        tenantId: data?.tenantId || null,
+        source: data?.source || null,
+        keys: data ? Object.keys(data) : [],
+    });
     const redis = getRedisConnection();
 
     // This is a new helper function to transform the debounced scopes array.

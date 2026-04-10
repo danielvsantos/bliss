@@ -1,11 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import type { InsightTier, InsightCategory } from '@/types/api';
+
+// Re-export shared insight type unions so existing imports from '@/hooks/use-insights' still compile.
+export type { InsightTier, InsightCategory };
 
 interface InsightParams {
   limit?: number;
   offset?: number;
   lens?: string;
   severity?: string;
+  tier?: InsightTier;
+  category?: InsightCategory;
+  periodKey?: string;
   includeDismissed?: boolean;
 }
 
@@ -29,14 +36,21 @@ export function useDismissInsight() {
   });
 }
 
+interface GenerateOptions {
+  tier: InsightTier; // required — the retired DAILY fallback was removed in v1
+  year?: number;
+  month?: number;
+  quarter?: number;
+  periodKey?: string;
+  force?: boolean;
+}
+
 export function useGenerateInsights() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => api.generateInsights(),
+    mutationFn: (options: GenerateOptions) => api.generateInsights(options),
     onSuccess: () => {
-      // Don't invalidate immediately — the job is async.
-      // The page polls via refetchInterval when generation is in progress.
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['insights'] });
       }, 5000);

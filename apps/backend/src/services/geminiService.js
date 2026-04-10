@@ -13,7 +13,7 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 // ─── Models ───────────────────────────────────────────────────────────────────
 const EMBEDDING_MODEL = 'gemini-embedding-001';  // 3072-dim by default; outputDimensionality: 768 applied at call time
 const CLASSIFICATION_MODEL = 'gemini-3-flash-preview';  // Fast + cheap for high-volume classification
-const INSIGHT_MODEL = process.env.INSIGHT_MODEL || 'gemini-3.1-pro-preview';  // Quality prose, low volume (one call per tenant per day)
+const INSIGHT_MODEL = process.env.INSIGHT_MODEL || 'gemini-3.1-pro-preview';  // Quality prose for monthly/quarterly/annual/portfolio
 
 // ─── Rate-limit / retry config ────────────────────────────────────────────────
 const MAX_RETRIES = 5;                   // More attempts to survive quota windows
@@ -239,31 +239,36 @@ Respond with this exact JSON schema:
 }
 
 /**
- * Generates financial insight content using a higher-quality model.
+ * Generates financial insight content for a tiered insight run.
  * Takes a pre-built prompt (system + data) and returns parsed JSON array.
  *
  * @param {string} prompt — Full prompt including system instructions and data
+ * @param {Object} [options] — Optional configuration
+ * @param {number} [options.temperature=0.4] — Temperature for generation
  * @returns {Promise<Array>} — Parsed JSON array of insight objects
  */
-async function generateInsightContent(prompt) {
+async function generateInsightContent(prompt, options = {}) {
   if (!genAI) throw new Error('Gemini API key not configured');
 
+  const { temperature = 0.4 } = options;
+  const modelId = INSIGHT_MODEL;
+
   const model = genAI.getGenerativeModel({
-    model: INSIGHT_MODEL,
+    model: modelId,
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.4, // Slightly creative for prose, but grounded
+      temperature,
     },
   });
 
-  const INSIGHT_TIMEOUT_MS = 60_000; // Insight prompts are larger, allow 60s
+  const INSIGHT_TIMEOUT_MS = 60_000;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const result = await withTimeout(
         model.generateContent(prompt),
         INSIGHT_TIMEOUT_MS,
-        'Gemini insight generation'
+        `Gemini insight generation (${modelId})`
       );
       const responseText = result.response.text();
       const parsed = JSON.parse(responseText);
@@ -275,13 +280,13 @@ async function generateInsightContent(prompt) {
       return parsed;
     } catch (error) {
       if (attempt === MAX_RETRIES) {
-        logger.error(`Gemini insight generation failed after ${MAX_RETRIES} attempts: ${error.message}`);
+        logger.error(`Gemini insight generation failed after ${MAX_RETRIES} attempts (${modelId}): ${error.message}`);
         throw error;
       }
       const delay = isRateLimitError(error)
         ? RATE_LIMIT_BASE_DELAY_MS * attempt
         : BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      logger.warn(`Gemini insight attempt ${attempt} failed, retrying in ${Math.round(delay / 1000)}s: ${error.message}`);
+      logger.warn(`Gemini insight attempt ${attempt} failed (${modelId}), retrying in ${Math.round(delay / 1000)}s: ${error.message}`);
       await sleep(delay);
     }
   }

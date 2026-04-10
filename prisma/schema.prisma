@@ -492,24 +492,33 @@ model AnalyticsCacheMonthly {
 }
 
 model Insight {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   tenantId  String
   batchId   String              // Groups insights from same generation run
-  date      DateTime @db.Date   // Batch run date
+  date      DateTime  @db.Date  // Batch run date
   lens      String              // SPENDING_VELOCITY | CATEGORY_CONCENTRATION | INCOME_STABILITY | etc.
   title     String
-  body      String   @db.Text   // Insight body text
-  severity  String   @default("INFO")  // INFO | WARNING | POSITIVE | CRITICAL
-  priority  Int      @default(50)      // 1-100, higher = more important
+  body      String    @db.Text  // Insight body text
+  severity  String    @default("INFO")  // INFO | WARNING | POSITIVE | CRITICAL
+  priority  Int       @default(50)      // 1-100, higher = more important
   dataHash  String?             // SHA-256 of input data — skip generation if unchanged
-  metadata  Json?               // { dataPoints: {...} }
-  dismissed Boolean  @default(false)
-  createdAt DateTime @default(now())
+  metadata  Json?               // { dataPoints: {...}, actionTypes: [...], relatedLenses: [...], suggestedAction: "..." }
+  dismissed Boolean   @default(false)
+  createdAt DateTime  @default(now())
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // v1 tiered insight fields
+  tier      String    @default("DAILY")     // DAILY | MONTHLY | QUARTERLY | ANNUAL | PORTFOLIO
+  category  String    @default("SPENDING")  // SPENDING | INCOME | SAVINGS | PORTFOLIO | DEBT | NET_WORTH
+  periodKey String    @default("")          // "2026-04-08" (daily), "2026-03" (monthly), "2026-Q1" (quarterly), "2025" (annual), "2026-W14" (portfolio)
+  expiresAt DateTime?                       // TTL: daily=+90d, monthly=+2y, quarterly=+5y, annual=null
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, date])
   @@index([tenantId, batchId])
+  @@index([tenantId, tier, periodKey])
+  @@index([tenantId, category])
+  @@index([expiresAt])
 }
 
 model Country {

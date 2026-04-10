@@ -484,18 +484,41 @@ export type PlaidSyncLog = {
 
 // ─── Insights Types ────────────────────────────────────────────────────────────
 
+/** Cadence tier that produced the insight. DAILY was retired in v1.1. */
+export type InsightTier = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'PORTFOLIO';
+
+/** Insight category grouping (drives the frontend tab bar and chip filters). */
+export type InsightCategory =
+  | 'SPENDING'
+  | 'INCOME'
+  | 'SAVINGS'
+  | 'PORTFOLIO'
+  | 'DEBT'
+  | 'NET_WORTH';
+
+export type InsightSeverity = 'POSITIVE' | 'INFO' | 'WARNING' | 'CRITICAL';
+
+export type InsightMetadata = {
+  actionTypes?: string[];
+  relatedLenses?: string[];
+  suggestedAction?: string;
+  dataPoints?: Record<string, unknown>;
+} & Record<string, unknown>;
+
 export type Insight = {
   id: string;
   lens: string;
+  tier: InsightTier;
+  category: InsightCategory;
+  periodKey: string;
+  severity: InsightSeverity;
   title: string;
-  severity: string;
-  body?: string;
-  priority?: number;
+  body: string;
+  priority: number;
   date?: string;
-  tier?: string;
-  periodKey?: string;
   dismissed?: boolean;
-  metadata?: Record<string, unknown>;
+  metadata?: InsightMetadata;
+  createdAt?: string;
 };
 
 // ─── Notification Signal Types ─────────────────────────────────────────────────

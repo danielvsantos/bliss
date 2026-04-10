@@ -42,6 +42,29 @@ async function fetchHistoricalRate(date, currencyFrom, currencyTo) {
 
 /**
  * Retrieves a currency rate, from local cache, DB, or external API.
+ *
+ * ⚠️  WRITE-THROUGH CACHE — AUTHORIZED CALLERS ONLY
+ *
+ * This helper is a write-through cache: on a miss it calls CurrencyLayer
+ * (external HTTP egress, metered billing) AND inserts a row into the
+ * `CurrencyRate` table. It is therefore a **side-effect-producing** function
+ * and must only be called from the valuation pipeline:
+ *
+ *   - portfolioWorker (valuation, cash processing, liability processing)
+ *   - price-fetcher (portfolio asset valuation strategies)
+ *
+ * The insights engine (insightService.js) and any other read-only consumer
+ * **must never** call this function — use `getRatesForDateRange()` below
+ * combined with an in-memory nearest-prior lookup instead. See the
+ * insights-v2 refactor for the reference pattern:
+ *   apps/backend/src/services/insightService.js → prefetchRatesForTier()
+ *
+ * A regression here previously caused the daily insights cron to populate
+ * `CurrencyRate` with fresh rows every morning and triggered CurrencyLayer
+ * billing alerts. The hygiene test
+ *   apps/backend/src/__tests__/unit/services/insightService.hygiene.test.js
+ * enforces this boundary at CI time.
+ *
  * @param {Date} dateObj - The date object for the rate.
  * @param {string} currencyFrom - The source currency code.
  * @param {string} currencyTo - The target currency code.
