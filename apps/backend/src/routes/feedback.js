@@ -44,4 +44,47 @@ router.post('/', apiKeyAuth, async (req, res) => {
     }
 });
 
+/**
+ * POST /api/feedback/batch
+ *
+ * Batch variant — accepts multiple feedback entries in a single request.
+ * Used by the bulk-promote endpoint to avoid N individual HTTP calls.
+ *
+ * Body: {
+ *   tenantId: string,
+ *   entries: [{ description: string, categoryId: number, transactionId?: number }]
+ * }
+ */
+router.post('/batch', apiKeyAuth, async (req, res) => {
+    const { tenantId, entries } = req.body;
+
+    if (!tenantId || !Array.isArray(entries) || entries.length === 0) {
+        return res.status(400).json({ error: 'tenantId and a non-empty entries array are required' });
+    }
+
+    let accepted = 0;
+    let failed = 0;
+
+    for (const entry of entries) {
+        const { description, categoryId, transactionId } = entry;
+        if (!description || !categoryId) { failed++; continue; }
+
+        const parsedCategoryId = Number(categoryId);
+        if (!Number.isInteger(parsedCategoryId) || parsedCategoryId <= 0) { failed++; continue; }
+
+        const parsedTransactionId = transactionId != null ? Number(transactionId) : null;
+
+        try {
+            await categorizationService.recordFeedback(description, parsedCategoryId, tenantId, parsedTransactionId);
+            accepted++;
+        } catch (error) {
+            logger.error(`Batch feedback entry failed: ${error.message}`);
+            failed++;
+        }
+    }
+
+    logger.info(`Batch feedback: tenant=${tenantId} accepted=${accepted} failed=${failed}`);
+    res.status(200).json({ accepted, failed });
+});
+
 module.exports = router;

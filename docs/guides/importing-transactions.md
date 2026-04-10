@@ -5,7 +5,7 @@ Bliss supports CSV and XLSX imports with automatic format detection, AI classifi
 ## The Smart Import flow
 
 1. **Upload** — Drag a CSV/XLSX file into the import page and select a destination account.
-2. **Processing** — The backend detects the file format, deduplicates against existing transactions (90-day window, SHA-256 hash), and classifies each row with the [4-tier AI pipeline](/docs/guides/ai-classification).
+2. **Processing** — The backend detects the file format, deduplicates against existing transactions (date-range-scoped SHA-256 hash), and classifies each row with the [4-tier AI pipeline](/docs/guides/ai-classification).
 3. **Review** — Inspect classifications, correct any mistakes, and approve rows.
 4. **Commit** — Confirmed rows become transactions. Corrections feed back into the AI model.
 

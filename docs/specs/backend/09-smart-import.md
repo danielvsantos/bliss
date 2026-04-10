@@ -62,7 +62,7 @@ BullMQ singleton, registered in `src/index.js` via `startSmartImportWorker()`. T
 2. **Load adapter** — Fetches `ImportAdapter` from DB by `adapterId`. Throws if not found.
 3. **Parse** — Calls `adapterEngine.parseFile(fileContent, adapter, fileType)` → returns `ParsedRow[]` with normalised `{ date, debit, credit, description, details, currency, ticker, assetQuantity, assetPrice, tags, rawData }`.
 4. **Warm caches** — Calls `descriptionCache.warmDescriptionCache(tenantId)` (loads from `DescriptionMapping` table) and `getCategoriesForTenant(tenantId)`. For native adapters, also loads tenant accounts and categories for name→ID resolution.
-5. **Build duplicate hash set** — Queries the last 90 days of `Transaction` records for the target account. Computes SHA-256 hashes and loads into an in-memory `Set`. For native adapters, duplicate sets are built per-account lazily as each unique `accountId` is encountered.
+5. **Build duplicate hash set** — Queries existing `Transaction` records for the target account within the batch's date range (with a 1-day buffer on each side for timezone edge cases; falls back to a 90-day window when no dates are available). Computes SHA-256 hashes and loads into an in-memory `Set`. For native adapters, duplicate sets are built per-account lazily as each unique `accountId` is encountered.
 6. **First pass — validate, dedup, and native classification** — For each parsed row, builds a `rowData` object and:
    - Validates required fields (`date`, `debit`/`credit`). Missing fields → `status: 'ERROR'`.
    - Computes the dedup hash and checks against the hash set:

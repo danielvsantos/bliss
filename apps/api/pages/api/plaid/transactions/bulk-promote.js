@@ -6,12 +6,11 @@ import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
 import { withAuth } from '../../../../utils/withAuth.js';
 import { computeTransactionHash, buildDuplicateHashSet } from '../../../../utils/transactionHash.js';
+import { fetchWithTimeout } from '../../../../utils/fetchWithTimeout.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
 
-// Max concurrent simple updates (non-transactional) — safe for connection pool
-const UPDATE_CONCURRENCY = 10;
 
 /**
  * POST /api/plaid/transactions/bulk-promote
@@ -65,33 +64,35 @@ export default withAuth(async function handler(req, res) {
       ? parseInt(req.body.overrideCategoryId)
       : null;
 
-    // Validate overrideCategoryId belongs to this tenant
-    if (overrideCategoryId) {
-      const cat = await prisma.category.findFirst({
-        where: { id: overrideCategoryId, tenantId: user.tenantId },
+    // ── Parallel setup: category validation + plaid items + linked accounts ──
+    const [overrideCat, tenantPlaidItems, linkedAccounts] = await Promise.all([
+      overrideCategoryId
+        ? prisma.category.findFirst({
+            where: { id: overrideCategoryId, tenantId: user.tenantId },
+            select: { id: true },
+          })
+        : Promise.resolve(true), // no validation needed
+      prisma.plaidItem.findMany({
+        where: { tenantId: user.tenantId },
         select: { id: true },
-      });
-      if (!cat) {
-        return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid category' });
-      }
+      }),
+      prisma.account.findMany({
+        where: { tenantId: user.tenantId, plaidAccountId: { not: null } },
+        select: { id: true, plaidAccountId: true },
+      }),
+    ]);
+
+    // Validate overrideCategoryId belongs to this tenant
+    if (overrideCategoryId && !overrideCat) {
+      return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid category' });
     }
 
-    // Get tenant's Plaid items
-    const tenantPlaidItems = await prisma.plaidItem.findMany({
-      where: { tenantId: user.tenantId },
-      select: { id: true },
-    });
     const tenantPlaidItemIds = tenantPlaidItems.map((pi) => pi.id);
 
     if (tenantPlaidItemIds.length === 0) {
       return res.status(StatusCodes.OK).json({ promoted: 0, skipped: 0, errors: 0 });
     }
 
-    // Build account map: plaidAccountId → local accountId
-    const linkedAccounts = await prisma.account.findMany({
-      where: { tenantId: user.tenantId, plaidAccountId: { not: null } },
-      select: { id: true, plaidAccountId: true },
-    });
     const accountMap = new Map(linkedAccounts.map((a) => [a.plaidAccountId, a.id]));
 
     // Fetch all eligible transactions
@@ -120,13 +121,8 @@ export default withAuth(async function handler(req, res) {
     const affectedAccountIds = new Set();
     const affectedDateScopes = new Set();
 
-    // ── Phase 1: Batch dedup lookups (2 queries total) ─────────────────────
+    // ── Phase 1: Parallel dedup lookups ──────────────────────────────────────
     const allExternalIds = eligibleTransactions.map((t) => t.plaidTransactionId);
-    const existingTransactions = await prisma.transaction.findMany({
-      where: { externalId: { in: allExternalIds } },
-      select: { id: true, externalId: true },
-    });
-    const existingByExternalId = new Map(existingTransactions.map((t) => [t.externalId, t.id]));
 
     const uniqueLocalAccountIds = new Set();
     for (const plaidTx of eligibleTransactions) {
@@ -138,10 +134,20 @@ export default withAuth(async function handler(req, res) {
     const minDate = allDates.length > 0 ? new Date(Math.min(...allDates.map(d => d.getTime()))) : null;
     const maxDate = allDates.length > 0 ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
 
-    const hashSetByAccountId = new Map();
-    for (const accountId of uniqueLocalAccountIds) {
-      hashSetByAccountId.set(accountId, await buildDuplicateHashSet(user.tenantId, accountId, minDate, maxDate));
-    }
+    const accountIdArr = Array.from(uniqueLocalAccountIds);
+    const [existingTransactions, ...hashSetsArr] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { externalId: { in: allExternalIds } },
+        select: { id: true, externalId: true },
+      }),
+      ...accountIdArr.map((accountId) =>
+        buildDuplicateHashSet(user.tenantId, accountId, minDate, maxDate)
+      ),
+    ]);
+    const existingByExternalId = new Map(existingTransactions.map((t) => [t.externalId, t.id]));
+    const hashSetByAccountId = new Map(
+      accountIdArr.map((id, i) => [id, hashSetsArr[i]])
+    );
 
     // ── Phase 2: Classify each transaction (no DB writes) ─────────────────
     const alreadyExisting = [];   // { plaidTx, existingTxId } — link only, no new Transaction
@@ -222,12 +228,11 @@ export default withAuth(async function handler(req, res) {
       skipped += hashDuplicateIds.length;
     }
 
-    // ── Phase 3b: Update already-existing (link only, small concurrent batches) ──
-    for (let i = 0; i < alreadyExisting.length; i += UPDATE_CONCURRENCY) {
-      const batch = alreadyExisting.slice(i, i + UPDATE_CONCURRENCY);
-      await Promise.all(batch.map(async ({ plaidTx, existingTxId }) => {
-        try {
-          await prisma.plaidTransaction.update({
+    // ── Phase 3b: Update already-existing (link only, all in parallel) ─────
+    if (alreadyExisting.length > 0) {
+      const linkResults = await Promise.allSettled(
+        alreadyExisting.map(({ plaidTx, existingTxId }) =>
+          prisma.plaidTransaction.update({
             where: { id: plaidTx.id },
             data: {
               promotionStatus: 'PROMOTED',
@@ -238,13 +243,13 @@ export default withAuth(async function handler(req, res) {
                 aiConfidence: 1.0,
               }),
             },
-          });
-          promoted++;
-        } catch (err) {
-          console.error(`Bulk promote link error for ${plaidTx.id}: ${err.message}`);
-          errors++;
-        }
-      }));
+          })
+        )
+      );
+      for (const r of linkResults) {
+        if (r.status === 'fulfilled') promoted++;
+        else { console.error(`Bulk promote link error: ${r.reason?.message}`); errors++; }
+      }
     }
 
     // ── Phase 3c: Batch-create new Transactions via createMany ────────────
@@ -268,30 +273,27 @@ export default withAuth(async function handler(req, res) {
           createdTransactions.map((t) => [t.externalId, t.id])
         );
 
-        // Update PlaidTransactions with matchedTransactionId (small concurrent batches)
-        for (let i = 0; i < toCreate.length; i += UPDATE_CONCURRENCY) {
-          const batch = toCreate.slice(i, i + UPDATE_CONCURRENCY);
-          await Promise.all(batch.map(async ({ plaidTx }) => {
-            try {
-              const matchedId = externalIdToTxId.get(plaidTx.plaidTransactionId);
-              await prisma.plaidTransaction.update({
-                where: { id: plaidTx.id },
-                data: {
-                  promotionStatus: 'PROMOTED',
-                  matchedTransactionId: matchedId || null,
-                  ...(overrideCategoryId && {
-                    suggestedCategoryId: overrideCategoryId,
-                    classificationSource: 'USER_OVERRIDE',
-                    aiConfidence: 1.0,
-                  }),
-                },
-              });
-              promoted++;
-            } catch (err) {
-              console.error(`Bulk promote update error for ${plaidTx.id}: ${err.message}`);
-              errors++;
-            }
-          }));
+        // Update PlaidTransactions with matchedTransactionId (all in parallel)
+        const updateResults = await Promise.allSettled(
+          toCreate.map(({ plaidTx }) => {
+            const matchedId = externalIdToTxId.get(plaidTx.plaidTransactionId);
+            return prisma.plaidTransaction.update({
+              where: { id: plaidTx.id },
+              data: {
+                promotionStatus: 'PROMOTED',
+                matchedTransactionId: matchedId || null,
+                ...(overrideCategoryId && {
+                  suggestedCategoryId: overrideCategoryId,
+                  classificationSource: 'USER_OVERRIDE',
+                  aiConfidence: 1.0,
+                }),
+              },
+            });
+          })
+        );
+        for (const r of updateResults) {
+          if (r.status === 'fulfilled') promoted++;
+          else { console.error(`Bulk promote update error: ${r.reason?.message}`); errors++; }
         }
       } catch (err) {
         // createMany or findMany failed — all toCreate items are errors
@@ -301,41 +303,43 @@ export default withAuth(async function handler(req, res) {
       }
     }
 
-    // ── Phase 3d: Fire-and-forget feedback for promoted transactions ────
+    // ── Phase 3d: Fire-and-forget batch feedback for promoted transactions ─
     // Updates the DescriptionMapping table and embedding indexes so future
     // classifications benefit from these confirmed description→category pairs.
     if (toCreate.length > 0) {
-      for (const { plaidTx } of toCreate) {
-        const desc = plaidTx.merchantName || plaidTx.name;
-        const catId = overrideCategoryId ?? plaidTx.suggestedCategoryId;
-        if (desc && catId) {
-          fetch(`${BACKEND_URL}/api/feedback`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
-            body: JSON.stringify({ description: desc, categoryId: catId, tenantId: user.tenantId }),
-          }).catch(() => {}); // Non-fatal
-        }
+      const feedbackEntries = toCreate
+        .map(({ plaidTx }) => ({
+          description: plaidTx.merchantName || plaidTx.name,
+          categoryId: overrideCategoryId ?? plaidTx.suggestedCategoryId,
+        }))
+        .filter((e) => e.description && e.categoryId);
+
+      if (feedbackEntries.length > 0) {
+        fetchWithTimeout(`${BACKEND_URL}/api/feedback/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
+          body: JSON.stringify({ tenantId: user.tenantId, entries: feedbackEntries }),
+        }, 5000).catch((err) => {
+          console.error(`Bulk promote batch feedback error: ${err.message}`);
+          Sentry.captureException(err, { extra: { eventType: 'feedback-batch', count: feedbackEntries.length } });
+        }); // Non-blocking
       }
     }
 
-    // ── Phase 4: Trigger downstream processing ───────────────────────────
+    // ── Phase 4: Trigger downstream processing (fire-and-forget) ──────────
+    // produceEvent has internal retry + timeout + Sentry, so it's safe to
+    // not await — the user gets their response immediately after DB work.
     if (promoted > 0) {
-      try {
-        await produceEvent({
-          type: 'TRANSACTIONS_IMPORTED',
-          tenantId: user.tenantId,
-          accountIds: Array.from(affectedAccountIds),
-          dateScopes: Array.from(affectedDateScopes).map((ds) => {
-            const [year, month] = ds.split('-');
-            return { year: parseInt(year), month: parseInt(month) };
-          }),
-          source: 'PLAID_BULK_PROMOTE',
-        });
-      } catch (eventErr) {
-        // Non-fatal — transactions are committed, event can be retried
-        console.error('Failed to produce TRANSACTIONS_IMPORTED event after bulk promote:', eventErr.message);
-        Sentry.captureException(eventErr);
-      }
+      produceEvent({
+        type: 'TRANSACTIONS_IMPORTED',
+        tenantId: user.tenantId,
+        accountIds: Array.from(affectedAccountIds),
+        dateScopes: Array.from(affectedDateScopes).map((ds) => {
+          const [year, month] = ds.split('-');
+          return { year: parseInt(year), month: parseInt(month) };
+        }),
+        source: 'PLAID_BULK_PROMOTE',
+      }).catch(() => {}); // already logs + reports internally
     }
 
     res.status(StatusCodes.OK).json({ promoted, skipped, errors });

@@ -1048,7 +1048,7 @@ export default function TransactionReviewPage() {
 
         {/* ── All Pending Tab ── */}
         <TabsContent value="all">
-          {plaidLoading || pendingLoading ? (
+          {(plaidLoading && !plaidData) || (pendingLoading && !pendingData) ? (
             loadingSkeleton
           ) : totalCount === 0 ? (
             emptyState(t('review.allCaughtUp'), t('review.noPendingTransactions'))
@@ -1108,7 +1108,7 @@ export default function TransactionReviewPage() {
 
         {/* ── Plaid Tab ── */}
         <TabsContent value="plaid">
-          {plaidLoading ? (
+          {plaidLoading && !plaidData ? (
             loadingSkeleton
           ) : plaidReviewItems.length === 0 ? (
             emptyState(t('review.noPlaidToReview'), t('review.allPlaidProcessed'))
@@ -1134,7 +1134,7 @@ export default function TransactionReviewPage() {
 
         {/* ── Imports Tab ── */}
         <TabsContent value="imports">
-          {pendingLoading ? (
+          {pendingLoading && !pendingData ? (
             loadingSkeleton
           ) : pendingImports.length === 0 && !selectedImportId ? (
             emptyState(t('review.noPendingImports'), t('review.allImportsCommitted'))

@@ -100,7 +100,7 @@ describe('transactionHash', () => {
       expect(call.where.transaction_date.lte.toISOString()).toBe(expectedCeiling.toISOString());
     });
 
-    it('uses 90-day floor when minDate is within 90 days', async () => {
+    it('uses minDate - 1 day as floor when minDate is within 90 days', async () => {
       prisma.transaction.findMany.mockResolvedValue([]);
       const recentDate = new Date();
       recentDate.setDate(recentDate.getDate() - 30);
@@ -108,12 +108,11 @@ describe('transactionHash', () => {
       await buildDuplicateHashSet('tenant1', 1, recentDate, recentDate);
 
       const call = prisma.transaction.findMany.mock.calls[0][0];
-      // Should use 90-day default, not minDate - 1 day
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
       const floorDate = call.where.transaction_date.gte;
-      // Floor should be approximately 90 days ago, not 31 days ago
-      expect(floorDate.getTime()).toBeLessThan(recentDate.getTime());
+      // Floor should be minDate - 1 day (buffer), not 90 days ago
+      const expectedFloor = new Date(recentDate);
+      expectedFloor.setDate(expectedFloor.getDate() - 1);
+      expect(floorDate.toISOString().slice(0, 10)).toBe(expectedFloor.toISOString().slice(0, 10));
     });
 
     it('applies maxDate ceiling even when minDate is recent', async () => {

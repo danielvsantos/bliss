@@ -64,7 +64,7 @@ Adapter-driven ingestion for any bank's export format:
 2. **Custom adapter builder** — Define column mappings for any bank format via a TypeScript interface
 3. **AI classification** — Every imported row goes through the same 4-tier classification engine
 4. **Investment enrichment** — Automatically detects stock/crypto transactions and fetches current prices
-5. **SHA-256 deduplication** — Hash-based dedup with a 90-day sliding window prevents double-counting
+5. **SHA-256 deduplication** — Hash-based dedup scoped to the batch's date range prevents double-counting
 6. **Staged review** — Preview all classifications before committing to your ledger
 
 #### AI-Generated Insights

@@ -39,13 +39,18 @@ export function computeTransactionHash(date, description, amount, accountId) {
  */
 export async function buildDuplicateHashSet(tenantId, accountId, minDate = null, maxDate = null) {
     // ── Compute date floor ────────────────────────────────────────────────────
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
-    let dateFloor = ninetyDaysAgo;
-    if (minDate && minDate < ninetyDaysAgo) {
+    // When the caller provides a minDate (the earliest date in the batch),
+    // use it directly — the hash includes the date, so only transactions
+    // sharing a date with the batch can ever collide.  The 90-day fallback
+    // is kept for callers that pass no date info.
+    let dateFloor;
+    if (minDate) {
         dateFloor = new Date(minDate);
         dateFloor.setDate(dateFloor.getDate() - 1); // 1-day buffer for timezone edge cases
+    } else {
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        dateFloor = ninetyDaysAgo;
     }
 
     // ── Compute date ceiling ──────────────────────────────────────────────────

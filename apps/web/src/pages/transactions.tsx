@@ -410,7 +410,7 @@ export default function TransactionsPage() {
         ) : (
           <>
             {/* Column headers — matches recent-transactions-card pattern */}
-            <div className="flex items-center px-4 py-2.5 gap-3">
+            <div className="flex items-center px-4 pt-2.5 pb-0 gap-3">
               {/* Spacer matching the category emoji icon */}
               <div className="w-9 shrink-0" />
               <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase w-[88px] shrink-0 hidden sm:block">
