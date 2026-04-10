@@ -181,7 +181,7 @@ export default function HomePage() {
             Production-Grade Infrastructure
           </p>
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-4" style={{ color: '#3A3542' }}>
-            Three services. Ten workers. Sixty endpoints. One configuration file.
+            Three services. Eight workers. Sixty endpoints. One configuration file.
           </h2>
           <p className="text-sm leading-relaxed mb-10 max-w-2xl" style={{ color: '#5A5266' }}>
             A monorepo architecture designed for privacy-first self-hosting.
@@ -192,7 +192,7 @@ export default function HomePage() {
             <div className="mx-auto" style={{ maxWidth: 1200 }}>
               <Image
                 src="/images/blissarchitecture.svg"
-                alt="Bliss architecture: Nginx entrypoint routing to React SPA, Next.js API, and Express backend with 10 BullMQ workers, PostgreSQL with pgvector, Redis, and third-party integrations"
+                alt="Bliss architecture: Nginx entrypoint routing to React SPA, Next.js API, and Express backend with 8 BullMQ workers, PostgreSQL with pgvector, Redis, and third-party integrations"
                 width={1200}
                 height={700}
                 className="w-full h-auto"
@@ -579,7 +579,7 @@ export default function HomePage() {
               <div className="overflow-hidden" style={{ backgroundColor: '#F6F8FA' }}>
                 <Image
                   src="/images/cipaths.png"
-                  alt="CI pipeline showing 1,076 passing tests across 152 test files"
+                  alt="CI pipeline showing 1,178 passing tests across the monorepo"
                   width={400}
                   height={200}
                   className="w-full h-auto"
@@ -712,7 +712,7 @@ export default function HomePage() {
   ✓ apps/web/CLAUDE.md      — design tokens, components
   ✓ apps/docs/CLAUDE.md     — sync script, Nextra`}</span>{`
 
-`}<span style={{ color: '#27C93F' }}>{'>'}</span>{` Context loaded. `}<span style={{ color: '#6D657A' }}>5 files</span>{`, `}<span style={{ color: '#6D657A' }}>43 specs</span>{`, `}<span style={{ color: '#6D657A' }}>1,076 tests</span>{`
+`}<span style={{ color: '#27C93F' }}>{'>'}</span>{` Context loaded. `}<span style={{ color: '#6D657A' }}>5 files</span>{`, `}<span style={{ color: '#6D657A' }}>43 specs</span>{`, `}<span style={{ color: '#6D657A' }}>1,178 tests</span>{`
 
 `}<span style={{ color: '#FFBD2E' }}>{'$'}</span>{` How can I help with Bliss?`}
                   </pre>
