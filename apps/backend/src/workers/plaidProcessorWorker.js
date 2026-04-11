@@ -227,7 +227,7 @@ async function processRowWithResult(plaidTx, result, ctx) {
 }
 
 /**
- * Classify a row via the 3-tier waterfall, then stage it.
+ * Classify a row via the 4-tier waterfall, then stage it.
  * Used in Phase 2 where each row gets its own classify() call.
  */
 async function classifyAndStageRow(plaidTx, ctx) {

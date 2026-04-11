@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { MobileFilterDrawer } from "@/components/ui/mobile-filter-drawer";
 import { getTenantMeta } from "@/utils/tenantMetaStorage";
 import { useTenantSettings } from "@/hooks/use-tenant-settings";
 import type { Country, Currency, AnalyticsResponse } from "@/types/api";
@@ -247,13 +248,14 @@ export default function PnLAnalysisPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
-        <div className="flex justify-between items-start">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
           <div>
             <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.pnl.title")}</h2>
             <p className="text-muted-foreground">
               {t("pages.pnl.subtitle")}
             </p>
           </div>
+          <MobileFilterDrawer>
           <div className="flex flex-col items-end gap-4">
             <div className="flex flex-wrap gap-2">
               <Select value={viewType} onValueChange={(value: 'year' | 'quarter' | 'month') => setViewType(value)}>
@@ -476,6 +478,7 @@ export default function PnLAnalysisPage() {
             {/* Selected Items Display - This section is now removed */}
 
           </div>
+          </MobileFilterDrawer>
         </div>
 
         <Tabs defaultValue="statement" value={activeTab} onValueChange={setActiveTab}>

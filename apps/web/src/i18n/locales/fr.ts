@@ -10,6 +10,7 @@ const fr = {
     loading: "Chargement...",
     save: "Enregistrer",
     save_changes: "Enregistrer les modifications",
+    apply: "Appliquer",
     cancel: "Annuler",
     delete: "Supprimer",
     edit: "Modifier",

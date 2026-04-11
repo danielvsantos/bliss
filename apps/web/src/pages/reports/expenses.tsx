@@ -50,6 +50,8 @@ import {
 } from "recharts";
 import { ExpenseTransactionList } from "@/components/entities/expense-transaction-list";
 import { translateCategoryType, translateCategoryGroup } from "@/lib/category-i18n";
+import { MobileFilterDrawer } from "@/components/ui/mobile-filter-drawer";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const CHART_COLORS = [
   "hsl(var(--chart-1))",
@@ -119,6 +121,7 @@ const processAnalyticsData = (
 export default function ExpenseTrackingPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("categories");
   const { data: userPreferences } = useUserPreferences();
   const { data: categories } = useCategories();
@@ -243,13 +246,14 @@ export default function ExpenseTrackingPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.expenses.title")}</h2>
             <p className="text-muted-foreground">
               {t("pages.expenses.description")}
             </p>
           </div>
+          <MobileFilterDrawer>
           <div className="flex flex-wrap items-center gap-3">
             {/* Start date */}
             <div className="space-y-1">
@@ -393,6 +397,7 @@ export default function ExpenseTrackingPage() {
               </Popover>
             </div>
           </div>
+          </MobileFilterDrawer>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
@@ -492,18 +497,18 @@ export default function ExpenseTrackingPage() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="h-[400px]">
+                    <div className={isMobile ? "h-[280px]" : "h-[400px]"}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
                             data={pieData}
                             cx="50%"
                             cy="50%"
-                            innerRadius={80}
-                            outerRadius={140}
+                            innerRadius={isMobile ? 50 : 80}
+                            outerRadius={isMobile ? 95 : 140}
                             paddingAngle={2}
                             dataKey="value"
-                            label={({ name, percentage }) => parseFloat(percentage) >= 5 ? `${translateCategoryGroup(t, name)}: ${percentage}%` : ''}
+                            label={isMobile ? false : ({ name, percentage }) => parseFloat(percentage) >= 5 ? `${translateCategoryGroup(t, name)}: ${percentage}%` : ''}
                             labelLine={false}
                             onClick={(data) => {
                               setActiveCategoryGroup(data.name);

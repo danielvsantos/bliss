@@ -93,7 +93,7 @@ export default function AccountsPage() {
     <>
       <div className="flex flex-col h-full">
         {/* Page Header */}
-        <div className="flex items-center justify-between px-6 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{t('accountsPage.title')}</h1>
             <p className="text-sm text-muted-foreground">
@@ -103,12 +103,12 @@ export default function AccountsPage() {
           <div className="flex items-center gap-2">
             {/* Uses PlaidConnect's built-in exchange + AccountSelectionModal flow */}
             <PlaidConnect variant="outline">
-              <Landmark className="h-4 w-4 mr-2" />
-              {t('accountsPage.connectBank')}
+              <Landmark className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{t('accountsPage.connectBank')}</span>
             </PlaidConnect>
             <Button onClick={handleAddManual}>
-              <PlusIcon className="h-4 w-4 mr-2" />
-              {t('accountsPage.addManual')}
+              <PlusIcon className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{t('accountsPage.addManual')}</span>
             </Button>
           </div>
         </div>

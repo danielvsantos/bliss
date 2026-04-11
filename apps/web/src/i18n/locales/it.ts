@@ -13,6 +13,7 @@ const it = {
     saving: "Salvataggio...",
     save: "Salva",
     save_changes: "Salva modifiche",
+    apply: "Applica",
     cancel: "Annulla",
     delete: "Elimina",
     edit: "Modifica",

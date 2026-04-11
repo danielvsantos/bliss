@@ -355,31 +355,31 @@ export default function SettingsPage() {
           <TabsList className="bg-muted border border-border rounded-[0.875rem] p-[3px] inline-flex gap-0.5 h-auto">
             <TabsTrigger
               value="general"
-              className="rounded-[0.75rem] px-4 py-2 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
-              <SettingsIcon className="h-3.5 w-3.5 mr-1.5" />
-              {t("pages.settings.tabs.general")}
+              <SettingsIcon className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">{t("pages.settings.tabs.general")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="countries-currencies"
-              className="rounded-[0.75rem] px-4 py-2 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
-              <Globe className="h-3.5 w-3.5 mr-1.5" />
-              {t("pages.settings.tabs.countries_currencies")}
+              <Globe className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">{t("pages.settings.tabs.countries_currencies")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="banks"
-              className="rounded-[0.75rem] px-4 py-2 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
-              <Building className="h-3.5 w-3.5 mr-1.5" />
-              {t("pages.settings.tabs.banks")}
+              <Building className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">{t("pages.settings.tabs.banks")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="ai-classification"
-              className="rounded-[0.75rem] px-4 py-2 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
-              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-              AI Classification
+              <Sparkles className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">AI Classification</span>
             </TabsTrigger>
           </TabsList>
 

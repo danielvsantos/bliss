@@ -86,7 +86,7 @@ Pure utilities (encryption, hash functions, calculator logic) are tested without
 | `unit/utils/encryption.test.js` | 10 | AES-256-GCM encrypt/decrypt, searchable vs non-searchable | none |
 | `unit/utils/categoryCache.test.js` | 10 | Tenant cache TTL, invalidation, stale-on-error fallback | Prisma, logger, `jest.useFakeTimers()` |
 | `unit/services/adapterEngine.test.js` | 11 | `parseDate`, `parseDecimal`, `sortAdaptersBySpecificity`, `detectAdapter` | Redis, Prisma, logger |
-| `unit/services/categorizationService.test.js` | 11 | 3-tier waterfall classify(), recordFeedback() fire-and-forget | descriptionCache, geminiService, Prisma, logger |
+| `unit/services/categorizationService.test.js` | 11 | 4-tier waterfall classify(), recordFeedback() fire-and-forget | descriptionCache, geminiService, Prisma, logger |
 | `unit/services/geminiService.test.js` | 12 | `generateEmbedding()` retry logic, `classifyTransaction()` parsing + clamping | `@google/generative-ai`, logger |
 | `unit/services/priceService.test.js` | 8 | `getLatestPrice()` routing by asset type, DB fallback | stockService, cryptoService, Prisma, logger |
 | `unit/services/cryptoService.test.js` | 11 | `searchCrypto()`, `getHistoricalCryptoPrice()`, `getLatestCryptoPrice()` — TwelveData delegation, pair construction, dedup | twelveDataService, logger |

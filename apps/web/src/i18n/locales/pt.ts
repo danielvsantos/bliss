@@ -13,6 +13,7 @@ const pt = {
     saving: "Salvando...",
     save: "Salvar",
     save_changes: "Salvar Alterações",
+    apply: "Aplicar",
     cancel: "Cancelar",
     delete: "Excluir",
     edit: "Editar",

@@ -230,7 +230,7 @@ export default function ManualUpdatesPage() {
                         </span>
                       </TableHead>
                       <TableHead
-                        className="text-center cursor-pointer select-none"
+                        className="text-center cursor-pointer select-none hidden sm:table-cell"
                         onClick={() => handleStaleSort("days")}
                       >
                         <span className="inline-flex items-center">
@@ -268,7 +268,7 @@ export default function ManualUpdatesPage() {
                           </TableCell>
 
                           {/* Status badge */}
-                          <TableCell className="text-center">
+                          <TableCell className="text-center hidden sm:table-cell">
                             <Badge className={`${urgency.className} text-[0.6875rem] font-semibold`}>
                               {t("manualUpdates.dOld", { count: asset.daysSince })} · {urgency.label}
                             </Badge>
@@ -315,8 +315,8 @@ export default function ManualUpdatesPage() {
                     <TableRow className="bg-accent/40">
                       <TableHead>{t("manualUpdates.debtName")}</TableHead>
                       <TableHead className="text-right">{t("manualUpdates.principalBalance")}</TableHead>
-                      <TableHead className="text-right">{t("manualUpdates.interestRate")}</TableHead>
-                      <TableHead>{t("manualUpdates.duration")}</TableHead>
+                      <TableHead className="text-right hidden sm:table-cell">{t("manualUpdates.interestRate")}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t("manualUpdates.duration")}</TableHead>
                       <TableHead className="text-right">{t("common.actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -342,12 +342,12 @@ export default function ManualUpdatesPage() {
                           <TableCell className="text-right font-semibold tabular-nums">
                             {formatCurrency(marketValue, portfolioCurrency)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                          <TableCell className="text-right tabular-nums text-muted-foreground hidden sm:table-cell">
                             {asset.debtTerms?.interestRate != null
                               ? `${asset.debtTerms.interestRate}%`
                               : <span className="text-muted-foreground">—</span>}
                           </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
+                          <TableCell className="text-muted-foreground text-sm hidden sm:table-cell">
                             {durationStr}
                           </TableCell>
                           <TableCell className="text-right">
@@ -380,7 +380,9 @@ export default function ManualUpdatesPage() {
                             portfolioCurrency
                           )}
                         </td>
-                        <td colSpan={3} />
+                        <td className="hidden sm:table-cell" />
+                        <td className="hidden sm:table-cell" />
+                        <td />
                       </tr>
                     </tfoot>
                   )}

@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import {
   ChevronDown,
   ChevronRight,
@@ -98,12 +98,12 @@ function AssetRow({ item, currency }: { item: PortfolioItem; currency: string })
     return (
       <TableRow className="hover:bg-accent/30">
         <TableCell className="font-medium">{item.symbol}</TableCell>
-        <TableCell />
-        <TableCell />
-        <TableCell />
-        <TableCell />
-        <TableCell />
-        <TableCell />
+        <TableCell className="hidden md:table-cell" />
+        <TableCell className="hidden md:table-cell" />
+        <TableCell className="hidden md:table-cell" />
+        <TableCell className="hidden sm:table-cell" />
+        <TableCell className="hidden md:table-cell" />
+        <TableCell className="hidden sm:table-cell" />
         <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(marketValue, currency)}</TableCell>
       </TableRow>
     );
@@ -121,17 +121,32 @@ function AssetRow({ item, currency }: { item: PortfolioItem; currency: string })
 
   return (
     <TableRow className={`hover:bg-accent/30 ${isClosed ? "opacity-60" : ""}`}>
-      <TableCell className="font-medium">{item.symbol}</TableCell>
-      <TableCell className="tabular-nums">{quantity.toFixed(2)}</TableCell>
-      <TableCell className="tabular-nums">{formatCurrency(price, currency)}</TableCell>
-      <TableCell className="tabular-nums">{formatCurrency(costBasis, currency)}</TableCell>
-      <TableCell className={`tabular-nums ${unrealizedPnL >= 0 ? "text-positive" : "text-negative"}`}>
+      <TableCell className="font-medium">
+        <div>{item.symbol}</div>
+        <p className="text-xs text-muted-foreground sm:hidden">
+          {unrealizedPnL !== 0 && (
+            <span className={unrealizedPnL >= 0 ? "text-positive" : "text-negative"}>
+              {formatCurrency(unrealizedPnL, currency)}
+            </span>
+          )}
+          {unrealizedPnL !== 0 && totalInvested > 0 && " · "}
+          {totalInvested > 0 && (
+            <span className={roiPercent >= 0 ? "text-positive" : "text-negative"}>
+              {roiPercent >= 0 ? "+" : ""}{roiPercent.toFixed(1)}%
+            </span>
+          )}
+        </p>
+      </TableCell>
+      <TableCell className="hidden md:table-cell tabular-nums">{quantity.toFixed(2)}</TableCell>
+      <TableCell className="hidden md:table-cell tabular-nums">{formatCurrency(price, currency)}</TableCell>
+      <TableCell className="hidden md:table-cell tabular-nums">{formatCurrency(costBasis, currency)}</TableCell>
+      <TableCell className={`hidden sm:table-cell tabular-nums ${unrealizedPnL >= 0 ? "text-positive" : "text-negative"}`}>
         {formatCurrency(unrealizedPnL, currency)}
       </TableCell>
-      <TableCell className={`tabular-nums ${realizedPnL >= 0 ? "text-positive" : "text-negative"}`}>
+      <TableCell className={`hidden md:table-cell tabular-nums ${realizedPnL >= 0 ? "text-positive" : "text-negative"}`}>
         {formatCurrency(realizedPnL, currency)}
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-right hidden sm:table-cell">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -165,10 +180,10 @@ function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: strin
   return (
     <TableRow className="hover:bg-accent/30">
       <TableCell className="font-medium">{item.symbol}</TableCell>
-      <TableCell className="tabular-nums">
+      <TableCell className="hidden sm:table-cell tabular-nums">
         {item.debtTerms?.interestRate != null ? `${item.debtTerms.interestRate}%` : <span className="text-muted-foreground">—</span>}
       </TableCell>
-      <TableCell className="tabular-nums">
+      <TableCell className="hidden sm:table-cell tabular-nums">
         {item.debtTerms?.termInMonths != null ? `${item.debtTerms.termInMonths} mo` : <span className="text-muted-foreground">—</span>}
       </TableCell>
       <TableCell className="text-right font-semibold tabular-nums text-negative">
@@ -514,13 +529,15 @@ export default function PortfolioHoldingsPage() {
     field,
     children,
     align = "left",
+    className: extraClassName,
   }: {
     field: string;
     children: React.ReactNode;
     align?: "left" | "right";
+    className?: string;
   }) => (
     <TableHead
-      className={`cursor-pointer select-none ${align === "right" ? "text-right" : ""}`}
+      className={cn(`cursor-pointer select-none ${align === "right" ? "text-right" : ""}`, extraClassName)}
       onClick={() => handleSort(field)}
     >
       <span className="inline-flex items-center gap-0.5">
@@ -731,12 +748,12 @@ export default function PortfolioHoldingsPage() {
                           <TableHeader>
                             <TableRow className="bg-accent/40">
                               <SortableHeader field="symbol">{t("portfolio.symbol")}</SortableHeader>
-                              <SortableHeader field="quantity">{t("portfolio.qty")}</SortableHeader>
-                              <TableHead>{t("portfolio.price")}</TableHead>
-                              <SortableHeader field="costBasis">{t("portfolio.costBasis")}</SortableHeader>
-                              <SortableHeader field="unrealizedPnL">{t("portfolio.unrealizedPnL")}</SortableHeader>
-                              <SortableHeader field="realizedPnL">{t("portfolio.realizedPnL")}</SortableHeader>
-                              <TableHead className="text-right">{t("portfolio.roiPercent")}</TableHead>
+                              <SortableHeader field="quantity" className="hidden md:table-cell">{t("portfolio.qty")}</SortableHeader>
+                              <TableHead className="hidden md:table-cell">{t("portfolio.price")}</TableHead>
+                              <SortableHeader field="costBasis" className="hidden md:table-cell">{t("portfolio.costBasis")}</SortableHeader>
+                              <SortableHeader field="unrealizedPnL" className="hidden sm:table-cell">{t("portfolio.unrealizedPnL")}</SortableHeader>
+                              <SortableHeader field="realizedPnL" className="hidden md:table-cell">{t("portfolio.realizedPnL")}</SortableHeader>
+                              <TableHead className="text-right hidden sm:table-cell">{t("portfolio.roiPercent")}</TableHead>
                               <SortableHeader field="marketValue" align="right">{t("portfolio.totalValue")}</SortableHeader>
                             </TableRow>
                           </TableHeader>
@@ -794,8 +811,8 @@ export default function PortfolioHoldingsPage() {
                 <TableHeader>
                   <TableRow className="bg-accent/40">
                     <TableHead>{t("portfolio.liability")}</TableHead>
-                    <TableHead>{t("portfolio.interestRate")}</TableHead>
-                    <TableHead>{t("portfolio.term")}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t("portfolio.interestRate")}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t("portfolio.term")}</TableHead>
                     <TableHead className="text-right">{t("portfolio.balance")}</TableHead>
                     <TableHead className="text-right">{t("common.actions")}</TableHead>
                   </TableRow>
@@ -808,9 +825,11 @@ export default function PortfolioHoldingsPage() {
                 {sortedLiabilities.length > 1 && (
                   <tfoot>
                     <tr className="border-t">
-                      <td colSpan={3} className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+                      <td className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
                         {t("portfolio.totalOutstanding")}
                       </td>
+                      <td className="hidden sm:table-cell" />
+                      <td className="hidden sm:table-cell" />
                       <td className="px-4 py-3 text-right font-bold tabular-nums text-negative">
                         {formatCurrency(totalLiabilitiesValue, portfolioCurrency)}
                       </td>

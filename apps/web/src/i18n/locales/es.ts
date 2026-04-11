@@ -10,6 +10,7 @@ const es = {
     loading: "Cargando...",
     save: "Guardar",
     save_changes: "Guardar cambios",
+    apply: "Aplicar",
     cancel: "Cancelar",
     delete: "Eliminar",
     edit: "Editar",

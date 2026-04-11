@@ -111,7 +111,7 @@ Provides an O(1) description → categoryId lookup per tenant.
 
 The main classification orchestrator. Key functions:
 
-- **`classify(description, merchantName, tenantId, reviewThreshold, plaidCategory?)`** — Runs the 3-tier waterfall in sequence, returning the first successful result. The optional 5th parameter `plaidCategory` is the raw Plaid `personal_finance_category` JSON object. When present, it is injected as a hint into the Tier 3 LLM prompt (see §9.6). Tiers 1 and 2 are unaffected.
+- **`classify(description, merchantName, tenantId, reviewThreshold, plaidCategory?)`** — Runs the 4-tier waterfall in sequence, returning the first successful result. The optional 5th parameter `plaidCategory` is the raw Plaid `personal_finance_category` JSON object. When present, it is injected as a hint into the Tier 3 LLM prompt (see §9.6). Tiers 1 and 2 are unaffected.
 
 - **`findVectorMatch(embedding, tenantId, threshold)`** — Executes the pgvector cosine similarity query against `TransactionEmbedding`. Returns `{ categoryId, confidence }` if similarity ≥ threshold, otherwise `null`.
 

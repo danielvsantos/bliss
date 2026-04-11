@@ -28,6 +28,7 @@ import { api } from '@/lib/api';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { format, parse } from 'date-fns';
 import { Label } from '@/components/ui/label';
+import { MobileFilterDrawer } from '@/components/ui/mobile-filter-drawer';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { translateCategoryGroup, translateCategoryName } from '@/lib/category-i18n';
 import type { Transaction, Account, Category } from '@/types/api';
@@ -207,6 +208,7 @@ export default function TransactionsPage() {
   };
 
   const hasActiveFilters = !!(filters.startDate || filters.endDate || filters.accountId || filters.group || filters.categoryId);
+  const activeFilterCount = [filters.startDate, filters.endDate, filters.accountId, filters.group, filters.categoryId].filter(Boolean).length;
 
   const clearFilters = () => {
     setFilters({
@@ -222,7 +224,7 @@ export default function TransactionsPage() {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{t('pages.transactions.title')}</h1>
           <p className="text-muted-foreground">{t('pages.transactions.subtitle')}</p>
@@ -230,17 +232,17 @@ export default function TransactionsPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleExportClick} disabled={isExporting} className="flex items-center gap-1">
             <DownloadIcon className="h-4 w-4" />
-            <span>{isExporting ? t('pages.transactions.exporting') : t('pages.transactions.exportCsv')}</span>
+            <span className="hidden sm:inline">{isExporting ? t('pages.transactions.exporting') : t('pages.transactions.exportCsv')}</span>
           </Button>
           <Button variant="outline" asChild>
             <Link to="/agents/import?adapter=native" className="flex items-center gap-1">
               <UploadIcon className="h-4 w-4" />
-              <span>{t('pages.transactions.importCsv')}</span>
+              <span className="hidden sm:inline">{t('pages.transactions.importCsv')}</span>
             </Link>
           </Button>
           <Button onClick={handleAddTransaction} className="flex items-center gap-1">
             <PlusIcon className="h-4 w-4" />
-            <span>{t('pages.transactions.addTransaction')}</span>
+            <span className="hidden sm:inline">{t('pages.transactions.addTransaction')}</span>
           </Button>
         </div>
       </div>
@@ -248,142 +250,144 @@ export default function TransactionsPage() {
       <div className="h-px bg-border my-6" />
 
       {/* ── Filter Bar ─────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 mb-6">
-        <div className="flex flex-col md:flex-row gap-3 items-end">
-          {/* Date range */}
-          <div className="flex gap-2 items-end">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">{t('time.startMonth')}</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'w-[150px] pl-3 text-left font-normal h-9 text-sm',
-                      !filters.startDate && 'text-muted-foreground',
-                    )}
-                  >
-                    {filters.startDate
-                      ? format(parse(filters.startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy')
-                      : t('pages.transactions.pickDate')}
-                    <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    captionLayout="dropdown-buttons"
-                    fromYear={2010}
-                    toYear={new Date().getFullYear() + 1}
-                    selected={filters.startDate ? parse(filters.startDate, 'yyyy-MM-dd', new Date()) : undefined}
-                    onSelect={(date) =>
-                      handleFilterChange('startDate', date ? format(date, 'yyyy-MM-dd') : undefined)
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+      <MobileFilterDrawer activeFilterCount={activeFilterCount}>
+        <div className="flex flex-col gap-3 mb-6">
+          <div className="flex flex-col md:flex-row gap-3 items-end">
+            {/* Date range */}
+            <div className="flex gap-2 items-end">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t('time.startMonth')}</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-[150px] pl-3 text-left font-normal h-9 text-sm',
+                        !filters.startDate && 'text-muted-foreground',
+                      )}
+                    >
+                      {filters.startDate
+                        ? format(parse(filters.startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy')
+                        : t('pages.transactions.pickDate')}
+                      <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      captionLayout="dropdown-buttons"
+                      fromYear={2010}
+                      toYear={new Date().getFullYear() + 1}
+                      selected={filters.startDate ? parse(filters.startDate, 'yyyy-MM-dd', new Date()) : undefined}
+                      onSelect={(date) =>
+                        handleFilterChange('startDate', date ? format(date, 'yyyy-MM-dd') : undefined)
+                      }
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t('time.endMonth')}</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'w-[150px] pl-3 text-left font-normal h-9 text-sm',
+                        !filters.endDate && 'text-muted-foreground',
+                      )}
+                    >
+                      {filters.endDate
+                        ? format(parse(filters.endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy')
+                        : t('pages.transactions.pickDate')}
+                      <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      captionLayout="dropdown-buttons"
+                      fromYear={2010}
+                      toYear={new Date().getFullYear() + 1}
+                      selected={filters.endDate ? parse(filters.endDate, 'yyyy-MM-dd', new Date()) : undefined}
+                      onSelect={(date) =>
+                        handleFilterChange('endDate', date ? format(date, 'yyyy-MM-dd') : undefined)
+                      }
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
+
+            {/* Account */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">{t('time.endMonth')}</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'w-[150px] pl-3 text-left font-normal h-9 text-sm',
-                      !filters.endDate && 'text-muted-foreground',
-                    )}
-                  >
-                    {filters.endDate
-                      ? format(parse(filters.endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy')
-                      : t('pages.transactions.pickDate')}
-                    <CalendarIcon className="ml-auto h-3.5 w-3.5 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    captionLayout="dropdown-buttons"
-                    fromYear={2010}
-                    toYear={new Date().getFullYear() + 1}
-                    selected={filters.endDate ? parse(filters.endDate, 'yyyy-MM-dd', new Date()) : undefined}
-                    onSelect={(date) =>
-                      handleFilterChange('endDate', date ? format(date, 'yyyy-MM-dd') : undefined)
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+              <Label className="text-xs text-muted-foreground">{t('common.account')}</Label>
+              <Select
+                value={filters.accountId?.toString() ?? 'all'}
+                onValueChange={(value) => handleFilterChange('accountId', value === 'all' ? undefined : Number(value))}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={t('pages.transactions.allAccounts')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('pages.transactions.allAccounts')}</SelectItem>
+                  {metadata?.accounts?.map((account: Account) => (
+                    <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
 
-          {/* Account */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">{t('common.account')}</Label>
-            <Select
-              value={filters.accountId?.toString() ?? 'all'}
-              onValueChange={(value) => handleFilterChange('accountId', value === 'all' ? undefined : Number(value))}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t('pages.transactions.allAccounts')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('pages.transactions.allAccounts')}</SelectItem>
-                {metadata?.accounts?.map((account: Account) => (
-                  <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            {/* Category Group */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('pages.transactions.categoryGroup')}</Label>
+              <Select
+                value={filters.group ?? 'all'}
+                onValueChange={(value) => handleFilterChange('group', value === 'all' ? undefined : value)}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={t('pages.transactions.allGroups')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('pages.transactions.allGroups')}</SelectItem>
+                  {categoryGroups.map((group: string) => (
+                    <SelectItem key={group} value={group}>{translateCategoryGroup(t, group)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Category Group */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">{t('pages.transactions.categoryGroup')}</Label>
-            <Select
-              value={filters.group ?? 'all'}
-              onValueChange={(value) => handleFilterChange('group', value === 'all' ? undefined : value)}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t('pages.transactions.allGroups')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('pages.transactions.allGroups')}</SelectItem>
-                {categoryGroups.map((group: string) => (
-                  <SelectItem key={group} value={group}>{translateCategoryGroup(t, group)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            {/* Category */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('charts.category')}</Label>
+              <Select
+                value={filters.categoryId?.toString() ?? 'all'}
+                onValueChange={(value) => handleFilterChange('categoryId', value === 'all' ? undefined : Number(value))}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={t('pages.transactions.allCategories')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('pages.transactions.allCategories')}</SelectItem>
+                  {filteredCategories.map((category: Category) => (
+                    <SelectItem key={category.id} value={String(category.id)}>{translateCategoryName(t, category)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Category */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">{t('charts.category')}</Label>
-            <Select
-              value={filters.categoryId?.toString() ?? 'all'}
-              onValueChange={(value) => handleFilterChange('categoryId', value === 'all' ? undefined : Number(value))}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t('pages.transactions.allCategories')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('pages.transactions.allCategories')}</SelectItem>
-                {filteredCategories.map((category: Category) => (
-                  <SelectItem key={category.id} value={String(category.id)}>{translateCategoryName(t, category)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Clear */}
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9">
+                <XIcon className="h-4 w-4 mr-1" />
+                {t('common.clearFilter')}
+              </Button>
+            )}
           </div>
-
-          {/* Clear */}
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9">
-              <XIcon className="h-4 w-4 mr-1" />
-              {t('common.clearFilter')}
-            </Button>
-          )}
         </div>
-      </div>
+      </MobileFilterDrawer>
 
       <Card>
         {isLoading ? (

@@ -13,6 +13,7 @@ const en = {
     saving: "Saving...",
     save: "Save",
     save_changes: "Save Changes",
+    apply: "Apply",
     cancel: "Cancel",
     delete: "Delete",
     edit: "Edit",
