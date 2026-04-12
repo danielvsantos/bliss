@@ -74,7 +74,7 @@ const processAnalyticsData = (
 
   for (const timeKey in analyticsData.data) {
     const periodData = analyticsData.data[timeKey];
-    const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Investments'];
+    const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
     const typesToProcess = selectedType === 'All'
       ? Object.keys(periodData).filter(key => ALLOWED_TYPES.includes(key))
       : [selectedType];
@@ -164,14 +164,14 @@ export default function ExpenseTrackingPage() {
     if (!categories) return [];
     const expenseTypes = new Set<string>();
     categories.forEach(cat => {
-      if (cat.type === 'Essentials' || cat.type === 'Lifestyle' || cat.type === 'Growth' || cat.type === 'Investments') {
+      if (cat.type === 'Essentials' || cat.type === 'Lifestyle' || cat.type === 'Growth') {
         expenseTypes.add(cat.type);
       }
     });
     return Array.from(expenseTypes);
   }, [categories]);
 
-  const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Investments'];
+  const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
 
   const analyticsFilters = useMemo(() => {
     const typesParam = selectedCategoryType === 'All' ? ALLOWED_TYPES : [selectedCategoryType];

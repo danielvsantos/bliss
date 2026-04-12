@@ -69,7 +69,7 @@ const processAnalyticsData = (analyticsData: AnalyticsResponse | undefined) => {
 
   for (const timeKey in analyticsData.data) {
     const periodData = analyticsData.data[timeKey];
-    const EXPENSE_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Investments'];
+    const EXPENSE_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
     const expenseData: Record<string, { debit: number }> = {};
     for (const type of EXPENSE_TYPES) {
       const typeData = periodData[type] || {};
@@ -162,7 +162,7 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
     currency,
     startMonth,
     endMonth,
-    types: ['Essentials', 'Lifestyle', 'Growth', 'Investments'],
+    types: ['Essentials', 'Lifestyle', 'Growth'],
   });
 
   const chartData = useMemo(() =>
