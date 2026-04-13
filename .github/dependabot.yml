@@ -1,65 +1,103 @@
 version: 2
 updates:
+  # Root workspace
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
     groups:
       production-deps:
         applies-to: security-updates
         dependency-type: "production"
         patterns: ["*"]
       dev-deps:
-        applies-to: version-updates
+        applies-to: security-updates
         dependency-type: "development"
         patterns: ["*"]
 
+  # API
   - package-ecosystem: "npm"
     directory: "/apps/api"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
     groups:
       production-deps:
         applies-to: security-updates
         dependency-type: "production"
         patterns: ["*"]
+      dev-deps:
+        applies-to: security-updates
+        dependency-type: "development"
+        patterns: ["*"]
 
+  # Backend
   - package-ecosystem: "npm"
     directory: "/apps/backend"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
     groups:
       production-deps:
         applies-to: security-updates
         dependency-type: "production"
         patterns: ["*"]
+      dev-deps:
+        applies-to: security-updates
+        dependency-type: "development"
+        patterns: ["*"]
 
+  # Web
   - package-ecosystem: "npm"
     directory: "/apps/web"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
     groups:
       production-deps:
         applies-to: security-updates
         dependency-type: "production"
         patterns: ["*"]
+      dev-deps:
+        applies-to: security-updates
+        dependency-type: "development"
+        patterns: ["*"]
 
+  # Docs
   - package-ecosystem: "npm"
     directory: "/apps/docs"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
     groups:
       production-deps:
         applies-to: security-updates
         dependency-type: "production"
         patterns: ["*"]
+      dev-deps:
+        applies-to: security-updates
+        dependency-type: "development"
+        patterns: ["*"]
 
+  # Shared package
   - package-ecosystem: "npm"
     directory: "/packages/shared"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
     groups:
       production-deps:
         applies-to: security-updates
         dependency-type: "production"
+        patterns: ["*"]
+      dev-deps:
+        applies-to: security-updates
+        dependency-type: "development"
         patterns: ["*"]
