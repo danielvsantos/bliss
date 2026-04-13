@@ -61,14 +61,14 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@vitest/coverage-v8": "^4.0.18",
-    "eslint": "^9.22.0",
-    "eslint-config-next": "15.2.2",
-    "knip": "^5.62.0",
-    "msw": "^2.12.10",
-    "prisma": "^6.19.2",
-    "vite": "^6.0.0",
-    "vitest": "^4.0.18"
+    "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.2.0",
+    "eslint-config-next": "16.2.3",
+    "knip": "^6.4.1",
+    "msw": "^2.13.2",
+    "prisma": "^7.7.0",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
   },
   "prisma": {
     "generate": "npx prisma generate --no-engine"
