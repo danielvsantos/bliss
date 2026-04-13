@@ -78,7 +78,7 @@
     "tw-animate-css": "^1.2.5",
     "use-debounce": "^10.0.5",
     "vaul": "^0.9.3",
-    "zod": "^3.23.8",
+    "zod": "^4.3.6",
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
