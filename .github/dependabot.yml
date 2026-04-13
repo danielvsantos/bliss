@@ -1,0 +1,65 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-deps:
+        applies-to: security-updates
+        dependency-type: "production"
+        patterns: ["*"]
+      dev-deps:
+        applies-to: version-updates
+        dependency-type: "development"
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-deps:
+        applies-to: security-updates
+        dependency-type: "production"
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/apps/backend"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-deps:
+        applies-to: security-updates
+        dependency-type: "production"
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-deps:
+        applies-to: security-updates
+        dependency-type: "production"
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/apps/docs"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-deps:
+        applies-to: security-updates
+        dependency-type: "production"
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/shared"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-deps:
+        applies-to: security-updates
+        dependency-type: "production"
+        patterns: ["*"]
