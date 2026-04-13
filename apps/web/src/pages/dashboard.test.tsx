@@ -39,7 +39,7 @@ describe('Dashboard', () => {
     vi.mocked(UseSignals.useUserSignals).mockReturnValue({
       signals: {},
       accounts: [],
-      metrics: { netWorth: 0, netIncome: 0, grossProfit: 0, netProfit: 0 },
+      metrics: { netWorth: 0, netIncome: 0, discretionaryIncome: 0, netSavings: 0 },
       portfolioCurrency: 'USD',
       metricsLoading: false,
       accountsLoading: false,
@@ -59,7 +59,7 @@ describe('Dashboard', () => {
     vi.mocked(UseSignals.useUserSignals).mockReturnValue({
       signals: {},
       accounts: [{ id: 1 }],
-      metrics: { netWorth: 100000, netIncome: 5000, grossProfit: 0, netProfit: 0 },
+      metrics: { netWorth: 100000, netIncome: 5000, discretionaryIncome: 0, netSavings: 0 },
       portfolioCurrency: 'USD',
       metricsLoading: false,
       accountsLoading: false,

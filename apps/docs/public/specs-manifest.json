@@ -51,7 +51,7 @@
   {
     "slug": "analytics",
     "title": "Analytics",
-    "description": "Spending aggregation, P&L, tag analytics, and monthly caches",
+    "description": "Spending aggregation, financial summary, tag analytics, and monthly caches",
     "order": 5,
     "layers": {
       "api": "docs/specs/api/05-analytics-api.md",

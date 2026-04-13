@@ -41,7 +41,7 @@ export interface UserSignals {
 export interface UseUserSignalsResult {
   signals: UserSignals;
   accounts: EnrichedAccount[];
-  metrics: { netWorth: number; netIncome: number; grossProfit: number; netProfit: number } | undefined;
+  metrics: { netWorth: number; netIncome: number; discretionaryIncome: number; netSavings: number } | undefined;
   portfolioCurrency: string;
   metricsLoading: boolean;
   accountsLoading: boolean;

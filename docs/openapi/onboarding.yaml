@@ -39,6 +39,7 @@ components:
             checkPnL:
               type: boolean
               default: false
+              description: Frontend displays this as "Check Financial Summary".
         setupFlow:
           type: object
           properties:
@@ -75,7 +76,7 @@ components:
           type: string
           description: |
             The step to mark as complete. Valid values:
-            - Checklist: connectBank, reviewTransactions, setPortfolioCurrency, exploreExpenses, checkPnL
+            - Checklist: connectBank, reviewTransactions, setPortfolioCurrency, exploreExpenses, checkPnL (frontend label: "Check Financial Summary")
             - Setup flow: step1_profile, step2_connect
             - Special: setupComplete (sets onboardingCompletedAt), dismissChecklist
           enum:

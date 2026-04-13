@@ -59,21 +59,22 @@ import { getTenantMeta } from "@/utils/tenantMetaStorage";
 import { useTenantSettings } from "@/hooks/use-tenant-settings";
 import type { Country, Currency, AnalyticsResponse } from "@/types/api";
 import {
-  calculateGrossProfit,
-  calculateNetProfit,
+  calculateDiscretionaryIncome,
+  calculateNetSavings,
   calculatePercentage,
   formatPercentage,
-  PNL_STRUCTURE,
+  FINANCIAL_STRUCTURE,
   isCalculatedSection,
   isTypeSection,
-  processAnalyticsIntoPnL,
-  PnLStatement,
+  isSeparatorSection,
+  processAnalyticsIntoFinancialStatement,
+  FinancialStatement,
   MonthlyData,
   AnalyticsData,
-} from "@/lib/pnl";
+} from "@/lib/financial-summary";
 import { translateCategoryGroup, translateCategoryType } from "@/lib/category-i18n";
 
-export default function PnLAnalysisPage() {
+export default function FinancialSummaryPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [viewType, setViewType] = useState<'year' | 'quarter' | 'month'>('year');
@@ -101,7 +102,7 @@ export default function PnLAnalysisPage() {
   const [activeTab, setActiveTab] = useState("statement");
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [pnlData, setPnlData] = useState<PnLStatement | null>(null);
+  const [statementData, setStatementData] = useState<FinancialStatement | null>(null);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [tableColumns, setTableColumns] = useState<string[]>([]);
   const [openCountries, setOpenCountries] = useState(false);
@@ -135,21 +136,21 @@ export default function PnLAnalysisPage() {
   }, []);
 
   const quarters = React.useMemo(() => [
-    { value: 'Q1', label: t('pnl.quarters.q1') },
-    { value: 'Q2', label: t('pnl.quarters.q2') },
-    { value: 'Q3', label: t('pnl.quarters.q3') },
-    { value: 'Q4', label: t('pnl.quarters.q4') }
+    { value: 'Q1', label: t('financialSummary.quarters.q1') },
+    { value: 'Q2', label: t('financialSummary.quarters.q2') },
+    { value: 'Q3', label: t('financialSummary.quarters.q3') },
+    { value: 'Q4', label: t('financialSummary.quarters.q4') }
   ], [t]);
 
   useEffect(() => {
     const loadData = async () => {
-      await fetchPnLData();
+      await fetchFinancialData();
     };
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPnLData is defined below the effect; adding it would cause infinite re-renders
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchFinancialData is defined below the effect; adding it would cause infinite re-renders
   }, [viewType, selectedYears, selectedCountries, selectedCurrency, startMonth, endMonth, startQuarter, endQuarter]);
 
-  const fetchPnLData = async () => {
+  const fetchFinancialData = async () => {
     setIsLoading(true);
     try {
       // Prepare API parameters based on view type
@@ -190,21 +191,21 @@ export default function PnLAnalysisPage() {
         });
       }
 
-      // Process analytics data into P&L format
-      const processedData = await processAnalyticsIntoPnL(
+      // Process analytics data into Financial Statement format
+      const processedData = await processAnalyticsIntoFinancialStatement(
         analyticsResponse,
         newTableColumns,
         viewType === 'month' ? monthlyAnalyticsResponse : null // Pass monthly data if applicable
       );
-      setPnlData(processedData.statement);
+      setStatementData(processedData.statement);
       setMonthlyData(processedData.monthlyData);
     } catch (error) {
-      console.error("Error fetching P&L data:", error);
-      setPnlData({
+      console.error("Error fetching financial data:", error);
+      setStatementData({
         types: [],
         netIncome: {},
-        netProfit: {},
-        profitPercentage: {}
+        netSavings: {},
+        savingsPercentage: {}
       });
       setMonthlyData([]);
     } finally {
@@ -235,7 +236,17 @@ export default function PnLAnalysisPage() {
     );
   };
 
-  if (isLoading || !pnlData) {
+  // Map calculated section names to translation keys
+  const getCalculatedSectionLabel = (name: string): string => {
+    const keyMap: Record<string, string> = {
+      'Discretionary Income': 'financialSummary.discretionaryIncome',
+      'Savings Capacity': 'financialSummary.savingsCapacity',
+      'Net Savings': 'financialSummary.netSavings',
+    };
+    return t(keyMap[name] || name, name);
+  };
+
+  if (isLoading || !statementData) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex justify-center items-center h-[60vh]">
@@ -250,9 +261,9 @@ export default function PnLAnalysisPage() {
       <div className="flex flex-col space-y-8">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.pnl.title")}</h2>
+            <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.financialSummary.title")}</h2>
             <p className="text-muted-foreground">
-              {t("pages.pnl.subtitle")}
+              {t("pages.financialSummary.subtitle")}
             </p>
           </div>
           <MobileFilterDrawer>
@@ -483,16 +494,16 @@ export default function PnLAnalysisPage() {
 
         <Tabs defaultValue="statement" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6">
-            <TabsTrigger value="statement">{t("pages.pnl.statement")}</TabsTrigger>
-            <TabsTrigger value="chart">{t("pages.pnl.trend")}</TabsTrigger>
+            <TabsTrigger value="statement">{t("pages.financialSummary.statement")}</TabsTrigger>
+            <TabsTrigger value="chart">{t("pages.financialSummary.trend")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="statement">
             <Card>
               <CardHeader>
-                <CardTitle>{t("pages.pnl.statement")}</CardTitle>
+                <CardTitle>{t("pages.financialSummary.statement")}</CardTitle>
                 <CardDescription>
-                  {t("pages.pnl.breakdown")}
+                  {t("pages.financialSummary.breakdown")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -508,9 +519,23 @@ export default function PnLAnalysisPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {Object.entries(PNL_STRUCTURE).map(([key, section]) => {
+                    {Object.entries(FINANCIAL_STRUCTURE).map(([key, section]) => {
+                      // Render separator row
+                      if (isSeparatorSection(section)) {
+                        return (
+                          <TableRow key={key} className="bg-muted/30 hover:bg-muted/30">
+                            <TableCell
+                              colSpan={tableColumns.length + 1}
+                              className="py-2 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-t-2 border-border"
+                            >
+                              {t('financialSummary.otherActivity')}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
                       const typeData = isTypeSection(section)
-                        ? pnlData.types.find(t => t.name === section.type)
+                        ? statementData.types.find(t => t.name === section.type)
                         : null;
 
                       return (
@@ -533,12 +558,12 @@ export default function PnLAnalysisPage() {
                               )}
                               {isTypeSection(section)
                                 ? translateCategoryType(t, section.name)
-                                : t(`pnl.${section.name === 'Gross Profit' ? 'grossProfit' : section.name === 'Operating Profit' ? 'operatingProfit' : 'netProfit'}`, section.name)}
+                                : getCalculatedSectionLabel(section.name)}
                             </TableCell>
                             {tableColumns.map(column => {
-                              const totalIncome = pnlData.types.find(t => t.name === 'Income')?.totals[column] || 0;
+                              const totalIncome = statementData.types.find(t => t.name === 'Income')?.totals[column] || 0;
                               const value = isCalculatedSection(section)
-                                ? section.calculation(pnlData, column)
+                                ? section.calculation(statementData, column)
                                 : typeData?.totals[column] || 0;
                               const percentage = calculatePercentage(value, totalIncome);
 
@@ -565,7 +590,7 @@ export default function PnLAnalysisPage() {
                                 {translateCategoryGroup(t, category.name)}
                               </TableCell>
                               {tableColumns.map(column => {
-                                const totalIncome = pnlData.types.find(t => t.name === 'Income')?.totals[column] || 0;
+                                const totalIncome = statementData.types.find(t => t.name === 'Income')?.totals[column] || 0;
                                 const value = category.values[column] || 0;
                                 const percentage = calculatePercentage(value, totalIncome);
 
@@ -595,9 +620,9 @@ export default function PnLAnalysisPage() {
           <TabsContent value="chart">
             <Card>
               <CardHeader>
-                <CardTitle>{t("pages.pnl.trend")}</CardTitle>
+                <CardTitle>{t("pages.financialSummary.trend")}</CardTitle>
                 <CardDescription>
-                  {t("pages.pnl.chartDescription")}
+                  {t("pages.financialSummary.chartDescription")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -630,21 +655,21 @@ export default function PnLAnalysisPage() {
                         stroke="hsl(var(--chart-1))"
                         strokeWidth={2}
                         activeDot={{ r: 8 }}
-                        name={t("pages.pnl.totalRevenue")}
+                        name={t("pages.financialSummary.totalRevenue")}
                       />
                       <Line
                         type="monotone"
                         dataKey="expenses"
                         stroke="hsl(var(--chart-2))"
                         strokeWidth={2}
-                        name={t("pages.pnl.totalExpenses")}
+                        name={t("pages.financialSummary.totalExpenses")}
                       />
                       <Line
                         type="monotone"
-                        dataKey="profit"
+                        dataKey="savings"
                         stroke="hsl(var(--chart-3))"
                         strokeWidth={2}
-                        name={t("pages.pnl.netProfit")}
+                        name={t("pages.financialSummary.netSavings")}
                       />
                     </LineChart>
                   </ResponsiveContainer>

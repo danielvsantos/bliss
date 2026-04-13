@@ -77,7 +77,7 @@ describe('useUserSignals', () => {
 
   it('returns metrics payload safely', () => {
     vi.mocked(useDashboardMetrics).mockReturnValue({
-      data: { netWorth: 1000, netIncome: 50, grossProfit: 0, netProfit: 0 },
+      data: { netWorth: 1000, netIncome: 50, discretionaryIncome: 0, netSavings: 0 },
       portfolioCurrency: 'EUR',
       isLoading: false
     } as unknown as ReturnType<typeof useDashboardMetrics>);

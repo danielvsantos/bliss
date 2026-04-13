@@ -141,7 +141,7 @@ export default function Dashboard() {
               netWorth={metrics?.netWorth ?? 0}
               previousNetWorth={previousNetWorth}
               netIncome={metrics?.netIncome ?? 0}
-              grossProfit={metrics?.grossProfit ?? 0}
+              discretionaryIncome={metrics?.discretionaryIncome ?? 0}
               currency={portfolioCurrency}
               lastSyncDate={mostRecentSync}
               sparklineData={sparklineData}

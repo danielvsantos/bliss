@@ -147,7 +147,7 @@ After setup completes, a post-onboarding checklist is tracked via the `onboardin
 | Review transactions | `reviewTransactions` | User visits the review page |
 | Set portfolio currency | `setPortfolioCurrency` | User updates currency in settings |
 | Explore expenses | `exploreExpenses` | User visits the analytics page |
-| Check P&L | `checkPnL` | User visits the portfolio page |
+| Check Financial Summary | `checkPnL` | User visits the financial summary page |
 
 The checklist is dismissible via `dismissChecklist` step. Future enhancement: auto-complete items on relevant page visits.
 

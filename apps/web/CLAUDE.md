@@ -12,7 +12,7 @@ All files use `import` / `export`. Never use `require()` in this app.
 apps/web/src/
   pages/                # Route pages
     auth/               # Sign-in, sign-up
-    reports/            # Financial reports (portfolio, expenses, tags, PnL, equity-analysis)
+    reports/            # Financial reports (portfolio, expenses, tags, financial-summary, equity-analysis)
     settings/           # User settings (index.tsx) + user management (users.tsx)
     Index.tsx           # Landing / home page
     dashboard.tsx       # Main dashboard

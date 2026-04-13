@@ -14,7 +14,7 @@ import { withAuth } from '../../../utils/withAuth.js';
  * Marks a checklist item or setup flow step as done.
  *
  * Valid step values:
- *   Checklist:  connectBank, reviewTransactions, setPortfolioCurrency, exploreExpenses, checkPnL
+ *   Checklist:  connectBank, reviewTransactions, setPortfolioCurrency, exploreExpenses, checkPnL (displayed as "Check Financial Summary")
  *   Setup flow: step1_profile, step2_connect
  *   Special:    setupComplete (sets onboardingCompletedAt), dismissChecklist
  */

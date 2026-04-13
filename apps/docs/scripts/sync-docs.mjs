@@ -33,7 +33,7 @@ const FEATURE_MAP = {
   'accounts-and-categories':  { title: 'Accounts & Categories',      order: 2,  description: 'Multi-bank account management, category hierarchy, account owners' },
   'reference-data':           { title: 'Reference Data',             order: 3,  description: 'Countries, currencies, banks, and tenant configuration metadata' },
   'transactions':             { title: 'Transactions',               order: 4,  description: 'CRUD operations, filtering, bulk actions, and encrypted storage' },
-  'analytics':                { title: 'Analytics',                  order: 5,  description: 'Spending aggregation, P&L, tag analytics, and monthly caches' },
+  'analytics':                { title: 'Analytics',                  order: 5,  description: 'Spending aggregation, financial summary, tag analytics, and monthly caches' },
   'portfolio':                { title: 'Portfolio',                  order: 6,  description: 'FIFO lot tracking, real-time pricing, FX conversion, and valuations' },
   'cash-holdings':            { title: 'Cash Holdings',              order: 7,  description: 'Cash position tracking with forward-fill valuation' },
   'plaid-integration':        { title: 'Plaid Integration',          order: 8,  description: 'Bank sync, two-worker pipeline, token rotation, and sync logs' },

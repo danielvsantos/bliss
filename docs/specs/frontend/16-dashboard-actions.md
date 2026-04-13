@@ -114,7 +114,7 @@ interface DashboardAction {
 | 6 | `import-csv` | Import Transactions | quickAction | 6 | `accountCount > 0 && !hasPlaid` (only manual-account users) |
 | 7 | `view-insights` | View Insights | quickAction | 5 | `insightCount > 0` |
 | 8 | `explore-expenses` | Explore Expenses | both | 7 | always (quick); `!checklist.exploreExpenses.done` (onboarding) |
-| 9 | `check-pnl` | View P&L | both | 8 | always (quick); `!checklist.checkPnL.done` (onboarding) |
+| 9 | `check-pnl` | View Financial Summary | both | 8 | always (quick); `!checklist.checkPnL.done` (onboarding) |
 | 10 | `view-accounts` | View Accounts | quickAction | 9 | `accountCount > 0` |
 
 ### Key Rules
@@ -122,7 +122,7 @@ interface DashboardAction {
 - `fix-connection` has highest priority and only appears when there's a real Plaid issue
 - `review-transactions` badge dynamically shows `totalReviewCount`
 - `connect-bank` + `add-account` are separate actions for Plaid vs manual account creation
-- `explore-expenses` and `check-pnl` serve dual roles: one-time onboarding steps + permanent quick action shortcuts
+- `explore-expenses` and `check-pnl` serve dual roles: one-time onboarding steps + permanent quick action shortcuts (label: "View Financial Summary", href: `/reports/financial-summary`)
 - `view-insights` only appears when there are undismissed insights
 - `update-prices` only appears when manual assets are stale (>30 days or no initial price)
 

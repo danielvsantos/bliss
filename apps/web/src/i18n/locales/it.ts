@@ -97,7 +97,7 @@ const it = {
     support: "Supporto",
     about: "Informazioni",
     currencyRates: "Tassi di cambio",
-    pnlAnalysis: "Analisi P&L",
+    financialSummary: "Riepilogo Finanziario",
     portfolioHoldings: "Portafoglio investimenti",
     tagAnalytics: "Analisi per tag",
     equityAnalysis: "Analisi azionaria",
@@ -196,9 +196,9 @@ const it = {
     reports: {
       title: "Report",
       subtitle: "Seleziona un tipo di report per generare analisi finanziarie dettagliate",
-      pnl: {
-        title: "Analisi P&L",
-        description: "Visualizza i conti economici in diversi periodi"
+      financialSummary: {
+        title: "Riepilogo Finanziario",
+        description: "Visualizza entrate e spese in diversi periodi"
       },
       expenses: {
         title: "Monitoraggio spese",
@@ -224,21 +224,23 @@ const it = {
       historicalRates: "Tassi storici",
       updateRate: "Aggiorna tasso",
     },
-    pnl: {
-      title: "Analisi P&L",
-      subtitle: "Visualizza e analizza i tuoi conti economici",
-      statement: "Conto economico",
+    financialSummary: {
+      title: "Riepilogo Finanziario",
+      subtitle: "Visualizza e analizza le tue entrate e spese",
+      statement: "Prospetto",
       trend: "Tendenza mensile",
       breakdown: "Dettaglio di entrate e uscite",
-      chartDescription: "Dettaglio mensile di ricavi, spese e profitto",
-      downloadStatement: "Scarica conto economico completo",
+      chartDescription: "Ripartizione mensile di entrate, spese e risparmio",
+      downloadStatement: "Scarica prospetto completo",
       netIncome: "Reddito netto",
-      netProfit: "Profitto netto",
+      netSavings: "Risparmio Netto",
       totalRevenue: "Ricavi totali",
       totalExpenses: "Spese totali",
-      profitMargin: "Margine di profitto",
+      savingsRate: "Tasso di Risparmio",
       topExpense: "Spesa principale",
-      grossProfit: "Profitto lordo",
+      discretionaryIncome: "Reddito Discrezionale",
+      savingsCapacity: "Capacità di Risparmio",
+      otherActivity: "Altra Attività",
     },
     portfolio: {
       title: "Portafoglio investimenti",
@@ -601,8 +603,8 @@ const it = {
     ventures: "Imprese",
   },
 
-  // P&L specific
-  pnl: {
+  // Financial Summary specific
+  financialSummary: {
     revenue: "Ricavi",
     assetTransfer: "Trasferimento asset",
     housingUtilities: "Abitazione e utenze",
@@ -630,9 +632,10 @@ const it = {
     gambling: "Gioco d'azzardo",
     margin: "margine",
     netIncome: 'Reddito netto',
-    grossProfit: 'Profitto lordo',
-    operatingProfit: 'Profitto operativo',
-    netProfit: 'Profitto netto',
+    discretionaryIncome: 'Reddito Discrezionale',
+    savingsCapacity: 'Capacità di Risparmio',
+    netSavings: 'Risparmio Netto',
+    otherActivity: 'Altra Attività',
     quarters: {
       q1: "T1",
       q2: "T2",
@@ -1979,7 +1982,7 @@ const it = {
   "See AI-generated financial observations": "Vedi osservazioni finanziarie generate dall'IA",
   "Explore Expenses": "Esplora spese",
   "See how your spending breaks down": "Scopri come si distribuiscono le tue spese",
-  "View P&L": "Visualizza P&L",
+  "View Financial Summary": "Visualizza Riepilogo Finanziario",
   "View income vs expenses over time": "Visualizza entrate vs spese nel tempo",
   "View Accounts": "Visualizza conti",
   "See all your connected accounts": "Vedi tutti i tuoi conti collegati",

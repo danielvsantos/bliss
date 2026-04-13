@@ -186,7 +186,7 @@ export const DASHBOARD_ACTIONS: DashboardAction[] = [
   },
   {
     id: 'check-pnl',
-    label: 'View P&L',
+    label: 'View Financial Summary',
     description: 'View income vs expenses over time',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
@@ -196,7 +196,7 @@ export const DASHBOARD_ACTIONS: DashboardAction[] = [
           stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
-    href: '/reports/pnl',
+    href: '/reports/financial-summary',
     slot: 'both',
     priority: 8,
     visible: (s, ctx) => {

@@ -1,6 +1,6 @@
 # 5. Analytics & Reporting
 
-This document outlines the frontend implementation of the analytics and reporting features, covering the Dashboard, Expenses, and Profit & Loss (P&L) pages. These pages provide users with a comprehensive overview of their financial health.
+This document outlines the frontend implementation of the analytics and reporting features, covering the Dashboard, Expenses, and Financial Summary pages. These pages provide users with a comprehensive overview of their financial health.
 
 ## 5.1. Key Features
 
@@ -8,7 +8,7 @@ The analytics section is composed of three main pages:
 
 - **Dashboard**: A high-level summary of key financial metrics.
 - **Expenses Report**: A detailed breakdown of spending by category and over time.
-- **P&L Report**: A financial statement summarizing revenues, costs, and expenses.
+- **Financial Summary Report**: A financial statement summarizing revenues, costs, and expenses.
 
 All analytics pages rely on data fetched from the `/api/analytics` endpoint and use a consistent set of filters, including date range, currency, and country.
 
@@ -82,21 +82,21 @@ When `netWorth === 0 && netIncome === 0 && accounts.length === 0`:
 - Displays "Your dashboard will come to life once you add some data."
 - Year/currency selectors hidden
 
-## 5.3. P&L Analysis Page
+## 5.3. Financial Summary Page
 
-This page offers a detailed P&L statement, allowing for in-depth financial analysis.
+This page offers a detailed financial summary statement, allowing for in-depth financial analysis.
 
-- **File Path**: `src/pages/reports/pnl.tsx`
+- **File Path**: `src/pages/reports/financial-summary.tsx`
 
 ### 5.3.1. Filtering and Views
 
-- **Time-Based Views**: Users can view the P&L statement by `year`, `quarter`, or `month`.
+- **Time-Based Views**: Users can view the financial summary by `year`, `quarter`, or `month`.
 - **Filtering**: Data can be filtered by `country` and `currency`.
 
 ### 5.3.2. Data Presentation
 
-- **P&L Statement**: A collapsible table that breaks down income and expenses into their constituent categories.
-- **Trend Chart**: A line chart that visualizes trends in revenue, expenses, and net profit over the selected period.
+- **Financial Summary Statement**: A collapsible table that breaks down income and expenses into their constituent categories. Key metrics include Discretionary Income, Savings Capacity, and Net Savings.
+- **Trend Chart**: A line chart that visualizes trends in revenue, expenses, and net savings over the selected period.
 
 ## 5.4. Expense Tracking Page
 

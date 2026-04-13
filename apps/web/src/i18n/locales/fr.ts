@@ -102,7 +102,7 @@ const fr = {
     support: "Support",
     about: "À propos",
     currencyRates: "Taux de change",
-    pnlAnalysis: "Analyse P&L",
+    financialSummary: "Résumé Financier",
     portfolioHoldings: "Portefeuille",
     tagAnalytics: "Analyse par tags",
     equityAnalysis: "Analyse des actions",
@@ -184,9 +184,9 @@ const fr = {
     reports: {
       title: "Rapports",
       subtitle: "Sélectionnez un type de rapport pour obtenir des informations financières détaillées",
-      pnl: {
-        title: "Analyse P&L",
-        description: "Consulter les états de profits et pertes sur différentes périodes"
+      financialSummary: {
+        title: "Résumé Financier",
+        description: "Voir les revenus et dépenses sur différentes périodes"
       },
       expenses: {
         title: "Suivi des dépenses",
@@ -212,21 +212,23 @@ const fr = {
       historicalRates: "Taux historiques",
       updateRate: "Mettre à jour le taux",
     },
-    pnl: {
-      title: "Analyse P&L",
-      subtitle: "Voir et analyser vos états de profits et pertes",
-      statement: "État P&L",
+    financialSummary: {
+      title: "Résumé Financier",
+      subtitle: "Voir et analyser vos revenus et dépenses",
+      statement: "État",
       trend: "Tendance mensuelle",
       breakdown: "Détail des revenus et dépenses",
-      chartDescription: "Répartition mensuelle des revenus, dépenses et bénéfices",
+      chartDescription: "Répartition mensuelle des revenus, dépenses et épargne",
       downloadStatement: "Télécharger l'état complet",
       netIncome: "Revenu net",
-      netProfit: "Bénéfice net",
+      netSavings: "Épargne Nette",
       totalRevenue: "Revenus totaux",
       totalExpenses: "Dépenses totales",
-      profitMargin: "Marge bénéficiaire",
+      savingsRate: "Taux d'Épargne",
       topExpense: "Principale dépense",
-      grossProfit: "Bénéfice brut",
+      discretionaryIncome: "Revenu Discrétionnaire",
+      savingsCapacity: "Capacité d'Épargne",
+      otherActivity: "Autre Activité",
     },
     portfolio: {
       title: "Portefeuille",
@@ -588,8 +590,8 @@ const fr = {
     ventures: "Entreprises",
   },
 
-  // P&L specific
-  pnl: {
+  // Financial Summary specific
+  financialSummary: {
     revenue: "Revenus",
     assetTransfer: "Transfert d'actifs",
     housingUtilities: "Logement & Services",
@@ -617,9 +619,10 @@ const fr = {
     gambling: "Jeux de hasard",
     margin: "marge",
     netIncome: 'Revenu net',
-    grossProfit: 'Bénéfice brut',
-    operatingProfit: 'Bénéfice opérationnel',
-    netProfit: 'Bénéfice net',
+    discretionaryIncome: 'Revenu Discrétionnaire',
+    savingsCapacity: "Capacité d'Épargne",
+    netSavings: 'Épargne Nette',
+    otherActivity: 'Autre Activité',
     quarters: {
       q1: "T1",
       q2: "T2",
@@ -1939,7 +1942,7 @@ const fr = {
   "See AI-generated financial observations": "Voir les observations financières générées par l'IA",
   "Explore Expenses": "Explorer les dépenses",
   "See how your spending breaks down": "Voyez comment vos dépenses se répartissent",
-  "View P&L": "Voir P&L",
+  "View Financial Summary": "Voir le Résumé Financier",
   "View income vs expenses over time": "Voir les revenus vs dépenses dans le temps",
   "View Accounts": "Voir les comptes",
   "See all your connected accounts": "Voir tous vos comptes connectés",

@@ -1,12 +1,12 @@
 import type { AnalyticsResponse } from '@/types/api';
 
-// Types for P&L data
-export interface PnLCategory {
+// Types for Financial Statement data
+export interface FinancialCategory {
   name: string;
   value: number;
 }
 
-export interface PnLType {
+export interface FinancialType {
   name: string;
   totals: { [year: string]: number };
   categories: {
@@ -15,18 +15,18 @@ export interface PnLType {
   }[];
 }
 
-export interface PnLStatement {
-  types: PnLType[];
+export interface FinancialStatement {
+  types: FinancialType[];
   netIncome: { [year: string]: number };
-  netProfit: { [year: string]: number };
-  profitPercentage: { [year: string]: number };
+  netSavings: { [year: string]: number };
+  savingsPercentage: { [year: string]: number };
 }
 
 export interface MonthlyData {
   month: string;
   revenue: number;
   expenses: number;
-  profit: number;
+  savings: number;
 }
 
 export interface AnalyticsData {
@@ -41,46 +41,57 @@ export interface AnalyticsData {
     };
   }
 
-// Define types for P&L structure
-export interface PnLSection {
+// Define types for Financial Statement structure
+export interface FinancialSection {
   name: string;
   isCalculated: boolean;
   isExpandable: boolean;
 }
 
-export interface PnLTypeSection extends PnLSection {
+export interface FinancialTypeSection extends FinancialSection {
   type: string;
   isCalculated: false;
+  isSeparator?: never;
   calculation?: never;
 }
 
-export interface PnLCalculatedSection extends PnLSection {
+export interface FinancialCalculatedSection extends FinancialSection {
   isCalculated: true;
-  calculation: (data: PnLStatement, year: string) => number;
+  isExpandable: false;
+  calculation: (data: FinancialStatement, year: string) => number;
   type?: never;
+  isSeparator?: never;
 }
 
-export type PnLSectionType = PnLTypeSection | PnLCalculatedSection;
+export interface FinancialSeparatorSection extends FinancialSection {
+  isSeparator: true;
+  isCalculated: false;
+  isExpandable: false;
+  type?: never;
+  calculation?: never;
+}
 
-// Helper function to calculate gross profit: Income - Essentials
-export const calculateGrossProfit = (data: PnLStatement, year: string): number => {
+export type FinancialSectionType = FinancialTypeSection | FinancialCalculatedSection | FinancialSeparatorSection;
+
+// Helper function to calculate discretionary income: Income - Essentials
+export const calculateDiscretionaryIncome = (data: FinancialStatement, year: string): number => {
   const income = data.types.find(t => t.name === 'Income')?.totals[year] || 0;
   const essentials = data.types.find(t => t.name === 'Essentials')?.totals[year] || 0;
   return income + essentials;
 };
 
-// Helper function to calculate operating profit: Gross Profit - Lifestyle
-export const calculateOperatingProfit = (data: PnLStatement, year: string): number => {
-  const grossProfit = calculateGrossProfit(data, year);
+// Helper function to calculate savings capacity: Discretionary Income - Lifestyle
+export const calculateSavingsCapacity = (data: FinancialStatement, year: string): number => {
+  const discretionaryIncome = calculateDiscretionaryIncome(data, year);
   const lifestyle = data.types.find(t => t.name === 'Lifestyle')?.totals[year] || 0;
-  return grossProfit + lifestyle;
+  return discretionaryIncome + lifestyle;
 };
 
-// Helper function to calculate net profit: Operating Profit - Growth
-export const calculateNetProfit = (data: PnLStatement, year: string): number => {
-  const operatingProfit = calculateOperatingProfit(data, year);
+// Helper function to calculate net savings: Savings Capacity - Growth
+export const calculateNetSavings = (data: FinancialStatement, year: string): number => {
+  const savingsCapacity = calculateSavingsCapacity(data, year);
   const growth = data.types.find(t => t.name === 'Growth')?.totals[year] || 0;
-  return operatingProfit + growth;
+  return savingsCapacity + growth;
 };
 
 // Helper function to calculate percentage of a total
@@ -94,10 +105,10 @@ export const formatPercentage = (value: number): string => {
   return `${value >= 0 ? '+' : ''}${value.toFixed(0)}%`;
 };
 
-// Define the P&L structure
-// Income → Essentials → Gross Profit → Lifestyle → Operating Profit → Growth → Net Profit
-// → Ventures → Transfers → Investments → Debt
-export const PNL_STRUCTURE: Record<string, PnLSectionType> = {
+// Define the Financial Statement structure
+// Income → Essentials → Discretionary Income → Lifestyle → Savings Capacity → Growth → Net Savings
+// → [Other Activity] → Ventures → Transfers → Investments → Debt
+export const FINANCIAL_STRUCTURE: Record<string, FinancialSectionType> = {
   INCOME: {
     name: 'Income',
     type: 'Income',
@@ -110,11 +121,11 @@ export const PNL_STRUCTURE: Record<string, PnLSectionType> = {
     isCalculated: false,
     isExpandable: true,
   },
-  GROSS_PROFIT: {
-    name: 'Gross Profit',
+  DISCRETIONARY_INCOME: {
+    name: 'Discretionary Income',
     isCalculated: true,
     isExpandable: false,
-    calculation: calculateGrossProfit
+    calculation: calculateDiscretionaryIncome
   },
   LIFESTYLE: {
     name: 'Lifestyle',
@@ -122,11 +133,11 @@ export const PNL_STRUCTURE: Record<string, PnLSectionType> = {
     isCalculated: false,
     isExpandable: true,
   },
-  OPERATING_PROFIT: {
-    name: 'Operating Profit',
+  SAVINGS_CAPACITY: {
+    name: 'Savings Capacity',
     isCalculated: true,
     isExpandable: false,
-    calculation: calculateOperatingProfit
+    calculation: calculateSavingsCapacity
   },
   GROWTH: {
     name: 'Growth',
@@ -134,11 +145,17 @@ export const PNL_STRUCTURE: Record<string, PnLSectionType> = {
     isCalculated: false,
     isExpandable: true,
   },
-  NET_PROFIT: {
-    name: 'Net Profit',
+  NET_SAVINGS: {
+    name: 'Net Savings',
     isCalculated: true,
     isExpandable: false,
-    calculation: calculateNetProfit
+    calculation: calculateNetSavings
+  },
+  OTHER_ACTIVITY: {
+    name: 'Other Activity',
+    isSeparator: true,
+    isCalculated: false,
+    isExpandable: false,
   },
   VENTURES: {
     name: 'Ventures',
@@ -166,33 +183,37 @@ export const PNL_STRUCTURE: Record<string, PnLSectionType> = {
   }
 };
 
-// Type guards for P&L sections
-export function isCalculatedSection(section: PnLSectionType): section is PnLCalculatedSection {
+// Type guards for Financial Statement sections
+export function isCalculatedSection(section: FinancialSectionType): section is FinancialCalculatedSection {
   return section.isCalculated;
 }
 
-export function isTypeSection(section: PnLSectionType): section is PnLTypeSection {
-  return !section.isCalculated;
+export function isTypeSection(section: FinancialSectionType): section is FinancialTypeSection {
+  return !section.isCalculated && !('isSeparator' in section && section.isSeparator);
 }
 
-export const processAnalyticsIntoPnL = (
+export function isSeparatorSection(section: FinancialSectionType): section is FinancialSeparatorSection {
+  return 'isSeparator' in section && section.isSeparator === true;
+}
+
+export const processAnalyticsIntoFinancialStatement = (
     analytics: AnalyticsResponse,
     timeKeys: string[],
     monthlyAnalytics: AnalyticsResponse | null
   ): {
-    statement: PnLStatement;
+    statement: FinancialStatement;
     monthlyData: MonthlyData[];
   } => {
     try {
-      const statement: PnLStatement = {
+      const statement: FinancialStatement = {
         types: [],
         netIncome: {},
-        netProfit: {},
-        profitPercentage: {}
+        netSavings: {},
+        savingsPercentage: {}
       };
 
-      // Ensure all PNL STRUCTURE types exist in the statement to maintain order
-      Object.values(PNL_STRUCTURE).forEach(section => {
+      // Ensure all FINANCIAL_STRUCTURE types exist in the statement to maintain order
+      Object.values(FINANCIAL_STRUCTURE).forEach(section => {
         if (isTypeSection(section)) {
           statement.types.push({
             name: section.type,
@@ -201,7 +222,7 @@ export const processAnalyticsIntoPnL = (
           });
         }
       });
-      
+
       timeKeys.forEach(timeKey => {
         const timeKeyData = (analytics.data as AnalyticsData)[timeKey];
         if (!timeKeyData) return;
@@ -237,8 +258,8 @@ export const processAnalyticsIntoPnL = (
         // Calculate metrics for this timeKey
         const netIncome = statement.types.find(t => t.name === 'Income')?.totals[timeKey] || 0;
         statement.netIncome[timeKey] = netIncome;
-        statement.netProfit[timeKey] = calculateNetProfit({ ...statement }, timeKey);
-        statement.profitPercentage[timeKey] = netIncome > 0 ? (statement.netProfit[timeKey] / netIncome) * 100 : 0;
+        statement.netSavings[timeKey] = calculateNetSavings({ ...statement }, timeKey);
+        statement.savingsPercentage[timeKey] = netIncome > 0 ? (statement.netSavings[timeKey] / netIncome) * 100 : 0;
       });
 
       const monthlyData: MonthlyData[] = [];
@@ -261,7 +282,7 @@ export const processAnalyticsIntoPnL = (
             month: new Date(monthKey.split('-').join('/')).toLocaleString('default', { month: 'short' }),
             revenue,
             expenses,
-            profit: revenue - expenses
+            savings: revenue - expenses
           });
         });
       }
@@ -273,10 +294,10 @@ export const processAnalyticsIntoPnL = (
         statement: {
           types: [],
           netIncome: {},
-          netProfit: {},
-          profitPercentage: {}
+          netSavings: {},
+          savingsPercentage: {}
         },
         monthlyData: []
       };
     }
-  }; 
+  };

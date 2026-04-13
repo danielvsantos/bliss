@@ -46,7 +46,7 @@ export function Header({ sidebarOpen, onSidebarToggle, isMobile = false }: Heade
       "/accounts": "nav.accounts",
       "/categories": "nav.categories",
       "/manual-updates": "nav.assetPriceUpdates",
-      "/reports/pnl": "nav.pnlAnalysis",
+      "/reports/financial-summary": "nav.financialSummary",
       "/reports/expenses": "nav.expenses",
       "/reports/portfolio": "nav.portfolioHoldings",
       "/reports/tags": "nav.tagAnalytics",

@@ -87,7 +87,7 @@ const createIcon = (Icon: React.ElementType) => ({ active }: { active?: boolean 
 
 const CategoriesIcon = createIcon(Tags);
 const AssetsLiabilitiesIcon = createIcon(TrendingUp);
-const PnLIcon = createIcon(LineChart);
+const FinancialSummaryIcon = createIcon(LineChart);
 const ExpensesIcon = createIcon(BarChart3);
 const PortfolioIcon = createIcon(Briefcase);
 const ImportAgentIcon = createIcon(FileUp);
@@ -213,7 +213,7 @@ export function Sidebar({
     { type: 'link', id: "categories", href: "/categories", label: t('nav.categories'), icon: CategoriesIcon, badge: 0, exact: false },
     // ── Reports
     { type: 'section', label: 'REPORTS' },
-    { type: 'link', id: "pnl", href: "/reports/pnl", label: t('nav.pnlAnalysis'), icon: PnLIcon, badge: 0, exact: false },
+    { type: 'link', id: "financial-summary", href: "/reports/financial-summary", label: t('nav.financialSummary'), icon: FinancialSummaryIcon, badge: 0, exact: false },
     { type: 'link', id: "expenses", href: "/reports/expenses", label: t('nav.expenses'), icon: ExpensesIcon, badge: 0, exact: false },
     { type: 'link', id: "portfolio", href: "/reports/portfolio", label: t('nav.portfolioHoldings'), icon: PortfolioIcon, badge: 0, exact: false },
     { type: 'link', id: "tag-analytics", href: "/reports/tags", label: 'Tag Analytics', icon: TagAnalyticsIcon, badge: 0, exact: false },

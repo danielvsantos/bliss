@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
-  calculateGrossProfit,
-  calculateOperatingProfit,
-  calculateNetProfit,
+  calculateDiscretionaryIncome,
+  calculateSavingsCapacity,
+  calculateNetSavings,
   calculatePercentage,
   formatPercentage,
   isCalculatedSection,
   isTypeSection,
-  PNL_STRUCTURE,
-  processAnalyticsIntoPnL,
-} from './pnl';
-import type { PnLStatement } from './pnl';
+  isSeparatorSection,
+  FINANCIAL_STRUCTURE,
+  processAnalyticsIntoFinancialStatement,
+} from './financial-summary';
+import type { FinancialStatement } from './financial-summary';
 
-function makeStatement(overrides: Record<string, number> = {}): PnLStatement {
+function makeStatement(overrides: Record<string, number> = {}): FinancialStatement {
   const defaults: Record<string, number> = {
     Income: 10000,
     Essentials: -4000,
@@ -28,70 +29,70 @@ function makeStatement(overrides: Record<string, number> = {}): PnLStatement {
       categories: [],
     })),
     netIncome: {},
-    netProfit: {},
-    profitPercentage: {},
+    netSavings: {},
+    savingsPercentage: {},
   };
 }
 
-describe('calculateGrossProfit', () => {
+describe('calculateDiscretionaryIncome', () => {
   it('returns Income + Essentials (Essentials is negative)', () => {
     const stmt = makeStatement({ Income: 10000, Essentials: -4000 });
-    expect(calculateGrossProfit(stmt, '2025')).toBe(6000);
+    expect(calculateDiscretionaryIncome(stmt, '2025')).toBe(6000);
   });
 
   it('returns 0 when types are missing', () => {
-    const empty: PnLStatement = {
+    const empty: FinancialStatement = {
       types: [],
       netIncome: {},
-      netProfit: {},
-      profitPercentage: {},
+      netSavings: {},
+      savingsPercentage: {},
     };
-    expect(calculateGrossProfit(empty, '2025')).toBe(0);
+    expect(calculateDiscretionaryIncome(empty, '2025')).toBe(0);
   });
 });
 
-describe('calculateOperatingProfit', () => {
-  it('returns Gross Profit + Lifestyle (Lifestyle is negative)', () => {
+describe('calculateSavingsCapacity', () => {
+  it('returns Discretionary Income + Lifestyle (Lifestyle is negative)', () => {
     const stmt = makeStatement();
-    // Gross = 10000 + (-4000) = 6000; Operating = 6000 + (-2000) = 4000
-    expect(calculateOperatingProfit(stmt, '2025')).toBe(4000);
+    // Discretionary = 10000 + (-4000) = 6000; Savings Capacity = 6000 + (-2000) = 4000
+    expect(calculateSavingsCapacity(stmt, '2025')).toBe(4000);
   });
 
   it('handles missing Lifestyle gracefully', () => {
-    const stmt: PnLStatement = {
+    const stmt: FinancialStatement = {
       types: [
         { name: 'Income', totals: { '2025': 5000 }, categories: [] },
         { name: 'Essentials', totals: { '2025': -1000 }, categories: [] },
       ],
       netIncome: {},
-      netProfit: {},
-      profitPercentage: {},
+      netSavings: {},
+      savingsPercentage: {},
     };
-    // No Lifestyle type, so just grossProfit = 4000
-    expect(calculateOperatingProfit(stmt, '2025')).toBe(4000);
+    // No Lifestyle type, so just discretionaryIncome = 4000
+    expect(calculateSavingsCapacity(stmt, '2025')).toBe(4000);
   });
 });
 
-describe('calculateNetProfit', () => {
-  it('returns Operating Profit + Growth (Growth is negative)', () => {
+describe('calculateNetSavings', () => {
+  it('returns Savings Capacity + Growth (Growth is negative)', () => {
     const stmt = makeStatement();
-    // Operating = 4000; Net = 4000 + (-1000) = 3000
-    expect(calculateNetProfit(stmt, '2025')).toBe(3000);
+    // Savings Capacity = 4000; Net Savings = 4000 + (-1000) = 3000
+    expect(calculateNetSavings(stmt, '2025')).toBe(3000);
   });
 
   it('handles missing Growth gracefully', () => {
-    const stmt: PnLStatement = {
+    const stmt: FinancialStatement = {
       types: [
         { name: 'Income', totals: { '2025': 5000 }, categories: [] },
         { name: 'Essentials', totals: { '2025': -2000 }, categories: [] },
         { name: 'Lifestyle', totals: { '2025': -1000 }, categories: [] },
       ],
       netIncome: {},
-      netProfit: {},
-      profitPercentage: {},
+      netSavings: {},
+      savingsPercentage: {},
     };
-    // Operating = 2000; Growth missing = 0; Net = 2000
-    expect(calculateNetProfit(stmt, '2025')).toBe(2000);
+    // Savings Capacity = 2000; Growth missing = 0; Net Savings = 2000
+    expect(calculateNetSavings(stmt, '2025')).toBe(2000);
   });
 });
 
@@ -122,39 +123,52 @@ describe('formatPercentage', () => {
 
 describe('type guards', () => {
   it('isCalculatedSection returns true for calculated sections', () => {
-    expect(isCalculatedSection(PNL_STRUCTURE.GROSS_PROFIT)).toBe(true);
-    expect(isCalculatedSection(PNL_STRUCTURE.OPERATING_PROFIT)).toBe(true);
-    expect(isCalculatedSection(PNL_STRUCTURE.NET_PROFIT)).toBe(true);
+    expect(isCalculatedSection(FINANCIAL_STRUCTURE.DISCRETIONARY_INCOME)).toBe(true);
+    expect(isCalculatedSection(FINANCIAL_STRUCTURE.SAVINGS_CAPACITY)).toBe(true);
+    expect(isCalculatedSection(FINANCIAL_STRUCTURE.NET_SAVINGS)).toBe(true);
   });
 
   it('isCalculatedSection returns false for type sections', () => {
-    expect(isCalculatedSection(PNL_STRUCTURE.INCOME)).toBe(false);
-    expect(isCalculatedSection(PNL_STRUCTURE.ESSENTIALS)).toBe(false);
+    expect(isCalculatedSection(FINANCIAL_STRUCTURE.INCOME)).toBe(false);
+    expect(isCalculatedSection(FINANCIAL_STRUCTURE.ESSENTIALS)).toBe(false);
   });
 
   it('isTypeSection returns true for type sections', () => {
-    expect(isTypeSection(PNL_STRUCTURE.INCOME)).toBe(true);
-    expect(isTypeSection(PNL_STRUCTURE.LIFESTYLE)).toBe(true);
+    expect(isTypeSection(FINANCIAL_STRUCTURE.INCOME)).toBe(true);
+    expect(isTypeSection(FINANCIAL_STRUCTURE.LIFESTYLE)).toBe(true);
   });
 
   it('isTypeSection returns false for calculated sections', () => {
-    expect(isTypeSection(PNL_STRUCTURE.GROSS_PROFIT)).toBe(false);
+    expect(isTypeSection(FINANCIAL_STRUCTURE.DISCRETIONARY_INCOME)).toBe(false);
+  });
+
+  it('isTypeSection returns false for separator sections', () => {
+    expect(isTypeSection(FINANCIAL_STRUCTURE.OTHER_ACTIVITY)).toBe(false);
+  });
+
+  it('isSeparatorSection returns true for separator sections', () => {
+    expect(isSeparatorSection(FINANCIAL_STRUCTURE.OTHER_ACTIVITY)).toBe(true);
+  });
+
+  it('isSeparatorSection returns false for other sections', () => {
+    expect(isSeparatorSection(FINANCIAL_STRUCTURE.INCOME)).toBe(false);
+    expect(isSeparatorSection(FINANCIAL_STRUCTURE.DISCRETIONARY_INCOME)).toBe(false);
   });
 });
 
-describe('PNL_STRUCTURE', () => {
+describe('FINANCIAL_STRUCTURE', () => {
   it('has expected keys', () => {
     const expectedKeys = [
-      'INCOME', 'ESSENTIALS', 'GROSS_PROFIT',
-      'LIFESTYLE', 'OPERATING_PROFIT', 'GROWTH',
-      'NET_PROFIT', 'VENTURES', 'TRANSFERS',
+      'INCOME', 'ESSENTIALS', 'DISCRETIONARY_INCOME',
+      'LIFESTYLE', 'SAVINGS_CAPACITY', 'GROWTH',
+      'NET_SAVINGS', 'OTHER_ACTIVITY', 'VENTURES', 'TRANSFERS',
       'INVESTMENTS', 'DEBT',
     ];
-    expect(Object.keys(PNL_STRUCTURE)).toEqual(expectedKeys);
+    expect(Object.keys(FINANCIAL_STRUCTURE)).toEqual(expectedKeys);
   });
 });
 
-describe('processAnalyticsIntoPnL', () => {
+describe('processAnalyticsIntoFinancialStatement', () => {
   it('processes analytics data into statement with correct types', () => {
     const analytics = {
       data: {
@@ -167,7 +181,7 @@ describe('processAnalyticsIntoPnL', () => {
       timeframe: 'yearly',
     };
 
-    const { statement, monthlyData } = processAnalyticsIntoPnL(
+    const { statement, monthlyData } = processAnalyticsIntoFinancialStatement(
       analytics,
       ['2025'],
       null,
@@ -188,7 +202,7 @@ describe('processAnalyticsIntoPnL', () => {
 
   it('returns empty statement on error', () => {
     // Pass invalid data to trigger the catch block
-    const { statement, monthlyData } = processAnalyticsIntoPnL(
+    const { statement, monthlyData } = processAnalyticsIntoFinancialStatement(
       null as unknown as never,
       ['2025'],
       null,
@@ -196,7 +210,7 @@ describe('processAnalyticsIntoPnL', () => {
 
     expect(statement.types).toEqual([]);
     expect(statement.netIncome).toEqual({});
-    expect(statement.netProfit).toEqual({});
+    expect(statement.netSavings).toEqual({});
     expect(monthlyData).toEqual([]);
   });
 });

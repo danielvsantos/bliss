@@ -5,12 +5,12 @@ import { api } from '@/lib/api';
 import React from 'react';
 import { useDashboardMetrics } from './use-dashboard-metrics';
 import * as UsePortfolio from './use-portfolio-items';
-import * as PnLLib from '@/lib/pnl';
+import * as FinancialLib from '@/lib/financial-summary';
 import { mockQueryResult } from '@/test/mock-helpers';
 
 vi.mock('@/lib/api');
 vi.mock('./use-portfolio-items');
-vi.mock('@/lib/pnl');
+vi.mock('@/lib/financial-summary');
 vi.mock('@/lib/portfolio-utils', () => ({
   getDisplayData: (item: { currentPrice: number }) => ({ marketValue: item.currentPrice }),
   parseDecimal: (val: unknown) => Number(val) || 0,
@@ -32,7 +32,7 @@ describe('useDashboardMetrics', () => {
     vi.clearAllMocks();
   });
 
-  it('computes netWorth and PnL metrics correctly', async () => {
+  it('computes netWorth and financial metrics correctly', async () => {
     // Mock Portfolio
     vi.mocked(UsePortfolio.usePortfolioItems).mockReturnValue(
       mockQueryResult({
@@ -44,13 +44,13 @@ describe('useDashboardMetrics', () => {
       }),
     );
 
-    // Mock API — return shape doesn't matter since PnL processor is also mocked
+    // Mock API — return shape doesn't matter since processor is also mocked
     vi.mocked(api.getAnalytics).mockResolvedValueOnce(
       {} as unknown as Awaited<ReturnType<typeof api.getAnalytics>>,
     );
 
-    // Mock PnL processor heavily simplified
-    vi.mocked(PnLLib.processAnalyticsIntoPnL).mockReturnValue({
+    // Mock Financial Statement processor
+    vi.mocked(FinancialLib.processAnalyticsIntoFinancialStatement).mockReturnValue({
       statement: {
         types: [
           { name: 'Income', totals: { '2023': 10000 } },
@@ -59,7 +59,7 @@ describe('useDashboardMetrics', () => {
           { name: 'Growth', totals: { '2023': -1000 } },
         ]
       }
-    } as unknown as ReturnType<typeof PnLLib.processAnalyticsIntoPnL>);
+    } as unknown as ReturnType<typeof FinancialLib.processAnalyticsIntoFinancialStatement>);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDashboardMetrics('2023', 'USD'), { wrapper });
@@ -67,16 +67,14 @@ describe('useDashboardMetrics', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     // net worth Calculation: 500,000 asset - 300,000 debt = 200,000
-    // wait, the hook parses data using getDisplayData and sums absolutes for debt
-    // if getDisplayData gives 500000 and -300000...
     expect(result.current.data.netWorth).toBe(200000);
-    
-    // PnL:
+
+    // Financial metrics:
     // netIncome = 10000
-    // grossProfit = 10000 - |-4000| = 6000
-    // netProfit = 6000 - |-2000| - |-1000| = 3000
+    // discretionaryIncome = 10000 - |-4000| = 6000
+    // netSavings = 6000 - |-2000| - |-1000| = 3000
     expect(result.current.data.netIncome).toBe(10000);
-    expect(result.current.data.grossProfit).toBe(6000);
-    expect(result.current.data.netProfit).toBe(3000);
+    expect(result.current.data.discretionaryIncome).toBe(6000);
+    expect(result.current.data.netSavings).toBe(3000);
   });
 });

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useMemo } from 'react';
-import { processAnalyticsIntoPnL } from '@/lib/pnl';
+import { processAnalyticsIntoFinancialStatement } from '@/lib/financial-summary';
 import { usePortfolioItems } from './use-portfolio-items';
 import { getDisplayData, parseDecimal } from '@/lib/portfolio-utils';
 
@@ -36,27 +36,27 @@ export function useDashboardMetrics(year: string, currency?: string) {
 
     const netWorth = totalAssets - totalLiabilities;
 
-    // PnL Metrics
-    let netIncome = 0, grossProfit = 0, netProfit = 0;
+    // Financial Metrics
+    let netIncome = 0, discretionaryIncome = 0, netSavings = 0;
     if (pnlData) {
-      const { statement } = processAnalyticsIntoPnL(pnlData, [year], null);
+      const { statement } = processAnalyticsIntoFinancialStatement(pnlData, [year], null);
 
       const incomeData = statement.types.find(t => t.name === 'Income')?.totals[selectedYear] || 0;
       netIncome = incomeData;
 
       const essentials = statement.types.find(t => t.name === 'Essentials')?.totals[selectedYear] || 0;
-      grossProfit = netIncome - Math.abs(essentials);
+      discretionaryIncome = netIncome - Math.abs(essentials);
 
       const lifestyle = statement.types.find(t => t.name === 'Lifestyle')?.totals[selectedYear] || 0;
       const growth = statement.types.find(t => t.name === 'Growth')?.totals[selectedYear] || 0;
-      netProfit = grossProfit - Math.abs(lifestyle) - Math.abs(growth);
+      netSavings = discretionaryIncome - Math.abs(lifestyle) - Math.abs(growth);
     }
 
     return {
       netWorth,
       netIncome,
-      grossProfit,
-      netProfit,
+      discretionaryIncome,
+      netSavings,
     };
   }, [portfolioItems, pnlData, year, selectedYear, portfolioCurrency]);
 

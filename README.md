@@ -33,7 +33,7 @@
 
 Most financial tools force you to trade privacy for convenience. If your financial footprint spans multiple countries, currencies, and asset classes, you're usually handing your most sensitive data to a third-party SaaS — or stitching it together in spreadsheets.
 
-**Bliss is the open-source alternative.** A single, self-hostable dashboard that unifies bank accounts, investment portfolios, expense tracking, and P&L reporting across borders. Everything runs on your infrastructure, classified by AI, normalized to your chosen currency, and encrypted at rest.
+**Bliss is the open-source alternative.** A single, self-hostable dashboard that unifies bank accounts, investment portfolios, expense tracking, and financial summary reporting across borders. Everything runs on your infrastructure, classified by AI, normalized to your chosen currency, and encrypted at rest.
 
 > Built with [Spec-Driven Development](https://blissfinance.co/docs/specifications) — every feature was documented in detailed technical specs before a line of code was written.
 
@@ -80,14 +80,14 @@ Each tier is calendar-gated and runs a data-completeness check before generation
 
 ### The Global Ledger
 
-#### Multi-Currency, Multi-Country P&L
+#### Multi-Currency, Multi-Country Financial Summary
 
-Your personal income statement, across borders and currencies. Bliss organizes finances like a corporate P&L — Income flows through Essentials, Lifestyle, and Growth spending to produce Gross Profit, Operating Profit, and Net Profit.
+Your personal income statement, across borders and currencies. Bliss organizes finances into a structured financial summary — Income flows through Essentials, Lifestyle, and Growth spending to produce Discretionary Income, Savings Capacity, and Net Savings.
 
 - **115+ pre-built categories across 9 types** — A ready-made chart of accounts so classification works from day one
 - **Automatic currency normalization** — Every transaction converted to your display currency using historical FX rates from the transaction date
 - **Drill down by year, quarter, or month** — Group-level breakdowns, period comparisons, and trend spotting
-- **Filter by country** — See your full global P&L or isolate a single country's activity
+- **Filter by country** — See your full global financial summary or isolate a single country's activity
 
 #### Real-Time Portfolio Tracking
 

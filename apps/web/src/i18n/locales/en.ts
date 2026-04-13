@@ -97,7 +97,7 @@ const en = {
     support: "Support",
     about: "About",
     currencyRates: "Currency Rates",
-    pnlAnalysis: "P&L Analysis",
+    financialSummary: "Financial Summary",
     portfolioHoldings: "Portfolio Holdings",
     tagAnalytics: "Tag Analytics",
     equityAnalysis: "Equity Analysis",
@@ -196,9 +196,9 @@ const en = {
     reports: {
       title: "Reports",
       subtitle: "Select a report type to generate detailed financial insights",
-      pnl: {
-        title: "P&L Analysis",
-        description: "View profit and loss statements over different time periods"
+      financialSummary: {
+        title: "Financial Summary",
+        description: "View income and spending over different time periods"
       },
       expenses: {
         title: "Expense Tracking",
@@ -224,21 +224,23 @@ const en = {
       historicalRates: "Historical Rates",
       updateRate: "Update Rate",
     },
-    pnl: {
-      title: "P&L Analysis",
-      subtitle: "View and analyze your profit and loss statements",
-      statement: "P&L Statement",
+    financialSummary: {
+      title: "Financial Summary",
+      subtitle: "View and analyze your income and spending",
+      statement: "Statement",
       trend: "Monthly Trend",
       breakdown: "Detailed breakdown of income and expenses",
-      chartDescription: "Monthly breakdown of revenue, expenses, and profit",
+      chartDescription: "Monthly breakdown of income, expenses, and savings",
       downloadStatement: "Download Full Statement",
       netIncome: "Net Income",
-      netProfit: "Net Profit",
+      netSavings: "Net Savings",
       totalRevenue: "Total Revenue",
       totalExpenses: "Total Expenses",
-      profitMargin: "Profit Margin",
+      savingsRate: "Savings Rate",
       topExpense: "Top Expense",
-      grossProfit: "Gross Profit",
+      discretionaryIncome: "Discretionary Income",
+      savingsCapacity: "Savings Capacity",
+      otherActivity: "Other Activity",
     },
     portfolio: {
       title: "Portfolio Holdings",
@@ -601,8 +603,8 @@ const en = {
     ventures: "Ventures",
   },
 
-  // P&L specific
-  pnl: {
+  // Financial Summary specific
+  financialSummary: {
     revenue: "Revenue",
     assetTransfer: "Asset Transfer",
     housingUtilities: "Housing & Utilities",
@@ -630,9 +632,10 @@ const en = {
     gambling: "Gambling",
     margin: "margin",
     netIncome: 'Net Income',
-    grossProfit: 'Gross Profit',
-    operatingProfit: 'Operating Profit',
-    netProfit: 'Net Profit',
+    discretionaryIncome: 'Discretionary Income',
+    savingsCapacity: 'Savings Capacity',
+    netSavings: 'Net Savings',
+    otherActivity: 'Other Activity',
     quarters: {
       q1: "Q1",
       q2: "Q2",
@@ -1979,7 +1982,7 @@ const en = {
   "See AI-generated financial observations": "See AI-generated financial observations",
   "Explore Expenses": "Explore Expenses",
   "See how your spending breaks down": "See how your spending breaks down",
-  "View P&L": "View P&L",
+  "View Financial Summary": "View Financial Summary",
   "View income vs expenses over time": "View income vs expenses over time",
   "View Accounts": "View Accounts",
   "See all your connected accounts": "See all your connected accounts",

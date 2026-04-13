@@ -8,7 +8,7 @@ interface HeroNetWorthProps {
   netWorth: number;
   previousNetWorth: number | null;
   netIncome: number;
-  grossProfit: number;
+  discretionaryIncome: number;
   currency: string;
   lastSyncDate: string | null;
   sparklineData: number[];
@@ -38,7 +38,7 @@ export function HeroNetWorth({
   netWorth,
   previousNetWorth,
   netIncome,
-  grossProfit,
+  discretionaryIncome,
   currency,
   lastSyncDate,
   sparklineData,
@@ -101,10 +101,10 @@ export function HeroNetWorth({
         {/* Secondary metric pills */}
         <div className="flex gap-2 mt-2 flex-wrap">
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-            Net Income: {formatCurrency(netIncome, currency)}
+            {t('dashboard.netIncome', 'Net Income')}: {formatCurrency(netIncome, currency)}
           </span>
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-            Gross Profit: {formatCurrency(grossProfit, currency)}
+            {t('dashboard.discretionaryIncome', 'Discretionary Income')}: {formatCurrency(discretionaryIncome, currency)}
           </span>
         </div>
 

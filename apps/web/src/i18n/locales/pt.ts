@@ -97,7 +97,7 @@ const pt = {
     support: "Suporte",
     about: "Sobre",
     currencyRates: "Taxas de Câmbio",
-    pnlAnalysis: "Análise de P&L",
+    financialSummary: "Resumo Financeiro",
     portfolioHoldings: "Carteira de Investimentos",
     tagAnalytics: "Análise por Tags",
     equityAnalysis: "Análise de Ações",
@@ -196,9 +196,9 @@ const pt = {
     reports: {
       title: "Relatórios",
       subtitle: "Selecione um tipo de relatório para gerar análises financeiras detalhadas",
-      pnl: {
-        title: "Análise de P&L",
-        description: "Visualize demonstrações de lucros e perdas em diferentes períodos"
+      financialSummary: {
+        title: "Resumo Financeiro",
+        description: "Ver receitas e despesas em diferentes períodos"
       },
       expenses: {
         title: "Controle de Despesas",
@@ -224,21 +224,23 @@ const pt = {
       historicalRates: "Taxas Históricas",
       updateRate: "Atualizar Taxa",
     },
-    pnl: {
-      title: "Análise de P&L",
-      subtitle: "Visualize e analise suas demonstrações de lucros e perdas",
-      statement: "Demonstrativo de P&L",
+    financialSummary: {
+      title: "Resumo Financeiro",
+      subtitle: "Ver e analisar suas receitas e despesas",
+      statement: "Demonstrativo",
       trend: "Tendência Mensal",
       breakdown: "Detalhamento de receitas e despesas",
-      chartDescription: "Detalhamento mensal de receitas, despesas e lucro",
+      chartDescription: "Desdobramento mensal de receitas, despesas e poupança",
       downloadStatement: "Baixar Demonstrativo Completo",
       netIncome: "Receita Líquida",
-      netProfit: "Lucro Líquido",
+      netSavings: "Poupança Líquida",
       totalRevenue: "Receita Total",
       totalExpenses: "Despesas Totais",
-      profitMargin: "Margem de Lucro",
+      savingsRate: "Taxa de Poupança",
       topExpense: "Maior Despesa",
-      grossProfit: "Lucro Bruto",
+      discretionaryIncome: "Renda Discricionária",
+      savingsCapacity: "Capacidade de Poupança",
+      otherActivity: "Outra Atividade",
     },
     portfolio: {
       title: "Carteira de Investimentos",
@@ -601,8 +603,8 @@ const pt = {
     ventures: "Empreendimentos",
   },
 
-  // P&L específico
-  pnl: {
+  // Financial Summary específico
+  financialSummary: {
     revenue: "Receita",
     assetTransfer: "Transferência de Ativo",
     housingUtilities: "Moradia e Serviços",
@@ -630,9 +632,10 @@ const pt = {
     gambling: "Apostas",
     margin: "margem",
     netIncome: 'Receita Líquida',
-    grossProfit: 'Lucro Bruto',
-    operatingProfit: 'Lucro Operacional',
-    netProfit: 'Lucro Líquido',
+    discretionaryIncome: 'Renda Discricionária',
+    savingsCapacity: 'Capacidade de Poupança',
+    netSavings: 'Poupança Líquida',
+    otherActivity: 'Outra Atividade',
     quarters: {
       q1: "T1",
       q2: "T2",
@@ -1979,7 +1982,7 @@ const pt = {
   "See AI-generated financial observations": "Ver observações financeiras geradas por IA",
   "Explore Expenses": "Explorar despesas",
   "See how your spending breaks down": "Veja como seus gastos se distribuem",
-  "View P&L": "Ver P&L",
+  "View Financial Summary": "Ver Resumo Financeiro",
   "View income vs expenses over time": "Ver receitas vs despesas ao longo do tempo",
   "View Accounts": "Ver contas",
   "See all your connected accounts": "Ver todas as suas contas conectadas",

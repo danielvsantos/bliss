@@ -102,7 +102,7 @@ const es = {
     support: "Soporte",
     about: "Acerca de",
     currencyRates: "Tipos de cambio",
-    pnlAnalysis: "Análisis de P&L",
+    financialSummary: "Resumen Financiero",
     portfolioHoldings: "Cartera de inversiones",
     tagAnalytics: "Análisis por etiquetas",
     equityAnalysis: "Análisis de acciones",
@@ -184,9 +184,9 @@ const es = {
     reports: {
       title: "Informes",
       subtitle: "Selecciona un tipo de informe para obtener información financiera detallada",
-      pnl: {
-        title: "Análisis de P&L",
-        description: "Ver estados de pérdidas y ganancias en diferentes periodos"
+      financialSummary: {
+        title: "Resumen Financiero",
+        description: "Ver ingresos y gastos en diferentes períodos"
       },
       expenses: {
         title: "Seguimiento de gastos",
@@ -212,21 +212,23 @@ const es = {
       historicalRates: "Tasas históricas",
       updateRate: "Actualizar tasa",
     },
-    pnl: {
-      title: "Análisis de P&L",
-      subtitle: "Ver y analizar tus estados de pérdidas y ganancias",
-      statement: "Estado de P&L",
+    financialSummary: {
+      title: "Resumen Financiero",
+      subtitle: "Ver y analizar tus ingresos y gastos",
+      statement: "Estado",
       trend: "Tendencia mensual",
       breakdown: "Desglose detallado de ingresos y gastos",
-      chartDescription: "Desglose mensual de ingresos, gastos y beneficios",
+      chartDescription: "Desglose mensual de ingresos, gastos y ahorros",
       downloadStatement: "Descargar estado completo",
       netIncome: "Ingreso neto",
-      netProfit: "Beneficio neto",
+      netSavings: "Ahorro Neto",
       totalRevenue: "Ingresos totales",
       totalExpenses: "Gastos totales",
-      profitMargin: "Margen de beneficio",
+      savingsRate: "Tasa de Ahorro",
       topExpense: "Gasto principal",
-      grossProfit: "Beneficio bruto",
+      discretionaryIncome: "Ingreso Discrecional",
+      savingsCapacity: "Capacidad de Ahorro",
+      otherActivity: "Otra Actividad",
     },
     portfolio: {
       title: "Cartera de inversiones",
@@ -583,8 +585,8 @@ const es = {
     ventures: "Emprendimientos",
   },
 
-  // P&L specific
-  pnl: {
+  // Financial Summary specific
+  financialSummary: {
     revenue: "Ingresos",
     assetTransfer: "Transferencia de activos",
     housingUtilities: "Vivienda y servicios",
@@ -612,9 +614,10 @@ const es = {
     gambling: "Juegos de azar",
     margin: "margen",
     netIncome: 'Ingresos netos',
-    grossProfit: 'Beneficio bruto',
-    operatingProfit: 'Beneficio operativo',
-    netProfit: 'Beneficio neto',
+    discretionaryIncome: 'Ingreso Discrecional',
+    savingsCapacity: 'Capacidad de Ahorro',
+    netSavings: 'Ahorro Neto',
+    otherActivity: 'Otra Actividad',
     quarters: {
       q1: "T1",
       q2: "T2",
@@ -1933,7 +1936,7 @@ const es = {
   "See AI-generated financial observations": "Ver observaciones financieras generadas por IA",
   "Explore Expenses": "Explorar gastos",
   "See how your spending breaks down": "Ve cómo se distribuyen tus gastos",
-  "View P&L": "Ver P&G",
+  "View Financial Summary": "Ver Resumen Financiero",
   "View income vs expenses over time": "Ver ingresos vs gastos a lo largo del tiempo",
   "View Accounts": "Ver cuentas",
   "See all your connected accounts": "Ver todas tus cuentas conectadas",

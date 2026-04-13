@@ -22,10 +22,10 @@ export default function ReportsOverviewPage() {
   const reportOptions = [
     {
       id: 1,
-      title: t("pages.reports.pnl.title"),
-      description: t("pages.reports.pnl.description"),
+      title: t("pages.reports.financialSummary.title"),
+      description: t("pages.reports.financialSummary.description"),
       icon: <LineChart className="h-8 w-8 text-primary" />,
-      path: "/reports/pnl",
+      path: "/reports/financial-summary",
     },
     {
       id: 2,

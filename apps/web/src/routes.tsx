@@ -4,7 +4,7 @@ import AccountsPage from "./pages/accounts";
 import AuthPage from "./pages/auth";
 import AuthCallbackPage from "./pages/auth/callback";
 import ExpenseTrackingPage from "./pages/reports/expenses";
-import PnlPage from "./pages/reports/pnl";
+import FinancialSummaryPage from "./pages/reports/financial-summary";
 import PortfolioPage from "./pages/reports/portfolio";
 import OnboardingPage from "./pages/onboarding";
 import DashboardPage from "./pages/dashboard";
@@ -25,8 +25,9 @@ export const routes = [
   { path: "/accounts", component: AccountsPage, protected: true },
   { path: "/manual-updates", component: ManualUpdatesPage, protected: true },
   { path: "/reports/expenses", component: ExpenseTrackingPage, protected: true },
-  { path: "/reports/pnl", component: PnlPage, protected: true },
-  { path: "/reports", element: <Navigate to="/reports/pnl" replace />, protected: true },
+  { path: "/reports/financial-summary", component: FinancialSummaryPage, protected: true },
+  { path: "/reports/pnl", element: <Navigate to="/reports/financial-summary" replace />, protected: true },
+  { path: "/reports", element: <Navigate to="/reports/financial-summary" replace />, protected: true },
   { path: "/reports/portfolio", component: PortfolioPage, protected: true },
   { path: "/reports/tags", component: TagAnalyticsPage, protected: true },
   { path: "/reports/equity-analysis", component: EquityAnalysisPage, protected: true },

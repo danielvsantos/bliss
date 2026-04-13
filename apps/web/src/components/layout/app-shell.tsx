@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 const PAGE_TO_CHECKLIST: Record<string, string> = {
   "/agents/review": "reviewTransactions",
   "/reports/expenses": "exploreExpenses",
-  "/reports/pnl": "checkPnL",
+  "/reports/financial-summary": "checkPnL",
 };
 
 interface AppShellProps {
