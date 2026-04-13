@@ -7,8 +7,8 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 interface HeroNetWorthProps {
   netWorth: number;
   previousNetWorth: number | null;
-  netIncome: number;
-  discretionaryIncome: number;
+  income: number;
+  netSavings: number;
   currency: string;
   lastSyncDate: string | null;
   sparklineData: number[];
@@ -37,8 +37,8 @@ function TrendIcon({ positive }: { positive: boolean }) {
 export function HeroNetWorth({
   netWorth,
   previousNetWorth,
-  netIncome,
-  discretionaryIncome,
+  income,
+  netSavings,
   currency,
   lastSyncDate,
   sparklineData,
@@ -101,10 +101,10 @@ export function HeroNetWorth({
         {/* Secondary metric pills */}
         <div className="flex gap-2 mt-2 flex-wrap">
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-            {t('dashboard.netIncome', 'Net Income')}: {formatCurrency(netIncome, currency)}
+            {t('dashboard.income', 'Income')}: {formatCurrency(income, currency)}
           </span>
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-            {t('dashboard.discretionaryIncome', 'Discretionary Income')}: {formatCurrency(discretionaryIncome, currency)}
+            {t('dashboard.netSavings', 'Net Savings')}: {formatCurrency(netSavings, currency)}
           </span>
         </div>
 

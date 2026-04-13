@@ -140,8 +140,8 @@ export default function Dashboard() {
             <HeroNetWorth
               netWorth={metrics?.netWorth ?? 0}
               previousNetWorth={previousNetWorth}
-              netIncome={metrics?.netIncome ?? 0}
-              discretionaryIncome={metrics?.discretionaryIncome ?? 0}
+              income={metrics?.netIncome ?? 0}
+              netSavings={metrics?.netSavings ?? 0}
               currency={portfolioCurrency}
               lastSyncDate={mostRecentSync}
               sparklineData={sparklineData}
