@@ -58,10 +58,10 @@ Every correction feeds the loop immediately — your override updates the in-mem
 
 #### Smart CSV/XLSX Import
 
-Adapter-driven ingestion for any bank's export format:
+Adapter-driven ingestion with 30+ preconfigured bank formats (Chase, Bank of America, Citi, Capital One, Amex, HSBC, Barclays, Revolut, N26, BBVA, CaixaBank, Nubank, and more):
 
-1. **Adapter auto-detection** — Upload a CSV and Bliss identifies the format by matching column headers
-2. **Custom adapter builder** — Define column mappings for any bank format via a TypeScript interface
+1. **Adapter auto-detection** — Upload a CSV and Bliss identifies the format by matching column headers against 30+ known bank formats
+2. **Custom adapter builder** — Define column mappings for any bank format not yet supported
 3. **AI classification** — Every imported row goes through the same 4-tier classification engine
 4. **Investment enrichment** — Automatically detects stock/crypto transactions and fetches current prices
 5. **SHA-256 deduplication** — Hash-based dedup scoped to the batch's date range prevents double-counting

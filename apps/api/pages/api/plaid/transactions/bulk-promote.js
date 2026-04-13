@@ -319,9 +319,12 @@ export default withAuth(async function handler(req, res) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
           body: JSON.stringify({ tenantId: user.tenantId, entries: feedbackEntries }),
-        }, 5000).catch((err) => {
-          console.error(`Bulk promote batch feedback error: ${err.message}`);
-          Sentry.captureException(err, { extra: { eventType: 'feedback-batch', count: feedbackEntries.length } });
+        }, 25000).catch((err) => {
+          // Feedback is non-critical — log but don't alert Sentry for timeouts
+          console.warn(`Bulk promote batch feedback error: ${err.message}`);
+          if (err.name !== 'AbortError') {
+            Sentry.captureException(err, { extra: { eventType: 'feedback-batch', count: feedbackEntries.length } });
+          }
         }); // Non-blocking
       }
     }

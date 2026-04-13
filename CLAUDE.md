@@ -172,7 +172,9 @@ Key patterns:
 
 Adapter-driven pipeline: detect format -> stage rows -> AI classify -> user review -> commit.
 
-- Adapters matched by header intersection against `matchSignature`
+- 30+ preconfigured global adapters for major banks (US, UK, Spain, France, EU, Brazil, Canada, Australia) plus 2 generic fallbacks
+- Adapters matched by header intersection against `matchSignature`, sorted by specificity (more headers = higher priority)
+- Four amount strategies: `SINGLE_SIGNED`, `SINGLE_SIGNED_INVERTED` (e.g. Amex), `DEBIT_CREDIT_COLUMNS`, `AMOUNT_WITH_TYPE`
 - Deduplication via SHA-256 hash of `(date + description + amount + accountId)`
 - Bliss Native CSV adapter enables direct import without AI classification
 - Batch commit (200 rows/batch) with tag resolution via `resolveTagsByName()`

@@ -112,17 +112,12 @@ const processInsightJob = async (job) => {
       case 'generate-portfolio-intel': {
         const tenants = await prisma.tenant.findMany({
           where: {
-            portfolioItems: {
-              some: {
-                quantity: { gt: 0 },
-                symbol: { not: null },
-              },
-            },
+            portfolioItems: { some: {} },
           },
           select: { id: true },
         });
 
-        logger.info(`Found ${tenants.length} tenants with equity holdings for portfolio intelligence`);
+        logger.info(`Found ${tenants.length} tenants with portfolio items for portfolio intelligence`);
 
         let totalInsights = 0;
         let errors = 0;

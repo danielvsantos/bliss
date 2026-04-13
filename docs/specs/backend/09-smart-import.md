@@ -33,9 +33,10 @@ Detection logic:
 
 ### Amount Strategies
 
-Adapters declare one of three amount parsing strategies via `amountStrategy`:
+Adapters declare one of four amount parsing strategies via `amountStrategy`:
 
-- `SINGLE_SIGNED` — one amount column; positive = credit, negative = debit (or vice versa based on `signConvention`).
+- `SINGLE_SIGNED` — one amount column; positive = credit, negative = debit.
+- `SINGLE_SIGNED_INVERTED` — one amount column with inverted sign convention; positive = debit, negative = credit. Used by banks like American Express where charges are positive and payments/refunds are negative.
 - `DEBIT_CREDIT_COLUMNS` — two separate columns: `debitColumn` and `creditColumn`.
 - `AMOUNT_WITH_TYPE` — one amount column + one type indicator column (`D`/`C`, `debit`/`credit`, etc.).
 

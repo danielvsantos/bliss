@@ -5,7 +5,7 @@ import { cors } from '../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { withAuth } from '../../../utils/withAuth.js';
 
-const VALID_AMOUNT_STRATEGIES = ['SINGLE_SIGNED', 'DEBIT_CREDIT_COLUMNS', 'AMOUNT_WITH_TYPE'];
+const VALID_AMOUNT_STRATEGIES = ['SINGLE_SIGNED', 'SINGLE_SIGNED_INVERTED', 'DEBIT_CREDIT_COLUMNS', 'AMOUNT_WITH_TYPE'];
 
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {

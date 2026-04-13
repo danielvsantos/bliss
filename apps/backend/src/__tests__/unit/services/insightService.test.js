@@ -769,5 +769,44 @@ describe('insightService (v1)', () => {
       expect(h.currentValue).toBe(1000);
       expect(h.costBasis).toBe(800);
     });
+
+    it('uses category processingHint as sector fallback when SecurityMaster has no record', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([
+        {
+          id: 1, symbol: 'SPY', currency: 'USD',
+          currentValue: 5000, costBasis: 4500, quantity: 10, realizedPnL: 0,
+          category: { name: 'ETFs', processingHint: 'API_FUND' },
+        },
+        {
+          id: 2, symbol: 'BTC', currency: 'USD',
+          currentValue: 3000, costBasis: 2000, quantity: 0.05, realizedPnL: 0,
+          category: { name: 'Crypto', processingHint: 'API_CRYPTO' },
+        },
+        {
+          id: 3, symbol: 'HOUSE', currency: 'USD',
+          currentValue: 200000, costBasis: 180000, quantity: 1, realizedPnL: 0,
+          category: { name: 'Real Estate', processingHint: 'MANUAL' },
+        },
+      ]);
+      // No SecurityMaster records for any of these
+      mockSecurityMasterFindMany.mockResolvedValue([]);
+
+      const result = await gatherEquityFundamentals('tenant-1', 'USD', {});
+
+      expect(result.holdings).toHaveLength(3);
+      // ETF → 'ETFs & Funds' from processingHint map
+      expect(result.holdings[0].sector).toBe('ETFs & Funds');
+      // Crypto → 'Cryptocurrency' from processingHint map
+      expect(result.holdings[1].sector).toBe('Cryptocurrency');
+      // Manual → 'Alternative Assets' from processingHint map
+      expect(result.holdings[2].sector).toBe('Alternative Assets');
+      // Country fallback should be 'Global', not 'Unknown'
+      expect(result.holdings[0].country).toBe('Global');
+      // Sector allocation should use the derived labels
+      expect(result.sectorAllocation['ETFs & Funds']).toBeDefined();
+      expect(result.sectorAllocation['Cryptocurrency']).toBeDefined();
+      expect(result.sectorAllocation['Alternative Assets']).toBeDefined();
+      expect(result.sectorAllocation['Unknown']).toBeUndefined();
+    });
   });
 });

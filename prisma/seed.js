@@ -47,21 +47,45 @@ const CURRENCIES = [
 ];
 
 const BANKS = [
+  // US
   'Chase',
   'Bank of America',
+  'Citi',
+  'Capital One',
+  'American Express',
+  'Discover',
+  'US Bank',
   'Charles Schwab',
   'Fidelity',
-  'Revolut',
-  'N26',
-  'Barclays',
+  // UK
   'HSBC',
+  'Barclays',
+  'Lloyds',
+  'Monzo',
+  'Santander UK',
+  // EU — Spain
+  'BBVA',
+  'CaixaBank',
+  'Santander',
+  // EU — France
+  'Boursorama',
+  'Crédit Agricole',
+  // EU — Other
+  'N26',
+  'Revolut',
+  'Wise',
+  'Deutsche Bank',
+  // Brazil
   'Nubank',
   'Itaú',
-  'Wise',
+  // Canada
+  'RBC',
+  'TD Canada',
+  // Australia
+  'ANZ',
+  'Commonwealth Bank',
+  // Brokerages
   'Interactive Brokers',
-  'Deutsche Bank',
-  'CaixaBank',
-  'Monzo',
 ];
 
 // ── Main ────────────────────────────────────────────────────────────────────

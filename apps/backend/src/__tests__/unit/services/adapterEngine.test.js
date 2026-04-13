@@ -233,4 +233,65 @@ describe('adapterEngine', () => {
       expect(rows[0].tags).toBeNull();
     });
   });
+
+  describe('parseFile() — SINGLE_SIGNED_INVERTED strategy', () => {
+    const makeAmexAdapter = () => ({
+      name: 'American Express CSV',
+      columnMapping: {
+        date: 'Date',
+        description: 'Description',
+        amount: 'Amount',
+      },
+      dateFormat: 'MM/DD/YYYY',
+      amountStrategy: 'SINGLE_SIGNED_INVERTED',
+      currencyDefault: 'USD',
+      skipRows: 0,
+    });
+
+    it('treats positive amounts as debits (charges)', async () => {
+      const csv = 'Date,Description,Amount\n01/15/2024,Coffee Shop,4.50';
+      const { rows } = await parseFile(csv, makeAmexAdapter(), 'csv');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].debit).toBe(4.50);
+      expect(rows[0].credit).toBeNull();
+    });
+
+    it('treats negative amounts as credits (payments/refunds)', async () => {
+      const csv = 'Date,Description,Amount\n01/20/2024,Payment Received,-500.00';
+      const { rows } = await parseFile(csv, makeAmexAdapter(), 'csv');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].debit).toBeNull();
+      expect(rows[0].credit).toBe(500.00);
+    });
+
+    it('treats zero amounts as debits', async () => {
+      const csv = 'Date,Description,Amount\n01/25/2024,Adjustment,0';
+      const { rows } = await parseFile(csv, makeAmexAdapter(), 'csv');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].debit).toBe(0);
+      expect(rows[0].credit).toBeNull();
+    });
+
+    it('handles empty/null amount gracefully', async () => {
+      const csv = 'Date,Description,Amount\n01/25/2024,Empty Row,';
+      const { rows } = await parseFile(csv, makeAmexAdapter(), 'csv');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].debit).toBeNull();
+      expect(rows[0].credit).toBeNull();
+    });
+
+    it('parses multiple rows correctly', async () => {
+      const csv = [
+        'Date,Description,Amount',
+        '01/01/2024,Restaurant,85.20',
+        '01/02/2024,Refund,-25.00',
+        '01/03/2024,Grocery Store,42.15',
+      ].join('\n');
+      const { rows } = await parseFile(csv, makeAmexAdapter(), 'csv');
+      expect(rows).toHaveLength(3);
+      expect(rows[0].debit).toBe(85.20);
+      expect(rows[1].credit).toBe(25.00);
+      expect(rows[2].debit).toBe(42.15);
+    });
+  });
 });

@@ -15,13 +15,33 @@ Bliss supports CSV and XLSX imports with automatic format detection, AI classifi
 
 Bliss matches your file's column headers against known adapter signatures. If a match is found, it auto-maps columns. If not, you create a custom adapter.
 
+### Preconfigured bank adapters
+
+Bliss ships with 30+ preconfigured adapters that automatically recognize CSV exports from major banks worldwide. Just upload your file and Bliss will detect the format:
+
+| Region | Supported banks |
+|--------|----------------|
+| **US** | Chase, Bank of America, Citi, Capital One, American Express, Discover, US Bank |
+| **UK** | HSBC, Barclays, Lloyds, Monzo, Santander UK |
+| **Spain** | BBVA, CaixaBank, Santander |
+| **France** | Boursorama, Credit Agricole |
+| **EU** | N26, Revolut, Wise |
+| **Brazil** | Nubank, Itau |
+| **Canada** | RBC, TD Canada |
+| **Australia** | ANZ, Commonwealth Bank |
+| **Brokerages** | Interactive Brokers, eToro |
+
+Two generic fallback adapters (`Date/Description/Amount` and `Date/Description/Debit/Credit`) cover banks not listed above, as long as their CSV uses standard column names.
+
+> **Bank not listed?** Create a custom adapter in seconds — see below.
+
 ### Creating a custom adapter
 
 Click **Import Adapters** on the import page to open the adapter manager. Define:
 
 - **Match Headers** — comma-separated column names that identify this format (e.g., `Date, Description, Amount`)
 - **Date / Description / Amount columns** — map to your file's headers
-- **Amount strategy** — `SINGLE_SIGNED` (one column, negative = debit) or `DEBIT_CREDIT_COLUMNS` (separate columns)
+- **Amount strategy** — `SINGLE_SIGNED` (one column, negative = debit), `SINGLE_SIGNED_INVERTED` (one column, positive = debit — used by Amex), or `DEBIT_CREDIT_COLUMNS` (separate columns)
 - **Date format** — e.g., `DD/MM/YYYY`, `YYYY-MM-DD`, `MM-DD-YYYY`
 - **Default currency** — applied when the file doesn't include a currency column
 

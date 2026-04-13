@@ -462,6 +462,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       costBasis: true,
       quantity: true,
       realizedPnL: true,
+      category: { select: { name: true, processingHint: true } },
     },
   });
 
@@ -500,6 +501,15 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
   // through as-is for context, tagged with the holding's native currency.
   const fundamentalsMap = new Map(fundamentals.map((f) => [f.symbol, f]));
   const today = new Date();
+  // Derive a human-readable sector label from the category when SecurityMaster
+  // has no data (e.g. ETFs, funds, crypto, manual assets). This prevents the
+  // LLM from lumping everything without fundamentals into a single "Unknown"
+  // bucket and flagging it as a concentration risk.
+  const HINT_TO_SECTOR = {
+    API_FUND: 'ETFs & Funds',
+    API_CRYPTO: 'Cryptocurrency',
+    MANUAL: 'Alternative Assets',
+  };
   const enrichedHoldings = holdings.map((h) => {
     const f = fundamentalsMap.get(h.symbol) || {};
     const nativeCurrency = h.currency || portfolioCurrency;
@@ -509,6 +519,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
     const convertedCurrentValue = convertAmount(rawCurrentValue, nativeCurrency, portfolioCurrency, today, rateCache);
     const convertedCostBasis = convertAmount(rawCostBasis, nativeCurrency, portfolioCurrency, today, rateCache);
     const convertedRealizedPnL = convertAmount(rawRealizedPnL, nativeCurrency, portfolioCurrency, today, rateCache);
+    const fallbackSector = HINT_TO_SECTOR[h.category?.processingHint] || h.category?.name || 'Other';
     return {
       symbol: h.symbol,
       name: f.name || h.symbol,
@@ -518,15 +529,15 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       quantity: Number(h.quantity || 0),
       unrealizedPnL: Math.round((convertedCurrentValue - convertedCostBasis) * 100) / 100,
       realizedPnL: Math.round(convertedRealizedPnL * 100) / 100,
-      sector: f.sector || 'Unknown',
-      industry: f.industry || 'Unknown',
-      country: f.country || 'Unknown',
+      sector: f.sector || fallbackSector,
+      industry: f.industry || fallbackSector,
+      country: f.country || 'Global',
       peRatio: f.peRatio ? Number(f.peRatio) : null,
       dividendYield: f.dividendYield ? Number(f.dividendYield) : null,
       trailingEps: f.trailingEps ? Number(f.trailingEps) : null,
       week52High: f.week52High ? Number(f.week52High) : null,
       week52Low: f.week52Low ? Number(f.week52Low) : null,
-      assetType: f.assetType || 'Unknown',
+      assetType: f.assetType || fallbackSector,
     };
   });
 

@@ -281,15 +281,12 @@ describe('insightGeneratorWorker', () => {
 
       const result = await workerCallback(makeJob('generate-portfolio-intel', {}));
 
-      // Verify the shape of the tenant query — must filter on equity portfolioItems
+      // Verify the shape of the tenant query — must filter on tenants with any portfolio items
       expect(mockTenantFindMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             portfolioItems: expect.objectContaining({
-              some: expect.objectContaining({
-                quantity: { gt: 0 },
-                symbol: { not: null },
-              }),
+              some: {},
             }),
           }),
         }),

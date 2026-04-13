@@ -293,6 +293,15 @@ function resolveAmount(row, columnMapping, amountStrategy) {
       return { debit: debit || null, credit: credit || null };
     }
 
+    case 'SINGLE_SIGNED_INVERTED': {
+      // Inverted sign convention (e.g. American Express): positive = expense, negative = payment/refund
+      const invAmount = parseDecimal(getColumnValue(row, columnMapping.amount));
+      if (invAmount === null) return { debit: null, credit: null };
+      if (invAmount > 0) return { debit: invAmount, credit: null };
+      if (invAmount < 0) return { debit: null, credit: Math.abs(invAmount) };
+      return { debit: 0, credit: null };
+    }
+
     case 'AMOUNT_WITH_TYPE': {
       const amount = parseDecimal(getColumnValue(row, columnMapping.amount));
       const type = (getColumnValue(row, columnMapping.type) || '').toLowerCase().trim();

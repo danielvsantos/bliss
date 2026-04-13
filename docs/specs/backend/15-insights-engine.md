@@ -11,7 +11,7 @@ The insights engine replaces the v0 single-tier architecture (one daily cron ove
 The pipeline is event-driven and calendar-aware:
 
 1. A daily cron (`generate-all-insights`, 06:00 UTC) scans every tenant and checks whether MONTHLY / QUARTERLY / ANNUAL are due today under the calendar rules in 15.6.3. On a non-trigger day the cron is a no-op.
-2. A weekly cron (`generate-portfolio-intel`, Mondays 05:00 UTC) runs the PORTFOLIO tier for tenants with priced equity holdings.
+2. A weekly cron (`generate-portfolio-intel`, Mondays 05:00 UTC) runs the PORTFOLIO tier for tenants with any portfolio items (completeness gating inside `generateTieredInsights` handles tenants without meaningful data).
 3. Any tier can be triggered on-demand via `POST /api/insights/generate` with `{ tier, year?, month?, quarter?, force? }`. `tier` is **required** — there is no DAILY fallback.
 
 All runs pass through a completeness gate, a data-hash dedup, and a dismissed-state preservation step before persisting insights. Old insights are **never** deleted by new runs — only by the TTL cleanup job.
@@ -344,7 +344,7 @@ Returns per-tier counts + oldest/newest timestamps, plus the total number of cur
 |------------------------------|---------------------------------|-------------------------------------------------------------------------|
 | `generate-tenant-insights`   | On-demand (POST `/generate`)    | Routes to `generateTieredInsights(tenantId, tier, options)` — `tier` is required |
 | `generate-all-insights`      | Daily cron 06:00 UTC            | Loops tenants with transactions, calls `generateAllDueTiers` (no-op on non-trigger days) |
-| `generate-portfolio-intel`   | Weekly cron Mon 05:00 UTC       | Loops tenants with priced equity, calls `generateTieredInsights(PORTFOLIO)` |
+| `generate-portfolio-intel`   | Weekly cron Mon 05:00 UTC       | Loops tenants with portfolio items, calls `generateTieredInsights(PORTFOLIO)` |
 
 > The `generate-daily-pulse` job type was removed in v1.1. Enqueuing it now throws from the worker handler as an unknown job name.
 
@@ -459,7 +459,7 @@ When `GEMINI_API_KEY` is unset the service logs a warning and returns `{ skipped
   - `generate-tenant-insights` tiered path — asserts `tier` is required
   - `generate-tenant-insights` skipped-result handling
   - `generate-all-insights` per-tier aggregation + skipped counting + error continuation (MONTHLY/QUARTERLY/ANNUAL only)
-  - `generate-portfolio-intel` equity query shape + error continuation
+  - `generate-portfolio-intel` portfolio-items query shape + error continuation
   - Unknown job name throws (including the retired `generate-daily-pulse`)
 
 ### Integration Tests
