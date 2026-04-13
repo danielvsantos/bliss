@@ -107,12 +107,85 @@
   display: none !important;
 }
 
+/* ── Spec Selector ─────────────────────────────────────── */
+
+.spec-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+
+.spec-category {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.spec-category-label {
+  flex-shrink: 0;
+  width: 5.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+}
+
+.spec-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.spec-pill {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+.spec-pill:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.spec-pill-active {
+  background: hsl(var(--brand-deep));
+  color: white;
+  border-color: hsl(var(--brand-deep));
+}
+
+.spec-pill-active:hover {
+  background: hsl(var(--brand-deep));
+  color: white;
+}
+
+@media (max-width: 640px) {
+  .spec-category {
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .spec-category-label {
+    width: auto;
+  }
+}
+
 /* ── Scalar API Reference isolation ──────────────────── */
 
 .scalar-wrapper {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
-  overflow: hidden;
   min-height: 600px;
 }
 
@@ -120,6 +193,12 @@
 .scalar-wrapper *::before,
 .scalar-wrapper *::after {
   font-family: inherit;
+}
+
+/* Fix Scalar's auth badge being clipped by max-h-8 + overflow-hidden */
+.scalar-wrapper .scalar-reference-intro-auth button {
+  max-height: none;
+  overflow: visible;
 }
 
 /* ── Nextra theme color overrides ──────────────────────── */
