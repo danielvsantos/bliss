@@ -288,7 +288,7 @@ describe('insightGeneratorWorker', () => {
             portfolioItems: expect.objectContaining({
               some: expect.objectContaining({
                 quantity: { gt: 0 },
-                ticker: { not: null },
+                symbol: { not: null },
               }),
             }),
           }),
