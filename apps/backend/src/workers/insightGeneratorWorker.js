@@ -115,7 +115,7 @@ const processInsightJob = async (job) => {
             portfolioItems: {
               some: {
                 quantity: { gt: 0 },
-                ticker: { not: null },
+                symbol: { not: null },
               },
             },
           },
