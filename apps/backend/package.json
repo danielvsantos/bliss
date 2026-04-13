@@ -24,7 +24,7 @@
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.1.0",
     "@sentry/node": "^10.40.0",
-    "axios": "^1.10.0",
+    "axios": "^1.15.0",
     "bullmq": "^5.51.0",
     "cors": "^2.8.5",
     "decimal.js": "^10.4.3",
