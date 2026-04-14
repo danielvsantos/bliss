@@ -3,6 +3,9 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
+# Prevent Prisma from downloading engine binaries for other platforms (macOS, Windows, etc.)
+ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
+
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 # All workspace package.json stubs must be present so pnpm resolves peers
 # consistently with the lockfile (e.g. typescript optional peer of prisma).
@@ -21,7 +24,7 @@ FROM deps AS shared-build
 COPY packages/shared/src ./packages/shared/src
 RUN pnpm --filter @bliss/shared build
 
-# ─── Stage 3: Build Next.js app ───────────────────────────────────────────────
+# ─── Stage 3: Build Next.js app + create prod deploy ────────────────────────
 FROM shared-build AS builder
 COPY apps/api ./apps/api
 
@@ -32,6 +35,19 @@ RUN pnpm exec prisma generate --schema=../../prisma/schema.prisma
 
 # Build Next.js standalone output
 RUN ./node_modules/.bin/next build
+
+# Create a flat production-only node_modules for supplemental packages.
+# Next.js standalone traces most deps; pnpm deploy provides the rest.
+WORKDIR /app
+RUN pnpm deploy --prod --filter=@bliss/api /prod/api
+
+# Remove packages from pnpm deploy that Next.js standalone already traced.
+# This avoids duplicating the ~200MB that standalone bundles while keeping
+# supplemental packages (Prisma CLI, @google-cloud/storage, and their deps).
+RUN cd /prod/api/node_modules/.pnpm && \
+    for pkg in $(ls /app/apps/api/.next/standalone/node_modules/.pnpm/ 2>/dev/null); do \
+      rm -rf "$pkg" 2>/dev/null; \
+    done
 
 # ─── Stage 4: Production image ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -44,18 +60,22 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy standalone server
+# Supplemental packages from pnpm deploy (pruned of what standalone already traced).
+# Copied FIRST so standalone's more precisely traced output overlays on top.
+# Includes: Prisma CLI, @google-cloud/storage, and all their transitive deps.
+COPY --from=builder --chown=nextjs:nodejs /prod/api/node_modules ./node_modules
+
+# Next.js standalone output (traced + bundled — includes most deps in .pnpm)
 COPY --from=builder --chown=nextjs:nodejs /app/apps/api/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/api/.next/static ./apps/api/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/api/public ./apps/api/public
 
-# Copy prisma schema and migrations (needed for migrate deploy at startup)
-COPY --from=builder /app/prisma ./prisma
+# Prisma schema + migrations (for migrate deploy at startup)
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
-# Copy pnpm virtual store (includes generated Prisma client)
-COPY --from=builder /app/node_modules/.pnpm ./node_modules/.pnpm
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# @bliss/shared built dist (storage adapters + encryption, ~18KB)
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
 
 RUN mkdir -p /app/data/uploads && chown nextjs:nodejs /app/data/uploads
 

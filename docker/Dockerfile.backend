@@ -28,12 +28,24 @@ FROM deps AS shared-build
 COPY packages/shared/src ./packages/shared/src
 RUN pnpm --filter @bliss/shared build
 
-# ─── Stage 3: Generate Prisma client ─────────────────────────────────────────
+# ─── Stage 3: Build backend + create prod deploy ────────────────────────────
 FROM shared-build AS builder
 COPY apps/backend ./apps/backend
 
 WORKDIR /app/apps/backend
 RUN pnpm exec prisma generate --schema=../../prisma/schema.prisma
+
+# Create flat production-only node_modules via pnpm deploy.
+# This resolves workspace:* references, includes only prod deps, and creates
+# a self-contained directory with node_modules + app source.
+WORKDIR /app
+RUN pnpm deploy --prod --filter=@bliss/backend /prod/backend
+
+# Copy the generated Prisma client into the deploy output's .pnpm store.
+# prisma generate ran in the workspace; overwrite the stub with the generated version.
+RUN SRC=$(ls -d /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client) && \
+    DEST=$(ls -d /prod/backend/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client) && \
+    rm -rf "$DEST" && cp -rL "$SRC" "$DEST"
 
 # ─── Stage 4: Production image ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -44,12 +56,13 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 backendjs
 
-# Copy application code and shared package output
-COPY --from=builder --chown=backendjs:nodejs /app/apps/backend ./apps/backend
-COPY --from=builder --chown=backendjs:nodejs /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/backend/node_modules ./apps/backend/node_modules
+# Copy pnpm deploy output (flat prod-only node_modules + app source)
+COPY --from=builder --chown=backendjs:nodejs /prod/backend ./
+
+# pnpm deploy copies @bliss/shared source but doesn't run its build —
+# overlay the pre-built dist files from the builder stage.
+COPY --from=builder /app/packages/shared/dist ./node_modules/@bliss/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@bliss/shared/package.json
 
 # Prisma schema (needed for any runtime schema references)
 COPY --from=builder /app/prisma ./prisma
@@ -57,8 +70,6 @@ COPY --from=builder /app/prisma ./prisma
 RUN mkdir -p /app/data/uploads && chown backendjs:nodejs /app/data/uploads
 
 USER backendjs
-
-WORKDIR /app/apps/backend
 EXPOSE 3001
 
 CMD ["node", "src/index.js"]
