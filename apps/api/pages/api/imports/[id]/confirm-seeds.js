@@ -101,6 +101,7 @@ export default withAuth(async function handler(req, res) {
                     suggestedCategoryId: confirmedCategoryId,
                     classificationSource: 'USER_OVERRIDE',
                     confidence: 1.0,
+                    status: 'CONFIRMED',
                 },
             });
 
