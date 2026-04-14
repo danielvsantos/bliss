@@ -8,9 +8,10 @@ The global seed (`prisma/seed.js`) runs automatically during Docker setup or `pr
 
 - **16 countries** — US, UK, Germany, France, Spain, Portugal, Brazil, Canada, Australia, Japan, Switzerland, Mexico, Italy, Netherlands, Singapore, India
 - **11 currencies** — USD, EUR, GBP, BRL, CAD, AUD, JPY, CHF, MXN, SGD, INR
-- **15 banks** — Chase, Bank of America, Charles Schwab, Fidelity, Revolut, N26, Barclays, HSBC, Nubank, Itaú, Wise, Interactive Brokers, Deutsche Bank, CaixaBank, Monzo
+- **30 banks** — Major banks across US (Chase, Bank of America, Citi, Capital One, Amex, Discover, US Bank, Schwab, Fidelity), UK (HSBC, Barclays, Lloyds, Monzo, Santander UK), Spain (BBVA, CaixaBank, Santander), France (Boursorama, Credit Agricole), EU (N26, Revolut, Wise, Deutsche Bank), Brazil (Nubank, Itau), Canada (RBC, TD Canada), Australia (ANZ, Commonwealth Bank), and brokerages (Interactive Brokers)
+- **32 import adapters** — Preconfigured CSV column mappings for the banks above (plus generic fallbacks and a Bliss Native format). These enable automatic format detection when importing transactions via CSV. See [Importing transactions](/docs/guides/importing-transactions) for the full list.
 
-**If your country, currency, or bank isn't listed**, add it to `prisma/seed.js` and re-run `pnpm exec prisma db seed` before running the tenant setup script. The seed is idempotent — existing records are skipped.
+**If your country, currency, or bank isn't listed**, add it to `prisma/seed.js` and re-run `pnpm exec prisma db seed`. The seed is idempotent — existing records are updated in place, and new entries are created without affecting existing data.
 
 ## What the tenant seed script does
 

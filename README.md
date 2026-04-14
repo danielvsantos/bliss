@@ -169,7 +169,7 @@ Three commands to a running instance:
 ```bash
 git clone https://github.com/danielvsantos/bliss.git && cd bliss
 ./scripts/setup.sh        # generates secrets, creates .env
-docker compose up --build  # starts all services
+docker compose up          # pulls images and starts all services
 ```
 
 Open **http://localhost:8080** and create your account. The database is automatically migrated and seeded with reference data (countries, currencies, banks).

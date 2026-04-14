@@ -12,10 +12,12 @@ Get Bliss running locally in under 5 minutes.
 ```bash
 git clone https://github.com/danielvsantos/bliss.git && cd bliss
 ./scripts/setup.sh          # generates secrets, creates .env
-docker compose up --build   # starts all 5 services
+docker compose up           # pulls images and starts all 5 services
 ```
 
 Open [http://localhost:8080](http://localhost:8080) once all containers are healthy. The database is auto-migrated and seeded with reference data (countries, currencies, banks) on first boot.
+
+> **Contributing?** Use `docker compose up --build` to build images from source instead of pulling from Docker Hub. This lets you test your local code changes.
 
 ## Create your account
 
