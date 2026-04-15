@@ -41,9 +41,15 @@ RUN pnpm exec prisma generate --schema=../../prisma/schema.prisma
 WORKDIR /app
 RUN pnpm deploy --prod --filter=@bliss/backend /prod/backend
 
-# Note: pnpm deploy runs @prisma/client postinstall which generates the Prisma client
-# automatically. No manual copy needed — the deploy output already contains the
-# generated client with the correct engine binary for this platform.
+# Copy the properly-generated Prisma client from the workspace into the deploy output.
+# pnpm deploy's postinstall runs `prisma generate` but due to pnpm's symlink layout,
+# the generated client doesn't land in the expected location inside /prod/backend.
+# cp -rL dereferences symlinks to ensure the engine binary + generated code are
+# present inline at runtime. Without this, the backend crashes on startup with
+# "@prisma/client did not initialize yet".
+RUN SRC=$(ls -d /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client) && \
+    DEST=$(ls -d /prod/backend/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client) && \
+    rm -rf "$DEST" && cp -rL "$SRC" "$DEST"
 
 # ─── Stage 4: Production image ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
