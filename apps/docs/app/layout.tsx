@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Urbanist } from 'next/font/google';
+import Script from 'next/script';
 import { Head } from 'nextra/components';
 
 import './globals.css';
@@ -36,6 +37,14 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </Head>
       <body style={{ fontFamily: 'var(--font-urbanist), Urbanist, sans-serif' }}>
+        <Script
+          async
+          src="https://plausible.io/js/pa-d_JvWNrshiN5VKD6KrxVw.js"
+          strategy="afterInteractive"
+        />
+        <Script id="plausible-init" strategy="afterInteractive">
+          {`window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`}
+        </Script>
         {children}
       </body>
     </html>
