@@ -8,7 +8,7 @@ jest.mock('../../../utils/categoryCache', () => ({
   getCategoriesForTenant: jest.fn(),
 }));
 
-jest.mock('../../../services/geminiService', () => ({
+jest.mock('../../../services/llm', () => ({
   generateEmbedding: jest.fn(),
   classifyTransaction: jest.fn(),
 }));
@@ -26,7 +26,7 @@ jest.mock('../../../utils/logger', () => ({
 
 const { lookupDescription, addDescriptionEntry } = require('../../../utils/descriptionCache');
 const { getCategoriesForTenant } = require('../../../utils/categoryCache');
-const geminiService = require('../../../services/geminiService');
+const geminiService = require('../../../services/llm');
 const prisma = require('../../../../prisma/prisma');
 
 const { classify, recordFeedback } = require('../../../services/categorizationService');

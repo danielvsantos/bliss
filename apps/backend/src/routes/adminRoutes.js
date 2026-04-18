@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const apiKeyAuth = require('../middleware/apiKeyAuth');
 const categorizationService = require('../services/categorizationService');
-const geminiService = require('../services/geminiService');
+const geminiService = require('../services/llm');
 const logger = require('../utils/logger');
 
 /**

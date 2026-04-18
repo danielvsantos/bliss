@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const apiKeyAuth = require('../middleware/apiKeyAuth');
-const geminiService = require('../services/geminiService');
+const geminiService = require('../services/llm');
 const prisma = require('../../prisma/prisma');
 const logger = require('../utils/logger');
 const { DEFAULT_REVIEW_THRESHOLD } = require('../config/classificationConfig');

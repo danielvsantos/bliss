@@ -7,7 +7,7 @@ const categorizationService = require('../services/categorizationService');
 const { warmDescriptionCache } = require('../utils/descriptionCache');
 const { getCategoriesForTenant } = require('../utils/categoryCache');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
-const { isRateLimitError } = require('../services/geminiService');
+const { isRateLimitError } = require('../services/llm');
 const { computeTransactionHash, buildDuplicateHashSet } = require('../utils/transactionHash');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const {

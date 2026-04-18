@@ -60,7 +60,7 @@ jest.mock('../../../../prisma/prisma.js', () => ({
 }));
 
 const mockGenerateInsightContent = jest.fn();
-jest.mock('../../../services/geminiService', () => ({
+jest.mock('../../../services/llm', () => ({
   generateInsightContent: (...args) => mockGenerateInsightContent(...args),
 }));
 

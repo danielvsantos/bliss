@@ -18,6 +18,7 @@
     "prisma:studio": "prisma studio --schema=../../prisma/schema.prisma"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@bliss/shared": "workspace:*",
     "@bull-board/api": "^5.18.0",
     "@google-cloud/storage": "^7.19.0",
@@ -36,6 +37,7 @@
     "helmet": "^7.1.0",
     "http-status-codes": "^2.3.0",
     "ioredis": "^5.3.2",
+    "openai": "^6.34.0",
     "p-limit": "^7.3.0",
     "papaparse": "^5.5.3",
     "plaid": "^41.0.0",
