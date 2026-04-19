@@ -132,12 +132,12 @@ components:
             - EXACT_MATCH — in-memory cache hit (fastest, highest confidence)
             - VECTOR_MATCH — tenant-scoped pgvector cosine similarity
             - VECTOR_MATCH_GLOBAL — cross-tenant pgvector cosine similarity (score discounted by 0.92)
-            - LLM — Gemini classification
+            - LLM — configured LLM provider (Gemini / OpenAI / Anthropic) classification
             - USER_OVERRIDE — user manually selected or confirmed a category
         classificationReasoning:
           type: string
           nullable: true
-          description: Free-text reasoning from the Gemini LLM. Null for EXACT_MATCH and VECTOR_MATCH.
+          description: Free-text reasoning from the configured LLM provider. Null for EXACT_MATCH and VECTOR_MATCH.
         seedHeld:
           type: boolean
           default: false
@@ -1233,7 +1233,7 @@ paths:
         transactions.
 
         Covers all classification sources held below `autoPromoteThreshold`:
-          - `LLM` — Gemini-classified, below threshold
+          - `LLM` — classified by the configured LLM provider, below threshold
           - `VECTOR_MATCH` — tenant-scoped vector match, below threshold
           - `VECTOR_MATCH_GLOBAL` — cross-tenant vector match, discounted score below threshold
 

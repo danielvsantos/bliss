@@ -150,7 +150,7 @@ past.
 | Service | Purpose |
 |---------|---------|
 | `categorizationService.js` | 4-tier waterfall: exact match -> vector match (tenant) -> vector match (global) -> LLM |
-| `geminiService.js` | Gemini API wrapper: `classifyTransaction()` (Flash, temp 0.1), `generateEmbedding()` (768-dim) |
+| `services/llm/` | Provider-agnostic LLM factory. Resolves primary + embedding adapters at module load based on `LLM_PROVIDER` / `EMBEDDING_PROVIDER`. Public API: `generateEmbedding()`, `classifyTransaction()`, `generateInsightContent()`, `isRateLimitError()`. Contains `geminiAdapter.js`, `openaiAdapter.js`, `anthropicAdapter.js`, plus `baseAdapter.js` (shared retry/timeout) and `jsonExtractor.js` (robust parsing for Anthropic). See `docs/specs/backend/20-llm-provider-abstraction.md`. |
 
 **Market data:**
 
@@ -180,16 +180,21 @@ Single source of truth for all AI tuning constants:
 |----------|-------|---------|
 | `EXACT_MATCH_CONFIDENCE` | 1.0 | Fixed score for description cache hits |
 | `GLOBAL_VECTOR_DISCOUNT` | 0.92 | Discount on cross-tenant vector matches |
-| `EMBEDDING_DIMENSIONS` | 768 | Gemini output projection (from 3072) |
+| `EMBEDDING_DIMENSIONS` | 768 | Embedding output dimension (all providers project/configure to 768 for pgvector compatibility) |
 | `DEFAULT_AUTO_PROMOTE_THRESHOLD` | 0.90 | Auto-confirm above this confidence |
 | `DEFAULT_REVIEW_THRESHOLD` | 0.70 | Hold for review below this confidence |
 | `TOP_N_SEEDS` | 15 | Phase 1 seed interview size |
-| `PHASE2_CONCURRENCY` | 5 | Max concurrent Gemini LLM calls |
+| `PHASE2_CONCURRENCY` | 5 | Max concurrent LLM calls |
 
-**Gemini models** (configured in `services/geminiService.js`):
-- Classification: `gemini-3-flash-preview` (fast, high-volume)
-- Insights: `gemini-3.1-pro-preview` (quality prose, override via `INSIGHT_MODEL` env var)
-- Embeddings: `gemini-embedding-001` with `outputDimensionality: 768`
+**LLM provider defaults** (adapters in `services/llm/`):
+
+| Provider | Embedding | Classification | Insights |
+|---|---|---|---|
+| Gemini   | `gemini-embedding-001` (projected to 768-dim) | `gemini-3-flash-preview` | `gemini-3.1-pro-preview` |
+| OpenAI   | `text-embedding-3-small` (projected to 768-dim) | `gpt-4.1-mini` | `gpt-4.1` |
+| Anthropic | *(not supported — use Gemini or OpenAI via `EMBEDDING_PROVIDER`)* | `claude-sonnet-4-6` | `claude-sonnet-4-6` |
+
+Each slot is overridable via `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL` env vars. Provider selection is controlled by `LLM_PROVIDER` and (for Anthropic users) `EMBEDDING_PROVIDER`. See `docs/specs/backend/20-llm-provider-abstraction.md`.
 
 These defaults must stay in sync with `Tenant.autoPromoteThreshold` and `Tenant.reviewThreshold` in `prisma/schema.prisma`.
 

@@ -594,8 +594,9 @@ paths:
       summary: Find semantically similar previously-classified transactions
       description: |
         Accepts a raw transaction description, proxies to the backend service to generate
-        a 768-dim embedding via Gemini, and returns the top-5 most semantically similar
-        previously-classified transactions for the authenticated tenant.
+        a 768-dim embedding via the configured embedding provider (Gemini or OpenAI), and
+        returns the top-5 most semantically similar previously-classified transactions for
+        the authenticated tenant.
 
         Intended to power "did you mean?" category suggestions in the import review UI.
         Only entries with cosine similarity ≥ 0.70 are returned.
@@ -632,4 +633,4 @@ paths:
         '401':
           description: Unauthorized
         '500':
-          description: Internal Server Error (e.g. Gemini API unavailable)
+          description: Internal Server Error (e.g. embedding provider API unavailable)

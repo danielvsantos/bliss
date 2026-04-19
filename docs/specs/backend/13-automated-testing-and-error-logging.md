@@ -8,6 +8,8 @@ This specification covers the testing infrastructure and error-logging strategy 
 2. **Verify contracts** — integration tests that exercise the real Express routes and Prisma layer end-to-end, catching issues that unit tests cannot (middleware order, query correctness, auth enforcement).
 3. **Surface production errors** — structured Sentry integration that captures every unhandled worker failure with full context, while filtering known-safe non-errors.
 
+> **LLM provider abstraction update.** After the multi-LLM refactor, tests mock `../../../services/llm` instead of the legacy `../../../services/geminiService`. The test file previously named `geminiService.test.js` is now `unit/services/llm/geminiAdapter.test.js`, and companion tests cover `openaiAdapter`, `anthropicAdapter`, `jsonExtractor`, and the `factory`. Exact counts in the tables below reflect the historical Gemini-only topology; current counts live in the repository. See [Spec 20 — LLM Provider Abstraction](./20-llm-provider-abstraction.md).
+
 The backend uses a **two-layer test pyramid**:
 
 ```

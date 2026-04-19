@@ -2,6 +2,8 @@
 
 This service handles the robust, asynchronous synchronisation of financial data from Plaid. It is designed to be fault-tolerant, scalable, and secure, ensuring users' financial data stays up-to-date without blocking the main application.
 
+> **LLM provider abstraction.** This spec was written when Gemini was the only supported LLM. Transaction classification during Plaid sync now routes through `services/llm/`, which supports Gemini, OpenAI, and Anthropic interchangeably. References to "Gemini" below describe the Tier 4 LLM in provider-agnostic terms. See [Spec 20 — LLM Provider Abstraction](./20-llm-provider-abstraction.md).
+
 ---
 
 ## Tenant Config

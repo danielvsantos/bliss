@@ -7,6 +7,8 @@ The AI classification pipeline automatically assigns categories to transactions 
 The pipeline is implemented in `src/services/` and called directly by `plaidProcessorWorker.js` and `smartImportWorker.js`.
 
 > **Configuration**: All tuning constants (thresholds, dimensions, concurrency limits) are centralised in `src/config/classificationConfig.js`. Edit only that file to change system-wide classification behaviour. See §9.10 for details.
+>
+> **LLM provider abstraction (post v1.1)**: The pipeline no longer calls the Gemini SDK directly. All LLM calls route through `src/services/llm/` — a factory-backed adapter layer that supports Gemini, OpenAI, and Anthropic Claude. The public surface (`generateEmbedding`, `classifyTransaction`, `generateInsightContent`, `isRateLimitError`) is unchanged, so the sections below describe the pipeline in provider-agnostic terms even where historical prose still mentions "Gemini". For full details see [Spec 20 — LLM Provider Abstraction](./20-llm-provider-abstraction.md).
 
 ---
 

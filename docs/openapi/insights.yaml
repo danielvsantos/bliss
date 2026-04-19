@@ -4,9 +4,10 @@ info:
   description: |
     AI-generated financial insights endpoints. Insights are produced by the
     backend service across four cadence tiers (MONTHLY, QUARTERLY, ANNUAL,
-    PORTFOLIO) using Google Gemini, persisted additively in the Insight
-    table, and surfaced here with filtering, per-tier summaries, and an
-    on-demand generation trigger.
+    PORTFOLIO) using the configured LLM provider (Gemini, OpenAI, or
+    Anthropic; selected via `LLM_PROVIDER`), persisted additively in the
+    Insight table, and surfaced here with filtering, per-tier summaries, and
+    an on-demand generation trigger.
 
     A fifth DAILY tier shipped briefly in v1 but was retired in v1.1 —
     single-transaction deltas inflated into dramatic percentage changes and

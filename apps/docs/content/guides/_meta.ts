@@ -3,6 +3,7 @@ export default {
   'docker-quickstart': 'Docker Quick Start',
   'tenant-seed-setup': 'Initial Account Setup',
   'external-services': 'Choosing Your External Services',
+  'llm-providers': 'Choosing an LLM Provider',
   'importing-transactions': 'Importing Transactions',
   'investment-portfolios': 'Investment Portfolios',
   'plaid-bank-sync': 'Bank Sync with Plaid',
