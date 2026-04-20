@@ -93,7 +93,7 @@
     "eslint": "^9.9.0",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.9",
-    "globals": "^15.9.0",
+    "globals": "^17.5.0",
     "knip": "^5.62.0",
     "lovable-tagger": "^1.1.7",
     "postcss": "^8.4.47",
