@@ -40,7 +40,7 @@
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "decimal.js": "^10.6.0",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express-rate-limit": "^7.5.0",
     "form-data": "^4.0.2",
