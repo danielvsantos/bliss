@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@bliss/shared": "workspace:*",
-    "@bull-board/api": "^5.18.0",
+    "@bull-board/api": "^7.0.0",
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.1.0",
