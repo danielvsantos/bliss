@@ -59,8 +59,8 @@ importers:
         specifier: ^9.10.1
         version: 9.47.1(@opentelemetry/context-async-hooks@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/core@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(next@15.5.15(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(webpack@5.105.4)
       axios:
-        specifier: ^1.15.0
-        version: 1.15.0
+        specifier: ^1.15.1
+        version: 1.15.1
       bootstrap:
         specifier: ^5.3.3
         version: 5.3.8(@popperjs/core@2.11.8)
@@ -180,8 +180,8 @@ importers:
         specifier: ^10.40.0
         version: 10.46.0
       axios:
-        specifier: ^1.15.0
-        version: 1.15.0
+        specifier: ^1.15.1
+        version: 1.15.1
       bullmq:
         specifier: ^5.51.0
         version: 5.71.1
@@ -266,7 +266,7 @@ importers:
     dependencies:
       '@scalar/api-reference-react':
         specifier: ^0.9.22
-        version: 0.9.22(axios@1.15.0)(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
+        version: 0.9.22(axios@1.15.1)(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
       next:
         specifier: ^15.5.15
         version: 15.5.15(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -410,8 +410,8 @@ importers:
         specifier: ^5.74.11
         version: 5.95.2(@tanstack/react-query@5.95.2(react@18.3.1))(react@18.3.1)
       axios:
-        specifier: ^1.15.0
-        version: 1.15.0
+        specifier: ^1.15.1
+        version: 1.15.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -5464,8 +5464,8 @@ packages:
     resolution: {integrity: sha512-BASOg+YwO2C+346x3LZOeoovTIoTrRqEsqMa6fmfAV0P+U9mFr9NsyOEpiYvFjbc64NMrSswhV50WdXzdb/Z5A==}
     engines: {node: '>=4'}
 
-  axios@1.15.0:
-    resolution: {integrity: sha512-wWyJDlAatxk30ZJer+GeCWS209sA42X+N5jU2jy6oHTp7ufw8uzUTVFBX9+wTfAlhiJXGS0Bq7X6efruWjuK9Q==}
+  axios@1.15.1:
+    resolution: {integrity: sha512-WOG+Jj8ZOvR0a3rAn+Tuf1UQJRxw5venr6DgdbJzngJE3qG7X0kL83CZGpdHMxEm+ZK3seAbvFsw4FfOfP9vxg==}
 
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
@@ -14350,10 +14350,10 @@ snapshots:
 
   '@rushstack/eslint-patch@1.16.1': {}
 
-  '@scalar/agent-chat@0.10.3(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
+  '@scalar/agent-chat@0.10.3(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
     dependencies:
       '@ai-sdk/vue': 3.0.33(vue@3.5.31(typescript@5.9.3))(zod@4.3.6)
-      '@scalar/api-client': 2.43.0(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
+      '@scalar/api-client': 2.43.0(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
       '@scalar/components': 0.21.4(typescript@5.9.3)
       '@scalar/helpers': 0.4.3
       '@scalar/icons': 0.7.2(typescript@5.9.3)
@@ -14387,7 +14387,7 @@ snapshots:
       - typescript
       - universal-cookie
 
-  '@scalar/api-client@2.43.0(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
+  '@scalar/api-client@2.43.0(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
     dependencies:
       '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))
       '@headlessui/vue': 1.7.23(vue@3.5.31(typescript@5.9.3))
@@ -14412,7 +14412,7 @@ snapshots:
       '@scalar/workspace-store': 0.45.0(typescript@5.9.3)
       '@types/har-format': 1.2.16
       '@vueuse/core': 13.9.0(vue@3.5.31(typescript@5.9.3))
-      '@vueuse/integrations': 13.9.0(axios@1.15.0)(focus-trap@7.8.0)(fuse.js@7.1.0)(vue@3.5.31(typescript@5.9.3))
+      '@vueuse/integrations': 13.9.0(axios@1.15.1)(focus-trap@7.8.0)(fuse.js@7.1.0)(vue@3.5.31(typescript@5.9.3))
       cookie: 1.1.1
       focus-trap: 7.8.0
       fuse.js: 7.1.0
@@ -14449,9 +14449,9 @@ snapshots:
       - typescript
       - universal-cookie
 
-  '@scalar/api-reference-react@0.9.22(axios@1.15.0)(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
+  '@scalar/api-reference-react@0.9.22(axios@1.15.1)(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
     dependencies:
-      '@scalar/api-reference': 1.52.1(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
+      '@scalar/api-reference': 1.52.1(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
       '@scalar/types': 0.8.0
       react: 18.3.1
     transitivePeerDependencies:
@@ -14470,11 +14470,11 @@ snapshots:
       - typescript
       - universal-cookie
 
-  '@scalar/api-reference@1.52.1(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
+  '@scalar/api-reference@1.52.1(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)':
     dependencies:
       '@headlessui/vue': 1.7.23(vue@3.5.31(typescript@5.9.3))
-      '@scalar/agent-chat': 0.10.3(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
-      '@scalar/api-client': 2.43.0(axios@1.15.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
+      '@scalar/agent-chat': 0.10.3(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
+      '@scalar/api-client': 2.43.0(axios@1.15.1)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.3))(typescript@5.9.3)
       '@scalar/code-highlight': 0.3.2
       '@scalar/components': 0.21.4(typescript@5.9.3)
       '@scalar/helpers': 0.4.3
@@ -15962,13 +15962,13 @@ snapshots:
       '@vueuse/shared': 13.9.0(vue@3.5.31(typescript@5.9.3))
       vue: 3.5.31(typescript@5.9.3)
 
-  '@vueuse/integrations@13.9.0(axios@1.15.0)(focus-trap@7.8.0)(fuse.js@7.1.0)(vue@3.5.31(typescript@5.9.3))':
+  '@vueuse/integrations@13.9.0(axios@1.15.1)(focus-trap@7.8.0)(fuse.js@7.1.0)(vue@3.5.31(typescript@5.9.3))':
     dependencies:
       '@vueuse/core': 13.9.0(vue@3.5.31(typescript@5.9.3))
       '@vueuse/shared': 13.9.0(vue@3.5.31(typescript@5.9.3))
       vue: 3.5.31(typescript@5.9.3)
     optionalDependencies:
-      axios: 1.15.0
+      axios: 1.15.1
       focus-trap: 7.8.0
       fuse.js: 7.1.0
 
@@ -16328,7 +16328,7 @@ snapshots:
 
   axe-core@4.11.1: {}
 
-  axios@1.15.0:
+  axios@1.15.1:
     dependencies:
       follow-redirects: 1.16.0
       form-data: 4.0.5
@@ -19094,7 +19094,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 24.12.0
+      '@types/node': 22.19.15
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -20672,7 +20672,7 @@ snapshots:
 
   plaid@41.4.0:
     dependencies:
-      axios: 1.15.0
+      axios: 1.15.1
     transitivePeerDependencies:
       - debug
 
