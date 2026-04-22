@@ -2,6 +2,8 @@
 
 Internal administration endpoints for managing default categories and the cross-tenant classification system. These endpoints are **not user-facing** — they are used by Bliss operations staff for category provisioning, metadata maintenance, and embedding quality management.
 
+> **LLM provider abstraction.** Embeddings are generated via `services/llm/` (supports Gemini, OpenAI, or Anthropic). References to "Gemini" below refer to the currently-configured embedding provider. See [Backend Spec 20 — LLM Provider Abstraction](../backend/20-llm-provider-abstraction.md).
+
 ---
 
 ## Authentication

@@ -6,7 +6,7 @@ Bliss uses a **single root `.env` file** as the source of truth for all services
 
 - **Docker Compose** reads the root `.env` automatically -- no `env_file` directive needed.
 - **`scripts/setup.sh`** generates cryptographic secrets (`ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`) so you never have to create them by hand. Run it once after copying `.env.example` to `.env`.
-- **Optional integrations** (Plaid, Gemini AI, Twelve Data, Sentry) are activated simply by adding the relevant API keys. The application degrades gracefully when they are absent.
+- **Optional integrations** (Plaid, Twelve Data, CurrencyLayer, Sentry) are activated simply by adding the relevant API keys. The application degrades gracefully when they are absent. The **LLM provider** (Gemini, OpenAI, or Anthropic) is the one required integration — without it AI classification and insights are unavailable.
 - **Test-specific overrides**: each service may have a `.env.test` file that overrides `DATABASE_URL` to point at an isolated test database. These files are loaded automatically by the test runners and should never be committed.
 
 ---
@@ -15,17 +15,17 @@ Bliss uses a **single root `.env` file** as the source of truth for all services
 
 For a basic Docker deployment, `scripts/setup.sh` generates all required secrets automatically (`ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`). It also sets safe defaults for `DATABASE_URL`, `REDIS_URL`, and all service URLs. **You do not need to configure anything to get a working local instance.**
 
-The only variables you might want to customize are the optional integration keys:
+The one required integration is an **LLM provider** for AI classification and insights. The optional ones add useful features but degrade gracefully:
 
-| Integration | Variables | Purpose |
-|---|---|---|
-| Plaid | `PLAID_CLIENT_ID`, `PLAID_SECRET` | Bank account linking |
-| Gemini AI | `GEMINI_API_KEY` | AI classification and insights |
-| Market data | `TWELVE_DATA_API_KEY` | Stock price fetching |
-| Currency rates | `CURRENCYLAYER_API_KEY` | Automatic FX rate fetching |
-| Observability | `SENTRY_DSN` | Error tracking |
+| Integration | Required? | Variables | Purpose |
+|---|---|---|---|
+| LLM (Gemini / OpenAI / Anthropic) | **Yes** | `LLM_PROVIDER`, `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | AI classification + insights |
+| Plaid | No | `PLAID_CLIENT_ID`, `PLAID_SECRET` | Bank account linking |
+| Market data | No | `TWELVE_DATA_API_KEY` | Stock price fetching |
+| Currency rates | No | `CURRENCYLAYER_API_KEY` | Automatic FX rate fetching |
+| Observability | No | `SENTRY_DSN` | Error tracking |
 
-All of these are optional. The application works without them and degrades gracefully.
+See [Choosing Your External Services](/docs/guides/external-services) for picking and configuring an LLM. Optional integrations can be added any time.
 
 ---
 
@@ -102,14 +102,24 @@ Plaid integration is optional. CSV import works without it. To enable bank-accou
 | `PLAID_WEBHOOK_URL` | No | -- | Public URL for Plaid webhook delivery. Required in production to receive transaction updates. |
 | `PLAID_HISTORY_DAYS` | No | `1` | Default number of days of transaction history fetched on initial Plaid link. Written to `Tenant.plaidHistoryDays` at signup. |
 
-## AI (optional)
+## AI / LLM Provider
 
-AI features (vector similarity classification, Gemini-powered categorization) are disabled when the API key is absent.
+Bliss supports three LLM providers for transaction classification and financial insights: **Google Gemini**, **OpenAI**, and **Anthropic Claude**. An LLM provider is required for AI classification and insights. Pick one in `.env`.
+
+See the [Choosing Your External Services](/docs/guides/external-services) guide for per-provider setup, model overrides, and switching workflows.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GEMINI_API_KEY` | No | -- | Google Gemini API key. Enables the vector classification tier and AI-powered transaction categorization. |
-| `INSIGHT_MODEL` | No | `gemini-3-flash-preview` | Model used by the insights engine. Change to use a different Gemini model for AI-generated financial insights. |
+| `LLM_PROVIDER` | Yes | `gemini` | Which provider powers classification and insights. One of: `gemini`, `openai`, `anthropic`. |
+| `EMBEDDING_PROVIDER` | When `LLM_PROVIDER=anthropic` | *(follows `LLM_PROVIDER`)* | Override embedding provider. Required when using Anthropic because Anthropic has no embedding API. Must be `gemini` or `openai`. |
+| `GEMINI_API_KEY` | When `LLM_PROVIDER=gemini` (or `EMBEDDING_PROVIDER=gemini`) | -- | Google Gemini API key. |
+| `OPENAI_API_KEY` | When `LLM_PROVIDER=openai` (or `EMBEDDING_PROVIDER=openai`) | -- | OpenAI API key. |
+| `ANTHROPIC_API_KEY` | When `LLM_PROVIDER=anthropic` | -- | Anthropic API key. |
+| `EMBEDDING_MODEL` | No | `gemini-embedding-001` / `text-embedding-3-small` / *(n/a)* | Override the embedding model for the active embedding provider. Output is projected to 768 dimensions. |
+| `CLASSIFICATION_MODEL` | No | `gemini-3-flash-preview` / `gpt-4.1-mini` / `claude-sonnet-4-6` | Override the classification model for the active LLM provider. |
+| `INSIGHT_MODEL` | No | `gemini-3.1-pro-preview` / `gpt-4.1` / `claude-sonnet-4-6` | Override the insights model for the active LLM provider. |
+
+**Graceful degradation:** Missing the primary LLM provider key produces a warning and disables AI classification + insights (the rest of the app keeps working). Missing the secondary `EMBEDDING_PROVIDER` key when you opted in explicitly is a hard startup error.
 
 ## Market Data (optional)
 

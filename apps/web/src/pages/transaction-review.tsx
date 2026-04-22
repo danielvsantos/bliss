@@ -112,8 +112,17 @@ function importRowToReviewItem(
   const amount = (Number(row.debit) || 0) - (Number(row.credit) || 0);
   const account = row.accountId ? accountsMap.get(row.accountId) : null;
 
+  // Duplicate-flagged rows get a dedicated status badge and are NOT committable.
+  // DUPLICATE = exact hash match including timestamp (hard dup; normally the GET
+  // endpoint hides these entirely). POTENTIAL_DUPLICATE = same date/description/
+  // amount/account but no timestamp — shown with a warning badge so the user can
+  // explicitly override to CONFIRMED if it really is a distinct transaction.
   let status: TxStatus = 'ai-approved';
-  if (row.requiresEnrichment) {
+  if (row.status === 'DUPLICATE') {
+    status = 'duplicate';
+  } else if (row.status === 'POTENTIAL_DUPLICATE') {
+    status = 'potential-duplicate';
+  } else if (row.requiresEnrichment) {
     status = 'needs-enrichment';
   } else if (row.confidence != null && row.confidence < reviewThreshold) {
     status = 'low-confidence';
@@ -210,8 +219,11 @@ export default function TransactionReviewPage() {
     {
       page: importPage,
       limit: 50,
-      // Show rows needing action + auto-confirmed rows not yet committed (excludes SKIPPED)
-      status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,DUPLICATE,CONFIRMED',
+      // Show rows needing action + auto-confirmed rows not yet committed.
+      // DUPLICATE (hard duplicates w/ timestamp match) is intentionally excluded —
+      // those rows must never reach the Review UI as committable. POTENTIAL_DUPLICATE
+      // stays visible so the user can override to CONFIRMED if it's a legit tx.
+      status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,CONFIRMED',
       ...(importCategoryFilter ? { categoryId: importCategoryFilter } : {}),
     },
   );
@@ -400,6 +412,10 @@ export default function TransactionReviewPage() {
           i.promotionStatus !== 'CONFIRMED' &&
           i.promotionStatus !== 'SKIPPED' &&
           i.promotionStatus !== 'DUPLICATE' &&
+          // POTENTIAL_DUPLICATE rows are excluded from bulk promote/approve —
+          // user must explicitly override each one via the drawer to commit it,
+          // otherwise re-imported transactions would silently re-land.
+          i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
           !itemNeedsEnrichment(i, categoriesMap),
       ),
     );
@@ -509,6 +525,10 @@ export default function TransactionReviewPage() {
           i.promotionStatus !== 'CONFIRMED' &&
           i.promotionStatus !== 'SKIPPED' &&
           i.promotionStatus !== 'DUPLICATE' &&
+          // POTENTIAL_DUPLICATE rows are excluded from bulk promote/approve —
+          // user must explicitly override each one via the drawer to commit it,
+          // otherwise re-imported transactions would silently re-land.
+          i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
           !itemNeedsEnrichment(i, categoriesMap),
       );
       const importEnrichmentSkipped = items.filter(
@@ -517,6 +537,10 @@ export default function TransactionReviewPage() {
           i.promotionStatus !== 'CONFIRMED' &&
           i.promotionStatus !== 'SKIPPED' &&
           i.promotionStatus !== 'DUPLICATE' &&
+          // POTENTIAL_DUPLICATE rows are excluded from bulk promote/approve —
+          // user must explicitly override each one via the drawer to commit it,
+          // otherwise re-imported transactions would silently re-land.
+          i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
           itemNeedsEnrichment(i, categoriesMap),
       ).length;
       for (const item of importItems) {

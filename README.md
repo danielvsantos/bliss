@@ -50,9 +50,9 @@ A deterministic AI waterfall that learns from your behavior and gets smarter ove
 | Tier | Method | Speed | How it works |
 |------|--------|-------|-------------|
 | **1. Exact Match** | In-memory cache | < 1ms | O(1) lookup against your transaction history. Instantly recognizes recurring merchants. |
-| **2. Vector Match (tenant)** | pgvector cosine search | ~10ms | Semantic matching using Gemini embeddings (768-dim). Catches variations like "AMZN" vs "Amazon.com". |
+| **2. Vector Match (tenant)** | pgvector cosine search | ~10ms | Semantic matching using 768-dim embeddings (Gemini or OpenAI). Catches variations like "AMZN" vs "Amazon.com". |
 | **3. Vector Match (global)** | Cross-tenant pgvector | ~10ms | Falls back to global embeddings, discounted by 0.92x, for new tenants with sparse data. |
-| **4. LLM Fallback** | Gemini Flash | ~500ms | Full AI classification with reasoning for truly novel transactions. |
+| **4. LLM Fallback** | Configured LLM provider (Gemini, OpenAI, or Anthropic) | ~500ms | Full AI classification with reasoning for truly novel transactions. |
 
 Every correction feeds the loop immediately — your override updates the in-memory cache and generates a new vector embedding, so the same merchant is auto-classified next time.
 
@@ -149,7 +149,7 @@ Three services. Ten asynchronous workers. Sixty endpoints. One configuration fil
             │   └── AI Embeddings: 768-dim Vectors
             │
             └─► 3rd Party Integrations:
-                ├─► AI: Gemini LLM (Classification)
+                ├─► AI: LLM provider abstraction (Gemini / OpenAI / Anthropic)
                 ├─► Banks: Plaid (Sync + Tokens)
                 ├─► Prices: TwelveData (Real-time Stocks)
                 ├─► FX: CurrencyLayer (Historical Rates)
@@ -168,9 +168,11 @@ Three commands to a running instance:
 
 ```bash
 git clone https://github.com/danielvsantos/bliss.git && cd bliss
-./scripts/setup.sh        # generates secrets, creates .env
+./scripts/setup.sh        # prompts for LLM provider, generates secrets, creates .env
 docker compose up          # pulls images and starts all services
 ```
+
+During `setup.sh` you're asked to pick an LLM provider (Gemini / OpenAI / Anthropic) and paste its API key. An LLM is required for AI classification and financial insights. See [Choosing an LLM Provider](https://blissfinance.co/docs/guides/external-services) for the full comparison.
 
 Open **http://localhost:8080** and create your account. The database is automatically migrated and seeded with reference data (countries, currencies, banks).
 
@@ -229,19 +231,32 @@ Claude Code loads the root file everywhere, plus the app-specific file when you'
 
 ---
 
-## Optional Integrations
+## Integrations
 
-Bliss works out of the box with just a database. Enable additional features by adding API keys:
+### Required: LLM provider
+
+AI classification and financial insights are powered by an LLM. Pick one — Gemini, OpenAI, or Anthropic — at setup time.
+
+| Provider | Role | Env Vars |
+|---|---|---|
+| [Google Gemini](https://ai.google.dev) | Default. Native embedding support. | `LLM_PROVIDER=gemini`, `GEMINI_API_KEY` |
+| [OpenAI](https://platform.openai.com) | Native embedding support. | `LLM_PROVIDER=openai`, `OPENAI_API_KEY` |
+| [Anthropic Claude](https://console.anthropic.com) | Best prose quality for insights. Requires a secondary provider (Gemini or OpenAI) for embeddings. | `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `EMBEDDING_PROVIDER`, matching embedding-provider key |
+
+Without an LLM configured, Tier 1 (exact match) still works for already-categorized merchants, but new merchants stay unclassified and the insights page is empty. See the [LLM provider guide](https://blissfinance.co/docs/guides/external-services) for details.
+
+### Optional integrations
+
+Enable additional features by adding API keys. All degrade gracefully if missing.
 
 | Feature | Provider | Env Var | What it unlocks |
 |---------|----------|---------|----------------|
 | Bank sync | [Plaid](https://plaid.com) | `PLAID_CLIENT_ID` | One-click bank account linking and automatic transaction sync |
-| AI classification | [Google Gemini](https://ai.google.dev) | `GEMINI_API_KEY` | 4-tier classification waterfall (vector search + LLM fallback) |
 | Stock prices | [Twelve Data](https://twelvedata.com) | `TWELVE_DATA_API_KEY` | Real-time and historical pricing for 10,000+ symbols |
 | Currency rates | [CurrencyLayer](https://currencylayer.com) | `CURRENCYLAYER_API_KEY` | Live and historical FX rates for multi-currency conversion |
 | Error tracking | [Sentry](https://sentry.io) | `SENTRY_DSN` | Production error monitoring and performance tracing |
 
-Without these keys, Bliss still provides full manual transaction management, CSV import (with rule-based classification), and portfolio management with manual valuations.
+Without the optional keys, Bliss still provides full manual transaction management, CSV import, and portfolio management with manual valuations.
 
 ---
 
@@ -251,11 +266,11 @@ Without these keys, Bliss still provides full manual transaction management, CSV
 |-------|-----------|
 | Frontend | React 18, TypeScript, Vite, TanStack Query, Recharts, shadcn/ui, Tailwind CSS, Framer Motion |
 | API | Next.js, NextAuth.js, Prisma ORM |
-| Backend | Express, BullMQ, Google Generative AI SDK |
+| Backend | Express, BullMQ, LLM adapter layer (Google Generative AI / OpenAI / Anthropic SDKs) |
 | Database | PostgreSQL 16 with pgvector extension |
 | Queue | Redis 7 via BullMQ |
 | Storage | Local filesystem (default) or Google Cloud Storage |
-| AI/ML | Gemini Flash (classification), Gemini Embedding-001 (768-dim vectors) |
+| AI/ML | Provider-agnostic adapter layer: Gemini (Flash + Embedding-001), OpenAI (gpt-4.1-mini + text-embedding-3-small), Anthropic (Claude Sonnet 4.6). 768-dim vectors across all providers. |
 | Market Data | Twelve Data |
 | Currency Rates | CurrencyLayer |
 | Banking | Plaid |

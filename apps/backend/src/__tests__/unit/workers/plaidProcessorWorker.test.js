@@ -86,7 +86,7 @@ jest.mock('../../../utils/categoryCache', () => ({
   getCategoriesForTenant: (...args) => mockGetCategoriesForTenant(...args),
 }));
 
-jest.mock('../../../services/geminiService', () => ({
+jest.mock('../../../services/llm', () => ({
   isRateLimitError: jest.fn().mockReturnValue(false),
 }));
 

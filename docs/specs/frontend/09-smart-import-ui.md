@@ -106,15 +106,21 @@ When `autoConfirmedCount > 0`, an info banner appears at the top of the review t
 **Per-row controls (flat view):**
 - **Category dropdown**: Pre-selected to `suggestedCategoryId`. Changing it calls `PUT /api/imports/:id/rows/:rowId` with the new category and sets `classificationSource: 'USER_OVERRIDE'`.
 - **Confidence badge**: Colour-coded (green/yellow/red) with source label (`EXACT_MATCH`, `VECTOR_MATCH`, `VECTOR_MATCH_GLOBAL`, `LLM`, `USER_OVERRIDE`).
-- **Status badge**: Current row status (`PENDING`, `CONFIRMED`, `DUPLICATE`, etc.).
-- **Confirm button**: Sets `status: 'CONFIRMED'`.
+- **Status badge**: Current row status. Rendered via `components/review/status-badge.tsx` — maps `POTENTIAL_DUPLICATE` to a yellow **"Possible dup"** badge (`bg-warning/10 text-warning`) and `DUPLICATE` to a red badge (`bg-destructive/10 text-destructive`).
+- **Confirm button**: Sets `status: 'CONFIRMED'`. For `POTENTIAL_DUPLICATE` rows this is the **explicit override** path — one click per row acknowledges "I've looked at this, it's a real transaction, commit it".
 - **Skip button**: Sets `status: 'SKIPPED'`.
 - **Notes popover**: Opens a text area; content saved on blur via `PUT /api/imports/:id/rows/:rowId`.
+
+**Duplicate handling — data-integrity guard:**
+
+- Rows flagged as `DUPLICATE` (exact hash match including wall-clock timestamp) are **never returned by the default `GET /api/imports/:id` query** — they're hidden from the Review UI entirely. The backend `commitWorker` also refuses to promote them. To audit these rows the caller must pass `?status=DUPLICATE` explicitly.
+- Rows flagged as `POTENTIAL_DUPLICATE` (date-only hash match) **are** shown in Review with the yellow "Possible dup" badge and a tinted row background, but are **excluded from every bulk / "Approve All" flow** (per-group approve, promote-by-description toasts, drawer "apply to all matching" prompts). A user must open or approve each flagged row individually to confirm it. This prevents accidental re-imports: a second upload of the same CSV produces a page of "Possible dup" rows that cannot be mass-committed with one click.
+- At commit time the backend enforces the same guard: only rows with `status === 'CONFIRMED'` are promoted to the `Transaction` table (see `docs/specs/backend/09-smart-import.md` §9.6, step 2). The `Transaction.externalId @unique` constraint is the final backstop.
 
 **Auto-suggest toast:**
 After confirming a row, if other unconfirmed rows share the same `suggestedCategoryId`, a toast appears:
 > "3 other transactions in 'Groceries' — Confirm All?"
-Clicking "Confirm All" bulk-confirms those rows.
+Clicking "Confirm All" bulk-confirms those rows. **`POTENTIAL_DUPLICATE` and `DUPLICATE` rows are excluded from this bulk action** even when they match the same description.
 
 **Grouped view (Accordion):**
 - One `AccordionItem` per category.
@@ -188,6 +194,8 @@ Update rows are visually distinct from create rows:
 ### Review Step — Import Summary Bar
 
 The summary bar gains an "Updates" count badge using `brand-primary` tokens: `bg-brand-primary/10 text-brand-primary border-brand-primary/20`. The count is sourced from `import.updateCount`.
+
+The **"N duplicates"** pill at the top of the review step uses `warning` tokens (`bg-warning/10 text-warning border-warning/20`) to match the per-row "Possible dup" status badge. Its count is `statusSummary['DUPLICATE'] + statusSummary['POTENTIAL_DUPLICATE']`. Keeping the summary pill and the row-level badge in the same colour family avoids the dissonance where a row looks duplicate-flagged while the summary pill suggests something neutral.
 
 ### Review Step — Status Filter
 

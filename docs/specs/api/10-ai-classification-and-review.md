@@ -2,6 +2,8 @@
 
 This module provides the API layer for reviewing, categorising, and promoting AI-classified Plaid transactions. Transactions are staged in the `PlaidTransaction` table after sync and classification; this API is how users move them into the core `Transaction` table.
 
+> **LLM provider abstraction.** The backend's classification layer supports Gemini, OpenAI, and Anthropic Claude through `services/llm/`. Historical references to "Gemini" in this spec describe the Tier 4 LLM in provider-agnostic terms — whichever provider is configured via `LLM_PROVIDER` in the deployment's environment. See [Backend Spec 20](../backend/20-llm-provider-abstraction.md).
+
 ---
 
 ## Tenant Classification Settings
@@ -119,7 +121,7 @@ The staging table for raw Plaid data, extended with AI classification and invest
 | `suggestedCategoryId` | FK to `Category` — AI or user-assigned |
 | `aiConfidence` | 0.0–1.0 score from classification pipeline |
 | `classificationSource` | `'EXACT_MATCH'` / `'VECTOR_MATCH'` / `'LLM'` / `'USER_OVERRIDE'` |
-| `classificationReasoning` | Free-text reasoning string returned by the Gemini LLM. `null` for `EXACT_MATCH` and `VECTOR_MATCH` results. Displayed in the Transaction Review deep-dive drawer. |
+| `classificationReasoning` | Free-text reasoning string returned by the configured LLM provider. `null` for `EXACT_MATCH` and `VECTOR_MATCH` results. Displayed in the Transaction Review deep-dive drawer. |
 | `promotionStatus` | `'PENDING'` / `'CLASSIFIED'` / `'PROMOTED'` / `'SKIPPED'` |
 | `matchedTransactionId` | FK to `Transaction` — set on promote |
 | `requiresEnrichment` | `true` for investment transactions that need ticker/quantity/price before promotion. Never auto-promoted regardless of confidence. |
@@ -146,7 +148,7 @@ The AI classification pipeline runs a three-tier waterfall: Exact Match → Vect
 | `EXACT_MATCH` | Description hash found in the tenant's `DescriptionMapping` table (loaded into in-memory cache) | Always `1.0` |
 | `VECTOR_MATCH` | Tenant-scoped pgvector cosine similarity match | `0.70–1.00` |
 | `VECTOR_MATCH_GLOBAL` | Cross-tenant pgvector match against GlobalEmbedding (score × 0.92 discount) | `0.64–0.92` |
-| `LLM` | Classified by the Google Gemini LLM | `0.00–0.85` (hard-capped) |
+| `LLM` | Classified by the configured LLM provider (Gemini / OpenAI / Anthropic) | `0.00–0.85` (hard-capped) |
 | `USER_OVERRIDE` | User manually changed the category (or auto-confirmed at `autoPromoteThreshold`) | `1.0` |
 
 When a transaction is confirmed (promoted, committed, or overridden), a fire-and-forget `POST /api/feedback` call is sent to the backend service, which updates the in-memory cache, the `DescriptionMapping` table (write-through), and the pgvector embedding index. This means future identical descriptions hit EXACT_MATCH instantly, and semantically-similar transactions are classified by VECTOR_MATCH instead of falling through to LLM.

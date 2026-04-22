@@ -60,8 +60,15 @@ services:
       PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
       PLAID_SECRET: ${PLAID_SECRET:-}
       PLAID_ENV: ${PLAID_ENV:-sandbox}
-      # Optional: AI
+      # AI provider (REQUIRED — gemini | openai | anthropic)
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      CLASSIFICATION_MODEL: ${CLASSIFICATION_MODEL:-}
+      INSIGHT_MODEL: ${INSIGHT_MODEL:-}
       # Optional: Sentry / OTEL
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ORG: ${SENTRY_ORG:-}
@@ -98,8 +105,15 @@ services:
       # Optional: GCS
       GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
       GCS_SERVICE_ACCOUNT_JSON: ${GCS_SERVICE_ACCOUNT_JSON:-}
-      # Optional: AI
+      # AI provider (REQUIRED — gemini | openai | anthropic)
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      CLASSIFICATION_MODEL: ${CLASSIFICATION_MODEL:-}
+      INSIGHT_MODEL: ${INSIGHT_MODEL:-}
       # Optional: Plaid
       PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:-}
       PLAID_SECRET: ${PLAID_SECRET:-}

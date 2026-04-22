@@ -7,6 +7,8 @@ This document specifies the backend architecture of the Bliss Insights engine �
 The insights engine replaces the v0 single-tier architecture (one daily cron over 6 months of data, 7 lenses, atomic batch replacement) with a four-tier model that separates cadence from depth. Each tier uses the prompt, model, data window, and LLM temperature appropriate to its purpose.
 
 > **Note — DAILY tier retired.** A fifth DAILY tier (Gemini Flash, 30-day window) shipped briefly in v1 but was removed in the insights-v1.1 refactor. Daily deltas were too noisy to produce signal — single-transaction swings inflated into dramatic percentage changes, and MONTHLY insights already covered the same observations with a full-period comparison. The Flash model path, the `generate-daily-pulse` job, and the `INSIGHT_MODEL_FAST` environment variable have all been removed.
+>
+> **Note — LLM provider abstraction.** Insight generation no longer imports the Gemini SDK directly. `insightService.js` calls `generateInsightContent()` from `services/llm/`, which dispatches to Gemini, OpenAI, or Anthropic based on the `LLM_PROVIDER` env var. The `INSIGHT_MODEL` override still works but is now interpreted as "the insight model for the active provider" (defaults: `gemini-3.1-pro-preview` for Gemini, `gpt-4.1` for OpenAI, `claude-sonnet-4-6` for Anthropic). See [Spec 20 — LLM Provider Abstraction](./20-llm-provider-abstraction.md).
 
 The pipeline is event-driven and calendar-aware:
 

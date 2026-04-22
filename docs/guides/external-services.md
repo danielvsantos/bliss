@@ -1,24 +1,33 @@
 # Choosing Your External Services
 
-Bliss works out of the box with just a database, but connecting external services unlocks its most powerful features. This guide explains what each integration does, why you might want it, and what it costs.
-
-All integrations are optional. The app detects which API keys are present and enables features accordingly.
+Bliss works out of the box with just a database, but several external integrations unlock key features. **An LLM provider is required** for AI classification and financial insights — the rest are optional.
 
 ---
 
-## Google Gemini (AI)
+## LLM Provider (REQUIRED)
 
-**What it powers:** Transaction classification and financial insights.
+**What it powers:** Transaction classification (Tier 4 of the AI waterfall) and financial insights.
 
-Gemini is used in two ways:
+Bliss uses a large language model in two ways: to categorize new, unseen transactions that don't match your existing history, and to write the monthly, quarterly, annual, and portfolio insight reports on your dashboard. Bring your own provider — pick one of three.
 
-1. **Classification (Gemini Flash)** -- When a transaction can't be matched by the in-memory cache or vector similarity search, Gemini classifies it using your existing categories as context. It also generates the 768-dimensional embeddings that power the vector similarity tier.
+| Provider | Native embeddings | Notes |
+|---|---|---|
+| **Google Gemini** | ✅ | Recommended default. Generous free tier, one key covers everything. |
+| **OpenAI** | ✅ | Good fit if you already have OpenAI billing. |
+| **Anthropic Claude** | ❌ | Best prose quality for insights. Requires a second provider (Gemini or OpenAI) for embeddings, since Anthropic does not offer an embedding API. |
 
-2. **Financial Insights (Gemini Pro)** -- Analyzes your spending patterns, portfolio exposure, income stability, and more to generate actionable insights across 7 financial lenses.
+**Plan recommendations:**
+- **Gemini free tier** — Enough for a single-user setup with CSV imports. No billing needed to get started.
+- **OpenAI pay-as-you-go** — Typical monthly cost is cents to low single-digit dollars for an active user, dominated by insights (embeddings + classifications are very cheap).
+- **Anthropic Claude Sonnet** — Slightly pricier per token than the others, but users consistently rate the insight narratives as the most natural to read.
 
-**Without Gemini:** Tier 1 (exact match) still works -- once you manually classify a transaction, the same merchant is auto-classified forever. But new, unseen merchants will remain unclassified until you review them. Insights are unavailable.
+**Setup:** `./scripts/setup.sh` prompts you to choose a provider and paste its API key on first run. If you pick Anthropic it also prompts for an embedding provider. Done.
 
-**Env var:** `GEMINI_API_KEY`
+**Switching providers later:** Safe and reversible. Edit `.env` and restart. If you change the embedding provider specifically, you also run `scripts/regenerate-embeddings.js` once to rebuild the vector index. See [Backend Spec 20 — LLM Provider Abstraction](/docs/specifications) for the full workflow.
+
+**Without an LLM:** Transactions you've already categorized still auto-match on sight (Tier 1 cache). But new merchants stay unclassified until you review them, and the insights page is empty. The rest of Bliss — transactions, portfolio, analytics, Plaid sync — keeps working normally.
+
+**Env vars:** `LLM_PROVIDER`, API key for the selected provider (`GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`), plus `EMBEDDING_PROVIDER` + its key when using Anthropic.
 
 ---
 
@@ -85,12 +94,12 @@ When your accounts span multiple currencies, Bliss needs exchange rates to norma
 
 | Service | Feature | Required? | Cost impact |
 |---------|---------|-----------|-------------|
-| Gemini | AI classification + insights | No | Free tier available |
+| LLM provider (Gemini / OpenAI / Anthropic) | AI classification + insights | **Yes** | Free tiers available from all three |
 | Twelve Data | Stock/ETF/crypto prices | No | Free tier for basics; Pro for international |
 | Plaid | Bank account sync | No | Free sandbox for testing |
 | CurrencyLayer | Exchange rates | No | Free tier available |
 
-All services degrade gracefully. Start with none, add them as you need them, and Bliss adjusts automatically.
+The optional services degrade gracefully. The LLM provider is the one hard requirement — without it, AI classification and insights are unavailable.
 
 ---
 
@@ -99,3 +108,4 @@ All services degrade gracefully. Start with none, add them as you need them, and
 - [Initial Account Setup](/docs/guides/tenant-seed-setup) -- set up your accounts and categories
 - [Importing Transactions](/docs/guides/importing-transactions) -- bring in your history via CSV
 - [AI Classification](/docs/guides/ai-classification) -- learn how the classification pipeline works
+- [Financial Insights](/docs/guides/financial-insights) -- what the insights engine does with your data

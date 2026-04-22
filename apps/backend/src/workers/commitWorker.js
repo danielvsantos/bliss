@@ -49,13 +49,14 @@ const processCommitJob = async (job) => {
 
         // ─── 3. Count promotable rows (cheap — no data loaded into heap) ─────
         const isPartialCommit = Array.isArray(rowIds) && rowIds.length > 0;
-        // Include both CONFIRMED and POTENTIAL_DUPLICATE rows. POTENTIAL_DUPLICATE
-        // rows are legitimate transactions (e.g. multiple identical commissions on the
-        // same day) that the user chose to commit — the occurrence counter on externalId
-        // ensures each one gets a unique hash so createMany doesn't silently drop them.
+        // Only CONFIRMED rows commit. POTENTIAL_DUPLICATE and DUPLICATE rows
+        // must first be explicitly confirmed through the Review UI (which flips
+        // their status to CONFIRMED). This preserves `Transaction.externalId`
+        // @unique as the ultimate defense-in-depth guard against duplicate ledger
+        // entries — any row reaching this query has passed human review.
         const rowWhere = {
             stagedImportId,
-            status: { in: ['CONFIRMED', 'POTENTIAL_DUPLICATE'] },
+            status: 'CONFIRMED',
             suggestedCategoryId: { not: null },
             ...(isPartialCommit && { id: { in: rowIds } }),
         };
@@ -101,12 +102,14 @@ const processCommitJob = async (job) => {
         const affectedAccountIds = new Set();
         const dateScopeMap = new Map(); // `${year}-${month}` → { year, month }
 
-        // Cross-batch occurrence counter: when multiple CONFIRMED rows produce the same
-        // base hash (e.g. 7 × "$1 Commission" on the same day), each gets a unique
-        // externalId: 1st → baseHash, 2nd → baseHash:2, 3rd → baseHash:3, etc.
-        // This prevents createMany({ skipDuplicates }) from silently dropping
-        // legitimate duplicate transactions the user explicitly confirmed.
-        // Lives outside the batch loop so counters persist across batches.
+        // Cross-batch occurrence counter: when multiple CONFIRMED rows in this
+        // commit share the same base hash (e.g. 7 × "$1 Commission" on the same
+        // day that the user explicitly confirmed), the 2nd+ occurrences get
+        // suffixed externalIds: 2nd → baseHash:2, 3rd → baseHash:3, etc. This
+        // is intentionally scoped to a single commit — we still want `externalId
+        // @unique` to reject re-commits of rows that were already promoted in a
+        // previous commit. Any row reaching this loop must already be CONFIRMED
+        // (duplicate-flagged rows are filtered upstream in rowWhere).
         const hashOccurrenceCount = new Map(); // baseHash → count seen so far
 
         while (true) {
@@ -360,10 +363,15 @@ const processCommitJob = async (job) => {
             }
 
             // 4e. Embedding feedback (fire-and-forget per batch)
-            // Only LLM/USER_OVERRIDE rows need new embeddings — EXACT/VECTOR already indexed.
+            // LLM/USER_OVERRIDE rows need new embeddings (novel or user-corrected).
+            // VECTOR_MATCH_GLOBAL rows also need a tenant-local embedding so future
+            // classifications hit tenant-local vector match instead of the discounted
+            // global tier. EXACT_MATCH and tenant-local VECTOR_MATCH are already indexed.
             const needsEmbedding = batch.filter(
                 (r) => r.description && r.suggestedCategoryId &&
-                    (r.classificationSource === 'LLM' || r.classificationSource === 'USER_OVERRIDE')
+                    (r.classificationSource === 'LLM' ||
+                     r.classificationSource === 'USER_OVERRIDE' ||
+                     r.classificationSource === 'VECTOR_MATCH_GLOBAL')
             );
             if (needsEmbedding.length > 0) {
                 Promise.all(

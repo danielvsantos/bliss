@@ -4,6 +4,8 @@ Internal administration endpoints for managing default categories and the cross-
 
 The admin endpoints live in the Next.js API (`apps/api`) and are documented here for cross-repo context since the backend service owns the classification pipeline that produces and consumes `GlobalEmbedding` data.
 
+> **LLM provider abstraction.** Embedding regeneration uses whichever provider is configured via `EMBEDDING_PROVIDER` (defaults to `LLM_PROVIDER`). Vectors across providers are not interchangeable — switching providers requires regenerating the index. For tenant-scoped regeneration use the `scripts/regenerate-embeddings.js` operator script; this admin endpoint targets `GlobalEmbedding` rows under a default-category code. See [Spec 20 — LLM Provider Abstraction](./20-llm-provider-abstraction.md).
+
 ---
 
 ## Authentication

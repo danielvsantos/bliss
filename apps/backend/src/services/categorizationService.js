@@ -1,7 +1,7 @@
 const { getCategoriesForTenant } = require('../utils/categoryCache');
 const { lookupDescription, addDescriptionEntry } = require('../utils/descriptionCache');
 const { computeDescriptionHash } = require('../utils/descriptionHash');
-const geminiService = require('./geminiService');
+const geminiService = require('./llm');
 const prisma = require('../../prisma/prisma');
 const logger = require('../utils/logger');
 const {

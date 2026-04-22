@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
-const { generateInsightContent } = require('./geminiService');
+const { generateInsightContent } = require('./llm');
 // IMPORTANT: the insights engine is a pure read consumer. It must NEVER
 // import getOrCreateCurrencyRate — that helper is a write-through cache that
 // hits CurrencyLayer and inserts rows into CurrencyRate on a miss. Only the

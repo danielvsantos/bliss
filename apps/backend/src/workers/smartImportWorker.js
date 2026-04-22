@@ -66,6 +66,36 @@ function buildAiFrequencyMap(entries) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DUPLICATE STATUS HELPER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Check a row's hash against the known-hash set and mutate its status when a
+ * collision is found. Rows whose source date carries a wall-clock timestamp
+ * are treated as hard duplicates (`DUPLICATE` — hidden from the Review UI by
+ * default). Date-only rows are flagged `POTENTIAL_DUPLICATE` — surfaced in
+ * the UI with a warning badge so the user can explicitly override them to
+ * CONFIRMED if they really are distinct transactions.
+ *
+ * The first occurrence of a given hash is added to the set so that subsequent
+ * rows in the same CSV with the same hash are also flagged as intra-CSV dups.
+ *
+ * @param {object} rowData — Staged row being built; status is mutated in place
+ * @param {Set<string>} hashSet — Known hashes (existing DB + prior CSV rows)
+ * @param {string} hash — This row's transaction hash
+ * @param {boolean} hasTime — True when the parsed date carried a time component
+ * @returns {boolean} true when the row was flagged as a duplicate
+ */
+function applyDuplicateStatus(rowData, hashSet, hash, hasTime) {
+    if (hashSet.has(hash)) {
+        rowData.status = hasTime ? 'DUPLICATE' : 'POTENTIAL_DUPLICATE';
+        return true;
+    }
+    hashSet.add(hash);
+    return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CLASSIFICATION HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -96,7 +126,6 @@ function applyClassificationToRowData(rowData, result, autoPromoteThreshold, cat
         rowData.status === 'PENDING'
     ) {
         rowData.status = 'CONFIRMED';
-        rowData.classificationSource = 'USER_OVERRIDE';
         return true; // signals autoConfirmed
     }
     return false;
@@ -419,15 +448,12 @@ const processSmartImportJob = async (job) => {
             const amount = row.debit || row.credit;
             if (!isNativeAdapter) {
                 const hash = computeTransactionHash(row.date, row.description, amount, accountId);
-                if (duplicateHashSet.has(hash)) {
-                    rowData.status = row.hasTime ? 'DUPLICATE' : 'POTENTIAL_DUPLICATE';
+                // Rows flagged here are still classified so the user can see the
+                // suggested category if they choose to override POTENTIAL_DUPLICATE
+                // rows to CONFIRMED. DUPLICATE rows are hidden from the UI by the
+                // GET /api/imports/[id] endpoint's default status filter.
+                if (applyDuplicateStatus(rowData, duplicateHashSet, hash, !!row.hasTime)) {
                     duplicateCount++;
-                    // Still classify so user sees category if they override to CONFIRMED
-                } else {
-                    // Track this hash so subsequent CSV rows with the same
-                    // date+description+amount+account are flagged as intra-CSV duplicates.
-                    // The first occurrence stays PENDING; the 2nd+ get POTENTIAL_DUPLICATE.
-                    duplicateHashSet.add(hash);
                 }
             }
 
@@ -517,12 +543,8 @@ const processSmartImportJob = async (job) => {
                         );
                     }
 
-                    if (acctHashSet.has(nativeHash)) {
-                        rowData.status = row.hasTime ? 'DUPLICATE' : 'POTENTIAL_DUPLICATE';
+                    if (applyDuplicateStatus(rowData, acctHashSet, nativeHash, !!row.hasTime)) {
                         duplicateCount++;
-                    } else {
-                        // Track so subsequent CSV rows with the same hash are flagged
-                        acctHashSet.add(nativeHash);
                     }
                 }
 
@@ -913,6 +935,7 @@ module.exports = {
     computeTransactionHash,
     // Exported for testing
     applyClassificationToRowData,
+    applyDuplicateStatus,
     computeUpdateDiff,
     buildAiFrequencyMap,
 };

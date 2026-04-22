@@ -11,7 +11,7 @@
 const request = require('supertest');
 
 // Mock dependencies before requiring app
-jest.mock('../../../services/geminiService', () => ({
+jest.mock('../../../services/llm', () => ({
   generateEmbedding: jest.fn(),
   classifyTransaction: jest.fn(),
 }));
@@ -28,7 +28,7 @@ jest.mock('../../../utils/logger', () => ({
 }));
 
 const app = require('../../../app');
-const geminiService = require('../../../services/geminiService');
+const geminiService = require('../../../services/llm');
 const prisma = require('../../../../prisma/prisma');
 
 const API_KEY = process.env.INTERNAL_API_KEY;

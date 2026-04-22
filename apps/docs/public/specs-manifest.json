@@ -195,5 +195,14 @@
       "backend": "docs/specs/backend/19-security-master.md",
       "frontend": "docs/specs/frontend/19-security-master.md"
     }
+  },
+  {
+    "slug": "llm-provider-abstraction",
+    "title": "LLM Provider Abstraction",
+    "description": "Factory-backed adapter layer for Gemini, OpenAI, and Anthropic with a unified contract",
+    "order": 20,
+    "layers": {
+      "backend": "docs/specs/backend/20-llm-provider-abstraction.md"
+    }
   }
 ]

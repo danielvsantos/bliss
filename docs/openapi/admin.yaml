@@ -314,22 +314,25 @@ paths:
 
   /api/admin/default-categories/{code}/regenerate-embeddings:
     post:
-      summary: Regenerate Gemini embeddings for a category
+      summary: Regenerate embeddings for a category
       description: |
-        Re-generates the Gemini embedding vectors for ALL existing GlobalEmbedding rows
-        under this code. This updates the `embedding` vector column in place — no rows
-        are created or deleted.
+        Re-generates the embedding vectors for ALL existing GlobalEmbedding rows
+        under this code using the currently configured embedding provider
+        (Gemini, OpenAI, or the one chosen via `EMBEDDING_PROVIDER`). This updates
+        the `embedding` vector column in place — no rows are created or deleted.
 
         **ONLY updates existing rows.** GlobalEmbedding rows are only created by the
         classification pipeline when real users confirm seeds against a default category.
         This endpoint never creates new rows — it only refreshes existing vectors.
 
         **Use cases:**
-        - After a Gemini model upgrade (refresh all vectors with the new model output)
+        - After an embedding model upgrade (refresh all vectors with the new model output)
+        - After switching embedding providers (see `scripts/regenerate-embeddings.js`
+          for tenant-scoped `TransactionEmbedding` rebuilds)
         - After a code rename (verify renamed rows still classify correctly)
         - Periodic quality refresh
 
-        Processing is sequential to avoid rate-limiting the Gemini API. The response is
+        Processing is sequential to avoid rate-limiting the upstream API. The response is
         synchronous — it waits for all rows to complete before returning.
       tags:
         - Admin — Default Categories
@@ -355,7 +358,7 @@ paths:
                     example: 23
                   failed:
                     type: integer
-                    description: Number of rows that failed (Gemini API errors). Check server logs for details.
+                    description: Number of rows that failed (provider API errors). Check server logs for details.
                     example: 0
                   message:
                     type: string

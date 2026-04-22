@@ -148,9 +148,26 @@ export default withAuth(async function handler(req, res) {
         });
       }
 
-      // Fire-and-forget to backend service
+      // Default the period to "current" when the client doesn't specify one.
+      // PORTFOLIO is period-agnostic. For MONTHLY/QUARTERLY/ANNUAL the backend
+      // requires year (and month/quarter), so derive them from today's date.
+      const now = new Date();
+      let resolvedYear = year ? parseInt(year, 10) : undefined;
+      let resolvedMonth = month ? parseInt(month, 10) : undefined;
+      let resolvedQuarter = quarter ? parseInt(quarter, 10) : undefined;
+      if (tier === 'MONTHLY') {
+        if (!resolvedYear) resolvedYear = now.getUTCFullYear();
+        if (!resolvedMonth) resolvedMonth = now.getUTCMonth() + 1;
+      } else if (tier === 'QUARTERLY') {
+        if (!resolvedYear) resolvedYear = now.getUTCFullYear();
+        if (!resolvedQuarter) resolvedQuarter = Math.floor(now.getUTCMonth() / 3) + 1;
+      } else if (tier === 'ANNUAL') {
+        if (!resolvedYear) resolvedYear = now.getUTCFullYear();
+      }
+
+      let backendResponse;
       try {
-        fetch(`${BACKEND_URL}/api/insights/generate`, {
+        backendResponse = await fetch(`${BACKEND_URL}/api/insights/generate`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -159,17 +176,30 @@ export default withAuth(async function handler(req, res) {
           body: JSON.stringify({
             tenantId: user.tenantId,
             tier,
-            year: year ? parseInt(year, 10) : undefined,
-            month: month ? parseInt(month, 10) : undefined,
-            quarter: quarter ? parseInt(quarter, 10) : undefined,
+            year: resolvedYear,
+            month: resolvedMonth,
+            quarter: resolvedQuarter,
             periodKey,
             force: force === true || force === 'true',
           }),
-        }).catch((err) => {
-          Sentry.captureException(err);
         });
-      } catch {
-        // Ignore — fire-and-forget
+      } catch (err) {
+        Sentry.captureException(err);
+        return res.status(StatusCodes.BAD_GATEWAY).json({
+          error: 'Failed to reach insight generation service',
+        });
+      }
+
+      if (!backendResponse.ok) {
+        const body = await backendResponse.text().catch(() => '');
+        Sentry.captureMessage('Insight dispatch rejected by backend', {
+          level: 'error',
+          extra: { status: backendResponse.status, body, tier, tenantId: user.tenantId },
+        });
+        return res.status(backendResponse.status).json({
+          error: 'Insight generation could not be enqueued',
+          details: body || undefined,
+        });
       }
 
       return res.status(StatusCodes.ACCEPTED).json({

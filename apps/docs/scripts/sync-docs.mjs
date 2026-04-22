@@ -47,6 +47,7 @@ const FEATURE_MAP = {
   'dashboard-actions':        { title: 'Dashboard Actions',          order: 16, description: 'Dashboard widgets, quick actions, and onboarding checklist' },
   'tag-analytics':            { title: 'Tag Analytics',              order: 18, description: 'Multi-tag transaction analysis with dedicated cache tables' },
   'security-master':          { title: 'Security Master & Equity Analysis', order: 19, description: 'Nightly stock fundamentals refresh, equity deep-dive with earnings and dividends' },
+  'llm-provider-abstraction': { title: 'LLM Provider Abstraction',   order: 20, description: 'Factory-backed adapter layer for Gemini, OpenAI, and Anthropic with a unified contract' },
 };
 
 // Maps feature slugs to actual filenames per layer (from docs/specs/)
@@ -70,6 +71,7 @@ const LAYER_FILES = {
   'dashboard-actions':        { frontend: '16-dashboard-actions.md' },
   'tag-analytics':            { api: '18-tag-analytics.md', backend: '18-tag-analytics.md', frontend: '18-tag-analytics.md' },
   'security-master':          { api: '19-security-master-api.md', backend: '19-security-master.md', frontend: '19-security-master.md' },
+  'llm-provider-abstraction': { backend: '20-llm-provider-abstraction.md' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────
