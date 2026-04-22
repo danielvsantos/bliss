@@ -41,15 +41,47 @@
  *   node scripts/regenerate-embeddings.js --batch=50       # batch size (default 100)
  *
  * Environment:
- *   All the usual Bliss env vars are read from .env. The script uses whichever
- *   adapter is currently configured (LLM_PROVIDER / EMBEDDING_PROVIDER).
+ *   All the usual Bliss env vars are read from .env at the repo root. The
+ *   script uses whichever adapter is currently configured (LLM_PROVIDER /
+ *   EMBEDDING_PROVIDER). Shell env vars DO NOT override the .env file — the
+ *   script uses dotenv with { override: true } so the .env is always the
+ *   source of truth. Stop your Docker stack or make sure the running backend
+ *   has the same EMBEDDING_PROVIDER configured before running this script.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * PREREQUISITES (running from the repo root on the host)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * This is a pnpm workspace. Dependencies live inside each package's own
+ * node_modules, not hoisted at the root. You need two one-time setup steps
+ * before the script can run from the host:
+ *
+ *   # 1. Install workspace dependencies
+ *   pnpm install
+ *
+ *   # 2. Build the shared package (tsup outputs consumed by apps/backend)
+ *   pnpm --filter @bliss/shared build
+ *
+ * Then run the script with NODE_PATH pointing at the backend's node_modules
+ * so dotenv, @prisma/client, the LLM SDKs, and @bliss/shared all resolve:
+ *
+ *   NODE_PATH=$(pwd)/apps/backend/node_modules \
+ *     node scripts/regenerate-embeddings.js --dry-run
+ *
+ * Alternative: run the script inside the backend Docker container where all
+ * dependencies are already installed. See docs/specs/backend/20-llm-provider-abstraction.md.
  */
 
 const path = require('path');
 
 // Load .env from repo root so DATABASE_URL and provider keys are available
-// when this script is invoked from any directory.
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+// when this script is invoked from any directory. `override: true` ensures the
+// file wins over any stale shell env vars (a common source of silent failures —
+// e.g. a shell-exported DATABASE_URL from a different project would otherwise
+// be used instead of the one matching the running Docker stack).
+require('dotenv').config({
+  path: path.resolve(__dirname, '..', '.env'),
+  override: true,
+});
 
 const prisma = require(path.resolve(__dirname, '..', 'apps', 'backend', 'prisma', 'prisma.js'));
 const { generateEmbedding } = require(path.resolve(

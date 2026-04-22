@@ -101,7 +101,7 @@ Defined in `baseAdapter.js` and applied uniformly by all adapters via `withRetry
 | Max retries | 5 | Survives one full quota window for providers with minute-scale limits |
 | Rate-limit backoff | 60s × attempt (60 → 120 → 180) | Aligns with Gemini/OpenAI/Anthropic quota-reset cadences |
 | Other errors | 1000 × 2^(attempt-1) ms (1s → 2s → 4s → 8s → 16s) | Exponential backoff for transient failures |
-| Call timeout | 30 s | Prevents infinite hangs |
+| Call timeout (classification / embedding) | 12 s | Fast calls normally finish in <5s; 12s is headroom for jitter without stalling a batch on one stuck call. The retry loop absorbs the aborted attempt. |
 | Insight timeout | 60 s | Longer prompts + longer outputs |
 
 ### Rate-limit detection

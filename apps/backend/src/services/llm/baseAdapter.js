@@ -18,8 +18,12 @@ const logger = require('../../utils/logger');
 const MAX_RETRIES = 5;                   // Survive quota windows
 const BASE_DELAY_MS = 1000;              // 1s → 2s → 4s for non-429 errors
 const RATE_LIMIT_BASE_DELAY_MS = 60_000; // 60s → 120s → 180s for 429
-const DEFAULT_CALL_TIMEOUT_MS = 30_000;  // 30s hard cap per API call
-const INSIGHT_CALL_TIMEOUT_MS = 60_000;  // 60s for insight generation (longer prompts)
+// Successful classification/embedding calls from any provider complete in well
+// under 5s. 12s gives generous headroom for transient slowness (spikes, cold
+// starts, network jitter) without stalling a whole batch on a single stuck
+// call — the retry loop absorbs the aborted attempt.
+const DEFAULT_CALL_TIMEOUT_MS = 12_000;  // 12s hard cap per classification/embedding call
+const INSIGHT_CALL_TIMEOUT_MS = 60_000;  // 60s for insight generation (longer prompts, more output)
 
 /**
  * Sleep helper for backoff delays.
