@@ -112,6 +112,11 @@ describe('commitWorker — processCommitJob', () => {
     // Re-apply default mock implementations cleared by resetAllMocks
     prisma.stagedImport.update.mockResolvedValue({});
     prisma.stagedImportRow.updateMany.mockResolvedValue({ count: 0 });
+    // Baseline: findMany returns []. Tests that need specific results chain
+    // .mockResolvedValueOnce() — they take precedence over this default.
+    // Order of findMany calls per batch: (1) pre-existing externalIds check,
+    // (2) committed-row → txId lookup (used for tag-linking + embedding FK).
+    prisma.transaction.findMany.mockResolvedValue([]);
     computeTransactionHash.mockImplementation(
       (date, desc, amount, accountId) => `hash-${desc}-${amount}-${accountId}`
     );
@@ -315,17 +320,26 @@ describe('commitWorker — processCommitJob', () => {
     prisma.stagedImportRow.findMany
       .mockResolvedValueOnce(rows)
       .mockResolvedValueOnce([]);
-    prisma.transaction.findMany.mockResolvedValueOnce([]);   // pre-existing check
+    prisma.transaction.findMany
+      .mockResolvedValueOnce([])  // pre-existing externalIds check
+      .mockResolvedValueOnce([    // committed-row → txId lookup
+        { id: 1001, externalId: 'hash-exact-10.00-1' },
+        { id: 1002, externalId: 'hash-llm-classified-20.00-1' },
+        { id: 1003, externalId: 'hash-user-override-30.00-1' },
+        { id: 1004, externalId: 'hash-vector-40.00-1' },
+      ]);
     prisma.transaction.createMany.mockResolvedValueOnce({ count: 4 });
     prisma.stagedImportRow.count.mockResolvedValueOnce(0);   // remainingCount
 
     const job = makeJob();
     await processCommitJob(job);
 
-    // recordFeedback should be called for LLM and USER_OVERRIDE rows only (2 of 4)
+    // recordFeedback should be called for LLM and USER_OVERRIDE rows only (2 of 4),
+    // and must receive the committed Transaction.id so TransactionEmbedding.transactionId
+    // gets populated (otherwise scripts/regenerate-embeddings.js can't recover plaintext).
     expect(categorizationService.recordFeedback).toHaveBeenCalledTimes(2);
-    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('llm-classified', 10, 'tenant-1');
-    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('user-override', 10, 'tenant-1');
+    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('llm-classified', 10, 'tenant-1', 1002);
+    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('user-override', 10, 'tenant-1', 1003);
   });
 
   // ─── Final status ───────────────────────────────────────────────────────

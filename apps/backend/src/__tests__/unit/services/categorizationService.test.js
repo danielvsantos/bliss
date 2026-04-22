@@ -130,5 +130,37 @@ describe('categorizationService', () => {
       await recordFeedback('', 7, 'tenant1');
       expect(addDescriptionEntry).not.toHaveBeenCalled();
     });
+
+    it('threads transactionId into the TransactionEmbedding upsert (FK populated)', async () => {
+      // Default category lookup → no defaultCategoryCode (skip GlobalEmbedding branch)
+      prisma.findUnique = undefined;
+      prisma.category = { findUnique: jest.fn().mockResolvedValue({ defaultCategoryCode: null }) };
+
+      await recordFeedback('Uber', 7, 'tenant1', 12345);
+      // Flush the fire-and-forget microtask chain
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Should have used the txId-bearing INSERT path. The query template includes
+      // the literal "transactionId" column header on that branch.
+      const calls = prisma.$executeRaw.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const sqlTemplate = calls[0][0].join(' ');
+      expect(sqlTemplate).toMatch(/"transactionId"/);
+      // The transactionId should be one of the interpolated parameters.
+      expect(calls[0]).toContain(12345);
+    });
+
+    it('uses the no-txId upsert branch when transactionId is omitted', async () => {
+      prisma.category = { findUnique: jest.fn().mockResolvedValue({ defaultCategoryCode: null }) };
+
+      await recordFeedback('Uber', 7, 'tenant1');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const calls = prisma.$executeRaw.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const sqlTemplate = calls[0][0].join(' ');
+      // The no-txId branch's template does NOT mention transactionId at all.
+      expect(sqlTemplate).not.toMatch(/"transactionId"/);
+    });
   });
 });

@@ -318,6 +318,31 @@ const processCommitJob = async (job) => {
             // Convenience alias used by tag-linking and embedding steps below
             const batchRowIds = batch.map((r) => r.id);
 
+            // Resolve rowId → committed Transaction.id for all CREATE rows that
+            // actually produced a new transaction (excludes pre-existing duplicates).
+            // Reused by both tag-linking (4e) and embedding feedback (4f) so the
+            // FK on TransactionEmbedding can be populated.
+            const externalIdToTxId = new Map();
+            const committedCreateExternalIds = committedRowIds
+                .map((rid) => rowIdToExternalId.get(rid))
+                .filter(Boolean);
+            if (committedCreateExternalIds.length > 0) {
+                const createdTransactions = await prisma.transaction.findMany({
+                    where: { externalId: { in: committedCreateExternalIds }, tenantId },
+                    select: { id: true, externalId: true },
+                });
+                for (const t of createdTransactions) externalIdToTxId.set(t.externalId, t.id);
+            }
+            const rowIdToTxId = new Map();
+            for (const row of createRows) {
+                const exId = rowIdToExternalId.get(row.id);
+                const txId = exId && externalIdToTxId.get(exId);
+                if (txId) rowIdToTxId.set(row.id, txId);
+            }
+            for (const row of updateRows) {
+                if (row.updateTargetId) rowIdToTxId.set(row.id, row.updateTargetId);
+            }
+
             // 4e. Link tags to created transactions (CREATE rows only)
             const rowsWithTags = createRows.filter(
                 (row) => row.tags && Array.isArray(row.tags) && row.tags.length > 0
@@ -327,24 +352,9 @@ const processCommitJob = async (job) => {
                 const resolvedTags = await resolveTagsByName(allTagNames, tenantId, userId);
                 const tagNameToId = new Map(resolvedTags.map((t) => [t.name, t.id]));
 
-                const externalIds = rowsWithTags.map((row) => {
-                    const date = new Date(row.transactionDate);
-                    const amount = row.debit || row.credit;
-                    return computeTransactionHash(date, row.description, amount, row.accountId);
-                });
-
-                const createdTransactions = await prisma.transaction.findMany({
-                    where: { externalId: { in: externalIds }, tenantId },
-                    select: { id: true, externalId: true },
-                });
-                const externalIdToTxId = new Map(createdTransactions.map((t) => [t.externalId, t.id]));
-
                 const tagLinks = [];
                 for (const row of rowsWithTags) {
-                    const date = new Date(row.transactionDate);
-                    const amount = row.debit || row.credit;
-                    const exId = computeTransactionHash(date, row.description, amount, row.accountId);
-                    const txId = externalIdToTxId.get(exId);
+                    const txId = rowIdToTxId.get(row.id);
                     if (!txId) continue;
 
                     for (const tagName of row.tags) {
@@ -361,6 +371,9 @@ const processCommitJob = async (job) => {
 
             // 4e. Embedding feedback (fire-and-forget per batch)
             // Only LLM/USER_OVERRIDE rows need new embeddings — EXACT/VECTOR already indexed.
+            // Pass the committed Transaction.id so TransactionEmbedding.transactionId
+            // is populated (required by scripts/regenerate-embeddings.js to recover
+            // plaintext for re-embedding when switching providers).
             const needsEmbedding = batch.filter(
                 (r) => r.description && r.suggestedCategoryId &&
                     (r.classificationSource === 'LLM' || r.classificationSource === 'USER_OVERRIDE')
@@ -369,7 +382,7 @@ const processCommitJob = async (job) => {
                 Promise.all(
                     needsEmbedding.map((row) =>
                         categorizationService
-                            .recordFeedback(row.description, row.suggestedCategoryId, tenantId)
+                            .recordFeedback(row.description, row.suggestedCategoryId, tenantId, rowIdToTxId.get(row.id) ?? null)
                             .catch((err) =>
                                 logger.warn(`[CommitWorker] Embedding feedback failed for "${row.description}": ${err.message}`)
                             )
