@@ -100,7 +100,18 @@ describe('smartImportWorker — helper functions', () => {
 
       expect(wasAutoConfirmed).toBe(true);
       expect(rowData.status).toBe('CONFIRMED');
-      expect(rowData.classificationSource).toBe('USER_OVERRIDE');
+      expect(rowData.classificationSource).toBe('EXACT_MATCH');
+    });
+
+    it('preserves AI source on auto-confirm (does not overwrite with USER_OVERRIDE)', () => {
+      const rowData = { status: 'PENDING' };
+      const result = { categoryId: 10, confidence: 0.92, source: 'VECTOR_MATCH_GLOBAL' };
+      const categoryById = makeCategoryMap();
+
+      applyClassificationToRowData(rowData, result, 0.90, categoryById);
+
+      expect(rowData.status).toBe('CONFIRMED');
+      expect(rowData.classificationSource).toBe('VECTOR_MATCH_GLOBAL');
     });
 
     it('does NOT auto-confirm when confidence < threshold', () => {

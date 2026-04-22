@@ -96,7 +96,6 @@ function applyClassificationToRowData(rowData, result, autoPromoteThreshold, cat
         rowData.status === 'PENDING'
     ) {
         rowData.status = 'CONFIRMED';
-        rowData.classificationSource = 'USER_OVERRIDE';
         return true; // signals autoConfirmed
     }
     return false;

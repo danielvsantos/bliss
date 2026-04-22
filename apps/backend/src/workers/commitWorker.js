@@ -370,13 +370,18 @@ const processCommitJob = async (job) => {
             }
 
             // 4e. Embedding feedback (fire-and-forget per batch)
-            // Only LLM/USER_OVERRIDE rows need new embeddings — EXACT/VECTOR already indexed.
+            // LLM/USER_OVERRIDE rows need new embeddings (novel or user-corrected).
+            // VECTOR_MATCH_GLOBAL rows also need a tenant-local embedding so future
+            // classifications hit tenant-local vector match instead of the discounted
+            // global tier. EXACT_MATCH and tenant-local VECTOR_MATCH are already indexed.
             // Pass the committed Transaction.id so TransactionEmbedding.transactionId
             // is populated (required by scripts/regenerate-embeddings.js to recover
             // plaintext for re-embedding when switching providers).
             const needsEmbedding = batch.filter(
                 (r) => r.description && r.suggestedCategoryId &&
-                    (r.classificationSource === 'LLM' || r.classificationSource === 'USER_OVERRIDE')
+                    (r.classificationSource === 'LLM' ||
+                     r.classificationSource === 'USER_OVERRIDE' ||
+                     r.classificationSource === 'VECTOR_MATCH_GLOBAL')
             );
             if (needsEmbedding.length > 0) {
                 Promise.all(
