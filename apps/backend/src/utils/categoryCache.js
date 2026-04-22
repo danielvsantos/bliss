@@ -17,6 +17,29 @@ const MAX_TENANTS = 500; // Safety cap — evict oldest-refreshed tenant if exce
 // LEGACY — Global category maps (backward-compatible)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// KNOWN-LARGE QUERY: fetches categories across ALL tenants for the legacy
+// analyticsWorker group→type/hint maps.  A safety cap of 50,000 rows is
+// applied; if the system grows beyond this the cache will be silently
+// partial.  Tenant-scoped callers should use getCategoriesForTenant()
+// instead, which is already bounded per tenant.
+async function _rebuildGlobalMaps() {
+  const categories = await prisma.category.findMany({ take: 50000 });
+
+  const newGroupToTypeMap = new Map();
+  const newGroupToHintMap = new Map();
+
+  for (const category of categories) {
+    newGroupToTypeMap.set(category.group, category.type);
+    newGroupToHintMap.set(category.group, category.processingHint);
+  }
+
+  groupToTypeMap = newGroupToTypeMap;
+  groupToHintMap = newGroupToHintMap;
+  lastGlobalRefresh = new Date();
+
+  return categories.length;
+}
+
 /**
  * Fetches ALL categories from the database and rebuilds the global lookup maps.
  * Used by analyticsWorker for group→type/hint resolution.
@@ -24,28 +47,53 @@ const MAX_TENANTS = 500; // Safety cap — evict oldest-refreshed tenant if exce
 async function refreshCategoryCache() {
   try {
     logger.info('Refreshing global category cache...');
-    // KNOWN-LARGE QUERY: fetches categories across ALL tenants for the legacy
-    // analyticsWorker group→type/hint maps.  A safety cap of 50,000 rows is
-    // applied; if the system grows beyond this the cache will be silently
-    // partial and a warning will be logged.  Tenant-scoped callers should use
-    // getCategoriesForTenant() instead, which is already bounded per tenant.
-    const categories = await prisma.category.findMany({ take: 50000 });
-
-    const newGroupToTypeMap = new Map();
-    const newGroupToHintMap = new Map();
-
-    for (const category of categories) {
-      newGroupToTypeMap.set(category.group, category.type);
-      newGroupToHintMap.set(category.group, category.processingHint);
-    }
-
-    groupToTypeMap = newGroupToTypeMap;
-    groupToHintMap = newGroupToHintMap;
-    lastGlobalRefresh = new Date();
-
-    logger.info(`Global category cache refreshed. Loaded ${categories.length} categories.`);
+    const loaded = await _rebuildGlobalMaps();
+    logger.info(`Global category cache refreshed. Loaded ${loaded} categories.`);
   } catch (error) {
     logger.error('Failed to refresh global category cache:', error);
+  }
+}
+
+/**
+ * Startup-only variant of refreshCategoryCache that tolerates a not-yet-migrated
+ * database. In Docker Compose the `api` container owns `prisma migrate deploy`
+ * while `backend` starts in parallel — Postgres being healthy does not mean the
+ * Bliss schema exists yet. On Prisma P2021 ("table does not exist") we retry
+ * quietly at debug level until the schema appears or maxWaitMs elapses.
+ *
+ * Any non-P2021 error falls through to the normal error log immediately.
+ */
+async function waitForSchemaAndRefresh({ maxWaitMs = 120000, retryDelayMs = 2000 } = {}) {
+  const start = Date.now();
+  let attempt = 0;
+  logger.info('Refreshing global category cache...');
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    attempt += 1;
+    try {
+      const loaded = await _rebuildGlobalMaps();
+      logger.info(`Global category cache refreshed. Loaded ${loaded} categories.`);
+      return;
+    } catch (error) {
+      const schemaMissing = error && error.code === 'P2021';
+      const elapsed = Date.now() - start;
+      if (schemaMissing && elapsed < maxWaitMs) {
+        logger.debug(
+          `[categoryCache] schema not yet ready (attempt ${attempt}, ${elapsed}ms elapsed), retrying in ${retryDelayMs}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      if (schemaMissing) {
+        logger.error(
+          `Failed to refresh global category cache: schema still not ready after ${maxWaitMs}ms`,
+          error
+        );
+      } else {
+        logger.error('Failed to refresh global category cache:', error);
+      }
+      return;
+    }
   }
 }
 
@@ -163,6 +211,7 @@ module.exports = {
   // Legacy (backward-compatible)
   getCategoryMaps,
   refreshCategoryCache,
+  waitForSchemaAndRefresh,
   // Tenant-scoped (Sprint 3+)
   getCategoriesForTenant,
   invalidateTenantCategories,

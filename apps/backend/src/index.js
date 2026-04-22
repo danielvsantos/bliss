@@ -12,7 +12,7 @@ const { startInsightGeneratorWorker } = require('./workers/insightGeneratorWorke
 const { startSecurityMasterWorker } = require('./workers/securityMasterWorker');
 const { initializeRedis, disconnectRedis } = require('./utils/redis');
 const logger = require('./utils/logger');
-const { refreshCategoryCache } = require('./utils/categoryCache');
+const { waitForSchemaAndRefresh } = require('./utils/categoryCache');
 const { validateEnv } = require('./utils/validateEnv');
 
 const PORT = process.env.PORT || 3001;
@@ -60,8 +60,10 @@ const startServer = async () => {
 
         // 3. Start Express Server if mode is 'web' or 'all'
         if (startMode === 'web' || startMode === 'all') {
-            // Initial data cache refresh
-            await refreshCategoryCache();
+            // Initial data cache refresh. In Docker Compose the api container
+            // runs `prisma migrate deploy` in parallel with backend startup, so
+            // the Category table may not exist yet — retry quietly until it does.
+            await waitForSchemaAndRefresh();
 
             app.listen(PORT, () => {
                 logger.info(`Bliss Backend Service listening on port ${PORT}`);

@@ -8,15 +8,18 @@ jest.mock('../../../utils/logger', () => ({
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
+  debug: jest.fn(),
 }));
 
 const prisma = require('../../../../prisma/prisma');
+const logger = require('../../../utils/logger');
 const {
   getCategoriesForTenant,
   invalidateTenantCategories,
   clearAllTenantCaches,
   getCategoryMaps,
   refreshCategoryCache,
+  waitForSchemaAndRefresh,
 } = require('../../../utils/categoryCache');
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -257,6 +260,64 @@ describe('categoryCache', () => {
       expect(maps.groupToHintMap.get('Food')).toBe('API_STOCK');
       expect(maps.groupToHintMap.get('Income')).toBeNull();
       expect(maps.groupToHintMap.get('Crypto')).toBe('API_CRYPTO');
+    });
+  });
+
+  // ─── waitForSchemaAndRefresh ─────────────────────────────────────────────
+
+  describe('waitForSchemaAndRefresh', () => {
+    // Use real timers here because the retry loop's own setTimeout must actually
+    // advance; mixing jest.useFakeTimers() with an awaited delay deadlocks.
+    beforeEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('retries on Prisma P2021 and succeeds once the schema appears', async () => {
+      const p2021 = Object.assign(new Error('table does not exist'), { code: 'P2021' });
+      const categories = [
+        { group: 'Food', type: 'EXPENSE', processingHint: null },
+      ];
+
+      prisma.category.findMany
+        .mockRejectedValueOnce(p2021)
+        .mockRejectedValueOnce(p2021)
+        .mockResolvedValueOnce(categories);
+
+      await waitForSchemaAndRefresh({ maxWaitMs: 5000, retryDelayMs: 5 });
+
+      expect(prisma.category.findMany).toHaveBeenCalledTimes(3);
+      // P2021 retries log at debug level, not error
+      expect(logger.debug).toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+      // Final success logs the loaded count
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Global category cache refreshed. Loaded 1 categories.')
+      );
+    });
+
+    it('gives up loudly when schema never becomes ready within maxWaitMs', async () => {
+      const p2021 = Object.assign(new Error('table does not exist'), { code: 'P2021' });
+      prisma.category.findMany.mockRejectedValue(p2021);
+
+      await waitForSchemaAndRefresh({ maxWaitMs: 20, retryDelayMs: 5 });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('schema still not ready'),
+        p2021
+      );
+    });
+
+    it('reports non-P2021 errors immediately without retrying', async () => {
+      const other = new Error('connection refused');
+      prisma.category.findMany.mockRejectedValue(other);
+
+      await waitForSchemaAndRefresh({ maxWaitMs: 5000, retryDelayMs: 5 });
+
+      expect(prisma.category.findMany).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to refresh global category cache:',
+        other
+      );
     });
   });
 });
