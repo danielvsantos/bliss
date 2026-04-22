@@ -15,7 +15,7 @@ git clone https://github.com/danielvsantos/bliss.git && cd bliss
 docker compose up           # pulls images and starts all 5 services
 ```
 
-During `setup.sh` you'll be asked to pick an LLM provider (Gemini / OpenAI / Anthropic) and paste its API key. An LLM is required for AI classification and financial insights — without one, new transactions won't be auto-categorized. You can skip the key prompt and add it to `.env` later, but the app will run in degraded mode until you do. See [Choosing an LLM Provider](/docs/guides/llm-providers) for the comparison.
+During `setup.sh` you'll be asked to pick an LLM provider (Gemini / OpenAI / Anthropic) and paste its API key. An LLM is required for AI classification and financial insights — without one, new transactions won't be auto-categorized. You can skip the key prompt and add it to `.env` later, but the app will run in degraded mode until you do. See [Choosing Your External Services](/docs/guides/external-services) for the comparison.
 
 Open [http://localhost:8080](http://localhost:8080) once all containers are healthy. The database is auto-migrated and seeded with reference data (countries, currencies, banks) on first boot.
 
@@ -120,7 +120,7 @@ pnpm dev                    # starts all services
 
 ## Next steps
 
-- [Choosing an LLM Provider](/docs/guides/llm-providers) -- required for AI classification and insights (Gemini, OpenAI, or Anthropic)
+- [Choosing Your External Services](/docs/guides/external-services) -- required for AI classification and insights (Gemini, OpenAI, or Anthropic)
 - [Initial Account Setup](/docs/guides/tenant-seed-setup) -- set up accounts, banks, and categories
 - [Choosing Your External Services](/docs/guides/external-services) -- configure Twelve Data, Plaid, CurrencyLayer
 - [Import transactions](/docs/guides/importing-transactions) -- bring in your CSV/XLSX data

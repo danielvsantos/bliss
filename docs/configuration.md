@@ -25,7 +25,7 @@ The one required integration is an **LLM provider** for AI classification and in
 | Currency rates | No | `CURRENCYLAYER_API_KEY` | Automatic FX rate fetching |
 | Observability | No | `SENTRY_DSN` | Error tracking |
 
-See [Choosing an LLM Provider](/docs/guides/llm-providers) for picking and configuring an LLM. Optional integrations can be added any time.
+See [Choosing Your External Services](/docs/guides/external-services) for picking and configuring an LLM. Optional integrations can be added any time.
 
 ---
 
@@ -106,7 +106,7 @@ Plaid integration is optional. CSV import works without it. To enable bank-accou
 
 Bliss supports three LLM providers for transaction classification and financial insights: **Google Gemini**, **OpenAI**, and **Anthropic Claude**. An LLM provider is required for AI classification and insights. Pick one in `.env`.
 
-See the [Choosing an LLM Provider](/docs/guides/llm-providers) guide for per-provider setup, model overrides, and switching workflows.
+See the [Choosing Your External Services](/docs/guides/external-services) guide for per-provider setup, model overrides, and switching workflows.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|

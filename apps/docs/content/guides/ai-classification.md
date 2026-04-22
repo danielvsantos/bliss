@@ -33,7 +33,7 @@ LLM_PROVIDER=gemini
 GEMINI_API_KEY=your_api_key
 ```
 
-See [Choosing an LLM Provider](/docs/guides/llm-providers) for full setup details, model overrides, and the Anthropic dual-provider pattern.
+See [Choosing Your External Services](/docs/guides/external-services) for full setup details, model overrides, and the Anthropic dual-provider pattern.
 
 Without a configured provider, unmatched transactions remain unclassified for manual review — the rest of the app keeps working.
 
@@ -65,6 +65,6 @@ Once classified, your transactions power the expense tracking dashboard with cat
 
 ## Next steps
 
-- [Choosing an LLM Provider](/docs/guides/llm-providers) — full provider comparison, configuration, and switching guide
+- [Choosing Your External Services](/docs/guides/external-services) — full provider comparison, configuration, and switching guide
 - [Importing transactions](/docs/guides/importing-transactions) — the review flow where you train the AI
 - Explore the [AI Classification spec](/docs/specifications) for full technical details

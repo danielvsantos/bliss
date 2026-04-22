@@ -33,9 +33,9 @@ LLM_PROVIDER=gemini            # or openai, or anthropic
 GEMINI_API_KEY=your_api_key
 ```
 
-See [Choosing an LLM Provider](/docs/guides/llm-providers) for full provider setup details.
+See [Choosing Your External Services](/docs/guides/external-services) for full provider setup details.
 
-The insights tier uses whichever model is configured for your provider (per-provider defaults are documented in the [LLM providers guide](/docs/guides/llm-providers#supported-providers)). You can override via env var:
+The insights tier uses whichever model is configured for your provider (per-provider defaults are documented in [Choosing Your External Services](/docs/guides/external-services)). You can override via env var:
 
 ```env
 INSIGHT_MODEL=gpt-4.1          # override the active provider's default insight model
@@ -77,7 +77,7 @@ Expired insights are cleaned up via the TTL retention service.
 
 ## Next steps
 
-- [Choosing an LLM Provider](/docs/guides/llm-providers) — which LLM to use for insights
+- [Choosing Your External Services](/docs/guides/external-services) — which LLM to use for insights
 - [AI Classification](/docs/guides/ai-classification) — insight quality depends on accurate classification
 - [Investment Portfolios](/docs/guides/investment-portfolios) — the portfolio tier uses SecurityMaster fundamentals
 - Explore the [Insights spec](/docs/specifications) for full technical details

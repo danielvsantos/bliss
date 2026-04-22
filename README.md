@@ -172,7 +172,7 @@ git clone https://github.com/danielvsantos/bliss.git && cd bliss
 docker compose up          # pulls images and starts all services
 ```
 
-During `setup.sh` you're asked to pick an LLM provider (Gemini / OpenAI / Anthropic) and paste its API key. An LLM is required for AI classification and financial insights. See [Choosing an LLM Provider](https://blissfinance.co/docs/guides/llm-providers) for the full comparison.
+During `setup.sh` you're asked to pick an LLM provider (Gemini / OpenAI / Anthropic) and paste its API key. An LLM is required for AI classification and financial insights. See [Choosing an LLM Provider](https://blissfinance.co/docs/guides/external-services) for the full comparison.
 
 Open **http://localhost:8080** and create your account. The database is automatically migrated and seeded with reference data (countries, currencies, banks).
 
@@ -243,7 +243,7 @@ AI classification and financial insights are powered by an LLM. Pick one — Gem
 | [OpenAI](https://platform.openai.com) | Native embedding support. | `LLM_PROVIDER=openai`, `OPENAI_API_KEY` |
 | [Anthropic Claude](https://console.anthropic.com) | Best prose quality for insights. Requires a secondary provider (Gemini or OpenAI) for embeddings. | `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `EMBEDDING_PROVIDER`, matching embedding-provider key |
 
-Without an LLM configured, Tier 1 (exact match) still works for already-categorized merchants, but new merchants stay unclassified and the insights page is empty. See the [LLM provider guide](https://blissfinance.co/docs/guides/llm-providers) for details.
+Without an LLM configured, Tier 1 (exact match) still works for already-categorized merchants, but new merchants stay unclassified and the insights page is empty. See the [LLM provider guide](https://blissfinance.co/docs/guides/external-services) for details.
 
 ### Optional integrations
 
