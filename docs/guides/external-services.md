@@ -4,146 +4,30 @@ Bliss works out of the box with just a database, but several external integratio
 
 ---
 
-## LLM provider (REQUIRED)
+## LLM Provider (REQUIRED)
 
-**What it powers:** Transaction classification (Tier 4 of the waterfall) and financial insights.
+**What it powers:** Transaction classification (Tier 4 of the AI waterfall) and financial insights.
 
-Bliss needs an LLM to do two things it cannot work without: classify transactions it has never seen before, and generate the financial insights that show up on your dashboard. Without one of the three supported providers configured, new merchants stay unclassified until you review them by hand, and the insights page stays empty.
+Bliss uses a large language model in two ways: to categorize new, unseen transactions that don't match your existing history, and to write the monthly, quarterly, annual, and portfolio insight reports on your dashboard. Bring your own provider — pick one of three.
 
-### Supported providers
-
-| Provider | Embeddings | Classification | Insights | Notes |
-|---|---|---|---|---|
-| **Google Gemini** | `gemini-embedding-001` (3072-dim native, projected to 768) | `gemini-3-flash-preview` | `gemini-3.1-pro-preview` | Recommended for new installs. Native embedding support keeps setup to a single key. |
-| **OpenAI** | `text-embedding-3-small` (1536-dim native, projected to 768) | `gpt-4.1-mini` | `gpt-4.1` | Native embedding support. Good fit if you already have OpenAI billing set up. |
-| **Anthropic Claude** | *(no embedding API)* | `claude-sonnet-4-6` | `claude-sonnet-4-6` | Best prose quality for insights, but requires a second provider for embeddings. |
-
-All three providers produce 768-dimensional embeddings and return classifications in the same JSON shape. Switching providers does not change any API contracts or database schema.
-
-### Quick decision guide
-
-Pick **Gemini** if:
-- You want the simplest setup (one key, one provider, done).
-- You are running Bliss on a free tier and want the most generous free quota.
-
-Pick **OpenAI** if:
-- You already have an OpenAI account and billing you trust.
-- You prefer OpenAI's classification behavior.
-
-Pick **Anthropic Claude** if:
-- You want the highest-quality prose for monthly, quarterly, and annual insight reports.
-- You are comfortable configuring a second provider for embeddings.
-
-### Configuration
-
-All configuration happens in `.env`. There are no per-tenant settings and no database migrations involved.
-
-**Gemini (default)**
-```env
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=...
-```
-
-**OpenAI**
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-```
-
-**Anthropic Claude**
-
-Anthropic does not expose an embedding API. You must configure a secondary provider (Gemini or OpenAI) for embeddings:
-```env
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-
-EMBEDDING_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-```
-
-If you forget to set `EMBEDDING_PROVIDER`, Bliss fails loudly at startup with a clear error message. The app will not run in a broken state.
-
-### Model overrides
-
-Each slot has a sensible default, but you can override any of them:
-
-```env
-EMBEDDING_MODEL=text-embedding-3-large
-CLASSIFICATION_MODEL=gpt-4.1
-INSIGHT_MODEL=gpt-4.1
-```
-
-Model overrides are honored by whichever adapter is active. Omit them unless you need to pin a specific model version.
-
-### Interactive setup
-
-The `./scripts/setup.sh` script prompts you for an LLM provider as part of the first-run flow, before it generates your secrets. If you pick Anthropic it follows up with an embedding-provider prompt. The chosen provider and key(s) are written into `.env` automatically.
-
-If you already have a `.env` and want to switch providers, edit the file directly — `setup.sh` will not overwrite an existing `.env`.
-
-### Switching providers later
-
-Switching is safe and reversible. The exact steps depend on what you're changing.
-
-**Changing only the classification / insights provider**
-
-For example, moving from Gemini to Anthropic while keeping Gemini for embeddings:
-
-```env
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-EMBEDDING_PROVIDER=gemini
-# GEMINI_API_KEY is already set
-```
-
-Restart the `api` and `backend` services. New classifications and insights use the new provider immediately. Existing embeddings stay valid because the embedding provider didn't change.
-
-**Changing the embedding provider**
-
-Vectors from one provider aren't comparable with vectors from another — even at the same dimensionality. When you switch `EMBEDDING_PROVIDER`, the stored embeddings become stale and Tier 2/3 vector search starts returning nonsense until the index is rebuilt.
-
-The workflow mirrors encryption key rotation:
-
-1. Update `.env` with the new `EMBEDDING_PROVIDER` (and its API key).
-2. Restart `api` and `backend`.
-3. Run the re-embed script:
-
-```bash
-# Dry run first — counts rows without calling the API
-node scripts/regenerate-embeddings.js --dry-run
-
-# Full rebuild
-node scripts/regenerate-embeddings.js
-
-# One tenant at a time
-node scripts/regenerate-embeddings.js --tenant=<tenantId>
-```
-
-The script is idempotent — safe to re-run after a crash.
-
-### Graceful degradation
-
-If the LLM provider's API key is unset or invalid:
-
-- **Tier 1 (exact match) still works.** Every merchant you have already classified is recognized instantly.
-- **Tier 2/3 (vector search) is disabled** for embedding failures — new unseen merchants cannot be matched semantically.
-- **Tier 4 (LLM) is disabled.** Unseen merchants remain unclassified until you review them manually.
-- **Insights are unavailable.** The insights page stays empty.
-
-No data is lost, and the rest of the app (transactions, portfolio, analytics) continues working normally.
-
-### Troubleshooting
-
-| Symptom | Cause | Fix |
+| Provider | Native embeddings | Notes |
 |---|---|---|
-| `LLM_PROVIDER=anthropic requires EMBEDDING_PROVIDER to be set explicitly` | You set Anthropic but didn't configure a secondary embedding provider | Add `EMBEDDING_PROVIDER=gemini` (or `openai`) plus the matching API key |
-| `EMBEDDING_PROVIDER cannot be anthropic` | Tried to use Anthropic for embeddings | Use Gemini or OpenAI for this slot |
-| Vector search returns bad matches after switching providers | Changed `EMBEDDING_PROVIDER` but didn't rebuild the index | Run `node scripts/regenerate-embeddings.js` |
-| Rate-limit errors in logs | Hit provider quota | Adapters retry with minute-scale backoff automatically. If persistent, upgrade plan or lower `PHASE2_CONCURRENCY` in `apps/backend/src/config/classificationConfig.js` |
+| **Google Gemini** | ✅ | Recommended default. Generous free tier, one key covers everything. |
+| **OpenAI** | ✅ | Good fit if you already have OpenAI billing. |
+| **Anthropic Claude** | ❌ | Best prose quality for insights. Requires a second provider (Gemini or OpenAI) for embeddings, since Anthropic does not offer an embedding API. |
 
-**Env vars (summary):** `LLM_PROVIDER`, `EMBEDDING_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, plus optional `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL`.
+**Plan recommendations:**
+- **Gemini free tier** — Enough for a single-user setup with CSV imports. No billing needed to get started.
+- **OpenAI pay-as-you-go** — Typical monthly cost is cents to low single-digit dollars for an active user, dominated by insights (embeddings + classifications are very cheap).
+- **Anthropic Claude Sonnet** — Slightly pricier per token than the others, but users consistently rate the insight narratives as the most natural to read.
 
-For the full technical details of the adapter layer, see [Backend Spec 20 — LLM Provider Abstraction](/docs/specifications).
+**Setup:** `./scripts/setup.sh` prompts you to choose a provider and paste its API key on first run. If you pick Anthropic it also prompts for an embedding provider. Done.
+
+**Switching providers later:** Safe and reversible. Edit `.env` and restart. If you change the embedding provider specifically, you also run `scripts/regenerate-embeddings.js` once to rebuild the vector index. See [Backend Spec 20 — LLM Provider Abstraction](/docs/specifications) for the full workflow.
+
+**Without an LLM:** Transactions you've already categorized still auto-match on sight (Tier 1 cache). But new merchants stay unclassified until you review them, and the insights page is empty. The rest of Bliss — transactions, portfolio, analytics, Plaid sync — keeps working normally.
+
+**Env vars:** `LLM_PROVIDER`, API key for the selected provider (`GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`), plus `EMBEDDING_PROVIDER` + its key when using Anthropic.
 
 ---
 
