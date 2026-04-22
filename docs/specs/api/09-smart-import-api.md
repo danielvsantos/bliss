@@ -77,12 +77,12 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
 - **`seedReady` field**: When the worker finishes and `StagedImport.seedReady === true`, the response includes this flag. The frontend uses it to gate the Quick Classify step — the status transition to `'review'` is intentionally blocked when `seedReady=true` so the seeds can be presented first.
 - **Query params**:
   - `?page` (default 1), `?limit` (default 50, max 200)
-  - `?status` — filter by row status. Accepts a **single value** (e.g. `status=CONFIRMED`) or a **comma-separated list** (e.g. `status=STAGED,POTENTIAL_DUPLICATE`). When multiple values are provided, the query uses an `IN` clause.
+  - `?status` — filter by row status. Accepts a **single value** (e.g. `status=CONFIRMED`) or a **comma-separated list** (e.g. `status=STAGED,POTENTIAL_DUPLICATE`). When multiple values are provided, the query uses an `IN` clause. **When omitted, the endpoint defaults to `['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED']` — `DUPLICATE` (hard duplicate with a wall-clock timestamp match) and `SKIPPED` rows are deliberately hidden** so duplicate-flagged rows can never reach the Review UI as committable. Callers that need to audit those rows must opt in explicitly (e.g. `?status=DUPLICATE`).
   - `?categoryId` — optional integer. Filters rows to a single `suggestedCategoryId`. Used by the grouped-view to paginate within one category group without re-fetching all rows.
 - **Response**: `{ import, rows, categorySummary, pagination }`:
   - `import` — the `StagedImport` record, including a `statusSummary` map of `{ PENDING: N, CONFIRMED: N, STAGED: N, POTENTIAL_DUPLICATE: N, ... }` and `earliestTransactionDate`.
   - `rows` — paginated `StagedImportRow` records, each enriched with `suggestedCategory: { id, name, group, type }`.
-  - `categorySummary` — **server-side groupBy across all pending rows** (regardless of the current page). Each entry is `{ categoryId, category: { id, name, group, type }, count }`, sorted descending by count. Computed against `status IN [STAGED, POTENTIAL_DUPLICATE]` so unconfirmed rows that need action are always represented. Used by the grouped-view headers to show accurate cross-page totals without additional requests.
+  - `categorySummary` — **server-side groupBy across all pending rows** (regardless of the current page). Each entry is `{ categoryId, category: { id, name, group, type }, count }`, sorted descending by count. Computed against the same status filter used for `rows` (default excludes `DUPLICATE` and `SKIPPED`), so grouped-view headers always match the items visible in the paginated list. Used to show accurate cross-page totals without additional requests.
   - `pagination` — `{ page, limit, total, totalPages }`.
 - **Polling**: The frontend polls this endpoint every 2 seconds while `import.status === 'PROCESSING'`.
 
@@ -133,7 +133,7 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
   2. Sets `StagedImport.status = 'COMMITTING'` and `progress = 0`.
   3. Dispatches a `SMART_IMPORT_COMMIT` event to the backend service via `produceEvent()`.
   4. Returns `202 Accepted` immediately.
-- **Body (optional)**: `{ rowIds: string[] }` — partial commit; if omitted, all CONFIRMED rows are promoted.
+- **Body (optional)**: `{ rowIds: string[] }` — partial commit; if omitted, every row with `status === 'CONFIRMED'` is promoted. `POTENTIAL_DUPLICATE` and `DUPLICATE` rows are **never** promoted regardless of `rowIds` — the user must first override them to `CONFIRMED` via `PUT /api/imports/:id/rows/:rowId`. This is the data-integrity guard that prevents accidental re-imports from silently landing in the `Transaction` table.
 - **Response**: `202 { status: 'COMMITTING', message: 'Commit process started. Poll for progress.' }`
 - **Error handling**: If `produceEvent()` fails, the status is reverted to `READY` (with `progress: 100`) and the endpoint returns `500 { error: 'Failed to start commit process' }`.
 - **Frontend polling**: The frontend polls `GET /api/imports/:id` while `status === 'COMMITTING'`. The backend `commitWorker` updates `StagedImport.progress` (0→85% batch processing, 90% embeddings, 100% done) and stores the final result in `StagedImport.errorDetails.commitResult` as `{ transactionCount: N, remaining: M }`.

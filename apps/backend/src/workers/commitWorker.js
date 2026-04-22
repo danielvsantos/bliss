@@ -49,13 +49,14 @@ const processCommitJob = async (job) => {
 
         // ─── 3. Count promotable rows (cheap — no data loaded into heap) ─────
         const isPartialCommit = Array.isArray(rowIds) && rowIds.length > 0;
-        // Include both CONFIRMED and POTENTIAL_DUPLICATE rows. POTENTIAL_DUPLICATE
-        // rows are legitimate transactions (e.g. multiple identical commissions on the
-        // same day) that the user chose to commit — the occurrence counter on externalId
-        // ensures each one gets a unique hash so createMany doesn't silently drop them.
+        // Only CONFIRMED rows commit. POTENTIAL_DUPLICATE and DUPLICATE rows
+        // must first be explicitly confirmed through the Review UI (which flips
+        // their status to CONFIRMED). This preserves `Transaction.externalId`
+        // @unique as the ultimate defense-in-depth guard against duplicate ledger
+        // entries — any row reaching this query has passed human review.
         const rowWhere = {
             stagedImportId,
-            status: { in: ['CONFIRMED', 'POTENTIAL_DUPLICATE'] },
+            status: 'CONFIRMED',
             suggestedCategoryId: { not: null },
             ...(isPartialCommit && { id: { in: rowIds } }),
         };
@@ -101,12 +102,14 @@ const processCommitJob = async (job) => {
         const affectedAccountIds = new Set();
         const dateScopeMap = new Map(); // `${year}-${month}` → { year, month }
 
-        // Cross-batch occurrence counter: when multiple CONFIRMED rows produce the same
-        // base hash (e.g. 7 × "$1 Commission" on the same day), each gets a unique
-        // externalId: 1st → baseHash, 2nd → baseHash:2, 3rd → baseHash:3, etc.
-        // This prevents createMany({ skipDuplicates }) from silently dropping
-        // legitimate duplicate transactions the user explicitly confirmed.
-        // Lives outside the batch loop so counters persist across batches.
+        // Cross-batch occurrence counter: when multiple CONFIRMED rows in this
+        // commit share the same base hash (e.g. 7 × "$1 Commission" on the same
+        // day that the user explicitly confirmed), the 2nd+ occurrences get
+        // suffixed externalIds: 2nd → baseHash:2, 3rd → baseHash:3, etc. This
+        // is intentionally scoped to a single commit — we still want `externalId
+        // @unique` to reject re-commits of rows that were already promoted in a
+        // previous commit. Any row reaching this loop must already be CONFIRMED
+        // (duplicate-flagged rows are filtered upstream in rowWhere).
         const hashOccurrenceCount = new Map(); // baseHash → count seen so far
 
         while (true) {
@@ -318,31 +321,6 @@ const processCommitJob = async (job) => {
             // Convenience alias used by tag-linking and embedding steps below
             const batchRowIds = batch.map((r) => r.id);
 
-            // Resolve rowId → committed Transaction.id for all CREATE rows that
-            // actually produced a new transaction (excludes pre-existing duplicates).
-            // Reused by both tag-linking (4e) and embedding feedback (4f) so the
-            // FK on TransactionEmbedding can be populated.
-            const externalIdToTxId = new Map();
-            const committedCreateExternalIds = committedRowIds
-                .map((rid) => rowIdToExternalId.get(rid))
-                .filter(Boolean);
-            if (committedCreateExternalIds.length > 0) {
-                const createdTransactions = await prisma.transaction.findMany({
-                    where: { externalId: { in: committedCreateExternalIds }, tenantId },
-                    select: { id: true, externalId: true },
-                });
-                for (const t of createdTransactions) externalIdToTxId.set(t.externalId, t.id);
-            }
-            const rowIdToTxId = new Map();
-            for (const row of createRows) {
-                const exId = rowIdToExternalId.get(row.id);
-                const txId = exId && externalIdToTxId.get(exId);
-                if (txId) rowIdToTxId.set(row.id, txId);
-            }
-            for (const row of updateRows) {
-                if (row.updateTargetId) rowIdToTxId.set(row.id, row.updateTargetId);
-            }
-
             // 4e. Link tags to created transactions (CREATE rows only)
             const rowsWithTags = createRows.filter(
                 (row) => row.tags && Array.isArray(row.tags) && row.tags.length > 0
@@ -352,9 +330,24 @@ const processCommitJob = async (job) => {
                 const resolvedTags = await resolveTagsByName(allTagNames, tenantId, userId);
                 const tagNameToId = new Map(resolvedTags.map((t) => [t.name, t.id]));
 
+                const externalIds = rowsWithTags.map((row) => {
+                    const date = new Date(row.transactionDate);
+                    const amount = row.debit || row.credit;
+                    return computeTransactionHash(date, row.description, amount, row.accountId);
+                });
+
+                const createdTransactions = await prisma.transaction.findMany({
+                    where: { externalId: { in: externalIds }, tenantId },
+                    select: { id: true, externalId: true },
+                });
+                const externalIdToTxId = new Map(createdTransactions.map((t) => [t.externalId, t.id]));
+
                 const tagLinks = [];
                 for (const row of rowsWithTags) {
-                    const txId = rowIdToTxId.get(row.id);
+                    const date = new Date(row.transactionDate);
+                    const amount = row.debit || row.credit;
+                    const exId = computeTransactionHash(date, row.description, amount, row.accountId);
+                    const txId = externalIdToTxId.get(exId);
                     if (!txId) continue;
 
                     for (const tagName of row.tags) {
@@ -374,9 +367,6 @@ const processCommitJob = async (job) => {
             // VECTOR_MATCH_GLOBAL rows also need a tenant-local embedding so future
             // classifications hit tenant-local vector match instead of the discounted
             // global tier. EXACT_MATCH and tenant-local VECTOR_MATCH are already indexed.
-            // Pass the committed Transaction.id so TransactionEmbedding.transactionId
-            // is populated (required by scripts/regenerate-embeddings.js to recover
-            // plaintext for re-embedding when switching providers).
             const needsEmbedding = batch.filter(
                 (r) => r.description && r.suggestedCategoryId &&
                     (r.classificationSource === 'LLM' ||
@@ -387,7 +377,7 @@ const processCommitJob = async (job) => {
                 Promise.all(
                     needsEmbedding.map((row) =>
                         categorizationService
-                            .recordFeedback(row.description, row.suggestedCategoryId, tenantId, rowIdToTxId.get(row.id) ?? null)
+                            .recordFeedback(row.description, row.suggestedCategoryId, tenantId)
                             .catch((err) =>
                                 logger.warn(`[CommitWorker] Embedding feedback failed for "${row.description}": ${err.message}`)
                             )

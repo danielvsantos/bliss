@@ -66,10 +66,11 @@ BullMQ singleton, registered in `src/index.js` via `startSmartImportWorker()`. T
 5. **Build duplicate hash set** — Queries existing `Transaction` records for the target account within the batch's date range (with a 1-day buffer on each side for timezone edge cases; falls back to a 90-day window when no dates are available). Computes SHA-256 hashes and loads into an in-memory `Set`. For native adapters, duplicate sets are built per-account lazily as each unique `accountId` is encountered.
 6. **First pass — validate, dedup, and native classification** — For each parsed row, builds a `rowData` object and:
    - Validates required fields (`date`, `debit`/`credit`). Missing fields → `status: 'ERROR'`.
-   - Computes the dedup hash and checks against the hash set:
-     - Exact match → `status: 'DUPLICATE'`
-     - Time-ambiguous match (no time component in the date) → `status: 'POTENTIAL_DUPLICATE'`
-     - No match → `status: 'PENDING'`
+   - Computes the dedup hash and checks against the hash set via the `applyDuplicateStatus()` helper:
+     - Exact match with a wall-clock timestamp on the parsed date → `status: 'DUPLICATE'` (hard duplicate; hidden from the Review UI by default — see [GET /api/imports/[id]](../api/09-smart-import-api.md))
+     - Match on date-only (no time component) → `status: 'POTENTIAL_DUPLICATE'` (surfaced in Review with a warning badge so the user can explicitly override to CONFIRMED if it really is a distinct transaction)
+     - No match → `status: 'PENDING'` and the hash is added to the set so subsequent CSV rows with the same fingerprint are also flagged
+   - Duplicate-flagged rows are still classified so the suggested category is available to the user if they choose to override. They are **never** auto-confirmed (see `applyClassificationToRowData()` — auto-promote only fires on `status === 'PENDING'`).
    - **Native adapter path**: Resolves `account` and `category` CSV columns to IDs using tenant lookup maps. Rows with both resolved + no duplicate conflict are set to `status: 'CONFIRMED'`. Unresolvable rows stay `PENDING` with an `errorMessage`. Investment fields (`ticker`, `assetQuantity`, `assetPrice`) are taken directly from the CSV; `requiresEnrichment` is always `false`.
    - **AI adapter path**: Row is added to the `aiEntries` list for Phase 1/2 classification. Classification is **not** performed inline — all AI rows are collected first to enable frequency-based ordering.
    - Progress → 1%.
@@ -202,10 +203,13 @@ When the user clicks "Commit Import", the API endpoint (`POST /api/imports/:id?a
 **Full pipeline**:
 
 1. **Verify** — Confirms `StagedImport` exists and has `status: 'COMMITTING'`.
-2. **Fetch promotable rows** — Queries `StagedImportRow` with `status: 'CONFIRMED'` and non-null `suggestedCategoryId`. If `rowIds` is provided in the event data, only those rows are selected (partial commit).
+2. **Fetch promotable rows** — Queries `StagedImportRow` with `status === 'CONFIRMED'` **exactly** and non-null `suggestedCategoryId`. If `rowIds` is provided in the event data, only those rows are additionally filtered (partial commit).
+   - **Data-integrity guard**: `POTENTIAL_DUPLICATE` and `DUPLICATE` rows are deliberately excluded from this query. A user who wants to commit a flagged duplicate must explicitly override its status to `CONFIRMED` through the Review UI first. This keeps the `Transaction.externalId @unique` constraint as the true defense-in-depth backstop against accidental re-imports. Regression test: `apps/backend/src/__tests__/unit/workers/commitWorker.test.js` → "only fetches CONFIRMED rows — POTENTIAL_DUPLICATE and DUPLICATE are filtered out".
 3. **Batch create transactions** (batches of 200):
    a. Filters out rows requiring enrichment that are still missing ticker/quantity/price.
-   b. **Occurrence counter** — Tracks how many times each base hash appears across the entire commit (counter persists across batches). When multiple CONFIRMED rows produce the same base hash (e.g. 7 × "$1 Commission" on the same day), each gets a unique `externalId`: 1st → `baseHash`, 2nd → `baseHash:2`, 3rd → `baseHash:3`, etc. This ensures all user-confirmed transactions are actually created by `createMany`, even when they share the same date, description, amount, and account.
+   b. **Occurrence counter** — Tracks how many times each base hash appears across the entire commit (counter persists across batches). When multiple `CONFIRMED` rows in the same commit share the same base hash (e.g. 7 × "$1 Commission" on the same day that the user explicitly confirmed), each gets a unique `externalId`: 1st → `baseHash`, 2nd → `baseHash:2`, 3rd → `baseHash:3`, etc. This lets a user commit legitimate same-fingerprint transactions.
+
+      The counter is intentionally **scoped to a single commit** — it starts empty on each job. A re-committed row (re-import of a CSV that was previously committed) gets `externalId = baseHash` in the new commit, which already exists in the DB, so `createMany({ skipDuplicates: true })` correctly skips it. Combined with step 2's `status === 'CONFIRMED'` guard, this means any row reaching `createMany` is either a brand-new transaction or a DB-level duplicate that the unique constraint will reject — never a silent re-import.
    c. Maps rows to `Transaction` data. Investment fields (`ticker`, `assetQuantity`, `assetPrice`, `isin`, `exchange`, `assetCurrency`) are carried through from the staged row when present.
    d. Sets `Transaction.externalId` to the occurrence-suffixed hash for idempotent dedup.
    e. **Pre-checks for existing externalIds** — queries `Transaction` for all `externalId`s in the batch *before* calling `createMany`. This identifies which rows will be skipped by `skipDuplicates` so they can be treated differently from successfully committed rows. The check uses the full suffixed externalId, so re-importing the same CSV correctly detects all occurrences (including `baseHash:2`, `baseHash:3`, etc.).

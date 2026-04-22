@@ -57,6 +57,7 @@ jest.mock('../../../queues/smartImportQueue', () => ({
 
 const {
   applyClassificationToRowData,
+  applyDuplicateStatus,
   computeUpdateDiff,
   buildAiFrequencyMap,
 } = require('../../../workers/smartImportWorker');
@@ -354,6 +355,57 @@ describe('smartImportWorker — helper functions', () => {
       // null and '' both normalize to ''
       expect(map.get('')).toHaveLength(2);
       expect(map.get('valid')).toHaveLength(1);
+    });
+  });
+
+  // ─── applyDuplicateStatus ──────────────────────────────────────────────────
+
+  describe('applyDuplicateStatus', () => {
+    it('flags date-only duplicates as POTENTIAL_DUPLICATE and preserves them in the set', () => {
+      const row = { status: 'PENDING' };
+      const set = new Set(['hash-A']);
+
+      const flagged = applyDuplicateStatus(row, set, 'hash-A', false);
+
+      expect(flagged).toBe(true);
+      expect(row.status).toBe('POTENTIAL_DUPLICATE');
+      // The set is untouched when a collision is found — the existing hash stays
+      expect(set.size).toBe(1);
+    });
+
+    it('flags timestamped duplicates as DUPLICATE (hard dup, hidden from UI by default)', () => {
+      const row = { status: 'PENDING' };
+      const set = new Set(['hash-B']);
+
+      const flagged = applyDuplicateStatus(row, set, 'hash-B', true);
+
+      expect(flagged).toBe(true);
+      expect(row.status).toBe('DUPLICATE');
+    });
+
+    it('adds new hashes to the set and leaves status untouched', () => {
+      const row = { status: 'PENDING' };
+      const set = new Set(['hash-A']);
+
+      const flagged = applyDuplicateStatus(row, set, 'hash-NEW', false);
+
+      expect(flagged).toBe(false);
+      expect(row.status).toBe('PENDING');
+      expect(set.has('hash-NEW')).toBe(true);
+    });
+
+    it('flags the 2nd+ intra-CSV occurrence of the same hash', () => {
+      const set = new Set();
+      const row1 = { status: 'PENDING' };
+      const row2 = { status: 'PENDING' };
+
+      // First occurrence is tracked, not flagged.
+      expect(applyDuplicateStatus(row1, set, 'hash-X', false)).toBe(false);
+      expect(row1.status).toBe('PENDING');
+
+      // Second occurrence of the same hash within the same CSV is flagged.
+      expect(applyDuplicateStatus(row2, set, 'hash-X', false)).toBe(true);
+      expect(row2.status).toBe('POTENTIAL_DUPLICATE');
     });
   });
 });

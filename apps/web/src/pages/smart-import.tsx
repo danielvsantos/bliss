@@ -1335,7 +1335,7 @@ export default function SmartImportPage() {
                       </Badge>
                     )}
                     {duplicateCount > 0 && (
-                      <Badge className="bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
+                      <Badge className="bg-warning/10 text-warning border-warning/20 hover:bg-warning/10">
                         {t('smartImport.review.nDuplicates', { count: duplicateCount })}
                       </Badge>
                     )}
@@ -1445,6 +1445,10 @@ export default function SmartImportPage() {
                       .filter((i) =>
                         i.promotionStatus !== 'CONFIRMED' &&
                         i.promotionStatus !== 'DUPLICATE' &&
+                        // POTENTIAL_DUPLICATE rows must be approved one-by-one
+                        // via the drawer — bulk-approving would silently commit
+                        // re-imported transactions the user never examined.
+                        i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
                         i.promotionStatus !== 'SKIPPED' &&
                         !itemNeedsEnrichment(i, categoriesMap),
                       )

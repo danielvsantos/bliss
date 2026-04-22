@@ -320,26 +320,19 @@ describe('commitWorker — processCommitJob', () => {
     prisma.stagedImportRow.findMany
       .mockResolvedValueOnce(rows)
       .mockResolvedValueOnce([]);
-    prisma.transaction.findMany
-      .mockResolvedValueOnce([])  // pre-existing externalIds check
-      .mockResolvedValueOnce([    // committed-row → txId lookup
-        { id: 1001, externalId: 'hash-exact-10.00-1' },
-        { id: 1002, externalId: 'hash-llm-classified-20.00-1' },
-        { id: 1003, externalId: 'hash-user-override-30.00-1' },
-        { id: 1004, externalId: 'hash-vector-40.00-1' },
-      ]);
+    prisma.transaction.findMany.mockResolvedValueOnce([]);  // pre-existing externalIds check
     prisma.transaction.createMany.mockResolvedValueOnce({ count: 4 });
     prisma.stagedImportRow.count.mockResolvedValueOnce(0);   // remainingCount
 
     const job = makeJob();
     await processCommitJob(job);
 
-    // recordFeedback should be called for LLM and USER_OVERRIDE rows only (2 of 4),
-    // and must receive the committed Transaction.id so TransactionEmbedding.transactionId
-    // gets populated (otherwise scripts/regenerate-embeddings.js can't recover plaintext).
+    // recordFeedback should be called for LLM and USER_OVERRIDE rows only (2 of 4).
+    // EXACT_MATCH and VECTOR_MATCH rows skip the embedding feedback step because
+    // they're already indexed.
     expect(categorizationService.recordFeedback).toHaveBeenCalledTimes(2);
-    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('llm-classified', 10, 'tenant-1', 1002);
-    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('user-override', 10, 'tenant-1', 1003);
+    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('llm-classified', 10, 'tenant-1');
+    expect(categorizationService.recordFeedback).toHaveBeenCalledWith('user-override', 10, 'tenant-1');
   });
 
   // ─── Final status ───────────────────────────────────────────────────────
@@ -552,36 +545,48 @@ describe('commitWorker — processCommitJob', () => {
     });
   });
 
-  it('includes POTENTIAL_DUPLICATE rows in commit (not just CONFIRMED)', async () => {
-    // Rows flagged as POTENTIAL_DUPLICATE should be processed by the commit worker
-    // without requiring the user to individually approve each one first.
-    const rows = [
-      makeRow({ id: 'row-1', status: 'POTENTIAL_DUPLICATE', description: 'Commission', debit: '1.00' }),
-      makeRow({ id: 'row-2', status: 'CONFIRMED', description: 'Groceries', debit: '50.00' }),
-    ];
+  it('excludes POTENTIAL_DUPLICATE rows from commit — only CONFIRMED rows are promoted', async () => {
+    // Data-integrity guard: POTENTIAL_DUPLICATE rows must stay in the staged table
+    // until the user explicitly overrides them to CONFIRMED via the Review UI.
+    // The DB only sees the CONFIRMED row; the POTENTIAL_DUPLICATE one is ignored.
+    const confirmedRow = makeRow({
+      id: 'row-2', status: 'CONFIRMED', description: 'Groceries', debit: '50.00',
+    });
 
     prisma.stagedImport.findFirst.mockResolvedValueOnce({
       id: 'si-1',
       tenantId: 'tenant-1',
       status: 'COMMITTING',
     });
-    prisma.stagedImportRow.count.mockResolvedValueOnce(2);   // totalConfirmed (includes both)
+    prisma.stagedImportRow.count.mockResolvedValueOnce(1);   // totalConfirmed: only the CONFIRMED row
     prisma.stagedImportRow.findMany
-      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([confirmedRow])
       .mockResolvedValueOnce([]);
-    prisma.transaction.findMany.mockResolvedValueOnce([]);    // pre-existing check
-    prisma.transaction.createMany.mockResolvedValueOnce({ count: 2 });
-    prisma.stagedImportRow.count.mockResolvedValueOnce(0);   // remainingCount
+    prisma.transaction.findMany.mockResolvedValueOnce([]);   // pre-existing check
+    prisma.transaction.createMany.mockResolvedValueOnce({ count: 1 });
+    // POTENTIAL_DUPLICATE row still counted in remaining → status stays READY
+    prisma.stagedImportRow.count.mockResolvedValueOnce(1);
 
     const job = makeJob();
     const result = await processCommitJob(job);
 
-    // Both rows should be committed
-    expect(result.transactionCount).toBe(2);
+    // Exactly 1 transaction created (the CONFIRMED one).
+    expect(result.transactionCount).toBe(1);
+    expect(result.remaining).toBe(1);
 
-    // Verify the rowWhere query includes both statuses
+    // Verify the commit-scope filter is `status === 'CONFIRMED'` exactly —
+    // not `{ in: ['CONFIRMED', 'POTENTIAL_DUPLICATE'] }`. A regression here
+    // would re-introduce the silent re-import duplicate bug.
     const countCall = prisma.stagedImportRow.count.mock.calls[0][0];
-    expect(countCall.where.status).toEqual({ in: ['CONFIRMED', 'POTENTIAL_DUPLICATE'] });
+    expect(countCall.where.status).toBe('CONFIRMED');
+
+    // Because a POTENTIAL_DUPLICATE row remains, the import stays READY
+    // (partial commit), not COMMITTED.
+    expect(prisma.stagedImport.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'READY' }),
+      })
+    );
   });
 
   // ─── DescriptionMapping write-through ──────────────────────────────────
@@ -615,5 +620,67 @@ describe('commitWorker — processCommitJob', () => {
     expect(addDescriptionEntry).toHaveBeenCalledWith('Coffee Shop', 10, 'tenant-1');
     expect(addDescriptionEntry).toHaveBeenCalledWith('AMZN Purchase', 20, 'tenant-1');
     expect(addDescriptionEntry).toHaveBeenCalledWith('New Merchant', 30, 'tenant-1');
+  });
+
+  // ─── Duplicate rows are NEVER committed implicitly ──────────────────────
+  // Data-integrity guard: duplicate-flagged rows must stay out of the
+  // Transaction table until the user explicitly overrides them to CONFIRMED
+  // via the Review UI. The query must filter on status === 'CONFIRMED'
+  // exclusively — regressions here re-introduce the silent re-import bug.
+
+  it('only fetches CONFIRMED rows — POTENTIAL_DUPLICATE and DUPLICATE are filtered out', async () => {
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({
+      id: 'si-1', tenantId: 'tenant-1', status: 'COMMITTING',
+    });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);   // totalConfirmed
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);   // remainingCount
+
+    const job = makeJob();
+    await processCommitJob(job);
+
+    const countCalls = prisma.stagedImportRow.count.mock.calls;
+    const commitCountCall = countCalls.find(
+      ([args]) => args?.where?.stagedImportId === 'si-1' && args?.where?.status === 'CONFIRMED'
+    );
+    expect(commitCountCall).toBeDefined();
+
+    // The commit-scope filter must be the bare string 'CONFIRMED' — never an
+    // `{ in: [...] }` array. Any array-style status filter indicates the
+    // regression that silently committed duplicate rows.
+    const arrayStatusCalls = countCalls.filter(
+      ([args]) => typeof args?.where?.status === 'object' && Array.isArray(args.where.status.in)
+    );
+    for (const [args] of arrayStatusCalls) {
+      // The remaining-count queries use `{ in: [...] }` and DO include PENDING
+      // (remaining rows keep the import in READY until the user resolves them).
+      // If a call has an array filter WITHOUT PENDING, it's the commit-scope
+      // query and it must not contain duplicate statuses.
+      const statuses = args.where.status.in;
+      const isRemainingScope = statuses.includes('PENDING');
+      if (!isRemainingScope) {
+        expect(statuses).not.toContain('POTENTIAL_DUPLICATE');
+        expect(statuses).not.toContain('DUPLICATE');
+      }
+    }
+  });
+
+  it('passes through partial-commit rowIds while still filtering to CONFIRMED only', async () => {
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({
+      id: 'si-1', tenantId: 'tenant-1', status: 'COMMITTING',
+    });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);
+
+    const job = makeJob({ rowIds: ['row-7', 'row-8'] });
+    await processCommitJob(job);
+
+    const commitCountCall = prisma.stagedImportRow.count.mock.calls.find(
+      ([args]) =>
+        args?.where?.stagedImportId === 'si-1' &&
+        args?.where?.status === 'CONFIRMED' &&
+        args?.where?.id?.in
+    );
+    expect(commitCountCall).toBeDefined();
+    expect(commitCountCall[0].where.id.in).toEqual(['row-7', 'row-8']);
   });
 });

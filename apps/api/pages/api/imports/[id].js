@@ -61,12 +61,19 @@ async function handleGet(req, res, user, stagedImportId) {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
 
-  // status param: single value OR comma-separated list (e.g. "STAGED,POTENTIAL_DUPLICATE")
+  // status param: single value OR comma-separated list (e.g. "STAGED,POTENTIAL_DUPLICATE").
+  // When no filter is supplied we DO NOT return the whole table — DUPLICATE and
+  // SKIPPED rows are deliberately hidden so duplicate-flagged rows can never
+  // reach the Review UI as committable. Callers that need to audit those rows
+  // must opt in explicitly via ?status=DUPLICATE or ?status=SKIPPED.
+  const DEFAULT_VISIBLE_STATUSES = ['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED'];
   const statusParam = req.query.status || null;
-  const statusValues = statusParam ? statusParam.split(',').map((s) => s.trim()).filter(Boolean) : null;
-  const statusClause = statusValues
-    ? (statusValues.length === 1 ? { status: statusValues[0] } : { status: { in: statusValues } })
-    : {};
+  const statusValues = statusParam
+    ? statusParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : DEFAULT_VISIBLE_STATUSES;
+  const statusClause = statusValues.length === 1
+    ? { status: statusValues[0] }
+    : { status: { in: statusValues } };
 
   // Optional category filter (used by grouped view to paginate within a single category)
   const categoryIdFilter = req.query.categoryId ? parseInt(req.query.categoryId, 10) : null;
@@ -77,9 +84,10 @@ async function handleGet(req, res, user, stagedImportId) {
     ...(categoryIdFilter && { suggestedCategoryId: categoryIdFilter }),
   };
 
-  // Statuses that still need user action — used for the category breakdown summary
-  // Must match the status filter sent by the frontend for grouped view to work
-  const pendingStatuses = statusValues || ['PENDING', 'POTENTIAL_DUPLICATE', 'ERROR', 'DUPLICATE'];
+  // Statuses that still need user action — used for the category breakdown summary.
+  // Must match the effective status filter so grouped-view headers show the same
+  // rows visible in the paginated list. DUPLICATE is excluded by default (see above).
+  const pendingStatuses = statusValues;
   const pendingWhere = {
     stagedImportId,
     status: { in: pendingStatuses },
