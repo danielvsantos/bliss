@@ -411,6 +411,21 @@ export default function SmartImportPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     } else if (importStatus === 'READY' && prevStatus === 'COMMITTING' && result) {
       // Partial commit: some rows were committed but others remain
+      // (PENDING / POTENTIAL_DUPLICATE / STAGED rows linger in READY state so
+      // the user can come back to review them later).
+      //
+      // Clicking "Commit" expresses intent to finish this batch, so treat
+      // a partial commit as "done" UX-wise: show the completion page with
+      // the stats block (which already has a dedicated "Remaining" counter
+      // in warning color) and the "Review in Transaction Review" CTA so
+      // the user can finish the leftover rows without hunting.
+      setCommitResult({
+        committed: true,
+        transactionCount: result.transactionCount,
+        updateCount: result.updateCount ?? 0,
+        remaining: result.remaining,
+      });
+      setStep('done');
       const partialParts = [];
       if (result.transactionCount) partialParts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
       if (result.updateCount) partialParts.push(t('smartImport.toast.nUpdated', { count: result.updateCount }));
