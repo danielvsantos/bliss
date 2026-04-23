@@ -326,6 +326,210 @@ describe('eventSchedulerWorker — processEventJob', () => {
     expect(scheduleDebouncedJob).not.toHaveBeenCalled();
   });
 
+  // ─── MANUAL_REBUILD_REQUESTED ────────────────────────────────────────────
+  //
+  // Admin-triggered rebuilds from the Maintenance UI. One event type with
+  // a `scope` discriminator covers four distinct routing paths. Each path
+  // is tested for:
+  //   - correct queue + job name selection
+  //   - `_rebuildMeta` attached so the job shows up in rebuild history
+  //   - 30-day `removeOnComplete` + `removeOnFail` retention
+  //   - deterministic `jobId` that includes the scope + tenant
+
+  describe('MANUAL_REBUILD_REQUESTED', () => {
+    it('warns when tenantId is missing', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', { scope: 'full-analytics' });
+      await processEventJob(job);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'MANUAL_REBUILD_REQUESTED event is missing tenantId or scope.'
+      );
+    });
+
+    it('warns when scope is missing', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', { tenantId: 't1' });
+      await processEventJob(job);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'MANUAL_REBUILD_REQUESTED event is missing tenantId or scope.'
+      );
+    });
+
+    it('warns for unknown scope', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', { tenantId: 't1', scope: 'garbage' });
+      await processEventJob(job);
+      expect(logger.warn).toHaveBeenCalledWith('Unknown MANUAL_REBUILD_REQUESTED scope: garbage');
+    });
+
+    it('routes full-portfolio → process-portfolio-changes with 30-day retention', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1',
+        scope: 'full-portfolio',
+        requestedBy: 'alice@example.com',
+        requestedAt: '2026-04-23T10:00:00.000Z',
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
+        'process-portfolio-changes',
+        expect.objectContaining({
+          tenantId: 't1',
+          _rebuildMeta: {
+            requestedBy: 'alice@example.com',
+            requestedAt: '2026-04-23T10:00:00.000Z',
+            rebuildType: 'full-portfolio',
+          },
+        }),
+        expect.objectContaining({
+          jobId: expect.stringMatching(/^manual-rebuild-full-portfolio-t1-/),
+          removeOnComplete: { age: 30 * 24 * 3600 },
+          removeOnFail: { age: 30 * 24 * 3600 },
+        })
+      );
+    });
+
+    it('routes full-analytics → full-rebuild-analytics (analytics queue, no portfolio touch)', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1',
+        scope: 'full-analytics',
+      });
+      await processEventJob(job);
+
+      expect(mockAnalyticsQueue.add).toHaveBeenCalledWith(
+        'full-rebuild-analytics',
+        expect.objectContaining({
+          tenantId: 't1',
+          _rebuildMeta: expect.objectContaining({ rebuildType: 'full-analytics' }),
+        }),
+        expect.objectContaining({
+          jobId: expect.stringMatching(/^manual-rebuild-full-analytics-t1-/),
+        })
+      );
+      expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('routes scoped-analytics → scoped-update-analytics with earliestDate', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1',
+        scope: 'scoped-analytics',
+        payload: { earliestDate: '2026-03-01T00:00:00.000Z' },
+      });
+      await processEventJob(job);
+
+      expect(mockAnalyticsQueue.add).toHaveBeenCalledWith(
+        'scoped-update-analytics',
+        expect.objectContaining({
+          tenantId: 't1',
+          scopes: [{ earliestDate: '2026-03-01T00:00:00.000Z' }],
+          _rebuildMeta: expect.objectContaining({ rebuildType: 'scoped-analytics' }),
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('warns when scoped-analytics is missing earliestDate', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1',
+        scope: 'scoped-analytics',
+        payload: {},
+      });
+      await processEventJob(job);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'MANUAL_REBUILD_REQUESTED (scoped-analytics) missing payload.earliestDate.'
+      );
+      expect(mockAnalyticsQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('routes single-asset → value-portfolio-items with portfolioItemIds', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1',
+        scope: 'single-asset',
+        payload: { portfolioItemId: 42 },
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
+        'value-portfolio-items',
+        expect.objectContaining({
+          tenantId: 't1',
+          portfolioItemIds: [42],
+          _rebuildMeta: expect.objectContaining({ rebuildType: 'single-asset' }),
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('warns when single-asset is missing portfolioItemId', async () => {
+      const job = makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1',
+        scope: 'single-asset',
+        payload: {},
+      });
+      await processEventJob(job);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'MANUAL_REBUILD_REQUESTED (single-asset) missing payload.portfolioItemId.'
+      );
+      expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── ANALYTICS_RECALCULATION_COMPLETE cascade suppression ───────────────
+  //
+  // When a manual `full-analytics` rebuild finishes, the analyticsWorker
+  // forwards `_rebuildMeta` in the completion event. The scheduler must
+  // detect this marker and suppress the downstream valuation cascade —
+  // otherwise the "analytics-only" button would still trigger a full
+  // `value-all-assets` run, defeating the purpose.
+
+  describe('ANALYTICS_RECALCULATION_COMPLETE — cascade suppression', () => {
+    it('suppresses value-all-assets when _rebuildMeta.rebuildType === "full-analytics"', async () => {
+      const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: true,
+        _rebuildMeta: { rebuildType: 'full-analytics' },
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('cascades into value-all-assets for normal isFullRebuild (no _rebuildMeta)', async () => {
+      const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: true,
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', { tenantId: 't1' });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-amortizing-loan', { tenantId: 't1' });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-simple-liability', { tenantId: 't1' });
+    });
+
+    it('still cascades for full-rebuild when _rebuildMeta indicates a different scope (full-portfolio)', async () => {
+      // full-portfolio rebuilds intentionally want the cascade — the suppression
+      // only targets the analytics-only button.
+      const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: true,
+        _rebuildMeta: { rebuildType: 'full-portfolio' },
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', { tenantId: 't1' });
+    });
+
+    it('scoped analytics with empty portfolioItemIds does not trigger valuation', async () => {
+      const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: false,
+        _rebuildMeta: { rebuildType: 'scoped-analytics' },
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── Unknown event ───────────────────────────────────────────────────────
 
   it('warns for unknown event type', async () => {

@@ -491,6 +491,11 @@ const processAnalyticsJob = async (job, token) => {
             isFullRebuild,
             // For a full rebuild, we send no IDs. For scoped runs, we send the affected IDs.
             ...(isFullRebuild ? {} : { portfolioItemIds: allAffectedItemIds }),
+            // Forward the admin-rebuild marker (if any) so the event
+            // scheduler can distinguish a manual `full-analytics` rebuild
+            // (no downstream valuation cascade) from a routine full rebuild
+            // that does want the cascade.
+            ...(data._rebuildMeta ? { _rebuildMeta: data._rebuildMeta } : {}),
         });
 
 

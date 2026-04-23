@@ -1,0 +1,351 @@
+/**
+ * Integration tests for the admin Maintenance routes:
+ *
+ *   POST /api/admin/rebuild/trigger
+ *   GET  /api/admin/rebuild/status
+ *
+ * Tests the full Express stack: helmet → cors → apiKeyAuth → route handler.
+ * The single-flight lock, events queue, and the portfolio/analytics queues
+ * are all mocked at the module boundary so these tests focus on HTTP
+ * contract + routing shape without requiring Redis or BullMQ.
+ */
+
+jest.mock('../../../queues/eventsQueue', () => ({
+  enqueueEvent: jest.fn().mockResolvedValue({ id: 'mock-event-id' }),
+  EVENTS_QUEUE_NAME: 'mock-events',
+  getEventsQueue: jest.fn(),
+}));
+
+jest.mock('../../../utils/singleFlightLock', () => ({
+  acquire: jest.fn(),
+  release: jest.fn(),
+  isHeld: jest.fn(),
+}));
+
+// Each queue exposes `getJobs` so the status endpoint can aggregate them.
+// We return the BullMQ-shaped objects directly; `getState` is per-job.
+const mockGetJobsPortfolio = jest.fn();
+const mockGetJobsAnalytics = jest.fn();
+
+jest.mock('../../../queues/portfolioQueue', () => ({
+  PORTFOLIO_QUEUE_NAME: 'mock-portfolio',
+  getPortfolioQueue: jest.fn(() => ({ getJobs: mockGetJobsPortfolio })),
+}));
+
+jest.mock('../../../queues/analyticsQueue', () => ({
+  ANALYTICS_QUEUE_NAME: 'mock-analytics',
+  getAnalyticsQueue: jest.fn(() => ({ getJobs: mockGetJobsAnalytics })),
+}));
+
+const request = require('supertest');
+const app = require('../../../app');
+const { enqueueEvent } = require('../../../queues/eventsQueue');
+const { acquire, isHeld } = require('../../../utils/singleFlightLock');
+
+const API_KEY = process.env.INTERNAL_API_KEY;
+const TENANT = 'tenant-rebuild-test';
+
+// Helper: fabricate a BullMQ-shaped job with the fields the route reads.
+function makeJob({
+  id, name, state = 'completed', progress = 100,
+  tenantId = TENANT, rebuildType = 'full-analytics',
+  requestedBy = 'admin@example.com',
+  requestedAt = '2026-04-23T10:00:00.000Z',
+  finishedAt = '2026-04-23T10:05:00.000Z',
+  processedAt = null,
+  failedReason = null,
+  attemptsMade = 1,
+}) {
+  return {
+    id,
+    name,
+    data: {
+      tenantId,
+      _rebuildMeta: { rebuildType, requestedBy, requestedAt },
+    },
+    progress,
+    finishedOn: finishedAt ? Date.parse(finishedAt) : null,
+    processedOn: processedAt ? Date.parse(processedAt) : null,
+    failedReason,
+    attemptsMade,
+    getState: jest.fn().mockResolvedValue(state),
+  };
+}
+
+describe('POST /api/admin/rebuild/trigger', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    acquire.mockResolvedValue(true);
+    isHeld.mockResolvedValue({ held: false, ttlSeconds: null });
+  });
+
+  it('returns 401 when X-API-KEY header is missing', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .send({ tenantId: TENANT, scope: 'full-analytics' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when tenantId is missing', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ scope: 'full-analytics' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/tenantId/);
+  });
+
+  it('returns 400 when scope is invalid', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ tenantId: TENANT, scope: 'not-a-real-scope' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/scope must be one of/);
+  });
+
+  it('returns 400 when scoped-analytics payload is missing earliestDate', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ tenantId: TENANT, scope: 'scoped-analytics' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/earliestDate/);
+  });
+
+  it('returns 400 when scoped-analytics earliestDate is invalid', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({
+        tenantId: TENANT,
+        scope: 'scoped-analytics',
+        payload: { earliestDate: 'not-a-date' },
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/earliestDate/);
+  });
+
+  it('returns 400 when single-asset payload is missing portfolioItemId', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ tenantId: TENANT, scope: 'single-asset' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/portfolioItemId/);
+  });
+
+  it('returns 202 and enqueues MANUAL_REBUILD_REQUESTED on valid full-analytics', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ tenantId: TENANT, scope: 'full-analytics', requestedBy: 'alice@example.com' });
+
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({
+      status: 'accepted',
+      scope: 'full-analytics',
+      lockTtlSeconds: 3600,
+    });
+    expect(res.body.requestedAt).toEqual(expect.any(String));
+
+    // Lock acquired before enqueue.
+    expect(acquire).toHaveBeenCalledWith(
+      `rebuild-lock:${TENANT}:full-analytics`,
+      3600,
+    );
+    expect(enqueueEvent).toHaveBeenCalledWith('MANUAL_REBUILD_REQUESTED', {
+      tenantId: TENANT,
+      scope: 'full-analytics',
+      requestedBy: 'alice@example.com',
+      requestedAt: expect.any(String),
+      payload: null,
+      source: 'admin-maintenance-ui',
+    });
+  });
+
+  it('returns 409 with remaining TTL when the lock is already held', async () => {
+    acquire.mockResolvedValueOnce(false);
+    isHeld.mockResolvedValueOnce({ held: true, ttlSeconds: 1234 });
+
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ tenantId: TENANT, scope: 'full-portfolio' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: 'Rebuild already in progress',
+      scope: 'full-portfolio',
+      ttlSeconds: 1234,
+    });
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  it('forwards scoped-analytics payload through to the event', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({
+        tenantId: TENANT,
+        scope: 'scoped-analytics',
+        payload: { earliestDate: '2026-03-01T00:00:00.000Z' },
+      });
+
+    expect(res.status).toBe(202);
+    expect(enqueueEvent).toHaveBeenCalledWith('MANUAL_REBUILD_REQUESTED', expect.objectContaining({
+      scope: 'scoped-analytics',
+      payload: { earliestDate: '2026-03-01T00:00:00.000Z' },
+    }));
+  });
+
+  it('forwards single-asset payload through to the event', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({
+        tenantId: TENANT,
+        scope: 'single-asset',
+        payload: { portfolioItemId: 42 },
+      });
+
+    expect(res.status).toBe(202);
+    expect(enqueueEvent).toHaveBeenCalledWith('MANUAL_REBUILD_REQUESTED', expect.objectContaining({
+      scope: 'single-asset',
+      payload: { portfolioItemId: 42 },
+    }));
+  });
+});
+
+describe('GET /api/admin/rebuild/status', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Default: no locks held, no jobs.
+    isHeld.mockResolvedValue({ held: false, ttlSeconds: null });
+    mockGetJobsPortfolio.mockResolvedValue([]);
+    mockGetJobsAnalytics.mockResolvedValue([]);
+  });
+
+  it('returns 401 when X-API-KEY header is missing', async () => {
+    const res = await request(app).get(`/api/admin/rebuild/status?tenantId=${TENANT}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when tenantId query param is missing', async () => {
+    const res = await request(app)
+      .get('/api/admin/rebuild/status')
+      .set('X-API-KEY', API_KEY);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns empty locks + current + recent when nothing is happening', async () => {
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.locks).toEqual(expect.arrayContaining([
+      { scope: 'full-portfolio', held: false, ttlSeconds: null },
+      { scope: 'full-analytics', held: false, ttlSeconds: null },
+      { scope: 'scoped-analytics', held: false, ttlSeconds: null },
+      { scope: 'single-asset', held: false, ttlSeconds: null },
+    ]));
+    expect(res.body.current).toEqual([]);
+    expect(res.body.recent).toEqual([]);
+  });
+
+  it('separates active jobs into `current` and completed/failed into `recent`', async () => {
+    const activeJob = makeJob({ id: 1, name: 'full-rebuild-analytics', state: 'active', progress: 42, processedAt: '2026-04-23T10:00:00.000Z', finishedAt: null });
+    const completedJob = makeJob({ id: 2, name: 'value-all-assets', state: 'completed', rebuildType: 'full-portfolio', finishedAt: '2026-04-22T10:00:00.000Z' });
+    const failedJob = makeJob({ id: 3, name: 'full-rebuild-analytics', state: 'failed', failedReason: 'Prisma timeout', finishedAt: '2026-04-21T10:00:00.000Z' });
+
+    mockGetJobsAnalytics.mockResolvedValueOnce([activeJob, failedJob]);
+    mockGetJobsPortfolio.mockResolvedValueOnce([completedJob]);
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.current).toHaveLength(1);
+    expect(res.body.current[0]).toMatchObject({ id: 1, state: 'active', progress: 42 });
+    expect(res.body.recent).toHaveLength(2);
+    // Newest first.
+    expect(res.body.recent[0]).toMatchObject({ id: 2, state: 'completed' });
+    expect(res.body.recent[1]).toMatchObject({ id: 3, state: 'failed', failedReason: 'Prisma timeout' });
+  });
+
+  it('filters out jobs without _rebuildMeta (nightly crons, etc.)', async () => {
+    const adminJob = makeJob({ id: 1, name: 'full-rebuild-analytics', state: 'completed' });
+    const cronJob = {
+      id: 99,
+      name: 'revalue-all-tenants',
+      // No _rebuildMeta — a nightly cron run.
+      data: { tenantId: TENANT },
+      progress: 100,
+      finishedOn: Date.now(),
+      processedOn: Date.now() - 60_000,
+      failedReason: null,
+      attemptsMade: 1,
+      getState: jest.fn().mockResolvedValue('completed'),
+    };
+    mockGetJobsAnalytics.mockResolvedValueOnce([adminJob]);
+    mockGetJobsPortfolio.mockResolvedValueOnce([cronJob]);
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.recent).toHaveLength(1);
+    expect(res.body.recent[0].id).toBe(1);
+  });
+
+  it('filters out jobs for other tenants', async () => {
+    const mine = makeJob({ id: 1, name: 'full-rebuild-analytics', tenantId: TENANT });
+    const theirs = makeJob({ id: 2, name: 'full-rebuild-analytics', tenantId: 'other-tenant' });
+    mockGetJobsAnalytics.mockResolvedValueOnce([mine, theirs]);
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.recent).toHaveLength(1);
+    expect(res.body.recent[0].id).toBe(1);
+  });
+
+  it('surfaces lock TTLs so the UI can show "next available in X min"', async () => {
+    isHeld.mockImplementation(async (key) => {
+      if (key.endsWith('full-portfolio')) return { held: true, ttlSeconds: 1800 };
+      return { held: false, ttlSeconds: null };
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    const portfolio = res.body.locks.find((l) => l.scope === 'full-portfolio');
+    expect(portfolio).toEqual({ scope: 'full-portfolio', held: true, ttlSeconds: 1800 });
+  });
+
+  it('caps the recent list to 20 entries', async () => {
+    const jobs = Array.from({ length: 30 }, (_, i) =>
+      makeJob({
+        id: i + 1,
+        name: 'full-rebuild-analytics',
+        state: 'completed',
+        finishedAt: new Date(Date.now() - i * 60_000).toISOString(),
+      }),
+    );
+    mockGetJobsAnalytics.mockResolvedValueOnce(jobs);
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.recent).toHaveLength(20);
+  });
+});
