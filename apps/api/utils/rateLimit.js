@@ -69,4 +69,10 @@ export const rateLimiters = {
   // Auth - sensitive operations
   changePassword: createRateLimiter({ max: 3, windowMs: 15 * 60 * 1000 }),  // 3 attempts per 15 min
 
+  // Admin Maintenance — rebuild triggers are heavy; status polls are cheap.
+  // Conservative cap on triggers prevents thrash against the single-flight lock.
+  // Status endpoint is polled every ~5s by the UI, so 300/5min = 1/sec headroom.
+  rebuildTrigger: createRateLimiter({ max: 20, windowMs: 5 * 60 * 1000 }),  // 20 triggers per 5 min
+  rebuildStatus:  createRateLimiter({ max: 300, windowMs: 5 * 60 * 1000 }), // 300 polls per 5 min
+
 };
