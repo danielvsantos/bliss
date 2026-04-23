@@ -115,7 +115,23 @@ article main pre {
 .nextra-mobile-nav > ul > li > a,
 .nextra-mobile-nav > ul > li > button {
   font-size: 0.9375rem !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
+  color: hsl(var(--brand-deep)) !important;
+}
+
+/* Nested items inside an expanded folder (e.g. Guides children) */
+.nextra-sidebar > div > div > ul ul a,
+.nextra-mobile-nav > ul ul a {
+  font-weight: 400 !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+/* Hover / active states on nested items restore full contrast */
+.nextra-sidebar > div > div > ul ul a:hover,
+.nextra-sidebar > div > div > ul ul a[aria-current="page"],
+.nextra-mobile-nav > ul ul a:hover,
+.nextra-mobile-nav > ul ul a[aria-current="page"] {
+  color: hsl(var(--brand-deep)) !important;
 }
 
 /* Fix folder buttons (e.g. Guides) losing padding from Tailwind reset */

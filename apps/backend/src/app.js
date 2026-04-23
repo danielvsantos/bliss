@@ -46,6 +46,7 @@ app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/similar', require('./routes/similar'));
 app.use('/api/pricing', require('./routes/pricing'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/admin/rebuild', require('./routes/rebuild'));
 app.use('/api/ticker', require('./routes/ticker'));
 app.use('/api/security-master', require('./routes/securityMaster'));
 app.use('/api/insights', require('./routes/insights'));

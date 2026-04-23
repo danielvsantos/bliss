@@ -1247,6 +1247,8 @@ const it = {
     selectCategoryPlaceholder: "Seleziona categoria",
     saveChanges: "Salva modifiche",
     saveAndPromote: "Salva e promuovi",
+    resetToPending: "Riporta in attesa",
+    resetToPendingDesc: "Riporta questa riga in attesa così non viene confermata automaticamente. Utile per annullare una classificazione auto-promossa che vuoi riesaminare.",
     // Bulk promote dialog
     bulkPromoteTitle: "Promozione massiva transazioni",
     bulkPromoteDescription: "Promuovi automaticamente tutte le transazioni Plaid classificate che superano la soglia di confidenza.",

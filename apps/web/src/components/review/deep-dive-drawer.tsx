@@ -33,6 +33,16 @@ interface DeepDiveDrawerProps {
   onClose: () => void;
   onSaveAndPromote: (data: DrawerSaveData) => void;
   onSkip: () => void;
+  /**
+   * Move a CONFIRMED import row back to PENDING. Only shown for
+   * `item.source === 'import'` where `promotionStatus === 'CONFIRMED'`.
+   * Motivating use case: auto-promote fires at the default 0.90
+   * confidence threshold, but a row landing at e.g. 0.91 may still
+   * deserve a manual look before commit — this escape hatch lets the
+   * user demote it without having to commit-then-edit-the-transaction
+   * after the fact. If not provided, the button is hidden.
+   */
+  onResetToPending?: () => void;
   isSaving?: boolean;
 }
 
@@ -57,6 +67,7 @@ export function DeepDiveDrawer({
   onClose,
   onSaveAndPromote,
   onSkip,
+  onResetToPending,
   isSaving,
 }: DeepDiveDrawerProps) {
   const { t } = useTranslation();
@@ -290,6 +301,26 @@ export function DeepDiveDrawer({
         {/* Footer — always show save button */}
         <Separator />
         <SheetFooter className="px-6 py-4 flex-row justify-end gap-2">
+          {/* Reset to pending — only for CONFIRMED import rows. Lets the
+              user undo an auto-promote without having to commit then
+              edit the transaction after the fact. Hidden when the
+              caller doesn't wire onResetToPending, so Plaid-review
+              usage is unaffected. */}
+          {onResetToPending
+            && item.source === 'import'
+            && item.promotionStatus === 'CONFIRMED' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onResetToPending();
+                onClose();
+              }}
+              title={t('review.resetToPendingDesc')}
+            >
+              {t('review.resetToPending')}
+            </Button>
+          )}
           {!isAlreadyProcessed && (
             <Button
               variant="outline"

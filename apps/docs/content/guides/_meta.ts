@@ -9,4 +9,5 @@ export default {
   'ai-classification': 'AI Classification',
   'financial-insights': 'Financial Insights',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
+  maintenance: 'Maintenance',
 };

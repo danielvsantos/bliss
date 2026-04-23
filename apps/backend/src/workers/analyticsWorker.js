@@ -9,6 +9,8 @@ const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/c
 const { getCategoryMaps } = require('../utils/categoryCache'); // Import category cache
 const { enqueueEvent } = require('../queues/eventsQueue'); // Corrected import path
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { createHeartbeat } = require('../utils/jobHeartbeat');
+const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
 const prisma = require('../../prisma/prisma.js');
 
@@ -32,7 +34,7 @@ async function fetchHistoricalRate(date, currencyFrom, currencyTo) {
 
 // --- Enhanced Analytics Calculation Logic ---
 
-async function calculateAnalytics(tenantId, scope, targetCurrencies) {
+async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat = async () => {}) {
   logger.info('Starting analytics calculation:', { tenantId, scope, targetCurrencies });
 
   const BATCH_SIZE = 1000;
@@ -107,6 +109,11 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies) {
       break;
     }
     transactionCount += transactionsForDates.length;
+    // Renew the job lock between batch fetches — Pass 1 can walk tens of
+    // thousands of rows for a full-rebuild tenant, and Prisma Accelerate
+    // retries (1102 Worker resource limits) can stretch a single await
+    // past BullMQ's 150s auto-renew window.
+    await heartbeat();
 
 
     const filteredForDates = transactionsForDates.filter(txn => {
@@ -165,6 +172,8 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies) {
     }
     processedCount += transactions.length;
     logger.info(`[AnalyticsWorker] Processing batch of ${transactions.length}. Total processed: ${processedCount}/${transactionCount}`);
+    // Renew the job lock between batches (same reasoning as Pass 1).
+    await heartbeat();
     
     const filteredTransactions = transactions.filter(txn => {
         if (scopeType     && !scopeType.includes(txn.category?.type))       return false;
@@ -264,10 +273,20 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies) {
 // Cash holdings processing has been moved to the dedicated cash-processor.js worker
 
 // --- BullMQ Worker Setup ---
-const processAnalyticsJob = async (job) => {
+const processAnalyticsJob = async (job, token) => {
     const { name, data } = job;
     const { tenantId, scope, scopes } = data; // Added 'scopes'
     const startTime = Date.now();
+
+    // Explicit lock heartbeat. See `utils/jobHeartbeat.js` for why we don't
+    // rely solely on BullMQ's auto-renew. `lockDurationMs` here matches
+    // the Worker's `lockDuration` below; `intervalMs` is how often we're
+    // willing to spend a Redis round-trip on a renewal.
+    const heartbeat = createHeartbeat(job, token, {
+        intervalMs: 60_000,
+        lockDurationMs: 300_000,
+        name: 'analyticsWorker',
+    });
 
     logger.info(`Starting analytics job: ${name}`, {
         jobId: job.id,
@@ -311,7 +330,7 @@ const processAnalyticsJob = async (job) => {
             case 'scoped-update-analytics':
                 if (scopes && scopes.length > 0) {
                     for (const singleScope of scopes) {
-                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies);
+                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies, heartbeat);
                         newAnalytics.push(...analytics);
                         newTagAnalytics.push(...tagAnalytics);
                     }
@@ -339,7 +358,7 @@ const processAnalyticsJob = async (job) => {
 
             case 'recalculate-analytics': // This is the broad job from imports
             default: {
-                const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, scope || {}, targetCurrencies);
+                const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, scope || {}, targetCurrencies, heartbeat);
                 newAnalytics = analytics;
                 newTagAnalytics = tagAnalytics;
                 break;
@@ -353,118 +372,99 @@ const processAnalyticsJob = async (job) => {
           updateCount: newAnalytics.length
         });
 
-        // Update or create analytics cache entries in batches to avoid
-        // overwhelming the Prisma Accelerate proxy (10s per-query timeout).
-        const UPSERT_BATCH_SIZE = 500;
-        const results = [];
-        let updatedCount = 0;
-        let createdCount = 0;
+        // Write analytics cache in batches. Two modes:
+        //
+        //  - Full rebuild: the outer $transaction above has already wiped
+        //    the tenant's existing rows, so each batch is a pure
+        //    createMany(). We deliberately do NOT pass `skipDuplicates` —
+        //    after the wipe there should be no conflicts, and a unique
+        //    violation here indicates a concurrent rebuild that we want
+        //    to surface (the single-flight lock introduced in Issue 3
+        //    prevents this, but letting it throw is the correct default).
+        //
+        //  - Scoped: we can't wipe the whole tenant (we'd lose untouched
+        //    periods/types/groups), and Prisma has no native bulk upsert.
+        //    Instead, atomically replace exactly the composite keys we're
+        //    rewriting via a keyed deleteMany + createMany inside a
+        //    single $transaction.
+        //
+        // This replaces the prior upsert-per-row pattern, which
+        // round-tripped once per analytics entry (500 RTs per batch) and
+        // pushed Prisma Accelerate past its Worker resource limits (the
+        // "Error 1102: Worker exceeded resource limits" Cloudflare
+        // responses observed in production).
+        const WRITE_BATCH_SIZE = 500;
 
-        for (let i = 0; i < newAnalytics.length; i += UPSERT_BATCH_SIZE) {
-            const batch = newAnalytics.slice(i, i + UPSERT_BATCH_SIZE);
-            const batchPromises = batch.map(entry => {
-                const { totalDebt, ...dataToUpsert } = entry;
-                return prisma.analyticsCacheMonthly.upsert({
-                    where: {
-                        tenant_year_month_currency_country_type_group: {
-                            tenantId,
-                            year: dataToUpsert.year,
-                            month: dataToUpsert.month,
-                            currency: dataToUpsert.currency,
-                            country: dataToUpsert.country,
-                            type: dataToUpsert.type,
-                            group: dataToUpsert.group
-                        }
-                    },
-                    update: {
-                        credit: dataToUpsert.credit,
-                        debit: dataToUpsert.debit,
-                        balance: dataToUpsert.balance,
-                    },
-                    create: {
-                        ...dataToUpsert,
-                        tenantId
-                    }
-                });
-            });
+        for (let i = 0; i < newAnalytics.length; i += WRITE_BATCH_SIZE) {
+            await heartbeat();
+            const batch = newAnalytics.slice(i, i + WRITE_BATCH_SIZE);
+            // Strip any extraneous in-memory fields (e.g. `totalDebt`)
+            // and attach tenantId for createMany.
+            // eslint-disable-next-line no-unused-vars
+            const rows = batch.map(({ totalDebt, ...rest }) => ({ ...rest, tenantId }));
 
-            const batchResults = await prisma.$transaction(batchPromises);
-            results.push(...batchResults);
-        }
-
-        // Now, calculate created vs. updated counts from the results
-        for (const result of results) {
-            if (result) {
-                if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-                    createdCount++;
-                } else {
-                    updatedCount++;
-                }
+            if (isFullRebuildJob) {
+                await prisma.analyticsCacheMonthly.createMany({ data: rows });
+            } else {
+                const keys = rows.map(r => ({
+                    year: r.year,
+                    month: r.month,
+                    currency: r.currency,
+                    country: r.country,
+                    type: r.type,
+                    group: r.group,
+                }));
+                await prisma.$transaction([
+                    prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId, OR: keys } }),
+                    prisma.analyticsCacheMonthly.createMany({ data: rows }),
+                ]);
             }
         }
 
-        // --- Tag Analytics Cache Upsert ---
-        let tagCreatedCount = 0;
-        let tagUpdatedCount = 0;
+        // --- Tag Analytics Cache Write ---
+        // Same delete-then-createMany pattern, but keyed on the 9-column
+        // composite unique constraint (adds tagId + categoryId).
         if (newTagAnalytics.length > 0) {
-          const tagResults = [];
-          for (let i = 0; i < newTagAnalytics.length; i += UPSERT_BATCH_SIZE) {
-              const batch = newTagAnalytics.slice(i, i + UPSERT_BATCH_SIZE);
-              const tagBatchPromises = batch.map(entry => {
-                  return prisma.tagAnalyticsCacheMonthly.upsert({
-                      where: {
-                          tag_tenant_year_month_currency_country_type_group_cat: {
-                              tagId: entry.tagId,
-                              tenantId,
-                              year: entry.year,
-                              month: entry.month,
-                              currency: entry.currency,
-                              country: entry.country,
-                              type: entry.type,
-                              group: entry.group,
-                              categoryId: entry.categoryId
-                          }
-                      },
-                      update: {
-                          credit: entry.credit,
-                          debit: entry.debit,
-                          balance: entry.balance,
-                          categoryName: entry.categoryName,
-                      },
-                      create: {
-                          tagId: entry.tagId,
-                          year: entry.year,
-                          month: entry.month,
-                          currency: entry.currency,
-                          country: entry.country,
-                          type: entry.type,
-                          group: entry.group,
-                          categoryId: entry.categoryId,
-                          categoryName: entry.categoryName,
-                          credit: entry.credit,
-                          debit: entry.debit,
-                          balance: entry.balance,
-                          tenantId
-                      }
-                  });
-              });
+          for (let i = 0; i < newTagAnalytics.length; i += WRITE_BATCH_SIZE) {
+              await heartbeat();
+              const batch = newTagAnalytics.slice(i, i + WRITE_BATCH_SIZE);
+              const rows = batch.map(entry => ({
+                  tagId: entry.tagId,
+                  year: entry.year,
+                  month: entry.month,
+                  currency: entry.currency,
+                  country: entry.country,
+                  type: entry.type,
+                  group: entry.group,
+                  categoryId: entry.categoryId,
+                  categoryName: entry.categoryName,
+                  credit: entry.credit,
+                  debit: entry.debit,
+                  balance: entry.balance,
+                  tenantId,
+              }));
 
-              const batchResults = await prisma.$transaction(tagBatchPromises);
-              tagResults.push(...batchResults);
-          }
-          for (const result of tagResults) {
-              if (result) {
-                  if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-                      tagCreatedCount++;
-                  } else {
-                      tagUpdatedCount++;
-                  }
+              if (isFullRebuildJob) {
+                  await prisma.tagAnalyticsCacheMonthly.createMany({ data: rows });
+              } else {
+                  const keys = rows.map(r => ({
+                      tagId: r.tagId,
+                      year: r.year,
+                      month: r.month,
+                      currency: r.currency,
+                      country: r.country,
+                      type: r.type,
+                      group: r.group,
+                      categoryId: r.categoryId,
+                  }));
+                  await prisma.$transaction([
+                      prisma.tagAnalyticsCacheMonthly.deleteMany({ where: { tenantId, OR: keys } }),
+                      prisma.tagAnalyticsCacheMonthly.createMany({ data: rows }),
+                  ]);
               }
           }
           logger.info('Tag analytics cache updated:', {
             jobId: job.id,
-            tagCreated: tagCreatedCount,
-            tagUpdated: tagUpdatedCount,
             totalTagEntries: newTagAnalytics.length
           });
         }
@@ -477,10 +477,7 @@ const processAnalyticsJob = async (job) => {
           duration: `${duration}ms`,
           stats: {
             totalProcessed: newAnalytics.length,
-            created: createdCount,
-            updated: updatedCount,
-            tagCreated: tagCreatedCount,
-            tagUpdated: tagUpdatedCount
+            totalTagEntries: newTagAnalytics.length,
           }
         });
 
@@ -495,6 +492,11 @@ const processAnalyticsJob = async (job) => {
             isFullRebuild,
             // For a full rebuild, we send no IDs. For scoped runs, we send the affected IDs.
             ...(isFullRebuild ? {} : { portfolioItemIds: allAffectedItemIds }),
+            // Forward the admin-rebuild marker (if any) so the event
+            // scheduler can distinguish a manual `full-analytics` rebuild
+            // (no downstream valuation cascade) from a routine full rebuild
+            // that does want the cascade.
+            ...(data._rebuildMeta ? { _rebuildMeta: data._rebuildMeta } : {}),
         });
 
 
@@ -503,8 +505,7 @@ const processAnalyticsJob = async (job) => {
           duration,
           stats: {
             totalProcessed: newAnalytics.length,
-            created: createdCount,
-            updated: updatedCount
+            totalTagEntries: newTagAnalytics.length,
           }
         };
 
@@ -536,11 +537,15 @@ const startAnalyticsWorker = () => {
     });
 
     // Worker event handlers
-    worker.on('completed', (job) => {
+    worker.on('completed', async (job) => {
       logger.info('Analytics job completed successfully:', {
         jobId: job.id,
         result: job.returnvalue
       });
+      // Release the single-flight rebuild lock if this job was the
+      // terminal step of a manual rebuild chain (full-analytics or
+      // scoped-analytics). See `utils/rebuildLock.js`.
+      await maybeReleaseRebuildLock(job);
     });
 
     worker.on('failed', (job, error) => {
@@ -557,4 +562,8 @@ const startAnalyticsWorker = () => {
 };
 
 
-module.exports = { startAnalyticsWorker, calculateAnalytics };
+// `processAnalyticsJob` is exported for direct unit-test access to the
+// write path (full-rebuild createMany vs scoped delete+createMany). Not
+// used in production — production invocation goes through the BullMQ
+// Worker set up in `startAnalyticsWorker`.
+module.exports = { startAnalyticsWorker, calculateAnalytics, processAnalyticsJob };

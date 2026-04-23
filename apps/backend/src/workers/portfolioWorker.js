@@ -5,6 +5,8 @@ const { getRedisConnection } = require('../utils/redis');
 const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue } = require('../queues/portfolioQueue');
 const prisma = require('../../prisma/prisma');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { createHeartbeat } = require('../utils/jobHeartbeat');
+const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
 const recalculatePortfolioItem = require('./portfolio-handlers/recalculate-portfolio-item');
 const processPortfolioChanges = require('./portfolio-handlers/process-portfolio-changes');
@@ -13,9 +15,22 @@ const processAmortizingLoan = require('./portfolio-handlers/amortizing-loan-proc
 const generatePortfolioValuation = require('./portfolio-handlers/valuation/index.js');
 const { processCashHoldings } = require('./portfolio-handlers/cash-processor');
 
-const processPortfolioJob = async (job) => {
+const processPortfolioJob = async (job, token) => {
     const { name, data } = job;
     logger.info(`Processing portfolio job: ${name}`, { data });
+
+    // Attach an explicit lock heartbeat to the job so downstream handlers
+    // — including those invoked via the `{ ...job, data: ... }` spread
+    // pattern — can call `job.heartbeat()` at natural yield points
+    // (per-asset loop iterations, per-batch writes). BullMQ v5's
+    // auto-renew at lockDuration/2 can miss its window under Prisma
+    // Accelerate retry storms, which is what caused the "could not renew
+    // lock for job <id>" errors during long full-rebuild chains.
+    job.heartbeat = createHeartbeat(job, token, {
+        intervalMs: 60_000,
+        lockDurationMs: 300_000,
+        name: 'portfolioWorker',
+    });
 
     try {
         switch (name) {
@@ -23,14 +38,17 @@ const processPortfolioJob = async (job) => {
                 return await processPortfolioChanges(job);
             
             case 'process-cash-holdings': {
-                const { tenantId, scope, originalScope, portfolioItemIds } = data;
+                const { tenantId, scope, originalScope, portfolioItemIds, _rebuildMeta } = data;
                 // Merge originalScope and portfolioItemIds into scope so the cash processor
                 // can include them in the CASH_HOLDINGS_PROCESSED event it emits, which
                 // allows the event scheduler to correctly trigger scoped analytics downstream.
+                // `_rebuildMeta` is also forwarded so the admin-rebuild chain stays
+                // traceable through to `value-all-assets` (lock release on completion).
                 const enrichedScope = {
                     ...scope,
                     ...(originalScope !== undefined && { originalScope }),
                     ...(portfolioItemIds !== undefined && { portfolioItemIds }),
+                    ...(_rebuildMeta ? { _rebuildMeta } : {}),
                 };
                 return await processCashHoldings(tenantId, enrichedScope);
             }
@@ -248,8 +266,13 @@ const startPortfolioWorker = () => {
     logger.info('Registered nightly portfolio revaluation cron (4 AM UTC)');
 
     // Add event listeners for logging
-    worker.on('completed', (job, result) => {
+    worker.on('completed', async (job, result) => {
       logger.info(`Portfolio job completed successfully`, { jobName: job.name, jobId: job.id, result });
+      // Release the single-flight rebuild lock if this job was the
+      // terminal step of a manual rebuild chain (full-portfolio's
+      // `value-all-assets`, or single-asset's `value-portfolio-items`).
+      // See `utils/rebuildLock.js`.
+      await maybeReleaseRebuildLock(job);
     });
 
     worker.on('failed', (job, error) => {

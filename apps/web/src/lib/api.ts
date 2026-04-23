@@ -38,6 +38,9 @@ import type {
   SeedItem,
   Insight,
   UserSignal,
+  RebuildStatusResponse,
+  RebuildTriggerRequest,
+  RebuildTriggerResponse,
 } from '../types/api';
 
 export interface AggregatedPortfolioHistory {
@@ -936,6 +939,18 @@ class APIClient {
 
   async getEquityAnalysis(params: { groupBy?: string } = {}): Promise<import('@/types/equity-analysis').EquityAnalysisResponse> {
     const response = await this.client.get('/api/portfolio/equity-analysis', { params });
+    return response.data;
+  }
+
+  // --- Admin Maintenance (tenant-admin only) ---
+
+  async getRebuildStatus(): Promise<RebuildStatusResponse> {
+    const response = await this.client.get('/api/admin/rebuild');
+    return response.data;
+  }
+
+  async triggerRebuild(body: RebuildTriggerRequest): Promise<RebuildTriggerResponse> {
+    const response = await this.client.post('/api/admin/rebuild', body);
     return response.data;
   }
 }

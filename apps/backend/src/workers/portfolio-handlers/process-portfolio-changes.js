@@ -52,21 +52,28 @@ const seedManualAssetValues = async (portfolioItemId, tenantId, transactions) =>
 };
 
 const processPortfolioChanges = async (job) => {
-    const { tenantId, transactionId, institutionId, accountIds, dateScopes } = job.data;
+    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta } = job.data;
+
+    // Thread the BullMQ lock heartbeat attached by `portfolioWorker`
+    // through to `handleFullRebuild`'s inner loops. Without this,
+    // `job.heartbeat` is out of scope inside the helper (which doesn't
+    // receive `job` directly) and the loops crash with
+    // `ReferenceError: job is not defined`.
+    const heartbeat = job.heartbeat;
 
     if (transactionId) {
         // --- Scoped Update Logic (single transaction) ---
-        return await handleScopedUpdate(tenantId, transactionId);
+        return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta);
     } else if (accountIds && accountIds.length > 0) {
         // --- Account-scoped rebuild (e.g., after Plaid promote or import) ---
-        return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes);
+        return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat);
     } else {
         // --- Full Rebuild Logic ---
-        return await handleFullRebuild(tenantId, institutionId);
+        return await handleFullRebuild(tenantId, institutionId, undefined, undefined, _rebuildMeta, heartbeat);
     }
 };
 
-const handleScopedUpdate = async (tenantId, transactionId) => {
+const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     logger.info(`--- Starting Scoped Portfolio Update for tenant: ${tenantId}, transaction: ${transactionId} ---`);
     
     const transaction = await prisma.transaction.findUnique({
@@ -200,6 +207,10 @@ const handleScopedUpdate = async (tenantId, transactionId) => {
         }),
     };
     
+    // Forward `_rebuildMeta` so the admin-rebuild chain stays traceable
+    // through cash → analytics → valuation and the terminal worker can
+    // release the single-flight lock on completion.
+    if (_rebuildMeta) payload._rebuildMeta = _rebuildMeta;
     await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', payload);
     logger.info(`[Scoped] Emitted PORTFOLIO_CHANGES_PROCESSED event.`, payload);
 
@@ -207,7 +218,7 @@ const handleScopedUpdate = async (tenantId, transactionId) => {
 };
 
 
-const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes) => {
+const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat) => {
     const isAccountScoped = accountIds && accountIds.length > 0;
     const scope = isAccountScoped
         ? `accounts: [${accountIds.join(', ')}]`
@@ -301,6 +312,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
             // For account-scoped updates, pass empty portfolioItemIds + dateScopes
             // so downstream cash/analytics processing still triggers
             ...(isAccountScoped && { portfolioItemIds: [], dateScopes: dateScopes || [] }),
+            ...(_rebuildMeta ? { _rebuildMeta } : {}),
         });
         return { success: true, portfolioItemsCreated: 0 };
     }
@@ -376,6 +388,10 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     let portfolioItemsToCreate = [];
 
     for (const [symbol, transactions] of transactionsByGroup.entries()) {
+        // BullMQ lock heartbeat — see `utils/jobHeartbeat.js`. Safe
+        // to call unconditionally (no-ops when not attached,
+        // self rate-limits to ~60s intervals).
+        await heartbeat?.();
         // --- Start Change: Sort transactions immediately to avoid side-effects ---
         transactions.sort((a, b) => a.transaction_date - b.transaction_date);
         // --- End Change ---
@@ -447,6 +463,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     // --- Step 5b: Seed ManualAssetValue for newly created MANUAL-source items ---
     for (const itemData of portfolioItemsToCreate) {
+        await heartbeat?.();
         if (itemData.source !== 'MANUAL') continue;
 
         const portfolioItem = allItemsMap.get(itemData.symbol);
@@ -508,6 +525,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         institutionId,
         ...(isAccountScoped && allAffectedItemIds.length > 0 && { portfolioItemIds: allAffectedItemIds }),
         ...(isAccountScoped && dateScopes && { dateScopes }),
+        ...(_rebuildMeta ? { _rebuildMeta } : {}),
     });
     logger.info(`[Sync] Emitted PORTFOLIO_CHANGES_PROCESSED event for tenant: ${tenantId}, isFullRebuild: ${!isAccountScoped}.`);
 

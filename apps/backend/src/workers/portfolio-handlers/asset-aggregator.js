@@ -33,10 +33,11 @@ const generateAssetKey = (transaction, decryptFn) => {
         case 'CATEGORY_NAME':
             return categoryName;
 
-        case 'CATEGORY_NAME_PLUS_DESCRIPTION':
+        case 'CATEGORY_NAME_PLUS_DESCRIPTION': {
             if (!description) return null;
             const decryptedDescription = decryptFn(description);
             return `${categoryName}:${decryptedDescription}`;
+        }
 
         case 'IGNORE':
         default:

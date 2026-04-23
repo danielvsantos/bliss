@@ -481,6 +481,24 @@ export default function TransactionReviewPage() {
     [updatePlaidTx, toast, plaidReviewItems, plaidCategoryFilter, plaidTransactions.length],
   );
 
+  // Clear any active category filter after a bulk operation so the user isn't
+  // left looking at a stale "filtered to an empty category" view. Without
+  // this, approving all items in a group leaves the filter set to that now-
+  // empty category; the next refetch returns 0 items and the grouped view
+  // appears broken until the user manually clicks another category. Mirrors
+  // the `length <= 1` fallback in `handleImportRowStatus` for the single-
+  // item path.
+  const clearStaleCategoryFilters = useCallback(() => {
+    if (plaidCategoryFilter != null) {
+      setPlaidCategoryFilter(null);
+      setPlaidPage(1);
+    }
+    if (importCategoryFilter != null) {
+      setImportCategoryFilter(null);
+      setImportPage(1);
+    }
+  }, [plaidCategoryFilter, importCategoryFilter]);
+
   const handlePromoteGroup = useCallback(
     (items: ReviewItem[]) => {
       // Plaid group promote — exclude items that need enrichment
@@ -500,6 +518,7 @@ export default function TransactionReviewPage() {
           { transactionIds: plaidIds },
           {
             onSuccess: (result) => {
+              clearStaleCategoryFilters();
               const parts = [`Promoted ${result.promoted} transactions`];
               if (result.errors > 0) parts.push(`${result.errors} failed`);
               if (skippedEnrichment > 0) parts.push(`${skippedEnrichment} need enrichment`);
@@ -547,6 +566,10 @@ export default function TransactionReviewPage() {
         handleImportRowStatus(item.originalImportRow!, 'CONFIRMED');
       }
       if (importItems.length > 0) {
+        // Clear the (possibly now-empty) import category filter so the
+        // refetched grouped view reflects the drained category. See
+        // `clearStaleCategoryFilters` docstring.
+        clearStaleCategoryFilters();
         const desc = importEnrichmentSkipped > 0
           ? `${importItems.length} row(s) confirmed. ${importEnrichmentSkipped} investment row(s) need enrichment first.`
           : `${importItems.length} row(s) confirmed for commit.`;
@@ -560,7 +583,7 @@ export default function TransactionReviewPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleImportRowStatus defined later; stable useCallback
-    [bulkPromote, toast, categoriesMap],
+    [bulkPromote, toast, categoriesMap, clearStaleCategoryFilters],
   );
 
   const handleBulkPromote = useCallback(() => {
@@ -568,6 +591,9 @@ export default function TransactionReviewPage() {
       { minConfidence: parseFloat(bulkConfidenceThreshold) },
       {
         onSuccess: (result) => {
+          // Confidence-threshold bulk promote can drain many categories at
+          // once; always reset the view filters.
+          clearStaleCategoryFilters();
           setShowBulkDialog(false);
           toast({
             title: 'Bulk Promote Complete',
@@ -580,7 +606,7 @@ export default function TransactionReviewPage() {
         },
       },
     );
-  }, [bulkPromote, bulkConfidenceThreshold, toast]);
+  }, [bulkPromote, bulkConfidenceThreshold, toast, clearStaleCategoryFilters]);
 
   // ── Import handlers ──
   const handleImportRowStatus = useCallback(
@@ -1269,6 +1295,15 @@ export default function TransactionReviewPage() {
         onClose={() => setSelectedItem(null)}
         onSaveAndPromote={handleDrawerSave}
         onSkip={handleDrawerSkip}
+        onResetToPending={
+          // Only wired for import rows — the drawer itself double-gates on
+          // `item.source === 'import'`, but this guard keeps the prop
+          // undefined for Plaid items so the button never even considers
+          // rendering.
+          selectedItem?.source === 'import' && selectedItem.originalImportRow
+            ? () => handleImportRowStatus(selectedItem.originalImportRow!, 'PENDING')
+            : undefined
+        }
         isSaving={updatePlaidTx.isPending || updateImportRow.isPending}
       />
 
@@ -1346,6 +1381,10 @@ export default function TransactionReviewPage() {
                         },
                         {
                           onSuccess: (result) => {
+                            // Clear stale filters — the drawer's "confirm all"
+                            // can fully drain the currently-expanded category
+                            // if all its items share this description.
+                            clearStaleCategoryFilters();
                             setPendingDrawerSave(null);
                             const total = result.promoted + 1 + importMatches.length;
                             toast({
@@ -1364,6 +1403,7 @@ export default function TransactionReviewPage() {
                       );
                     } else {
                       // Only import matches, no Plaid — close dialog immediately
+                      clearStaleCategoryFilters();
                       setPendingDrawerSave(null);
                       const total = 1 + importMatches.length;
                       toast({
@@ -1425,6 +1465,13 @@ export default function TransactionReviewPage() {
                   { transactionIds: ids },
                   {
                     onSuccess: (result) => {
+                      // Same rationale as the group-approve path: the set of
+                      // promoted items may fully drain the currently-expanded
+                      // category (if the category's remaining items all share
+                      // this description). Clear the stale filter so the
+                      // refetched grouped view isn't filtered to an empty
+                      // category.
+                      clearStaleCategoryFilters();
                       setPendingApproveItem(null);
                       toast({
                         title: `Promoted ${result.promoted} transaction${result.promoted !== 1 ? 's' : ''}`,

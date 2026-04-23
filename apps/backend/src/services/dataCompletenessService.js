@@ -317,11 +317,18 @@ async function checkAnnualTierCompleteness(tenantId, year) {
  * Requires at least 1 priced holding with SecurityMaster data.
  */
 async function checkPortfolioTierCompleteness(tenantId) {
+  // NOTE: `PortfolioItem` has no `ticker` column — the ticker is stored in
+  // the (non-nullable) `symbol` field. (`ticker` lives only on the
+  // `Transaction` model.) The weekly portfolio insights cron died on
+  // 2026-04-20 because this function queried a phantom `ticker` field,
+  // producing `Unknown argument \`ticker\``. We mirror the working pattern
+  // in `insightService.gatherEquityFundamentals`: filter by
+  // `quantity > 0` + investment category only, then read `symbol`.
+  // See `dataCompletenessService.hygiene.test.js` for the guard.
   const holdingsWithFundamentals = await prisma.portfolioItem.count({
     where: {
       tenantId,
       quantity: { gt: 0 },
-      ticker: { not: null },
       category: {
         type: 'Investments',
       },
@@ -333,13 +340,12 @@ async function checkPortfolioTierCompleteness(tenantId) {
     where: {
       tenantId,
       quantity: { gt: 0 },
-      ticker: { not: null },
       category: { type: 'Investments' },
     },
-    select: { ticker: true },
+    select: { symbol: true },
   });
 
-  const tickers = holdingsWithSecurityMaster.map((h) => h.ticker).filter(Boolean);
+  const tickers = holdingsWithSecurityMaster.map((h) => h.symbol).filter(Boolean);
   const securityMasterCount = tickers.length > 0
     ? await prisma.securityMaster.count({
         where: { symbol: { in: tickers } },

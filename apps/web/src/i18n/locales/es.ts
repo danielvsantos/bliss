@@ -1221,6 +1221,8 @@ const es = {
     selectCategoryPlaceholder: "Seleccionar categoría",
     saveChanges: "Guardar Cambios",
     saveAndPromote: "Guardar y Promover",
+    resetToPending: "Volver a Pendiente",
+    resetToPendingDesc: "Mueve esta fila a pendiente para que no se confirme automáticamente. Útil para deshacer una clasificación auto-promovida que quieres revisar.",
     bulkPromoteTitle: "Promover Transacciones en Lote",
     bulkPromoteDescription: "Promover automáticamente todas las transacciones clasificadas de Plaid que superen el umbral de confianza.",
     minConfidenceThreshold: "Umbral Mínimo de Confianza",

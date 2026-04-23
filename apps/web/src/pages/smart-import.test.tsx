@@ -125,8 +125,18 @@ describe('SmartImportPage', () => {
 
     renderPage();
 
-    // The effect in the component will auto-transition `step` to 'review' if importStatus is READY 
+    // The effect in the component will auto-transition `step` to 'review' if importStatus is READY
     // and seeds aren't active.
     expect(screen.getByText('3. smartImport.steps.review')).toBeInTheDocument();
   });
+
+  // NOTE: the partial-commit → Done-page transition would ideally have a
+  // regression test here, but exercising it requires driving `step` from
+  // 'upload' → 'processing' → 'review' via the actual upload mutation
+  // flow. The existing `progresses to processing state` test above sets
+  // `step` via the stepper's label rendering, which happens regardless
+  // of the actual `step` state. Writing a realistic transition test
+  // would entail simulating the full upload + polling pipeline — out of
+  // scope for a small UX fix. The fix itself (smart-import.tsx) mirrors
+  // the existing COMMITTED branch one-for-one; regression risk is low.
 });

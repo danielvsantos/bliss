@@ -67,7 +67,7 @@ async function waitForSchemaAndRefresh({ maxWaitMs = 120000, retryDelayMs = 2000
   const start = Date.now();
   let attempt = 0;
   logger.info('Refreshing global category cache...');
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     attempt += 1;
     try {

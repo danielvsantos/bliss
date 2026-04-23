@@ -398,8 +398,28 @@ const processSmartImportJob = async (job) => {
         // AI rows are collected for Phase 1/2 classification below.
         // This separates data prep from AI calls, allowing frequency-based ordering.
 
-        await job.updateProgress(1);
-        await prisma.stagedImport.update({ where: { id: stagedImportId }, data: { progress: 1 } });
+        // Progress reporter — writes at most once per second regardless of
+        // row count. Row-count strides (e.g. "every 5%" or "every 50 rows")
+        // either spam Prisma on small imports or leave the bar frozen for
+        // tens of seconds on large ones; a time-based throttle keeps the
+        // cadence smooth at any scale (~1 update/s) and the write itself is
+        // a single-row UPDATE by PK so it's essentially free.
+        // `force` bypasses the throttle — use it for guaranteed-land values
+        // like the start (1%) and end-of-phase boundaries.
+        let lastProgressWriteMs = 0;
+        const PROGRESS_MIN_INTERVAL_MS = 1000;
+        const reportProgress = async (pct, { force = false } = {}) => {
+            const now = Date.now();
+            if (!force && now - lastProgressWriteMs < PROGRESS_MIN_INTERVAL_MS) return;
+            lastProgressWriteMs = now;
+            await job.updateProgress(pct);
+            await prisma.stagedImport.update({
+                where: { id: stagedImportId },
+                data: { progress: pct },
+            });
+        };
+
+        await reportProgress(1, { force: true });
 
         const allRowData = [];     // Complete list of rowData objects (all rows)
         const aiEntries = [];      // Subset of allRowData entries needing AI classification
@@ -562,6 +582,17 @@ const processSmartImportJob = async (job) => {
             }
 
             allRowData.push(rowData);
+
+            // First-pass progress: 1% → 19% while we normalize, dedup, and
+            // resolve native-adapter rows. Without this, large imports sat
+            // at 1% for the entire duration of this loop before jumping to
+            // 30% when Phase 1 finished. Time-throttled so even a 15k-row
+            // import stays continuously updating.
+            // Ceiling is 19% (not 29%) to reserve 20→29 for Phase 1's LLM
+            // seed interview — that loop used to run silently for 100+
+            // seconds between this bar and the jump to 30%.
+            const pct = Math.min(19, 1 + Math.floor(((i + 1) / normalizedRows.length) * 18));
+            await reportProgress(pct);
         }
 
         // ── Phase 1: Frequency-First Seed Classification ──────────────────────────
@@ -575,6 +606,16 @@ const processSmartImportJob = async (job) => {
         const aiFreqMap = buildAiFrequencyMap(aiEntries);
         const sortedDescAi = [...aiFreqMap.entries()].sort((a, b) => b[1].length - a[1].length);
         const phase1Start = Date.now();
+
+        // Progress band for Phase 1: 20% → 29%. Each LLM classify call can
+        // take 3-5s (sometimes longer), and the loop runs up to TOP_N_SEEDS
+        // slow iterations plus any fast EXACT/VECTOR hits. Denominator is
+        // whichever completes first so the bar fills smoothly in both the
+        // small-list-all-LLM case (e.g. 5 unique desc → 5 slow iters fill
+        // 5/5 of the band) and the large-list-with-cache-hits case (many
+        // fast iters + up to TOP_N_SEEDS slow ones → bar caps at 29%).
+        const phase1Denom = Math.max(1, Math.min(sortedDescAi.length, TOP_N_SEEDS));
+        let phase1Done = 0;
 
         for (const [normalizedName, entries] of sortedDescAi) {
             if (seedCount >= TOP_N_SEEDS) break;
@@ -605,6 +646,13 @@ const processSmartImportJob = async (job) => {
                 logger.warn(`Phase 1 classify failed for "${normalizedName}": ${classifyError.message}`);
                 // Leave rowData.classificationSource = null — user will classify manually
             }
+
+            // Tick progress after each iteration so the bar advances even
+            // when the loop is blocked on slow LLM calls. The 1s throttle
+            // in reportProgress() keeps the Prisma write cadence sane.
+            phase1Done++;
+            const pct = Math.min(29, 20 + Math.floor((phase1Done / phase1Denom) * 9));
+            await reportProgress(pct);
         }
 
         logger.info(
@@ -613,11 +661,15 @@ const processSmartImportJob = async (job) => {
 
         // ── Signal frontend: Quick Seed interview can be shown ────────────────────
         // seedReady = true even if seedCount = 0 (all hit Tier 1/2 — interview skipped)
+        // NOTE: we update `seedReady` separately from the generic progress
+        // reporter because the boolean field must land with the progress
+        // write regardless of the time-throttle.
         await prisma.stagedImport.update({
             where: { id: stagedImportId },
             data: { seedReady: true, progress: 30 },
         });
         await job.updateProgress(30);
+        lastProgressWriteMs = Date.now(); // keep the throttle in sync with the manual write above
 
         // ── Phase 2: Parallel Classification of Remaining AI Rows ─────────────────
         // Rows not touched by Phase 1 (still have classificationSource === null).
@@ -656,12 +708,8 @@ const processSmartImportJob = async (job) => {
                         // rowData stays with no category — user must manually assign
                     }
                     phase2Done++;
-                    // Update DB progress every 50 rows during Phase 2
-                    if (phase2Done % 50 === 0) {
-                        const pct = 30 + Math.round((phase2Done / sortedAsc.length) * 50);
-                        await job.updateProgress(pct);
-                        await prisma.stagedImport.update({ where: { id: stagedImportId }, data: { progress: pct } });
-                    }
+                    const pct = 30 + Math.round((phase2Done / sortedAsc.length) * 50);
+                    await reportProgress(pct, { force: phase2Done === sortedAsc.length });
                 }))
             );
 
@@ -796,7 +844,10 @@ const processSmartImportJob = async (job) => {
             logger.info(`[SmartImport] Ticker metadata resolution complete.`);
         }
 
-        await job.updateProgress(90);
+        // Persist the 90% milestone (end of ticker resolution, before
+        // Step 7 batch insert). Forced write so the bar is guaranteed to
+        // advance here even if the last Phase 2 tick fired recently.
+        await reportProgress(90, { force: true });
 
         // ── Step 7: Batch insert all staged rows ──────────────────────────────────
         // NOTE: Embeddings are intentionally NOT saved here — only at commit time after

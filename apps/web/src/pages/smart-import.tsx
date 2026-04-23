@@ -382,7 +382,17 @@ export default function SmartImportPage() {
   }, [stagedData, toast]);
 
   // --- Detect COMMITTING → COMMITTED/READY transition via polling ---
+  //
+  // `useStagedImport` only polls while status is PROCESSING or COMMITTING.
+  // In the common case where the commit worker finishes in <2s we can
+  // miss the COMMITTING state entirely — by the time the UI refetches,
+  // status is already back to READY with a commitResult. Relying on
+  // `prevStatus === 'COMMITTING'` observed via polling is therefore
+  // unreliable. `commitInFlightRef` is set by `handleCommit`'s
+  // `onMutate` instead — we KNOW a commit was initiated, regardless of
+  // whether we ever observed the COMMITTING state.
   const prevCommitStatusRef = useRef<string | undefined>();
+  const commitInFlightRef = useRef<boolean>(false);
   useEffect(() => {
     const prevStatus = prevCommitStatusRef.current;
     prevCommitStatusRef.current = importStatus;
@@ -399,6 +409,7 @@ export default function SmartImportPage() {
       if (result) {
         setCommitResult({ committed: true, transactionCount: result.transactionCount, updateCount: result.updateCount ?? 0, remaining: result.remaining });
       }
+      commitInFlightRef.current = false;
       setStep('done');
       const parts = [];
       if (result?.transactionCount) parts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
@@ -409,8 +420,27 @@ export default function SmartImportPage() {
       });
       // Now that transactions exist, invalidate transaction queries
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    } else if (importStatus === 'READY' && prevStatus === 'COMMITTING' && result) {
-      // Partial commit: some rows were committed but others remain
+    } else if (commitInFlightRef.current && importStatus === 'READY' && result) {
+      // Partial commit: we initiated a commit (tracked via the ref because
+      // the COMMITTING state may not be observable via polling — see the
+      // ref's docstring above) and the backend has returned READY with a
+      // commitResult. Some rows were committed, others remain
+      // (PENDING / POTENTIAL_DUPLICATE / STAGED rows stay in READY so the
+      // user can come back to review them later).
+      //
+      // Clicking "Commit" expresses intent to finish this batch, so treat
+      // a partial commit as "done" UX-wise: show the completion page with
+      // the stats block (which already has a dedicated "Remaining" counter
+      // in warning color) and the "Review in Transaction Review" CTA so
+      // the user can finish the leftover rows without hunting.
+      setCommitResult({
+        committed: true,
+        transactionCount: result.transactionCount,
+        updateCount: result.updateCount ?? 0,
+        remaining: result.remaining,
+      });
+      commitInFlightRef.current = false;
+      setStep('done');
       const partialParts = [];
       if (result.transactionCount) partialParts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
       if (result.updateCount) partialParts.push(t('smartImport.toast.nUpdated', { count: result.updateCount }));
@@ -420,6 +450,9 @@ export default function SmartImportPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
+    // Suppress the unused-var lint for prevStatus — kept because the ref
+    // still tracks observed status for potential future diagnostics.
+    void prevStatus;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
   }, [importStatus, step, stagedData, toast, queryClient]);
 
@@ -526,6 +559,16 @@ export default function SmartImportPage() {
                           similar.forEach((r) => {
                             updateRow.mutate({ rowId: r.id, data: { status: 'CONFIRMED' } });
                           });
+                          // Reset the status filter so the just-confirmed
+                          // rows stay visible in their groups. Without this,
+                          // a `reviewFilter='PENDING'` user sees the group
+                          // disappear from the grouped view after bulk
+                          // confirm (the items moved to CONFIRMED). Mirrors
+                          // the category-filter reset in transaction-review.
+                          if (reviewFilter !== 'all') {
+                            setReviewFilter('all');
+                            setReviewPage(1);
+                          }
                           toast({ title: t('smartImport.toast.confirmedN', { count: similar.length }) });
                         }}
                       >
@@ -593,17 +636,28 @@ export default function SmartImportPage() {
     commitImport.mutate({ id: stagedImportId }, {
       onSuccess: () => {
         setShowCommitDialog(false);
-        // Don't transition to 'done' — the worker processes async.
-        // Polling will detect COMMITTING → COMMITTED and transition then.
+        // Signal to the status-transition effect that a commit is
+        // running, so it can transition to 'done' when we next see a
+        // commitResult — even if we never observe the intermediate
+        // COMMITTING state via polling (fast commits finish before the
+        // 2s polling interval fires).
+        commitInFlightRef.current = true;
+        // Invalidate the staged-import query so TanStack Query refetches
+        // immediately. The refetch picks up the new COMMITTING status and
+        // re-enables polling until the job completes.
+        queryClient.invalidateQueries({ queryKey: ['imports', 'staged', stagedImportId] });
         toast({ title: t('smartImport.toast.commitStarted'), description: t('smartImport.toast.commitStartedDesc') });
       },
       onError: () => {
         setShowCommitDialog(false);
+        // Safety: clear the ref so a subsequent poll doesn't fire a
+        // stale transition from a failed attempt.
+        commitInFlightRef.current = false;
         toast({ title: t('smartImport.toast.commitFailed'), description: t('smartImport.toast.commitFailedDesc'), variant: 'destructive' });
       },
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- t changes reference on every render; translations are stable within a session
-  }, [stagedImportId, commitImport, toast]);
+  }, [stagedImportId, commitImport, queryClient, toast]);
 
   const handleReset = useCallback(() => {
     setStep('upload');
@@ -1441,18 +1495,25 @@ export default function SmartImportPage() {
                   onApprove={(item) => handleRowStatusChange(item.id, 'CONFIRMED')}
                   onSkip={(item) => handleRowStatusChange(item.id, 'SKIPPED')}
                   onApproveAll={() => {
-                    group.items
-                      .filter((i) =>
-                        i.promotionStatus !== 'CONFIRMED' &&
-                        i.promotionStatus !== 'DUPLICATE' &&
-                        // POTENTIAL_DUPLICATE rows must be approved one-by-one
-                        // via the drawer — bulk-approving would silently commit
-                        // re-imported transactions the user never examined.
-                        i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-                        i.promotionStatus !== 'SKIPPED' &&
-                        !itemNeedsEnrichment(i, categoriesMap),
-                      )
-                      .forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
+                    const toConfirm = group.items.filter((i) =>
+                      i.promotionStatus !== 'CONFIRMED' &&
+                      i.promotionStatus !== 'DUPLICATE' &&
+                      // POTENTIAL_DUPLICATE rows must be approved one-by-one
+                      // via the drawer — bulk-approving would silently commit
+                      // re-imported transactions the user never examined.
+                      i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
+                      i.promotionStatus !== 'SKIPPED' &&
+                      !itemNeedsEnrichment(i, categoriesMap),
+                    );
+                    toConfirm.forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
+                    // If a status filter is active, reset it so the confirmed
+                    // rows stay visible in their groups rather than dropping
+                    // out of the next fetch. See the toast-action path above
+                    // and transaction-review's `clearStaleCategoryFilters`.
+                    if (toConfirm.length > 0 && reviewFilter !== 'all') {
+                      setReviewFilter('all');
+                      setReviewPage(1);
+                    }
                   }}
                   onItemClick={(item) => setDrawerItem(item)}
                   disabled={updateRow.isPending}
@@ -1501,6 +1562,11 @@ export default function SmartImportPage() {
             onClose={() => setDrawerItem(null)}
             onSaveAndPromote={handleDrawerSave}
             onSkip={handleDrawerSkip}
+            onResetToPending={
+              drawerItem
+                ? () => handleRowStatusChange(drawerItem.id, 'PENDING')
+                : undefined
+            }
             isSaving={updateRow.isPending}
           />
 
