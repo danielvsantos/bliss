@@ -96,7 +96,7 @@ Single source of truth for all AI classification tuning constants. All threshold
 | `EXACT_MATCH_CONFIDENCE` | `1` | Fixed confidence assigned to all EXACT_MATCH results |
 | `GLOBAL_VECTOR_DISCOUNT` | `0.92` | Multiplier applied to GlobalEmbedding similarity scores |
 | `EMBEDDING_DIMENSIONS` | `768` | Gemini embedding output dimensionality |
-| `TOP_N_SEEDS` | `15` | Max unique descriptions held for the Quick Seed interview (Phase 1 stops once this many are accumulated) |
+| `TOP_N_SEEDS` | `10` | Max unique descriptions held for the Quick Seed interview (Phase 1 stops once this many are accumulated) |
 | `PHASE2_CONCURRENCY` | `5` | Max concurrent LLM calls during Phase 2 (lowered from 15 to avoid Gemini quota bursting) |
 
 > **Note**: `autoPromoteThreshold` and `reviewThreshold` are also stored on the `Tenant` model so tenants can customise them. Workers fetch fresh values per-job. The constants above are the system defaults applied when creating new tenants.

@@ -183,7 +183,7 @@ Single source of truth for all AI tuning constants:
 | `EMBEDDING_DIMENSIONS` | 768 | Embedding output dimension (all providers project/configure to 768 for pgvector compatibility) |
 | `DEFAULT_AUTO_PROMOTE_THRESHOLD` | 0.90 | Auto-confirm above this confidence |
 | `DEFAULT_REVIEW_THRESHOLD` | 0.70 | Hold for review below this confidence |
-| `TOP_N_SEEDS` | 15 | Phase 1 seed interview size |
+| `TOP_N_SEEDS` | 10 | Phase 1 seed interview size |
 | `PHASE2_CONCURRENCY` | 5 | Max concurrent LLM calls |
 
 **LLM provider defaults** (adapters in `services/llm/`):

@@ -289,7 +289,7 @@ All tuning constants for the four-tier waterfall live in `src/config/classificat
 | `EMBEDDING_DIMENSIONS` | `768` | `geminiService.js` — Gemini embedding output dimensionality |
 | `DEFAULT_AUTO_PROMOTE_THRESHOLD` | `0.90` | Worker fallback when `Tenant.autoPromoteThreshold` is null |
 | `DEFAULT_REVIEW_THRESHOLD` | `0.70` | Worker fallback when `Tenant.reviewThreshold` is null |
-| `TOP_N_SEEDS` | `15` | Phase 1 — max distinct descriptions held for the Quick Seed interview |
+| `TOP_N_SEEDS` | `10` | Phase 1 — max distinct descriptions held for the Quick Seed interview |
 | `DEFAULT_PLAID_HISTORY_DAYS` | `1` (from `PLAID_HISTORY_DAYS` env var) | Default days of Plaid transaction history fetched on initial connect; written to `Tenant.plaidHistoryDays` at creation |
 | `PHASE2_CONCURRENCY` | `5` | Phase 2 — p-limit concurrency cap for parallel LLM calls |
 

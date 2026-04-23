@@ -65,7 +65,7 @@ const DEFAULT_REVIEW_THRESHOLD = 0.70;
 // ── Phase 1 / 2 processing ───────────────────────────────────────────────────
 /** Maximum number of seed descriptions held for the Quick Seed interview.
  *  Phase 1 stops once this many seeds are accumulated. */
-const TOP_N_SEEDS = 15;
+const TOP_N_SEEDS = 10;
 
 /** Maximum concurrent LLM calls during Phase 2 classification.
  *  Kept low (5) to avoid bursting into Gemini's per-minute quota.
