@@ -1,16 +1,32 @@
 openapi: 3.0.0
 info:
   title: Bliss API Layer - Admin
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    Internal admin endpoints for managing default categories and the GlobalEmbedding
-    cross-tenant classification table.
+    Endpoints under `/api/admin/*`. Two distinct audiences and auth models
+    live here; each path documents its own security requirement.
 
-    These endpoints are NOT user-facing — they are called by Anthropic/Bliss operations
-    staff to provision new categories, push metadata changes, and maintain embedding quality.
+    **1. Default Categories & Cross-Tenant Classification** (ops-staff)
 
-    Auth: `x-admin-key` request header (value must match `ADMIN_API_KEY` env var).
-    No user session is required or checked.
+    `/api/admin/default-categories/*`
+    Called by Bliss operations staff to provision new default categories,
+    push metadata changes across all tenants, and maintain the
+    `GlobalEmbedding` cross-tenant classification table.
+    Auth: `x-admin-key` request header (`ADMIN_API_KEY` env var). No user
+    session.
+
+    **2. Maintenance / Rebuild** (tenant-admin)
+
+    `/api/admin/rebuild`
+    Surfaced via the Settings → Maintenance tab. Lets a tenant admin
+    manually trigger background rebuilds of analytics and portfolio
+    valuations when caches look stale, and observe rebuild status +
+    history.
+    Auth: JWT cookie + `user.role === 'admin'`. Non-admins get 403.
+
+    See the spec doc in `docs/specs/api/03-reference-data-management.md`
+    §3.4 for flow diagrams and operator playbooks on the rebuild
+    endpoints.
 
 components:
   securitySchemes:
@@ -21,6 +37,15 @@ components:
       description: >
         Static admin API key set in the ADMIN_API_KEY environment variable.
         Must be provided on every request. Returns 401 if missing or incorrect.
+        Applies to the `/api/admin/default-categories/*` endpoints only.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set at sign-in. Applies to
+        `/api/admin/rebuild`, which additionally requires
+        `user.role === 'admin'` (403 otherwise).
 
   schemas:
     DefaultCategoryListItem:
@@ -145,6 +170,187 @@ components:
             - All GlobalEmbedding rows for this code
             Must not conflict with an existing code (409 if taken).
 
+    # ─── Maintenance / Rebuild schemas (tenant-admin) ─────────────────────────
+
+    RebuildScope:
+      type: string
+      enum: [full-portfolio, full-analytics, scoped-analytics, single-asset]
+      description: |
+        Which rebuild variant to run. Each scope has its own single-flight lock.
+          - `full-portfolio`    rebuilds items → cash → analytics → valuation.
+          - `full-analytics`    rebuilds AnalyticsCacheMonthly / TagAnalyticsCacheMonthly only.
+          - `scoped-analytics`  rebuilds analytics from a given start date onwards.
+          - `single-asset`      re-values one portfolio item's price / holdings history.
+
+    RebuildTriggerRequest:
+      type: object
+      required: [scope]
+      properties:
+        scope:
+          $ref: '#/components/schemas/RebuildScope'
+        payload:
+          type: object
+          description: |
+            Scope-specific arguments. Required fields depend on `scope`:
+              - `scoped-analytics`: `earliestDate` (ISO 8601 date-time string).
+              - `single-asset`:     `portfolioItemId` (integer).
+            Ignored for `full-portfolio` and `full-analytics`.
+          properties:
+            earliestDate:
+              type: string
+              format: date-time
+              example: '2026-03-01T00:00:00.000Z'
+            portfolioItemId:
+              type: integer
+              example: 42
+
+    RebuildTriggerResponse:
+      type: object
+      required: [status, scope, requestedAt, lockTtlSeconds]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        scope:
+          $ref: '#/components/schemas/RebuildScope'
+        requestedAt:
+          type: string
+          format: date-time
+          description: Server-side timestamp when the trigger was accepted.
+        lockTtlSeconds:
+          type: integer
+          description: Initial TTL of the single-flight lock (seconds). 3600 by default.
+          example: 3600
+
+    RebuildConflictResponse:
+      type: object
+      description: Returned when the per-scope lock is already held.
+      required: [error, scope, ttlSeconds]
+      properties:
+        error:
+          type: string
+          example: Rebuild already in progress
+        scope:
+          $ref: '#/components/schemas/RebuildScope'
+        ttlSeconds:
+          type: integer
+          description: Remaining seconds on the lock. UI uses this to render "Next available in X min".
+
+    RebuildLockInfo:
+      type: object
+      required: [scope, held]
+      properties:
+        scope:
+          $ref: '#/components/schemas/RebuildScope'
+        held:
+          type: boolean
+        ttlSeconds:
+          type: integer
+          nullable: true
+          description: Remaining seconds on the lock, or null if not held.
+
+    RebuildJobState:
+      type: string
+      enum: [active, waiting, delayed, completed, failed]
+
+    RebuildJob:
+      type: object
+      required: [id, name, state, progress, attemptsMade]
+      properties:
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+          description: >
+            BullMQ job ID. String for admin-triggered jobs
+            (`manual-rebuild-<scope>-<tenantId>-<ts>`), integer for internal.
+        name:
+          type: string
+          description: BullMQ job name (e.g. `full-rebuild-analytics`, `value-all-assets`).
+        state:
+          $ref: '#/components/schemas/RebuildJobState'
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Worker-reported progress 0–100. Unreported values default to 0.
+        rebuildType:
+          type: string
+          nullable: true
+          description: The scope the job was triggered under (from `_rebuildMeta.rebuildType`).
+        requestedBy:
+          type: string
+          nullable: true
+          description: Email of the admin user who triggered the rebuild.
+        requestedAt:
+          type: string
+          format: date-time
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the worker picked up the job. Null while `waiting`.
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failedReason:
+          type: string
+          nullable: true
+          description: Error message from the final failed attempt (if any).
+        attemptsMade:
+          type: integer
+
+    RebuildAsset:
+      type: object
+      description: |
+        Lightweight portfolio-item shape used by the single-asset rebuild
+        picker. Shipped inside the status response so the Maintenance tab
+        avoids hitting `/api/portfolio/items` (which triggers live price
+        fetches per asset).
+      required: [id, symbol, currency]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        currency:
+          type: string
+        category:
+          type: object
+          nullable: true
+          properties:
+            name:
+              type: string
+
+    RebuildStatusResponse:
+      type: object
+      required: [locks, current, recent, assets]
+      properties:
+        locks:
+          type: array
+          items:
+            $ref: '#/components/schemas/RebuildLockInfo'
+          description: One entry per scope (always 4 in the current release).
+        current:
+          type: array
+          items:
+            $ref: '#/components/schemas/RebuildJob'
+          description: In-flight rebuild jobs (`active`, `waiting`, or `delayed`).
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/RebuildJob'
+          description: Last 20 completed/failed admin-triggered rebuilds, newest first. Retained 30 days.
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RebuildAsset'
+
+# Default security for paths that don't override below. The
+# default-categories endpoints use `adminKeyAuth`; the rebuild endpoints
+# override to `cookieAuth` per-operation.
 security:
   - adminKeyAuth: []
 
@@ -367,3 +573,145 @@ paths:
           description: Unauthorized.
         '500':
           description: Internal Server Error (outer error, not per-row failures).
+
+  # ─── Maintenance / Rebuild endpoints (tenant-admin) ─────────────────────────
+
+  /api/admin/rebuild:
+    post:
+      summary: Trigger an admin rebuild
+      description: |
+        Acquires the per-(tenant, scope) single-flight lock via Redis
+        `SET NX EX 3600`. On success, emits a `MANUAL_REBUILD_REQUESTED`
+        event that the backend scheduler routes to the correct BullMQ
+        queue based on `scope`.
+
+        Returns 202 before the actual work starts — poll
+        `GET /api/admin/rebuild` for progress.
+
+        **Lock release**: the lock releases automatically when the
+        terminal job of the chain completes (e.g. `value-all-assets` for
+        full-portfolio). The 1-hour TTL is a safety ceiling; in the
+        happy path locks release within seconds of the job finishing.
+
+        **Concurrency**: different scopes have independent locks — you
+        can run `full-analytics` and `single-asset` in parallel. Two
+        triggers for the same scope return 409 on the second one.
+      tags:
+        - Admin — Maintenance (Rebuild)
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebuildTriggerRequest'
+            examples:
+              full_analytics:
+                summary: Full analytics rebuild
+                value:
+                  scope: full-analytics
+              full_portfolio:
+                summary: Full portfolio rebuild (items → cash → analytics → valuation)
+                value:
+                  scope: full-portfolio
+              scoped_analytics:
+                summary: Rebuild analytics from a date onwards
+                value:
+                  scope: scoped-analytics
+                  payload:
+                    earliestDate: '2026-03-01T00:00:00.000Z'
+              single_asset:
+                summary: Re-value one asset
+                value:
+                  scope: single-asset
+                  payload:
+                    portfolioItemId: 42
+      responses:
+        '202':
+          description: Rebuild accepted — job enqueued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildTriggerResponse'
+        '400':
+          description: |
+            Bad Request. Possible reasons:
+            - Missing / invalid `scope`.
+            - `payload.earliestDate` missing or not a valid ISO date (scoped-analytics).
+            - `payload.portfolioItemId` missing or not a number (single-asset).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorized — no valid session cookie.
+        '403':
+          description: Forbidden — user.role is not `admin`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Admin access required
+        '409':
+          description: |
+            A rebuild of this scope is already in flight. Response carries
+            the remaining lock TTL so the UI can display
+            "Next available in X min".
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildConflictResponse'
+        '429':
+          description: Rate-limited (`rateLimiters.rebuildTrigger`, 20 / 5 min).
+        '500':
+          description: Internal Server Error (backend proxy failure, Redis down, etc.).
+
+    get:
+      summary: Get rebuild status + history + asset picker data
+      description: |
+        Returns the current per-scope lock state, any in-flight rebuild
+        jobs, the last 20 completed/failed admin rebuilds, and a
+        lightweight list of the tenant's portfolio items for the
+        single-asset picker. Polled every 5 seconds by the Maintenance
+        tab; safe to call more frequently (rate limit is 300 / 5 min).
+
+        **Filtering**: only BullMQ jobs carrying `data._rebuildMeta` are
+        included. Nightly cron runs, transaction-driven scoped updates,
+        and other queue activity are explicitly excluded so the history
+        reflects only admin-initiated operations.
+      tags:
+        - Admin — Maintenance (Rebuild)
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Current status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildStatusResponse'
+        '401':
+          description: Unauthorized — no valid session cookie.
+        '403':
+          description: Forbidden — user.role is not `admin`.
+        '429':
+          description: Rate-limited (`rateLimiters.rebuildStatus`, 300 / 5 min).
+        '500':
+          description: Internal Server Error.
+
+tags:
+  - name: Admin — Default Categories
+    description: |
+      Ops-staff endpoints for provisioning and maintaining the global
+      default-category catalog. Auth via `x-admin-key`.
+  - name: Admin — Maintenance (Rebuild)
+    description: |
+      Tenant-admin endpoints for manual background-rebuild operations,
+      surfaced via the Settings → Maintenance tab.

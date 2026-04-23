@@ -31,7 +31,7 @@
   {
     "slug": "reference-data",
     "title": "Reference Data",
-    "description": "Countries, currencies, banks, and tenant configuration metadata",
+    "description": "Countries, currencies, banks, tenant configuration, and admin maintenance / rebuild operations",
     "order": 3,
     "layers": {
       "api": "docs/specs/api/03-reference-data-management.md",
