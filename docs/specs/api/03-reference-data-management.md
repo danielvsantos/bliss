@@ -221,6 +221,14 @@ Polled every 5 seconds by the Maintenance tab. Returns three views of the tenant
 
 **Job filtering**: only BullMQ jobs carrying `data._rebuildMeta` are included. Nightly cron runs, transaction-driven scoped updates, and other queue activity are filtered out so the history reflects only admin-initiated operations.
 
+**Per-rebuild grouping**: a `full-portfolio` rebuild is a chain of 4 BullMQ jobs (`process-portfolio-changes` → `process-cash-holdings` → `full-rebuild-analytics` → `value-all-assets`) that all share the same `_rebuildMeta.requestedAt`. Without grouping, the history would show 4 "Full rebuild" rows per admin click. The status endpoint groups jobs by `requestedAt` and returns **one representative per rebuild**:
+
+1.  **Any active / waiting / delayed subjob** → rebuild is in progress. Surface the latest-started one (its `progress` reflects the current step).
+2.  **Any failed subjob** → rebuild failed. Surface the failed one with its `failedReason`.
+3.  **All completed** → prefer the **terminal job** (from `TERMINAL_JOBS` in `utils/rebuildLock.js` — `value-all-assets` for full-portfolio, `full-rebuild-analytics` for full-analytics, etc.). Fall back to the latest-finished if no terminal is present.
+
+The single-job scopes (`full-analytics`, `scoped-analytics`, `single-asset`) are one-job chains, so grouping is a no-op for them.
+
 ### Concurrency: Redis Single-Flight Lock
 
 Each `(tenantId, scope)` pair has an independent Redis lock at `rebuild-lock:<tenantId>:<scope>` acquired via `SET NX EX 3600` on trigger. While held, a second trigger for the same scope returns `409` with the remaining TTL. Different scopes have independent locks — `full-analytics` and `single-asset` can run in parallel without blocking each other.
