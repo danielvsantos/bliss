@@ -353,118 +353,97 @@ const processAnalyticsJob = async (job) => {
           updateCount: newAnalytics.length
         });
 
-        // Update or create analytics cache entries in batches to avoid
-        // overwhelming the Prisma Accelerate proxy (10s per-query timeout).
-        const UPSERT_BATCH_SIZE = 500;
-        const results = [];
-        let updatedCount = 0;
-        let createdCount = 0;
+        // Write analytics cache in batches. Two modes:
+        //
+        //  - Full rebuild: the outer $transaction above has already wiped
+        //    the tenant's existing rows, so each batch is a pure
+        //    createMany(). We deliberately do NOT pass `skipDuplicates` —
+        //    after the wipe there should be no conflicts, and a unique
+        //    violation here indicates a concurrent rebuild that we want
+        //    to surface (the single-flight lock introduced in Issue 3
+        //    prevents this, but letting it throw is the correct default).
+        //
+        //  - Scoped: we can't wipe the whole tenant (we'd lose untouched
+        //    periods/types/groups), and Prisma has no native bulk upsert.
+        //    Instead, atomically replace exactly the composite keys we're
+        //    rewriting via a keyed deleteMany + createMany inside a
+        //    single $transaction.
+        //
+        // This replaces the prior upsert-per-row pattern, which
+        // round-tripped once per analytics entry (500 RTs per batch) and
+        // pushed Prisma Accelerate past its Worker resource limits (the
+        // "Error 1102: Worker exceeded resource limits" Cloudflare
+        // responses observed in production).
+        const WRITE_BATCH_SIZE = 500;
 
-        for (let i = 0; i < newAnalytics.length; i += UPSERT_BATCH_SIZE) {
-            const batch = newAnalytics.slice(i, i + UPSERT_BATCH_SIZE);
-            const batchPromises = batch.map(entry => {
-                const { totalDebt, ...dataToUpsert } = entry;
-                return prisma.analyticsCacheMonthly.upsert({
-                    where: {
-                        tenant_year_month_currency_country_type_group: {
-                            tenantId,
-                            year: dataToUpsert.year,
-                            month: dataToUpsert.month,
-                            currency: dataToUpsert.currency,
-                            country: dataToUpsert.country,
-                            type: dataToUpsert.type,
-                            group: dataToUpsert.group
-                        }
-                    },
-                    update: {
-                        credit: dataToUpsert.credit,
-                        debit: dataToUpsert.debit,
-                        balance: dataToUpsert.balance,
-                    },
-                    create: {
-                        ...dataToUpsert,
-                        tenantId
-                    }
-                });
-            });
+        for (let i = 0; i < newAnalytics.length; i += WRITE_BATCH_SIZE) {
+            const batch = newAnalytics.slice(i, i + WRITE_BATCH_SIZE);
+            // Strip any extraneous in-memory fields (e.g. `totalDebt`)
+            // and attach tenantId for createMany.
+            // eslint-disable-next-line no-unused-vars
+            const rows = batch.map(({ totalDebt, ...rest }) => ({ ...rest, tenantId }));
 
-            const batchResults = await prisma.$transaction(batchPromises);
-            results.push(...batchResults);
-        }
-
-        // Now, calculate created vs. updated counts from the results
-        for (const result of results) {
-            if (result) {
-                if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-                    createdCount++;
-                } else {
-                    updatedCount++;
-                }
+            if (isFullRebuildJob) {
+                await prisma.analyticsCacheMonthly.createMany({ data: rows });
+            } else {
+                const keys = rows.map(r => ({
+                    year: r.year,
+                    month: r.month,
+                    currency: r.currency,
+                    country: r.country,
+                    type: r.type,
+                    group: r.group,
+                }));
+                await prisma.$transaction([
+                    prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId, OR: keys } }),
+                    prisma.analyticsCacheMonthly.createMany({ data: rows }),
+                ]);
             }
         }
 
-        // --- Tag Analytics Cache Upsert ---
-        let tagCreatedCount = 0;
-        let tagUpdatedCount = 0;
+        // --- Tag Analytics Cache Write ---
+        // Same delete-then-createMany pattern, but keyed on the 9-column
+        // composite unique constraint (adds tagId + categoryId).
         if (newTagAnalytics.length > 0) {
-          const tagResults = [];
-          for (let i = 0; i < newTagAnalytics.length; i += UPSERT_BATCH_SIZE) {
-              const batch = newTagAnalytics.slice(i, i + UPSERT_BATCH_SIZE);
-              const tagBatchPromises = batch.map(entry => {
-                  return prisma.tagAnalyticsCacheMonthly.upsert({
-                      where: {
-                          tag_tenant_year_month_currency_country_type_group_cat: {
-                              tagId: entry.tagId,
-                              tenantId,
-                              year: entry.year,
-                              month: entry.month,
-                              currency: entry.currency,
-                              country: entry.country,
-                              type: entry.type,
-                              group: entry.group,
-                              categoryId: entry.categoryId
-                          }
-                      },
-                      update: {
-                          credit: entry.credit,
-                          debit: entry.debit,
-                          balance: entry.balance,
-                          categoryName: entry.categoryName,
-                      },
-                      create: {
-                          tagId: entry.tagId,
-                          year: entry.year,
-                          month: entry.month,
-                          currency: entry.currency,
-                          country: entry.country,
-                          type: entry.type,
-                          group: entry.group,
-                          categoryId: entry.categoryId,
-                          categoryName: entry.categoryName,
-                          credit: entry.credit,
-                          debit: entry.debit,
-                          balance: entry.balance,
-                          tenantId
-                      }
-                  });
-              });
+          for (let i = 0; i < newTagAnalytics.length; i += WRITE_BATCH_SIZE) {
+              const batch = newTagAnalytics.slice(i, i + WRITE_BATCH_SIZE);
+              const rows = batch.map(entry => ({
+                  tagId: entry.tagId,
+                  year: entry.year,
+                  month: entry.month,
+                  currency: entry.currency,
+                  country: entry.country,
+                  type: entry.type,
+                  group: entry.group,
+                  categoryId: entry.categoryId,
+                  categoryName: entry.categoryName,
+                  credit: entry.credit,
+                  debit: entry.debit,
+                  balance: entry.balance,
+                  tenantId,
+              }));
 
-              const batchResults = await prisma.$transaction(tagBatchPromises);
-              tagResults.push(...batchResults);
-          }
-          for (const result of tagResults) {
-              if (result) {
-                  if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-                      tagCreatedCount++;
-                  } else {
-                      tagUpdatedCount++;
-                  }
+              if (isFullRebuildJob) {
+                  await prisma.tagAnalyticsCacheMonthly.createMany({ data: rows });
+              } else {
+                  const keys = rows.map(r => ({
+                      tagId: r.tagId,
+                      year: r.year,
+                      month: r.month,
+                      currency: r.currency,
+                      country: r.country,
+                      type: r.type,
+                      group: r.group,
+                      categoryId: r.categoryId,
+                  }));
+                  await prisma.$transaction([
+                      prisma.tagAnalyticsCacheMonthly.deleteMany({ where: { tenantId, OR: keys } }),
+                      prisma.tagAnalyticsCacheMonthly.createMany({ data: rows }),
+                  ]);
               }
           }
           logger.info('Tag analytics cache updated:', {
             jobId: job.id,
-            tagCreated: tagCreatedCount,
-            tagUpdated: tagUpdatedCount,
             totalTagEntries: newTagAnalytics.length
           });
         }
@@ -477,10 +456,7 @@ const processAnalyticsJob = async (job) => {
           duration: `${duration}ms`,
           stats: {
             totalProcessed: newAnalytics.length,
-            created: createdCount,
-            updated: updatedCount,
-            tagCreated: tagCreatedCount,
-            tagUpdated: tagUpdatedCount
+            totalTagEntries: newTagAnalytics.length,
           }
         });
 
@@ -503,8 +479,7 @@ const processAnalyticsJob = async (job) => {
           duration,
           stats: {
             totalProcessed: newAnalytics.length,
-            created: createdCount,
-            updated: updatedCount
+            totalTagEntries: newTagAnalytics.length,
           }
         };
 
