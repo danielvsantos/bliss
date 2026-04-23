@@ -149,34 +149,44 @@ function serializeJob(job, state) {
 }
 
 async function getRebuildJobsForTenant(tenantId) {
-    // Pull from both queues; rebuild jobs live on either portfolio or
-    // analytics depending on scope. We ask for `active`/`waiting` (current)
-    // and `completed`/`failed` (recent) and let the caller sort.
+    // Pull from both queues. Rebuild jobs live on either portfolio or
+    // analytics depending on scope.
+    //
+    // Perf note: the previous implementation called `getJobs(allStates,
+    // 0, 200)` then per-job `getState()` to resolve which state bucket
+    // each job belonged to. Under contention from an active rebuild,
+    // those N+1 `getState` calls serialized against the worker's own
+    // Redis traffic and the endpoint timed out (10s proxy timeout fired
+    // regularly with 4-10s response times). Splitting by state tags each
+    // bucket up front — state comes from which list we asked for, not
+    // from a follow-up roundtrip per job.
     const portfolioQueue = getPortfolioQueue();
     const analyticsQueue = getAnalyticsQueue();
 
-    const states = ['active', 'waiting', 'delayed', 'completed', 'failed'];
-    const [portfolioJobs, analyticsJobs] = await Promise.all([
-        portfolioQueue.getJobs(states, 0, 200),
-        analyticsQueue.getJobs(states, 0, 200),
+    const STATES = ['active', 'waiting', 'delayed', 'completed', 'failed'];
+    // 30 per state is comfortably above the 20-entry history cap and
+    // the at-most-4 concurrent-rebuilds case. The previous 200 was
+    // overkill and wasted Redis ops on jobs we'd filter out anyway.
+    const LIMIT = 30;
+
+    const fetchStateJobs = async (queue, state) => {
+        const jobs = await queue.getJobs([state], 0, LIMIT);
+        return jobs.map((j) => ({ job: j, state }));
+    };
+
+    const buckets = await Promise.all([
+        ...STATES.map((s) => fetchStateJobs(portfolioQueue, s)),
+        ...STATES.map((s) => fetchStateJobs(analyticsQueue, s)),
     ]);
 
-    const all = [...portfolioJobs, ...analyticsJobs];
+    const all = buckets.flat();
 
     // Filter to admin-triggered rebuilds (those carrying `_rebuildMeta`)
     // for this tenant only. Everything else — nightly crons, transaction-
     // driven scoped updates — is noise on this surface.
-    const filtered = all.filter(
-        (j) => j?.data?._rebuildMeta && j?.data?.tenantId === tenantId,
+    return all.filter(
+        ({ job }) => job?.data?._rebuildMeta && job?.data?.tenantId === tenantId,
     );
-
-    // Attach state by asking each job directly (BullMQ v5). We could
-    // bucket by the query above instead, but this is safer: states can
-    // transition between the list call and the serialize step.
-    const withState = await Promise.all(
-        filtered.map(async (j) => ({ job: j, state: await j.getState() })),
-    );
-    return withState;
 }
 
 router.get('/status', apiKeyAuth, async (req, res) => {

@@ -46,9 +46,13 @@ const API_KEY = process.env.INTERNAL_API_KEY;
 const TENANT = 'tenant-rebuild-test';
 
 // Helper: fabricate a BullMQ-shaped job with the fields the route reads.
+// Note: the route no longer calls `job.getState()` — state is derived
+// from which list it came from in the per-state `getJobs` split. The
+// `state` parameter here only drives how the test routes the job into
+// the mock bucket via `stubQueueJobs`.
 function makeJob({
-  id, name, state = 'completed', progress = 100,
-  tenantId = TENANT, rebuildType = 'full-analytics',
+  id, name, tenantId = TENANT, rebuildType = 'full-analytics',
+  progress = 100,
   requestedBy = 'admin@example.com',
   requestedAt = '2026-04-23T10:00:00.000Z',
   finishedAt = '2026-04-23T10:05:00.000Z',
@@ -68,8 +72,16 @@ function makeJob({
     processedOn: processedAt ? Date.parse(processedAt) : null,
     failedReason,
     attemptsMade,
-    getState: jest.fn().mockResolvedValue(state),
   };
+}
+
+// Wire a `mockGetJobs*` mock so each per-state `getJobs([state], 0, N)`
+// call gets the bucket mapped to that state (defaults to `[]`).
+function stubQueueJobs(queueMock, byState = {}) {
+  queueMock.mockImplementation((states) => {
+    const state = Array.isArray(states) ? states[0] : states;
+    return Promise.resolve(byState[state] || []);
+  });
 }
 
 describe('POST /api/admin/rebuild/trigger', () => {
@@ -220,10 +232,10 @@ describe('POST /api/admin/rebuild/trigger', () => {
 describe('GET /api/admin/rebuild/status', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default: no locks held, no jobs.
+    // Default: no locks held, no jobs in any state.
     isHeld.mockResolvedValue({ held: false, ttlSeconds: null });
-    mockGetJobsPortfolio.mockResolvedValue([]);
-    mockGetJobsAnalytics.mockResolvedValue([]);
+    stubQueueJobs(mockGetJobsPortfolio);
+    stubQueueJobs(mockGetJobsAnalytics);
   });
 
   it('returns 401 when X-API-KEY header is missing', async () => {
@@ -255,12 +267,12 @@ describe('GET /api/admin/rebuild/status', () => {
   });
 
   it('separates active jobs into `current` and completed/failed into `recent`', async () => {
-    const activeJob = makeJob({ id: 1, name: 'full-rebuild-analytics', state: 'active', progress: 42, processedAt: '2026-04-23T10:00:00.000Z', finishedAt: null });
-    const completedJob = makeJob({ id: 2, name: 'value-all-assets', state: 'completed', rebuildType: 'full-portfolio', finishedAt: '2026-04-22T10:00:00.000Z' });
-    const failedJob = makeJob({ id: 3, name: 'full-rebuild-analytics', state: 'failed', failedReason: 'Prisma timeout', finishedAt: '2026-04-21T10:00:00.000Z' });
+    const activeJob = makeJob({ id: 1, name: 'full-rebuild-analytics', progress: 42, processedAt: '2026-04-23T10:00:00.000Z', finishedAt: null });
+    const completedJob = makeJob({ id: 2, name: 'value-all-assets', rebuildType: 'full-portfolio', finishedAt: '2026-04-22T10:00:00.000Z' });
+    const failedJob = makeJob({ id: 3, name: 'full-rebuild-analytics', failedReason: 'Prisma timeout', finishedAt: '2026-04-21T10:00:00.000Z' });
 
-    mockGetJobsAnalytics.mockResolvedValueOnce([activeJob, failedJob]);
-    mockGetJobsPortfolio.mockResolvedValueOnce([completedJob]);
+    stubQueueJobs(mockGetJobsAnalytics, { active: [activeJob], failed: [failedJob] });
+    stubQueueJobs(mockGetJobsPortfolio, { completed: [completedJob] });
 
     const res = await request(app)
       .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
@@ -276,7 +288,7 @@ describe('GET /api/admin/rebuild/status', () => {
   });
 
   it('filters out jobs without _rebuildMeta (nightly crons, etc.)', async () => {
-    const adminJob = makeJob({ id: 1, name: 'full-rebuild-analytics', state: 'completed' });
+    const adminJob = makeJob({ id: 1, name: 'full-rebuild-analytics' });
     const cronJob = {
       id: 99,
       name: 'revalue-all-tenants',
@@ -287,10 +299,9 @@ describe('GET /api/admin/rebuild/status', () => {
       processedOn: Date.now() - 60_000,
       failedReason: null,
       attemptsMade: 1,
-      getState: jest.fn().mockResolvedValue('completed'),
     };
-    mockGetJobsAnalytics.mockResolvedValueOnce([adminJob]);
-    mockGetJobsPortfolio.mockResolvedValueOnce([cronJob]);
+    stubQueueJobs(mockGetJobsAnalytics, { completed: [adminJob] });
+    stubQueueJobs(mockGetJobsPortfolio, { completed: [cronJob] });
 
     const res = await request(app)
       .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
@@ -304,7 +315,7 @@ describe('GET /api/admin/rebuild/status', () => {
   it('filters out jobs for other tenants', async () => {
     const mine = makeJob({ id: 1, name: 'full-rebuild-analytics', tenantId: TENANT });
     const theirs = makeJob({ id: 2, name: 'full-rebuild-analytics', tenantId: 'other-tenant' });
-    mockGetJobsAnalytics.mockResolvedValueOnce([mine, theirs]);
+    stubQueueJobs(mockGetJobsAnalytics, { completed: [mine, theirs] });
 
     const res = await request(app)
       .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
@@ -335,11 +346,10 @@ describe('GET /api/admin/rebuild/status', () => {
       makeJob({
         id: i + 1,
         name: 'full-rebuild-analytics',
-        state: 'completed',
         finishedAt: new Date(Date.now() - i * 60_000).toISOString(),
       }),
     );
-    mockGetJobsAnalytics.mockResolvedValueOnce(jobs);
+    stubQueueJobs(mockGetJobsAnalytics, { completed: jobs });
 
     const res = await request(app)
       .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
@@ -347,5 +357,27 @@ describe('GET /api/admin/rebuild/status', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.recent).toHaveLength(20);
+  });
+
+  // Perf-regression guard: the old implementation called
+  // `queue.getJobs(allStates, 0, 200)` then per-job `getState()` to
+  // resolve the state bucket. Under contention from an active rebuild
+  // that caused the endpoint to time out at 10s regularly. The fix
+  // splits into per-state queries (state comes from the list we asked
+  // for) so there is NO follow-up `getState()` round-trip.
+  it('does not call getState() on individual jobs (state is derived from the bucket)', async () => {
+    const getStateSpy = jest.fn().mockResolvedValue('completed');
+    const job = makeJob({ id: 1, name: 'full-rebuild-analytics' });
+    // Attach a getState spy — if the route starts calling it again, we
+    // want the test to fail and flag the regression.
+    job.getState = getStateSpy;
+    stubQueueJobs(mockGetJobsAnalytics, { completed: [job] });
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(getStateSpy).not.toHaveBeenCalled();
   });
 });

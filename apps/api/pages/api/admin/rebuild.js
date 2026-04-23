@@ -47,7 +47,12 @@ const VALID_SCOPES = new Set([
   'single-asset',
 ]);
 
-const FETCH_TIMEOUT_MS = 10_000;
+// 30s accommodates the status endpoint when the backend's Redis is
+// under contention from an active rebuild (BullMQ `getJobs` across
+// the portfolio + analytics queues can take a couple seconds each
+// when the worker is hammering Redis with batch writes). The trigger
+// path stays well under this — it's just `SET NX EX` + enqueue.
+const FETCH_TIMEOUT_MS = 30_000;
 
 async function applyRateLimit(limiter, req, res) {
   await new Promise((resolve, reject) => {
