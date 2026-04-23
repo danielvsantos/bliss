@@ -76,7 +76,11 @@ function findCurrent(current: RebuildJob[] | undefined, scope: RebuildScope) {
 }
 
 const SCOPE_LABEL: Record<RebuildScope, string> = {
-  'full-portfolio': 'Full portfolio',
+  // "Full rebuild" rather than "Full portfolio" — this scope runs the
+  // entire chain (portfolio items → cash holdings → analytics →
+  // valuation + loan processors), not just the portfolio piece.
+  // Calling it "portfolio" was misleading in practice.
+  'full-portfolio': 'Full rebuild',
   'full-analytics': 'Full analytics',
   'scoped-analytics': 'Scoped analytics',
   'single-asset': 'Single asset',
@@ -371,15 +375,15 @@ export function MaintenanceTab() {
         />
       </Card>
 
-      {/* ─── Full portfolio ────────────────────────────────────────────── */}
+      {/* ─── Full rebuild (everything) ─────────────────────────────────── */}
       <Card className="p-6 space-y-4">
         <div>
-          <h3 className="font-medium">Rebuild portfolio</h3>
+          <h3 className="font-medium">Full rebuild</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Runs the full pipeline: re-derives portfolio items from transactions,
-            rebuilds cash holdings, cascades into a full analytics rebuild, then
-            revalues every asset (including debt and loan processors). Heaviest
-            option — expect 5-30 minutes depending on history size.
+            Runs the full pipeline end-to-end: re-derives portfolio items from
+            transactions, rebuilds cash holdings, runs a full analytics rebuild,
+            then revalues every asset (including debt and loan processors).
+            Heaviest option — expect 5-30 minutes depending on history size.
           </p>
         </div>
         <RebuildButton
@@ -388,7 +392,7 @@ export function MaintenanceTab() {
           isPending={trigger.isPending && trigger.variables?.scope === 'full-portfolio'}
           disabled={statusLoading}
           onClick={() => runTrigger('full-portfolio')}
-          label="Rebuild portfolio"
+          label="Run full rebuild"
         />
       </Card>
 

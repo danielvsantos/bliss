@@ -1227,6 +1227,8 @@ const fr = {
     selectCategoryPlaceholder: "Sélectionner une catégorie",
     saveChanges: "Enregistrer les modifications",
     saveAndPromote: "Enregistrer et promouvoir",
+    resetToPending: "Revenir à En attente",
+    resetToPendingDesc: "Remet cette ligne en attente pour éviter la validation automatique. Utile pour annuler une classification auto-promue que vous souhaitez réexaminer.",
     bulkPromoteTitle: "Promotion en masse des transactions",
     bulkPromoteDescription: "Promouvoir automatiquement toutes les transactions Plaid classifiées dépassant le seuil de confiance.",
     minConfidenceThreshold: "Seuil de confiance minimum",

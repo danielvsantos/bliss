@@ -1247,6 +1247,8 @@ const en = {
     selectCategoryPlaceholder: "Select category",
     saveChanges: "Save Changes",
     saveAndPromote: "Save & Promote",
+    resetToPending: "Reset to Pending",
+    resetToPendingDesc: "Move this row back to pending so it's not auto-committed. Useful for undoing an auto-promoted classification you want to re-examine.",
     // Bulk promote dialog
     bulkPromoteTitle: "Bulk Promote Transactions",
     bulkPromoteDescription: "Automatically promote all classified Plaid transactions that exceed the confidence threshold.",

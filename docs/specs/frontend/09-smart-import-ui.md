@@ -111,6 +111,8 @@ When `autoConfirmedCount > 0`, an info banner appears at the top of the review t
 - **Skip button**: Sets `status: 'SKIPPED'`.
 - **Notes popover**: Opens a text area; content saved on blur via `PUT /api/imports/:id/rows/:rowId`.
 
+> **Row-action visibility.** Once a row is `CONFIRMED` or `SKIPPED`, the inline Confirm / Skip buttons hide (`showActions = !isPromoted && !isSkipped` in `tx-data-row.tsx`). To reverse a `CONFIRMED` row — for example, an auto-promoted row the user wants to re-examine before commit — open the Deep Dive drawer and use **Reset to Pending** in its footer. See Review spec §E.1 for the rationale and backend support.
+
 **Duplicate handling — data-integrity guard:**
 
 - Rows flagged as `DUPLICATE` (exact hash match including wall-clock timestamp) are **never returned by the default `GET /api/imports/:id` query** — they're hidden from the Review UI entirely. The backend `commitWorker` also refuses to promote them. To audit these rows the caller must pass `?status=DUPLICATE` explicitly.

@@ -1247,6 +1247,8 @@ const pt = {
     selectCategoryPlaceholder: "Selecione uma categoria",
     saveChanges: "Salvar Alterações",
     saveAndPromote: "Salvar e Promover",
+    resetToPending: "Voltar para Pendente",
+    resetToPendingDesc: "Move esta linha de volta para pendente para que não seja confirmada automaticamente. Útil para desfazer uma classificação auto-promovida que você quer revisar.",
     // Diálogo de promoção em massa
     bulkPromoteTitle: "Promoção em Massa de Transações",
     bulkPromoteDescription: "Promova automaticamente todas as transações classificadas do Plaid que excedam o limite de confiança.",

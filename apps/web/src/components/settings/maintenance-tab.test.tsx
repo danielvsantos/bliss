@@ -57,11 +57,11 @@ describe('MaintenanceTab', () => {
     renderTab();
 
     // Panel headings are <h3>s — querying by role disambiguates from
-    // button labels that share the same text ("Rebuild portfolio" etc.).
+    // button labels that share the same text ("Full rebuild" etc.).
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Rebuild all analytics' })).toBeInTheDocument();
     });
-    expect(screen.getByRole('heading', { name: 'Rebuild portfolio' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Full rebuild' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild analytics from a date' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild a single asset' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Recent rebuilds' })).toBeInTheDocument();

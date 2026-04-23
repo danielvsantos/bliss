@@ -1562,6 +1562,11 @@ export default function SmartImportPage() {
             onClose={() => setDrawerItem(null)}
             onSaveAndPromote={handleDrawerSave}
             onSkip={handleDrawerSkip}
+            onResetToPending={
+              drawerItem
+                ? () => handleRowStatusChange(drawerItem.id, 'PENDING')
+                : undefined
+            }
             isSaving={updateRow.isPending}
           />
 

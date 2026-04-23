@@ -1295,6 +1295,15 @@ export default function TransactionReviewPage() {
         onClose={() => setSelectedItem(null)}
         onSaveAndPromote={handleDrawerSave}
         onSkip={handleDrawerSkip}
+        onResetToPending={
+          // Only wired for import rows — the drawer itself double-gates on
+          // `item.source === 'import'`, but this guard keeps the prop
+          // undefined for Plaid items so the button never even considers
+          // rendering.
+          selectedItem?.source === 'import' && selectedItem.originalImportRow
+            ? () => handleImportRowStatus(selectedItem.originalImportRow!, 'PENDING')
+            : undefined
+        }
         isSaving={updatePlaidTx.isPending || updateImportRow.isPending}
       />
 

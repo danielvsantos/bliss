@@ -302,7 +302,7 @@ Component: `apps/web/src/components/settings/maintenance-tab.tsx`. The tab is ga
 Four rebuild panels:
 
 1.  **Rebuild all analytics** → `scope: 'full-analytics'`.
-2.  **Rebuild portfolio** → `scope: 'full-portfolio'`.
+2.  **Full rebuild** → `scope: 'full-portfolio'`. (Heading and button copy say "Full rebuild", not "Rebuild portfolio", because this scope runs the entire chain — items → cash holdings → analytics → valuation + loan processors — not just the portfolio step. Calling it "portfolio" was misleading; the scope's backend event name `full-portfolio` is kept for wire-format stability.)
 3.  **Rebuild analytics from a date** → date picker + `scope: 'scoped-analytics'`.
 4.  **Rebuild a single asset** → searchable combobox fed by `status.assets` + `scope: 'single-asset'`.
 

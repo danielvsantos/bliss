@@ -236,6 +236,8 @@ Section labeled **🕐 MERCHANT HISTORY**. Shows the last 10 `Transaction` recor
 ### E. Footer
 
 - **Cancel** → closes drawer without saving.
+- **Skip** → sets `status: 'SKIPPED'` (not shown for already-processed rows).
+- **Reset to Pending** → only visible for **import rows** with `promotionStatus === 'CONFIRMED'`. Moves the row back to `PENDING` via `PUT /api/imports/:id/rows/:rowId` with `{ status: 'PENDING' }`. Closes the drawer on click. See §E.1 below.
 - **Save & Promote** → the `handleDrawerSave` handler first checks whether other matching transactions exist before committing:
 
 ### Drawer Promote-All Intercept
@@ -268,6 +270,19 @@ State: `pendingDrawerSave` holds the drawer's save payload. `pendingDrawerOtherM
 After any successful promote mutation:
 - `['plaid-transactions']`, `['merchant-history']` caches are invalidated.
 - The drawer closes.
+
+### E.1 Reset to Pending (import rows only)
+
+Auto-promote fires at the tenant's `autoPromoteThreshold` (default 0.90), and a classification landing at e.g. 0.91 confidence gets auto-marked `CONFIRMED` without the user ever seeing it. If the user wants a closer look before commit, they need an escape hatch that doesn't require committing then editing the transaction post-facto.
+
+The **Reset to Pending** button in the drawer footer provides that hatch:
+
+- Visible only when `item.source === 'import'` and `item.promotionStatus === 'CONFIRMED'`. For Plaid rows it's hidden entirely (Plaid uses a different status model — PROMOTED rather than CONFIRMED).
+- For `SKIPPED` rows it is deliberately NOT shown. User-initiated skips are considered intentional; exposing "un-skip" alongside "un-confirm" adds surface area without a clear use case.
+- Wired via the `onResetToPending` prop on `DeepDiveDrawer`. The prop is always optional — callers that don't want to expose the behavior (e.g. any future Plaid-only review surface) simply don't pass it. Both the Smart Import page and the Transaction Review page currently wire it for their import rows.
+- Backend acceptance: `apps/api/pages/api/imports/[id]/rows/[rowId].js` includes `'PENDING'` in `ALLOWED_STATUS_OVERRIDES`, so the transition is already supported API-side — only UI was missing.
+
+Design decision: the reset lives in the drawer footer rather than as an inline icon on the row. The row actions (`✓` approve, `✗` skip) hide entirely once a row is `CONFIRMED` / `SKIPPED` (see `tx-data-row.tsx:105`: `showActions = !isPromoted && !isSkipped`), keeping the row-level UI clean. Users who care enough to undo will open the drawer to investigate anyway, and the drawer footer is where destructive / reversal actions live for the single-row context.
 
 ---
 
