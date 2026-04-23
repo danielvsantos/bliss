@@ -1,3 +1,41 @@
+// ── ioredis warning suppression ────────────────────────────────────────────
+//
+// ioredis emits two hardcoded `console.warn` messages when the Redis server
+// says the `default` user doesn't require a password but the client sent
+// one anyway:
+//
+//   [WARN] Redis server does not require a password, but a password was supplied.
+//   [WARN] This Redis server's `default` user does not require a password, but a password was supplied
+//
+// This is benign — the client's AUTH was ignored and the connection
+// proceeded normally. In local development it fires once per ioredis
+// client (and BullMQ creates multiple per queue for cmd + pubsub), so
+// it spams the console on every worker boot.
+//
+// The cleanest fix in userland is to strip the password from REDIS_URL
+// when the server doesn't require it, but that breaks for anyone whose
+// local Redis *does* require a password. Suppressing these two exact
+// strings keeps the noise out while leaving every other console.warn
+// (including our own logger, which doesn't use console.warn directly)
+// untouched.
+//
+// Must run BEFORE `require('ioredis')` so the patched console is
+// captured by ioredis's module-level bindings.
+(() => {
+    const IOREDIS_BENIGN_WARNINGS = [
+        'Redis server does not require a password, but a password was supplied',
+        "This Redis server's `default` user does not require a password",
+    ];
+    const origWarn = console.warn;
+    console.warn = (...args) => {
+        const first = args[0];
+        if (typeof first === 'string' && IOREDIS_BENIGN_WARNINGS.some((s) => first.includes(s))) {
+            return; // swallow benign ioredis noise
+        }
+        return origWarn.apply(console, args);
+    };
+})();
+
 const Redis = require('ioredis');
 const logger = require('./logger');
 // dotenv loaded in src/index.js — no need to load again here
@@ -21,10 +59,21 @@ const initializeRedis = () => {
             // Keep TCP socket alive during long-running Prisma transactions
             // so cloud Redis providers don't reset idle connections.
             keepAlive: 10000,
-            // Reconnect with exponential backoff (max 10s) if connection drops
+            // Reconnect with exponential backoff (max 10s) if connection drops.
+            //
+            // Logging cadence: Redis drops idle connections on a routine basis
+            // (cloud providers, local `redis.conf timeout`), and BullMQ keeps
+            // up to 2-3 sockets per queue alive, so benign reconnects fire in
+            // bursts of 7+ at a time. Logging every attempt at `warn` buries
+            // everything else. We only surface at `warn` once the reconnect
+            // loop has actually struggled (attempt 3+); earlier attempts go
+            // to `debug` so you can still see them via LOG_LEVEL=debug if
+            // you're investigating.
             retryStrategy(times) {
                 const delay = Math.min(times * 200, 10000);
-                logger.warn(`Redis reconnecting, attempt ${times} (delay ${delay}ms)`);
+                const msg = `Redis reconnecting, attempt ${times} (delay ${delay}ms)`;
+                if (times >= 3) logger.warn(msg);
+                else logger.debug(msg);
                 return delay;
             },
         });
