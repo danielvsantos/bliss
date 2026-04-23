@@ -242,6 +242,53 @@ export type Error = {
   details?: unknown;
 };
 
+// ─── Admin Maintenance (rebuild) ──────────────────────────────────────────
+
+export type RebuildScope = 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset';
+
+export type RebuildJobState = 'active' | 'waiting' | 'delayed' | 'completed' | 'failed' | 'unknown';
+
+export type RebuildJob = {
+  id: string | number;
+  name: string;
+  state: RebuildJobState;
+  progress: number;
+  rebuildType: RebuildScope | null;
+  requestedBy: string | null;
+  requestedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failedReason: string | null;
+  attemptsMade: number;
+};
+
+export type RebuildLockInfo = {
+  scope: RebuildScope;
+  held: boolean;
+  ttlSeconds: number | null;
+};
+
+export type RebuildStatusResponse = {
+  locks: RebuildLockInfo[];
+  current: RebuildJob[];
+  recent: RebuildJob[];
+};
+
+export type RebuildTriggerRequest = {
+  scope: RebuildScope;
+  payload?: {
+    earliestDate?: string;      // required for scope=scoped-analytics (ISO date)
+    portfolioItemId?: number;   // required for scope=single-asset
+  };
+};
+
+export type RebuildTriggerResponse = {
+  status: 'accepted';
+  scope: RebuildScope;
+  requestedAt: string;
+  lockTtlSeconds: number;
+};
+
 export type CurrencyRate = {
   id: number;
   year: number;

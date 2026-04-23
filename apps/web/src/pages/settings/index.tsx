@@ -45,12 +45,14 @@ import {
   ExternalLink,
   Plus,
   Lock,
+  Wrench,
 } from "lucide-react";
 import { useTenantSettings, useUpdateTenantSettings } from "@/hooks/use-tenant-settings";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { CardDivider } from "@/components/ui/card-divider";
 import { SettingsSelect } from "@/components/settings/settings-select";
+import { MaintenanceTab } from "@/components/settings/maintenance-tab";
 import {
   MultiSelectCombobox,
   type ComboboxOption,
@@ -381,6 +383,18 @@ export default function SettingsPage() {
               <Sparkles className="h-3.5 w-3.5 sm:mr-1.5" />
               <span className="hidden sm:inline">AI Classification</span>
             </TabsTrigger>
+            {/* Maintenance tab — admin only. Non-admin users don't see it
+                at all (server-side auth returns 403 if they find the URL,
+                but hiding the entry point is the primary guard). */}
+            {user?.role === 'admin' && (
+              <TabsTrigger
+                value="maintenance"
+                className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                <Wrench className="h-3.5 w-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">Maintenance</span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* ═══════ GENERAL TAB ═══════ */}
@@ -950,6 +964,13 @@ export default function SettingsPage() {
               </div>
             </Card>
           </TabsContent>
+
+          {/* ═══════ MAINTENANCE TAB (admin only) ═══════ */}
+          {user?.role === 'admin' && (
+            <TabsContent value="maintenance" className="mt-6 space-y-5">
+              <MaintenanceTab />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
