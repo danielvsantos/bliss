@@ -552,4 +552,8 @@ const startAnalyticsWorker = () => {
 };
 
 
-module.exports = { startAnalyticsWorker, calculateAnalytics };
+// `processAnalyticsJob` is exported for direct unit-test access to the
+// write path (full-rebuild createMany vs scoped delete+createMany). Not
+// used in production — production invocation goes through the BullMQ
+// Worker set up in `startAnalyticsWorker`.
+module.exports = { startAnalyticsWorker, calculateAnalytics, processAnalyticsJob };
