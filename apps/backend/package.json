@@ -12,6 +12,7 @@
     "test:integration": "jest --testPathPatterns=integration",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "lint": "eslint src",
     "knip": "knip",
     "prisma:generate": "prisma generate --schema=../../prisma/schema.prisma",
     "prisma:migrate": "prisma migrate deploy --schema=../../prisma/schema.prisma",
@@ -46,9 +47,12 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@eslint/js": "^9.9.0",
     "@jest/globals": "^30.2.0",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
+    "eslint": "^9.9.0",
+    "globals": "^15.9.0",
     "jest": "^30.2.0",
     "jest-mock-extended": "^4.0.0",
     "knip": "^5.62.0",

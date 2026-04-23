@@ -175,7 +175,7 @@ function parseDate(dateStr, format) {
   }
 
   // Fallback: try DD/MM/YYYY and variants
-  const parts = trimmed.split(/[/\-\.]/);
+  const parts = trimmed.split(/[/\-.]/);
   if (parts.length >= 3) {
     const [p0, p1, p2] = parts;
     let year, month, day;
@@ -221,7 +221,7 @@ function parseDateWithFormat(str, format) {
   const datePart = dateTimeParts[0];
   const timePart = dateTimeParts[1] || null;
 
-  const separators = datePart.match(/[/\-\.]/);
+  const separators = datePart.match(/[/\-.]/);
   const sep = separators ? separators[0] : '-';
   const parts = datePart.split(sep);
 

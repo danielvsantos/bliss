@@ -240,6 +240,9 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.9.0
+        version: 9.39.4
       '@jest/globals':
         specifier: ^30.2.0
         version: 30.3.0
@@ -249,6 +252,12 @@ importers:
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.37
+      eslint:
+        specifier: ^9.9.0
+        version: 9.39.4(jiti@2.6.1)
+      globals:
+        specifier: ^15.9.0
+        version: 15.15.0
       jest:
         specifier: ^30.2.0
         version: 30.3.0(@types/node@20.19.37)
