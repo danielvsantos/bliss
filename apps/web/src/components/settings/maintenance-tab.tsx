@@ -273,7 +273,12 @@ function RebuildHistoryList({ recent }: { recent: RebuildJob[] }) {
 export function MaintenanceTab() {
   const { toast } = useToast();
   const { data: status, isLoading: statusLoading, isError: statusError } = useRebuildStatus();
-  const { data: portfolioItems = [], isLoading: itemsLoading } = usePortfolioItems();
+  // `usePortfolioItems` returns `{ portfolioCurrency, items }`, not a raw
+  // array — the `items` accessor is required. A raw-array destructure
+  // with a `= []` default silently passes type checks but explodes at
+  // runtime the moment the query resolves with the real object shape.
+  const { data: portfolioItemsResponse, isLoading: itemsLoading } = usePortfolioItems();
+  const portfolioItems = portfolioItemsResponse?.items ?? [];
   const trigger = useTriggerRebuild();
 
   // Per-section local state

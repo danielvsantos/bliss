@@ -13,14 +13,18 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
-// `usePortfolioItems` is called unconditionally; return an empty list so
-// we don't need to populate the combobox.
+// `usePortfolioItems` returns `{ portfolioCurrency, items }` — must match
+// the real hook shape, not a raw array (which caused a runtime
+// `items.find is not a function` when the page first loaded).
 vi.mock('@/hooks/use-portfolio-items', () => ({
   usePortfolioItems: () => ({
-    data: [
-      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
-      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
-    ],
+    data: {
+      portfolioCurrency: 'USD',
+      items: [
+        { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
+        { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
+      ],
+    },
     isLoading: false,
   }),
   PORTFOLIO_ITEMS_QUERY_KEY: 'portfolio-items',
@@ -156,6 +160,25 @@ describe('MaintenanceTab', () => {
         screen.getByText(/No recent rebuilds\./),
       ).toBeInTheDocument();
     });
+  });
+
+  it('renders the single-asset picker without crashing (regression test for items.find)', async () => {
+    // Regression: the first Maintenance-tab deploy crashed with
+    // `items.find is not a function` because the component treated
+    // `usePortfolioItems().data` as a raw array — but the hook returns
+    // `{ portfolioCurrency, items }`. This test exercises the code path
+    // that dereferences the returned data.
+    vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
+
+    renderTab();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Rebuild a single asset' })).toBeInTheDocument();
+    });
+
+    // The asset picker renders — if the component correctly unwrapped
+    // `.items`, the default-unselected button shows "Select an asset…".
+    expect(screen.getByText(/Select an asset…/)).toBeInTheDocument();
   });
 
   it('renders a history entry for a completed rebuild', async () => {
