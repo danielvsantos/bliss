@@ -526,6 +526,16 @@ export default function SmartImportPage() {
                           similar.forEach((r) => {
                             updateRow.mutate({ rowId: r.id, data: { status: 'CONFIRMED' } });
                           });
+                          // Reset the status filter so the just-confirmed
+                          // rows stay visible in their groups. Without this,
+                          // a `reviewFilter='PENDING'` user sees the group
+                          // disappear from the grouped view after bulk
+                          // confirm (the items moved to CONFIRMED). Mirrors
+                          // the category-filter reset in transaction-review.
+                          if (reviewFilter !== 'all') {
+                            setReviewFilter('all');
+                            setReviewPage(1);
+                          }
                           toast({ title: t('smartImport.toast.confirmedN', { count: similar.length }) });
                         }}
                       >
@@ -1441,18 +1451,25 @@ export default function SmartImportPage() {
                   onApprove={(item) => handleRowStatusChange(item.id, 'CONFIRMED')}
                   onSkip={(item) => handleRowStatusChange(item.id, 'SKIPPED')}
                   onApproveAll={() => {
-                    group.items
-                      .filter((i) =>
-                        i.promotionStatus !== 'CONFIRMED' &&
-                        i.promotionStatus !== 'DUPLICATE' &&
-                        // POTENTIAL_DUPLICATE rows must be approved one-by-one
-                        // via the drawer — bulk-approving would silently commit
-                        // re-imported transactions the user never examined.
-                        i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-                        i.promotionStatus !== 'SKIPPED' &&
-                        !itemNeedsEnrichment(i, categoriesMap),
-                      )
-                      .forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
+                    const toConfirm = group.items.filter((i) =>
+                      i.promotionStatus !== 'CONFIRMED' &&
+                      i.promotionStatus !== 'DUPLICATE' &&
+                      // POTENTIAL_DUPLICATE rows must be approved one-by-one
+                      // via the drawer — bulk-approving would silently commit
+                      // re-imported transactions the user never examined.
+                      i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
+                      i.promotionStatus !== 'SKIPPED' &&
+                      !itemNeedsEnrichment(i, categoriesMap),
+                    );
+                    toConfirm.forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
+                    // If a status filter is active, reset it so the confirmed
+                    // rows stay visible in their groups rather than dropping
+                    // out of the next fetch. See the toast-action path above
+                    // and transaction-review's `clearStaleCategoryFilters`.
+                    if (toConfirm.length > 0 && reviewFilter !== 'all') {
+                      setReviewFilter('all');
+                      setReviewPage(1);
+                    }
                   }}
                   onItemClick={(item) => setDrawerItem(item)}
                   disabled={updateRow.isPending}
