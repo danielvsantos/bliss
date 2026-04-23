@@ -208,4 +208,51 @@ describe('MaintenanceTab', () => {
     expect(screen.getByText(/alice@example\.com/)).toBeInTheDocument();
     expect(screen.getByText(/Completed/)).toBeInTheDocument();
   });
+
+  it('renders distinct step labels for each subjob of a full-portfolio chain', async () => {
+    // A full-portfolio rebuild produces 4 BullMQ subjobs, each with the
+    // same `rebuildType: 'full-portfolio'` but different `name`. The UI
+    // must show all 4 as separate history rows so mid-chain failures
+    // are precisely located and so the admin can see the chain
+    // progressing. Scope label ("Full rebuild") stays constant; the
+    // step label differentiates the rows.
+    const requestedAt = '2026-04-23T10:00:00.000Z';
+    const baseJob = {
+      rebuildType: 'full-portfolio' as const,
+      requestedBy: 'admin@example.com',
+      requestedAt,
+      startedAt: requestedAt,
+      state: 'completed' as const,
+      progress: 100,
+      failedReason: null,
+      attemptsMade: 1,
+    };
+    vi.mocked(api.getRebuildStatus).mockResolvedValue({
+      ...emptyStatus,
+      recent: [
+        { ...baseJob, id: 1, name: 'process-portfolio-changes', finishedAt: '2026-04-23T10:00:30.000Z' },
+        { ...baseJob, id: 2, name: 'process-cash-holdings',     finishedAt: '2026-04-23T10:01:00.000Z' },
+        { ...baseJob, id: 3, name: 'full-rebuild-analytics',    finishedAt: '2026-04-23T10:02:00.000Z' },
+        { ...baseJob, id: 4, name: 'value-all-assets',          finishedAt: '2026-04-23T10:05:00.000Z' },
+      ],
+    });
+
+    renderTab();
+
+    // Step labels render with a "·" separator prefix to distinguish them
+    // from button labels that happen to share the same words (e.g. the
+    // full-analytics button literally says "Rebuild analytics"). Use the
+    // prefix to anchor the selector to the history row rather than the
+    // button. Four distinct step labels prove four distinct rows.
+    await waitFor(() => {
+      expect(screen.getByText(/· Sync transactions.*portfolio items/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/· Rebuild cash holdings/)).toBeInTheDocument();
+    expect(screen.getByText(/· Rebuild analytics/)).toBeInTheDocument();
+    expect(screen.getByText(/· Revalue all assets/)).toBeInTheDocument();
+    // ("Full rebuild" scope label appears on every row too, but it also
+    // shows up as the card heading, so we can't cleanly assert on its
+    // count here — the 4 unique step labels above are the rigorous
+    // signal that each row rendered distinctly.)
+  });
 });

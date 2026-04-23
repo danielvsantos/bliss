@@ -86,6 +86,22 @@ const SCOPE_LABEL: Record<RebuildScope, string> = {
   'single-asset': 'Single asset',
 };
 
+// Human-readable label per BullMQ job name. Used in the history list
+// so each subjob of a multi-step chain is distinguishable at a glance
+// (e.g., a `full-portfolio` rebuild produces 4 rows — each carrying the
+// same scope label but a different step label). Falls back to the raw
+// name if we don't have a mapping (future-proofing against new jobs).
+const STEP_LABEL: Record<string, string> = {
+  'process-portfolio-changes': 'Sync transactions → portfolio items',
+  'process-cash-holdings':     'Rebuild cash holdings',
+  'full-rebuild-analytics':    'Rebuild analytics',
+  'value-all-assets':          'Revalue all assets',
+  'scoped-update-analytics':   'Rebuild analytics (scoped)',
+  'value-portfolio-items':     'Revalue selected asset(s)',
+  'process-amortizing-loan':   'Rebuild amortizing loans',
+  'process-simple-liability':  'Rebuild simple liabilities',
+};
+
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
 interface RebuildButtonProps {
@@ -241,32 +257,44 @@ function RebuildHistoryList({ recent }: { recent: RebuildJob[] }) {
   }
   return (
     <div className="divide-y">
-      {recent.map((job) => (
-        <div key={String(job.id)} className="py-3 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-sm">
-                {job.rebuildType ? SCOPE_LABEL[job.rebuildType] : job.name}
-              </span>
-              <JobStateBadge state={job.state} />
+      {recent.map((job) => {
+        // Scope label (e.g. "Full rebuild") identifies the rebuild type;
+        // step label (e.g. "Revalue all assets") identifies WHICH subjob
+        // of that rebuild this row represents. For single-step scopes
+        // (full-analytics, scoped-analytics, single-asset) the two
+        // collapse into one, so we suppress the step suffix when it's
+        // redundant.
+        const scopeLabel = job.rebuildType ? SCOPE_LABEL[job.rebuildType] : job.name;
+        const stepLabel = STEP_LABEL[job.name] ?? job.name;
+        const showStep = job.rebuildType === 'full-portfolio' && stepLabel !== scopeLabel;
+        return (
+          <div key={String(job.id)} className="py-3 flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">{scopeLabel}</span>
+                {showStep && (
+                  <span className="text-xs text-muted-foreground">· {stepLabel}</span>
+                )}
+                <JobStateBadge state={job.state} />
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                {job.requestedBy ? `by ${job.requestedBy} · ` : ''}
+                {job.finishedAt
+                  ? `finished ${formatRelativeTime(job.finishedAt)}`
+                  : job.requestedAt
+                    ? `requested ${formatRelativeTime(job.requestedAt)}`
+                    : ''}
+                {job.attemptsMade > 1 ? ` · ${job.attemptsMade} attempts` : ''}
+              </div>
+              {job.failedReason && (
+                <p className="text-xs text-destructive mt-1 truncate" title={job.failedReason}>
+                  {job.failedReason}
+                </p>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground mt-0.5 truncate">
-              {job.requestedBy ? `by ${job.requestedBy} · ` : ''}
-              {job.finishedAt
-                ? `finished ${formatRelativeTime(job.finishedAt)}`
-                : job.requestedAt
-                  ? `requested ${formatRelativeTime(job.requestedAt)}`
-                  : ''}
-              {job.attemptsMade > 1 ? ` · ${job.attemptsMade} attempts` : ''}
-            </div>
-            {job.failedReason && (
-              <p className="text-xs text-destructive mt-1 truncate" title={job.failedReason}>
-                {job.failedReason}
-              </p>
-            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

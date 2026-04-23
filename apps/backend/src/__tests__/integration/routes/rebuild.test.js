@@ -313,26 +313,9 @@ describe('GET /api/admin/rebuild/status', () => {
   });
 
   it('separates active jobs into `current` and completed/failed into `recent`', async () => {
-    // Each job represents a DIFFERENT rebuild — history entries group by
-    // `_rebuildMeta.requestedAt`, so each needs its own timestamp to be
-    // treated as a separate rebuild. (Subjobs of the same rebuild share a
-    // requestedAt and collapse to one history row — see the dedicated
-    // grouping test below.)
-    const activeJob = makeJob({
-      id: 1, name: 'full-rebuild-analytics',
-      progress: 42, processedAt: '2026-04-23T10:00:00.000Z', finishedAt: null,
-      requestedAt: '2026-04-23T09:59:00.000Z',
-    });
-    const completedJob = makeJob({
-      id: 2, name: 'value-all-assets', rebuildType: 'full-portfolio',
-      finishedAt: '2026-04-22T10:00:00.000Z',
-      requestedAt: '2026-04-22T09:00:00.000Z',
-    });
-    const failedJob = makeJob({
-      id: 3, name: 'full-rebuild-analytics',
-      failedReason: 'Prisma timeout', finishedAt: '2026-04-21T10:00:00.000Z',
-      requestedAt: '2026-04-21T09:00:00.000Z',
-    });
+    const activeJob = makeJob({ id: 1, name: 'full-rebuild-analytics', progress: 42, processedAt: '2026-04-23T10:00:00.000Z', finishedAt: null });
+    const completedJob = makeJob({ id: 2, name: 'value-all-assets', rebuildType: 'full-portfolio', finishedAt: '2026-04-22T10:00:00.000Z' });
+    const failedJob = makeJob({ id: 3, name: 'full-rebuild-analytics', failedReason: 'Prisma timeout', finishedAt: '2026-04-21T10:00:00.000Z' });
 
     stubQueueJobs(mockGetJobsAnalytics, { active: [activeJob], failed: [failedJob] });
     stubQueueJobs(mockGetJobsPortfolio, { completed: [completedJob] });
@@ -405,19 +388,13 @@ describe('GET /api/admin/rebuild/status', () => {
   });
 
   it('caps the recent list to 20 entries', async () => {
-    // Each job represents a distinct historical rebuild — unique
-    // requestedAt keeps them from collapsing via the requestedAt-based
-    // grouping (which is the point: we want to assert the 20-entry cap
-    // on INDEPENDENT rebuilds, not 1 representative of 30 subjobs).
-    const jobs = Array.from({ length: 30 }, (_, i) => {
-      const finishedAt = new Date(Date.now() - i * 60_000).toISOString();
-      return makeJob({
+    const jobs = Array.from({ length: 30 }, (_, i) =>
+      makeJob({
         id: i + 1,
         name: 'full-rebuild-analytics',
-        finishedAt,
-        requestedAt: new Date(Date.now() - (i * 60_000 + 5_000)).toISOString(),
-      });
-    });
+        finishedAt: new Date(Date.now() - i * 60_000).toISOString(),
+      }),
+    );
     stubQueueJobs(mockGetJobsAnalytics, { completed: jobs });
 
     const res = await request(app)
@@ -428,15 +405,18 @@ describe('GET /api/admin/rebuild/status', () => {
     expect(res.body.recent).toHaveLength(20);
   });
 
-  // Grouping guard: a full-portfolio rebuild is actually 4 BullMQ jobs
+  // Chain-visibility guard: a full-portfolio rebuild is 4 BullMQ subjobs
   // (process-portfolio-changes → cash → analytics → value-all-assets)
-  // sharing the same `_rebuildMeta.requestedAt`. Before grouping, each
-  // appeared as its own history row — admin saw 4 "Full rebuild" entries
-  // per click. The grouping collapses them to 1 representative.
+  // sharing the same `_rebuildMeta.requestedAt`. By deliberate design
+  // the endpoint returns ALL of them — the frontend renders a
+  // human-readable per-step label so each row is distinguishable and
+  // mid-chain failures are precisely located. An earlier attempt at
+  // collapsing by requestedAt was reverted after UX review: we'd rather
+  // show the admin the real chain progressing than synthesize a
+  // single-row summary.
 
-  it('collapses a full-portfolio chain into ONE history entry per rebuild', async () => {
+  it('returns every subjob of a full-portfolio chain as its own history entry', async () => {
     const requestedAt = '2026-04-23T10:00:00.000Z';
-    // All 4 subjobs completed, same requestedAt.
     const step1 = makeJob({
       id: 101, name: 'process-portfolio-changes', rebuildType: 'full-portfolio',
       requestedAt, finishedAt: '2026-04-23T10:00:30.000Z',
@@ -461,75 +441,21 @@ describe('GET /api/admin/rebuild/status', () => {
       .set('X-API-KEY', API_KEY);
 
     expect(res.status).toBe(200);
-    expect(res.body.recent).toHaveLength(1);
-    // Representative is the terminal job (value-all-assets), not any of
-    // the intermediate steps.
-    expect(res.body.recent[0]).toMatchObject({
-      id: 104,
-      name: 'value-all-assets',
-      state: 'completed',
-      rebuildType: 'full-portfolio',
-    });
-  });
-
-  it('picks the currently-active subjob as representative while a chain is in progress', async () => {
-    // Same rebuild: step1 completed, step2 is active. Should show ONE
-    // entry in `current`, reflecting the running step.
-    const requestedAt = '2026-04-23T10:00:00.000Z';
-    const completedStep = makeJob({
-      id: 201, name: 'process-portfolio-changes', rebuildType: 'full-portfolio',
-      requestedAt, finishedAt: '2026-04-23T10:00:30.000Z',
-    });
-    const activeStep = makeJob({
-      id: 202, name: 'process-cash-holdings', rebuildType: 'full-portfolio',
-      requestedAt, processedAt: '2026-04-23T10:00:30.000Z', finishedAt: null,
-      progress: 40,
-    });
-    stubQueueJobs(mockGetJobsPortfolio, {
-      completed: [completedStep],
-      active: [activeStep],
-    });
-
-    const res = await request(app)
-      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
-      .set('X-API-KEY', API_KEY);
-
-    expect(res.status).toBe(200);
-    expect(res.body.current).toHaveLength(1);
-    expect(res.body.current[0]).toMatchObject({ id: 202, state: 'active', progress: 40 });
-    expect(res.body.recent).toHaveLength(0);
-  });
-
-  it('surfaces a mid-chain failure as a single failed entry (not as one completed + one failed)', async () => {
-    // Chain: process-portfolio-changes completed, then cash-holdings
-    // failed. User should see ONE failed entry, not a completed one AND
-    // a failed one.
-    const requestedAt = '2026-04-23T10:00:00.000Z';
-    const completedStep = makeJob({
-      id: 301, name: 'process-portfolio-changes', rebuildType: 'full-portfolio',
-      requestedAt, finishedAt: '2026-04-23T10:00:30.000Z',
-    });
-    const failedStep = makeJob({
-      id: 302, name: 'process-cash-holdings', rebuildType: 'full-portfolio',
-      requestedAt, failedReason: 'Prisma timeout',
-      finishedAt: '2026-04-23T10:01:00.000Z',
-    });
-    stubQueueJobs(mockGetJobsPortfolio, {
-      completed: [completedStep],
-      failed: [failedStep],
-    });
-
-    const res = await request(app)
-      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
-      .set('X-API-KEY', API_KEY);
-
-    expect(res.status).toBe(200);
-    expect(res.body.recent).toHaveLength(1);
-    expect(res.body.recent[0]).toMatchObject({
-      id: 302,
-      state: 'failed',
-      failedReason: 'Prisma timeout',
-    });
+    // All 4 subjobs present — the frontend disambiguates via
+    // `job.name` + a human-readable step label, not by collapsing.
+    expect(res.body.recent).toHaveLength(4);
+    const names = res.body.recent.map((j) => j.name).sort();
+    expect(names).toEqual([
+      'full-rebuild-analytics',
+      'process-cash-holdings',
+      'process-portfolio-changes',
+      'value-all-assets',
+    ]);
+    // All tagged with the same scope so the frontend can still group
+    // visually if it wants to.
+    expect(res.body.recent.every((j) => j.rebuildType === 'full-portfolio')).toBe(true);
+    // And all share the same requestedAt — they came from one click.
+    expect(res.body.recent.every((j) => j.requestedAt === requestedAt)).toBe(true);
   });
 
   // Perf-regression guard: the old implementation called

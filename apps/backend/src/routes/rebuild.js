@@ -43,7 +43,6 @@ const { enqueueEvent } = require('../queues/eventsQueue');
 const { acquire, isHeld } = require('../utils/singleFlightLock');
 const { getPortfolioQueue } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
-const { TERMINAL_JOBS } = require('../utils/rebuildLock');
 const prisma = require('../../prisma/prisma.js');
 
 const LOCK_TTL_SECONDS = 60 * 60; // 1 hour
@@ -193,73 +192,19 @@ async function getRebuildJobsForTenant(tenantId) {
     // Filter to admin-triggered rebuilds (those carrying `_rebuildMeta`)
     // for this tenant only. Everything else — nightly crons, transaction-
     // driven scoped updates — is noise on this surface.
-    const tenantRebuildJobs = all.filter(
+    //
+    // Note: a `full-portfolio` rebuild is a chain of 4 BullMQ jobs
+    // (process-portfolio-changes → cash → analytics → value-all-assets),
+    // all sharing the same `_rebuildMeta.requestedAt`. Each one is
+    // returned as its own history row — the frontend renders a
+    // human-readable step label per subjob (see the `STEP_LABEL` map in
+    // `components/settings/maintenance-tab.tsx`) so the admin sees the
+    // full chain progressing rather than one collapsed summary. This
+    // matches the BullMQ reality and makes mid-chain failures precisely
+    // located by step name.
+    return all.filter(
         ({ job }) => job?.data?._rebuildMeta && job?.data?.tenantId === tenantId,
     );
-
-    // A `full-portfolio` rebuild is actually a chain of 4 BullMQ jobs
-    // (process-portfolio-changes → cash → analytics → value-all-assets),
-    // each tagged with the same `_rebuildMeta.requestedAt`. Returning
-    // all of them would put 4 rows in the Maintenance tab's history for
-    // what the admin thinks of as ONE rebuild.
-    //
-    // Group by `requestedAt` (unique per admin trigger), then pick ONE
-    // representative per group:
-    //   - Any active/waiting/delayed subjob ⇒ whole rebuild is in
-    //     progress. Show the latest-started one so progress reflects
-    //     the current step.
-    //   - Else any failed subjob ⇒ rebuild failed; show the failure.
-    //   - Else all completed ⇒ prefer the terminal job (from
-    //     TERMINAL_JOBS), which is the canonical "rebuild finished"
-    //     signal. Fall back to the latest-finished if somehow no
-    //     terminal completed (edge case — shouldn't happen with
-    //     correct chain propagation).
-    //
-    // The other scopes (full-analytics, scoped-analytics, single-asset)
-    // are single-job chains, so the grouping is a no-op for them.
-    const ACTIVE_STATES = new Set(['active', 'waiting', 'delayed']);
-    const groups = new Map();
-    for (const item of tenantRebuildJobs) {
-        const meta = item.job.data._rebuildMeta;
-        // Fall back to jobId for legacy jobs that somehow lack requestedAt.
-        const key = meta?.requestedAt || `job-${item.job.id}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(item);
-    }
-
-    const representatives = [];
-    for (const items of groups.values()) {
-        const active = items.filter((i) => ACTIVE_STATES.has(i.state));
-        if (active.length > 0) {
-            // Latest-started subjob is the current step in the chain.
-            active.sort((a, b) => (b.job.processedOn || 0) - (a.job.processedOn || 0));
-            representatives.push(active[0]);
-            continue;
-        }
-        const failed = items.filter((i) => i.state === 'failed');
-        if (failed.length > 0) {
-            representatives.push(failed[0]);
-            continue;
-        }
-        // All completed — prefer the terminal job for that scope.
-        const completed = items.filter((i) => i.state === 'completed');
-        if (completed.length === 0) continue;
-        const rebuildType = completed[0].job.data._rebuildMeta?.rebuildType;
-        const terminalName = TERMINAL_JOBS[rebuildType];
-        const terminal = terminalName
-            ? completed.find((i) => i.job.name === terminalName)
-            : null;
-        if (terminal) {
-            representatives.push(terminal);
-        } else {
-            // Fallback: no terminal found in the group. Either an unknown
-            // scope or an incomplete chain. Show the latest-finished so
-            // something surfaces instead of silently dropping the rebuild.
-            completed.sort((a, b) => (b.job.finishedOn || 0) - (a.job.finishedOn || 0));
-            representatives.push(completed[0]);
-        }
-    }
-    return representatives;
 }
 
 router.get('/status', apiKeyAuth, async (req, res) => {

@@ -221,13 +221,30 @@ Polled every 5 seconds by the Maintenance tab. Returns three views of the tenant
 
 **Job filtering**: only BullMQ jobs carrying `data._rebuildMeta` are included. Nightly cron runs, transaction-driven scoped updates, and other queue activity are filtered out so the history reflects only admin-initiated operations.
 
-**Per-rebuild grouping**: a `full-portfolio` rebuild is a chain of 4 BullMQ jobs (`process-portfolio-changes` → `process-cash-holdings` → `full-rebuild-analytics` → `value-all-assets`) that all share the same `_rebuildMeta.requestedAt`. Without grouping, the history would show 4 "Full rebuild" rows per admin click. The status endpoint groups jobs by `requestedAt` and returns **one representative per rebuild**:
+**Per-subjob display (not grouped)**: a `full-portfolio` rebuild is a chain of 4 BullMQ jobs (`process-portfolio-changes` → `process-cash-holdings` → `full-rebuild-analytics` → `value-all-assets`) that all share the same `_rebuildMeta.requestedAt`. The status endpoint returns **every subjob as its own history entry** — the frontend disambiguates via a human-readable step label (`STEP_LABEL` map in `components/settings/maintenance-tab.tsx`) so each row shows e.g. "Full rebuild · Revalue all assets" rather than 4 rows all labelled "Full rebuild".
 
-1.  **Any active / waiting / delayed subjob** → rebuild is in progress. Surface the latest-started one (its `progress` reflects the current step).
-2.  **Any failed subjob** → rebuild failed. Surface the failed one with its `failedReason`.
-3.  **All completed** → prefer the **terminal job** (from `TERMINAL_JOBS` in `utils/rebuildLock.js` — `value-all-assets` for full-portfolio, `full-rebuild-analytics` for full-analytics, etc.). Fall back to the latest-finished if no terminal is present.
+Rationale for per-subjob over collapse-to-one: transparency beats tidiness for a maintenance surface. Admins get:
 
-The single-job scopes (`full-analytics`, `scoped-analytics`, `single-asset`) are one-job chains, so grouping is a no-op for them.
+- **Chain progression visibility** — they can see each step completing in real time as the rebuild advances.
+- **Precise failure location** — a mid-chain failure surfaces exactly which subjob broke (e.g. `process-cash-holdings` failed with "Prisma timeout"), not just "the rebuild failed".
+- **No synthetic aggregation logic** — the displayed data matches BullMQ reality one-for-one.
+
+The single-job scopes (`full-analytics`, `scoped-analytics`, `single-asset`) produce one subjob per rebuild, so their display is naturally one row per click. The step label is suppressed for these scopes (it would be redundant with the scope label). The multi-job `full-portfolio` scope is the only one that shows the step suffix.
+
+Step-label map (frontend, `STEP_LABEL`):
+
+| BullMQ job name | Step label |
+|---|---|
+| `process-portfolio-changes` | Sync transactions → portfolio items |
+| `process-cash-holdings` | Rebuild cash holdings |
+| `full-rebuild-analytics` | Rebuild analytics |
+| `value-all-assets` | Revalue all assets |
+| `scoped-update-analytics` | Rebuild analytics (scoped) |
+| `value-portfolio-items` | Revalue selected asset(s) |
+| `process-amortizing-loan` | Rebuild amortizing loans |
+| `process-simple-liability` | Rebuild simple liabilities |
+
+Falls back to the raw BullMQ name if an unmapped job appears (future-proofing).
 
 ### Concurrency: Redis Single-Flight Lock
 
