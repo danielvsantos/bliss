@@ -5,6 +5,7 @@ const { getRedisConnection } = require('../utils/redis');
 const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue } = require('../queues/portfolioQueue');
 const prisma = require('../../prisma/prisma');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { createHeartbeat } = require('../utils/jobHeartbeat');
 
 const recalculatePortfolioItem = require('./portfolio-handlers/recalculate-portfolio-item');
 const processPortfolioChanges = require('./portfolio-handlers/process-portfolio-changes');
@@ -13,9 +14,22 @@ const processAmortizingLoan = require('./portfolio-handlers/amortizing-loan-proc
 const generatePortfolioValuation = require('./portfolio-handlers/valuation/index.js');
 const { processCashHoldings } = require('./portfolio-handlers/cash-processor');
 
-const processPortfolioJob = async (job) => {
+const processPortfolioJob = async (job, token) => {
     const { name, data } = job;
     logger.info(`Processing portfolio job: ${name}`, { data });
+
+    // Attach an explicit lock heartbeat to the job so downstream handlers
+    // — including those invoked via the `{ ...job, data: ... }` spread
+    // pattern — can call `job.heartbeat()` at natural yield points
+    // (per-asset loop iterations, per-batch writes). BullMQ v5's
+    // auto-renew at lockDuration/2 can miss its window under Prisma
+    // Accelerate retry storms, which is what caused the "could not renew
+    // lock for job <id>" errors during long full-rebuild chains.
+    job.heartbeat = createHeartbeat(job, token, {
+        intervalMs: 60_000,
+        lockDurationMs: 300_000,
+        name: 'portfolioWorker',
+    });
 
     try {
         switch (name) {

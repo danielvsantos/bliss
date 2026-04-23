@@ -376,6 +376,10 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     let portfolioItemsToCreate = [];
 
     for (const [symbol, transactions] of transactionsByGroup.entries()) {
+        // BullMQ lock heartbeat — see `utils/jobHeartbeat.js`. Safe
+        // to call unconditionally (no-ops when not attached,
+        // self rate-limits to ~60s intervals).
+        await job.heartbeat?.();
         // --- Start Change: Sort transactions immediately to avoid side-effects ---
         transactions.sort((a, b) => a.transaction_date - b.transaction_date);
         // --- End Change ---
@@ -447,6 +451,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     // --- Step 5b: Seed ManualAssetValue for newly created MANUAL-source items ---
     for (const itemData of portfolioItemsToCreate) {
+        await job.heartbeat?.();
         if (itemData.source !== 'MANUAL') continue;
 
         const portfolioItem = allItemsMap.get(itemData.symbol);

@@ -9,6 +9,7 @@ const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/c
 const { getCategoryMaps } = require('../utils/categoryCache'); // Import category cache
 const { enqueueEvent } = require('../queues/eventsQueue'); // Corrected import path
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { createHeartbeat } = require('../utils/jobHeartbeat');
 
 const prisma = require('../../prisma/prisma.js');
 
@@ -32,7 +33,7 @@ async function fetchHistoricalRate(date, currencyFrom, currencyTo) {
 
 // --- Enhanced Analytics Calculation Logic ---
 
-async function calculateAnalytics(tenantId, scope, targetCurrencies) {
+async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat = async () => {}) {
   logger.info('Starting analytics calculation:', { tenantId, scope, targetCurrencies });
 
   const BATCH_SIZE = 1000;
@@ -107,6 +108,11 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies) {
       break;
     }
     transactionCount += transactionsForDates.length;
+    // Renew the job lock between batch fetches — Pass 1 can walk tens of
+    // thousands of rows for a full-rebuild tenant, and Prisma Accelerate
+    // retries (1102 Worker resource limits) can stretch a single await
+    // past BullMQ's 150s auto-renew window.
+    await heartbeat();
 
 
     const filteredForDates = transactionsForDates.filter(txn => {
@@ -165,6 +171,8 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies) {
     }
     processedCount += transactions.length;
     logger.info(`[AnalyticsWorker] Processing batch of ${transactions.length}. Total processed: ${processedCount}/${transactionCount}`);
+    // Renew the job lock between batches (same reasoning as Pass 1).
+    await heartbeat();
     
     const filteredTransactions = transactions.filter(txn => {
         if (scopeType     && !scopeType.includes(txn.category?.type))       return false;
@@ -264,10 +272,20 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies) {
 // Cash holdings processing has been moved to the dedicated cash-processor.js worker
 
 // --- BullMQ Worker Setup ---
-const processAnalyticsJob = async (job) => {
+const processAnalyticsJob = async (job, token) => {
     const { name, data } = job;
     const { tenantId, scope, scopes } = data; // Added 'scopes'
     const startTime = Date.now();
+
+    // Explicit lock heartbeat. See `utils/jobHeartbeat.js` for why we don't
+    // rely solely on BullMQ's auto-renew. `lockDurationMs` here matches
+    // the Worker's `lockDuration` below; `intervalMs` is how often we're
+    // willing to spend a Redis round-trip on a renewal.
+    const heartbeat = createHeartbeat(job, token, {
+        intervalMs: 60_000,
+        lockDurationMs: 300_000,
+        name: 'analyticsWorker',
+    });
 
     logger.info(`Starting analytics job: ${name}`, {
         jobId: job.id,
@@ -311,7 +329,7 @@ const processAnalyticsJob = async (job) => {
             case 'scoped-update-analytics':
                 if (scopes && scopes.length > 0) {
                     for (const singleScope of scopes) {
-                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies);
+                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies, heartbeat);
                         newAnalytics.push(...analytics);
                         newTagAnalytics.push(...tagAnalytics);
                     }
@@ -339,7 +357,7 @@ const processAnalyticsJob = async (job) => {
 
             case 'recalculate-analytics': // This is the broad job from imports
             default: {
-                const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, scope || {}, targetCurrencies);
+                const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, scope || {}, targetCurrencies, heartbeat);
                 newAnalytics = analytics;
                 newTagAnalytics = tagAnalytics;
                 break;
@@ -377,6 +395,7 @@ const processAnalyticsJob = async (job) => {
         const WRITE_BATCH_SIZE = 500;
 
         for (let i = 0; i < newAnalytics.length; i += WRITE_BATCH_SIZE) {
+            await heartbeat();
             const batch = newAnalytics.slice(i, i + WRITE_BATCH_SIZE);
             // Strip any extraneous in-memory fields (e.g. `totalDebt`)
             // and attach tenantId for createMany.
@@ -406,6 +425,7 @@ const processAnalyticsJob = async (job) => {
         // composite unique constraint (adds tagId + categoryId).
         if (newTagAnalytics.length > 0) {
           for (let i = 0; i < newTagAnalytics.length; i += WRITE_BATCH_SIZE) {
+              await heartbeat();
               const batch = newTagAnalytics.slice(i, i + WRITE_BATCH_SIZE);
               const rows = batch.map(entry => ({
                   tagId: entry.tagId,

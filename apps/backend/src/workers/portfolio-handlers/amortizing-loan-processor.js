@@ -58,6 +58,9 @@ const processAmortizingLoan = async (job) => {
     // --- End Change ---
 
     for (const debt of debts) {
+        // BullMQ lock heartbeat — self rate-limiting, safe to call
+        // unconditionally. See `utils/jobHeartbeat.js`.
+        await job.heartbeat?.();
         try {
             logger.info(`[DebtProc] Processing loan: ${debt.symbol}`, { tenantId, assetId: debt.id });
 

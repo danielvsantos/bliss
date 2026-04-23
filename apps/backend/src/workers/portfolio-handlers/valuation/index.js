@@ -11,8 +11,9 @@ const { calculateTotalInvested } = require('../../../utils/portfolioItemStateCal
 // Assets with long histories (e.g. 2,600+ days) produce large arrays that exceed
 // this limit in a single createMany call. Batching keeps each call well under it.
 const BATCH_SIZE = 500;
-async function batchCreateMany(model, data, options = {}) {
+async function batchCreateMany(model, data, options = {}, heartbeat) {
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
+        if (heartbeat) await heartbeat();
         const batch = data.slice(i, i + BATCH_SIZE);
         await model.createMany({ data: batch, ...options });
     }
@@ -157,6 +158,12 @@ const generatePortfolioValuation = async (job) => {
     // Process each asset one by one.
     for (let i = 0; i < assets.length; i++) {
         const asset = assets[i];
+        // Explicit BullMQ lock heartbeat — see `utils/jobHeartbeat.js`.
+        // Safe to call unconditionally: no-ops when `job.heartbeat` isn't
+        // attached (e.g. unit tests pass a pseudo-job), and self
+        // rate-limits when it is. `?.()` guards older call sites that
+        // haven't been updated to thread heartbeat through yet.
+        await job.heartbeat?.();
         try {
             logger.info(`[Valuation] Processing asset ${i + 1} of ${assets.length}: ${asset.symbol}`, { tenantId, assetId: asset.id });
 
@@ -191,9 +198,12 @@ const generatePortfolioValuation = async (job) => {
                     const holdingDates = new Set(cashHoldings.map(h => h.date.toISOString().split('T')[0]));
 
                     while (dayIterator <= endOfDayUTC) {
+                        // Heartbeat inside the per-day loop; self rate-limits
+                        // so calling per-iteration is cheap.
+                        await job.heartbeat?.();
                         const currentDate = new Date(dayIterator);
                         const dateStr = currentDate.toISOString().split('T')[0];
-                        
+
                         // Update balance if there's a holding record for this date
                         if (holdingsMap.has(dateStr)) {
                             currentBalance = holdingsMap.get(dateStr).totalValue;
@@ -228,7 +238,7 @@ const generatePortfolioValuation = async (job) => {
                     }
 
                     if (valueHistoryToCreate.length > 0) {
-                        await batchCreateMany(prisma.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true });
+                        await batchCreateMany(prisma.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true }, job.heartbeat);
                         totalSnapshotsCreated += valueHistoryToCreate.length;
                         logger.info(`[Valuation] Created ${valueHistoryToCreate.length} history records for cash asset ${asset.symbol} (forward-filled to present)`);
                     }
@@ -290,6 +300,8 @@ const generatePortfolioValuation = async (job) => {
 
             let iterationCount = 0;
             while (dayIterator <= endOfDayUTC) {
+                // Heartbeat inside the per-day loop; self rate-limits.
+                await job.heartbeat?.();
                 iterationCount++;
                 const currentDate = new Date(dayIterator); // Use a non-mutated copy for processing
                 const dateStr = currentDate.toISOString().slice(0, 10);
@@ -382,13 +394,13 @@ const generatePortfolioValuation = async (job) => {
             }
 
             if (holdingsToCreate.length > 0) {
-                await batchCreateMany(prisma.portfolioHolding, holdingsToCreate, { skipDuplicates: true });
+                await batchCreateMany(prisma.portfolioHolding, holdingsToCreate, { skipDuplicates: true }, job.heartbeat);
                 totalHoldingsCreated += holdingsToCreate.length;
                 logger.info(`[Valuation] Created ${holdingsToCreate.length} holding records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
             }
 
             if (valueHistoryToCreate.length > 0) {
-                await batchCreateMany(prisma.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true });
+                await batchCreateMany(prisma.portfolioValueHistory, valueHistoryToCreate, { skipDuplicates: true }, job.heartbeat);
                 totalSnapshotsCreated += valueHistoryToCreate.length;
                 logger.info(`[Valuation] Created ${valueHistoryToCreate.length} history records for asset ${asset.symbol}`, { tenantId, assetId: asset.id });
             }
