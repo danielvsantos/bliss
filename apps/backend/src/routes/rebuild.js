@@ -15,9 +15,16 @@
  *   GET /api/admin/rebuild/status?tenantId=...
  *     Returns:
  *       {
- *         locks: [{ scope, ttlSeconds }],   // per-scope single-flight state
- *         current: Job | null,              // oldest in-flight rebuild job
- *         recent: Job[]                     // last 20 completed/failed rebuilds
+ *         locks:   [{ scope, ttlSeconds }], // per-scope single-flight state
+ *         current: Job[],                   // in-flight rebuild jobs
+ *         recent:  Job[],                   // last 20 completed/failed rebuilds
+ *         assets:  [{ id, symbol, currency, category: { name } }],
+ *                                           // portfolio items for the
+ *                                           // single-asset rebuild picker —
+ *                                           // included here to avoid a
+ *                                           // second fetch against the
+ *                                           // live-priced /api/portfolio/items
+ *                                           // endpoint from the Maintenance tab
  *       }
  *     Jobs are filtered to those carrying `data._rebuildMeta` — i.e.
  *     only admin-triggered ones, not nightly crons or transaction-
@@ -36,6 +43,7 @@ const { enqueueEvent } = require('../queues/eventsQueue');
 const { acquire, isHeld } = require('../utils/singleFlightLock');
 const { getPortfolioQueue } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
+const prisma = require('../../prisma/prisma.js');
 
 const LOCK_TTL_SECONDS = 60 * 60; // 1 hour
 const RECENT_LIMIT = 20;
@@ -207,7 +215,30 @@ router.get('/status', apiKeyAuth, async (req, res) => {
 
         // 2. Jobs carrying `_rebuildMeta` for this tenant, across portfolio
         //    and analytics queues.
-        const jobs = await getRebuildJobsForTenant(tenantId);
+        //
+        // 3. Portfolio items for the single-asset picker. Ships alongside
+        //    status so the Maintenance tab doesn't need a second fetch
+        //    against /api/portfolio/items — which triggers live price
+        //    fetches for every asset (40+ HTTP calls to TwelveData) just
+        //    to populate a dropdown. Here we just read id+symbol+currency+
+        //    category.name from the DB. Run in parallel with the jobs
+        //    query since both are independent.
+        const [jobs, assets] = await Promise.all([
+            getRebuildJobsForTenant(tenantId),
+            prisma.portfolioItem.findMany({
+                where: {
+                    tenantId,
+                    category: { type: { in: ['Investments', 'Asset', 'Debt'] } },
+                },
+                select: {
+                    id: true,
+                    symbol: true,
+                    currency: true,
+                    category: { select: { name: true } },
+                },
+                orderBy: { symbol: 'asc' },
+            }),
+        ]);
 
         // Active/waiting/delayed → "current" bucket; completed/failed → "recent" bucket.
         const ACTIVE_STATES = new Set(['active', 'waiting', 'delayed']);
@@ -239,6 +270,7 @@ router.get('/status', apiKeyAuth, async (req, res) => {
             locks,
             current: currentJobs,
             recent: recentJobs,
+            assets,
         });
     } catch (error) {
         logger.error('[Rebuild] Failed to fetch rebuild status', {

@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 
 import { useRebuildStatus, useTriggerRebuild } from '@/hooks/use-rebuild';
-import { usePortfolioItems } from '@/hooks/use-portfolio-items';
 import { useToast } from '@/hooks/use-toast';
 
 import { Card } from '@/components/ui/card';
@@ -42,7 +41,7 @@ import type {
   RebuildStatusResponse,
   RebuildJob,
   RebuildLockInfo,
-  PortfolioItem,
+  RebuildAsset,
 } from '@/types/api';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -132,7 +131,7 @@ function RebuildButton({ scope, status, isPending, disabled, onClick, label }: R
 }
 
 interface AssetPickerProps {
-  items: PortfolioItem[];
+  items: RebuildAsset[];
   value: number | null;
   onChange: (id: number | null) => void;
 }
@@ -273,12 +272,13 @@ function RebuildHistoryList({ recent }: { recent: RebuildJob[] }) {
 export function MaintenanceTab() {
   const { toast } = useToast();
   const { data: status, isLoading: statusLoading, isError: statusError } = useRebuildStatus();
-  // `usePortfolioItems` returns `{ portfolioCurrency, items }`, not a raw
-  // array — the `items` accessor is required. A raw-array destructure
-  // with a `= []` default silently passes type checks but explodes at
-  // runtime the moment the query resolves with the real object shape.
-  const { data: portfolioItemsResponse, isLoading: itemsLoading } = usePortfolioItems();
-  const portfolioItems = portfolioItemsResponse?.items ?? [];
+  // Assets for the single-asset picker come from the rebuild status
+  // response itself — the backend reads id/symbol/currency/category.name
+  // direct from the DB, no price fetching. We deliberately do NOT call
+  // `usePortfolioItems()` here because that endpoint kicks off a live
+  // price fetch per asset (40+ HTTP calls to TwelveData) just to
+  // populate a dropdown.
+  const portfolioItems = status?.assets ?? [];
   const trigger = useTriggerRebuild();
 
   // Per-section local state
@@ -444,7 +444,7 @@ export function MaintenanceTab() {
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <div className="flex-1 space-y-1.5">
             <Label className="text-xs">Asset</Label>
-            {itemsLoading ? (
+            {statusLoading ? (
               <div className="h-10 rounded-md border bg-muted animate-pulse" />
             ) : (
               <AssetPicker

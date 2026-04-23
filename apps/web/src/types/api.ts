@@ -268,10 +268,21 @@ export type RebuildLockInfo = {
   ttlSeconds: number | null;
 };
 
+// Lightweight portfolio-item shape used by the Maintenance tab's
+// single-asset picker. Shipped alongside status to avoid calling
+// `/api/portfolio/items`, which triggers a live price fetch per asset.
+export type RebuildAsset = {
+  id: number;
+  symbol: string;
+  currency: string;
+  category: { name: string } | null;
+};
+
 export type RebuildStatusResponse = {
   locks: RebuildLockInfo[];
   current: RebuildJob[];
   recent: RebuildJob[];
+  assets: RebuildAsset[];
 };
 
 export type RebuildTriggerRequest = {

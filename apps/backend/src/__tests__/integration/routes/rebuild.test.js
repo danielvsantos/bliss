@@ -37,6 +37,14 @@ jest.mock('../../../queues/analyticsQueue', () => ({
   getAnalyticsQueue: jest.fn(() => ({ getJobs: mockGetJobsAnalytics })),
 }));
 
+// Mock Prisma: status endpoint now also reads portfolioItem for the
+// single-asset picker. We don't want a real DB, so mock the one call
+// and have each test override what it returns.
+const mockPortfolioItemFindMany = jest.fn();
+jest.mock('../../../../prisma/prisma.js', () => ({
+  portfolioItem: { findMany: (...args) => mockPortfolioItemFindMany(...args) },
+}));
+
 const request = require('supertest');
 const app = require('../../../app');
 const { enqueueEvent } = require('../../../queues/eventsQueue');
@@ -232,10 +240,11 @@ describe('POST /api/admin/rebuild/trigger', () => {
 describe('GET /api/admin/rebuild/status', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default: no locks held, no jobs in any state.
+    // Default: no locks held, no jobs in any state, no assets.
     isHeld.mockResolvedValue({ held: false, ttlSeconds: null });
     stubQueueJobs(mockGetJobsPortfolio);
     stubQueueJobs(mockGetJobsAnalytics);
+    mockPortfolioItemFindMany.mockResolvedValue([]);
   });
 
   it('returns 401 when X-API-KEY header is missing', async () => {
@@ -250,7 +259,7 @@ describe('GET /api/admin/rebuild/status', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns empty locks + current + recent when nothing is happening', async () => {
+  it('returns empty locks + current + recent + assets when nothing is happening', async () => {
     const res = await request(app)
       .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
       .set('X-API-KEY', API_KEY);
@@ -264,6 +273,43 @@ describe('GET /api/admin/rebuild/status', () => {
     ]));
     expect(res.body.current).toEqual([]);
     expect(res.body.recent).toEqual([]);
+    expect(res.body.assets).toEqual([]);
+  });
+
+  it('returns the single-asset picker list scoped to the tenant (no price fetch)', async () => {
+    mockPortfolioItemFindMany.mockResolvedValueOnce([
+      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
+      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
+    ]);
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.assets).toEqual([
+      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
+      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
+    ]);
+
+    // Perf guarantee: the portfolioItem query is scoped by tenantId +
+    // asset-like categories, selects ONLY the picker fields, and does
+    // NOT pull `currentValue`, `manualValues`, or anything that would
+    // push the caller into a live-price path.
+    expect(mockPortfolioItemFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          category: { type: { in: ['Investments', 'Asset', 'Debt'] } },
+        }),
+        select: {
+          id: true,
+          symbol: true,
+          currency: true,
+          category: { select: { name: true } },
+        },
+      }),
+    );
   });
 
   it('separates active jobs into `current` and completed/failed into `recent`', async () => {

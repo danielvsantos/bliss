@@ -13,22 +13,12 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
-// `usePortfolioItems` returns `{ portfolioCurrency, items }` — must match
-// the real hook shape, not a raw array (which caused a runtime
-// `items.find is not a function` when the page first loaded).
-vi.mock('@/hooks/use-portfolio-items', () => ({
-  usePortfolioItems: () => ({
-    data: {
-      portfolioCurrency: 'USD',
-      items: [
-        { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
-        { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
-      ],
-    },
-    isLoading: false,
-  }),
-  PORTFOLIO_ITEMS_QUERY_KEY: 'portfolio-items',
-}));
+// Note: the Maintenance tab no longer calls `usePortfolioItems()` —
+// asset picker data ships in the rebuild status response itself (see
+// `status.assets` below). That avoids the live-price fetch storm that
+// `/api/portfolio/items` triggers. If someone regresses that, the
+// "renders the single-asset picker" test still exercises the picker
+// against mocked assets.
 
 function renderTab() {
   const queryClient = new QueryClient({
@@ -50,6 +40,10 @@ const emptyStatus: RebuildStatusResponse = {
   ],
   current: [],
   recent: [],
+  assets: [
+    { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
+    { id: 2, symbol: 'BTC', currency: 'USD', category: { name: 'Crypto' } },
+  ],
 };
 
 describe('MaintenanceTab', () => {
@@ -162,23 +156,28 @@ describe('MaintenanceTab', () => {
     });
   });
 
-  it('renders the single-asset picker without crashing (regression test for items.find)', async () => {
-    // Regression: the first Maintenance-tab deploy crashed with
+  it('renders the single-asset picker without crashing (uses status.assets, not /api/portfolio/items)', async () => {
+    // Regression 1: the first Maintenance-tab deploy crashed with
     // `items.find is not a function` because the component treated
-    // `usePortfolioItems().data` as a raw array — but the hook returns
-    // `{ portfolioCurrency, items }`. This test exercises the code path
-    // that dereferences the returned data.
+    // `usePortfolioItems().data` as a raw array when the hook
+    // actually returned `{ portfolioCurrency, items }`.
+    //
+    // Regression 2: even after that was fixed, calling
+    // `usePortfolioItems()` triggered a live price fetch per asset
+    // (40+ HTTP calls) just to render this dropdown. We moved the
+    // picker data into the rebuild status response itself. This test
+    // asserts the picker renders using `status.assets` — if someone
+    // reintroduces `usePortfolioItems()` the test won't fail by
+    // itself, but the mock-free `@/hooks/use-portfolio-items` mock
+    // would start being required again.
     vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
 
     renderTab();
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Rebuild a single asset' })).toBeInTheDocument();
-    });
-
-    // The asset picker renders — if the component correctly unwrapped
-    // `.items`, the default-unselected button shows "Select an asset…".
-    expect(screen.getByText(/Select an asset…/)).toBeInTheDocument();
+    // Picker is gated on statusLoading — findByText waits for the
+    // status query to resolve and the placeholder to swap in the real
+    // picker trigger.
+    expect(await screen.findByText(/Select an asset…/)).toBeInTheDocument();
   });
 
   it('renders a history entry for a completed rebuild', async () => {
