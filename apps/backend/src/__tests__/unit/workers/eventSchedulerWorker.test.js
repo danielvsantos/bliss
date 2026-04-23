@@ -473,6 +473,100 @@ describe('eventSchedulerWorker — processEventJob', () => {
     });
   });
 
+  // ─── _rebuildMeta propagation through the full-portfolio chain ───────────
+  //
+  // The single-flight lock is released by the terminal job's completion
+  // handler (`utils/rebuildLock.js`). For the full-portfolio chain
+  // process-portfolio-changes → cash → analytics → value-all-assets,
+  // `_rebuildMeta` starts on the initial job and must ride through each
+  // downstream event → job hop to reach `value-all-assets`. If any
+  // propagation link breaks, the lock will never release and the admin
+  // will be stuck until the TTL expires.
+
+  describe('_rebuildMeta propagation (full-portfolio chain)', () => {
+    const meta = { rebuildType: 'full-portfolio', requestedBy: 'admin@example.com', requestedAt: '2026-04-23T10:00:00.000Z' };
+
+    it('PORTFOLIO_CHANGES_PROCESSED forwards _rebuildMeta to process-cash-holdings (full rebuild)', async () => {
+      const job = makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1',
+        isFullRebuild: true,
+        _rebuildMeta: meta,
+      });
+      await processEventJob(job);
+
+      expect(scheduleDebouncedJob).toHaveBeenCalledWith(
+        mockPortfolioQueue,
+        'process-cash-holdings',
+        expect.objectContaining({ tenantId: 't1', _rebuildMeta: meta }),
+        'needsCashRebuild',
+        expect.any(Number),
+      );
+    });
+
+    it('PORTFOLIO_CHANGES_PROCESSED forwards _rebuildMeta on scoped path too', async () => {
+      const job = makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1',
+        isFullRebuild: false,
+        dateScopes: [{ year: 2026, month: 3 }],
+        _rebuildMeta: meta,
+      });
+      await processEventJob(job);
+
+      expect(scheduleDebouncedJob).toHaveBeenCalledWith(
+        mockPortfolioQueue,
+        'process-cash-holdings',
+        expect.objectContaining({ _rebuildMeta: meta }),
+        'needsCashRebuild',
+        expect.any(Number),
+      );
+    });
+
+    it('CASH_HOLDINGS_PROCESSED forwards _rebuildMeta to full-rebuild-analytics', async () => {
+      const job = makeJob('CASH_HOLDINGS_PROCESSED', {
+        tenantId: 't1',
+        isFullRebuild: true,
+        _rebuildMeta: meta,
+      });
+      await processEventJob(job);
+
+      expect(scheduleDebouncedJob).toHaveBeenCalledWith(
+        mockAnalyticsQueue,
+        'full-rebuild-analytics',
+        expect.objectContaining({ _rebuildMeta: meta }),
+        'needsRecalc',
+        expect.any(Number),
+      );
+    });
+
+    it('ANALYTICS_RECALCULATION_COMPLETE forwards _rebuildMeta to value-all-assets', async () => {
+      const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: true,
+        _rebuildMeta: meta,
+      });
+      await processEventJob(job);
+
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
+        'value-all-assets',
+        expect.objectContaining({ tenantId: 't1', _rebuildMeta: meta }),
+      );
+    });
+
+    it('events without _rebuildMeta do NOT propagate the field (no stale injection)', async () => {
+      const job = makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1',
+        isFullRebuild: true,
+      });
+      await processEventJob(job);
+
+      const call = scheduleDebouncedJob.mock.calls.find(
+        (c) => c[1] === 'process-cash-holdings',
+      );
+      expect(call).toBeDefined();
+      expect(call[2]).not.toHaveProperty('_rebuildMeta');
+    });
+  });
+
   // ─── ANALYTICS_RECALCULATION_COMPLETE cascade suppression ───────────────
   //
   // When a manual `full-analytics` rebuild finishes, the analyticsWorker
@@ -506,8 +600,10 @@ describe('eventSchedulerWorker — processEventJob', () => {
     });
 
     it('still cascades for full-rebuild when _rebuildMeta indicates a different scope (full-portfolio)', async () => {
-      // full-portfolio rebuilds intentionally want the cascade — the suppression
-      // only targets the analytics-only button.
+      // full-portfolio rebuilds intentionally want the cascade — the
+      // suppression only targets the analytics-only button. The meta is
+      // also forwarded onto the value-all-assets job so its completion
+      // handler can release the single-flight lock.
       const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
         tenantId: 't1',
         isFullRebuild: true,
@@ -515,7 +611,10 @@ describe('eventSchedulerWorker — processEventJob', () => {
       });
       await processEventJob(job);
 
-      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', { tenantId: 't1' });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', {
+        tenantId: 't1',
+        _rebuildMeta: { rebuildType: 'full-portfolio' },
+      });
     });
 
     it('scoped analytics with empty portfolioItemIds does not trigger valuation', async () => {

@@ -100,7 +100,10 @@ async function processCashHoldings(tenantId, scope = {}) {
             isFullRebuild,
             scope,
             originalScope: scope.originalScope,
-            portfolioItemIds: scope.portfolioItemIds
+            portfolioItemIds: scope.portfolioItemIds,
+            // Forward the admin-rebuild marker so the lock release path
+            // can trace through to `value-all-assets` completion.
+            ...(scope._rebuildMeta ? { _rebuildMeta: scope._rebuildMeta } : {}),
         });
         
         return { success: true, duration };

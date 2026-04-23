@@ -212,7 +212,7 @@ const processEventJob = async (job) => {
             }
 
             case 'PORTFOLIO_CHANGES_PROCESSED': {
-                const { tenantId, isFullRebuild, portfolioItemIds, dateScopes } = data;
+                const { tenantId, isFullRebuild, portfolioItemIds, dateScopes, _rebuildMeta } = data;
                 if (!tenantId) {
                     logger.warn('PORTFOLIO_CHANGES_PROCESSED event is missing tenantId.');
                     return;
@@ -224,7 +224,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getPortfolioQueue(),
                         'process-cash-holdings',
-                        { tenantId, needsCashRebuild: [true] },
+                        { tenantId, needsCashRebuild: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsCashRebuild',
                         DEBOUNCE_DELAY_SECONDS
                     );
@@ -244,7 +244,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getPortfolioQueue(),
                         'process-cash-holdings',
-                        { tenantId, scope: cashScope, originalScope: finalScope, portfolioItemIds, needsCashRebuild: [true] },
+                        { tenantId, scope: cashScope, originalScope: finalScope, portfolioItemIds, needsCashRebuild: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsCashRebuild',
                         DEBOUNCE_DELAY_SECONDS
                     );
@@ -253,7 +253,7 @@ const processEventJob = async (job) => {
             }
 
             case 'CASH_HOLDINGS_PROCESSED': {
-                const { tenantId, isFullRebuild, scope, originalScope, portfolioItemIds } = data;
+                const { tenantId, isFullRebuild, scope, originalScope, portfolioItemIds, _rebuildMeta } = data;
                 if (!tenantId) {
                     logger.warn('CASH_HOLDINGS_PROCESSED event is missing tenantId.');
                     return;
@@ -265,7 +265,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getAnalyticsQueue(),
                         'full-rebuild-analytics',
-                        { tenantId, needsRecalc: [true] },
+                        { tenantId, needsRecalc: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsRecalc',
                         DEBOUNCE_DELAY_SECONDS
                     );
@@ -275,7 +275,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getAnalyticsQueue(),
                         'scoped-update-analytics',
-                        { tenantId, scopes: [originalScope], portfolioItemIds },
+                        { tenantId, scopes: [originalScope], portfolioItemIds, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'scopes',
                         DEBOUNCE_DELAY_SECONDS
                     );
@@ -304,8 +304,16 @@ const processEventJob = async (job) => {
                 if (isFullRebuild) {
                     // This is a full rebuild, so trigger a full valuation for ALL assets.
                     // The valuation worker will now handle cash vs. non-cash assets correctly.
+                    // `value-all-assets` carries `_rebuildMeta` through so its
+                    // completion handler can release the full-portfolio
+                    // single-flight lock (see `utils/rebuildLock.js`). The
+                    // loan processors run independently and don't gate lock
+                    // release.
                     logger.info(`Analytics recalculation complete (full) for tenant ${tenantId}. Enqueuing full valuation for ALL assets.`);
-                    await getPortfolioQueue().add('value-all-assets', { tenantId });
+                    await getPortfolioQueue().add('value-all-assets', {
+                        tenantId,
+                        ...(_rebuildMeta ? { _rebuildMeta } : {}),
+                    });
                     await getPortfolioQueue().add('process-amortizing-loan', { tenantId });
                     await getPortfolioQueue().add('process-simple-liability', { tenantId });
                 } else if (portfolioItemIds && portfolioItemIds.length > 0) {

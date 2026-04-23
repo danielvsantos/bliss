@@ -10,6 +10,7 @@ const { getCategoryMaps } = require('../utils/categoryCache'); // Import categor
 const { enqueueEvent } = require('../queues/eventsQueue'); // Corrected import path
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
+const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
 const prisma = require('../../prisma/prisma.js');
 
@@ -536,11 +537,15 @@ const startAnalyticsWorker = () => {
     });
 
     // Worker event handlers
-    worker.on('completed', (job) => {
+    worker.on('completed', async (job) => {
       logger.info('Analytics job completed successfully:', {
         jobId: job.id,
         result: job.returnvalue
       });
+      // Release the single-flight rebuild lock if this job was the
+      // terminal step of a manual rebuild chain (full-analytics or
+      // scoped-analytics). See `utils/rebuildLock.js`.
+      await maybeReleaseRebuildLock(job);
     });
 
     worker.on('failed', (job, error) => {
