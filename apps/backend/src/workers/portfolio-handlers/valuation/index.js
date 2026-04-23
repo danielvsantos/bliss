@@ -253,7 +253,13 @@ const generatePortfolioValuation = async (job) => {
 
             let valueHistoryToCreate = [];
             let holdingsToCreate = [];
-            let fallbackLogState = null; // State tracker for cost basis fallback logs
+            // NOTE: cost-basis fallback is an expected, non-error state for
+            // pre-IPO / pre-listing holdings and MANUAL assets before the
+            // first manual price entry. The occurrence is already persisted
+            // on each `PortfolioValueHistory.source` row as
+            // `COST_BASIS_FALLBACK`, so we no longer emit a summary log for
+            // it — the old summary was being captured by Sentry's console
+            // integration and polluting the issue stream.
 
             const startDate = new Date(transactionDates[0]);
             const lastTxDate = new Date(transactionDates[transactionDates.length - 1]);
@@ -326,11 +332,6 @@ const generatePortfolioValuation = async (job) => {
                     // Carry the asset at cost basis until the first real market price arrives.
                     totalValue = costBasis;
                     priceSource = 'COST_BASIS_FALLBACK';
-                    if (!fallbackLogState) {
-                        fallbackLogState = { count: 1, startDate: dateStr };
-                    } else {
-                        fallbackLogState.count++;
-                    }
                 } else if (
                     (asset.category.processingHint === 'MANUAL' ||
                      (asset.category.processingHint === 'API_FUND' && asset.source === 'MANUAL'))
@@ -342,11 +343,6 @@ const generatePortfolioValuation = async (job) => {
                         if (costBasis.gt(0)) {
                             totalValue = costBasis;
                             priceSource = 'COST_BASIS_FALLBACK';
-                            if (!fallbackLogState) {
-                                fallbackLogState = { count: 1, startDate: dateStr };
-                            } else {
-                                fallbackLogState.count++;
-                            }
                         }
                     } else {
                         logger.warn(`Could not find price for MANUAL asset ${asset.symbol} on ${dateStr}. A manual price exists, but not for this date or a prior one.`, { tenantId, assetId: asset.id });
@@ -383,10 +379,6 @@ const generatePortfolioValuation = async (job) => {
                     costBasis: costBasis,
                     totalValue: totalValue,
                 });
-            }
-
-            if (fallbackLogState) {
-                logger.info(`[Valuation] Used cost basis fallback for ${asset.symbol} for ${fallbackLogState.count} days, starting from ${fallbackLogState.startDate}.`, { tenantId, assetId: asset.id });
             }
 
             if (holdingsToCreate.length > 0) {
