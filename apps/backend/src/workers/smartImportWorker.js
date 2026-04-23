@@ -583,12 +583,15 @@ const processSmartImportJob = async (job) => {
 
             allRowData.push(rowData);
 
-            // First-pass progress: 1% → 29% while we normalize, dedup, and
+            // First-pass progress: 1% → 19% while we normalize, dedup, and
             // resolve native-adapter rows. Without this, large imports sat
             // at 1% for the entire duration of this loop before jumping to
             // 30% when Phase 1 finished. Time-throttled so even a 15k-row
             // import stays continuously updating.
-            const pct = Math.min(29, 1 + Math.floor(((i + 1) / normalizedRows.length) * 28));
+            // Ceiling is 19% (not 29%) to reserve 20→29 for Phase 1's LLM
+            // seed interview — that loop used to run silently for 100+
+            // seconds between this bar and the jump to 30%.
+            const pct = Math.min(19, 1 + Math.floor(((i + 1) / normalizedRows.length) * 18));
             await reportProgress(pct);
         }
 
@@ -603,6 +606,16 @@ const processSmartImportJob = async (job) => {
         const aiFreqMap = buildAiFrequencyMap(aiEntries);
         const sortedDescAi = [...aiFreqMap.entries()].sort((a, b) => b[1].length - a[1].length);
         const phase1Start = Date.now();
+
+        // Progress band for Phase 1: 20% → 29%. Each LLM classify call can
+        // take 3-5s (sometimes longer), and the loop runs up to TOP_N_SEEDS
+        // slow iterations plus any fast EXACT/VECTOR hits. Denominator is
+        // whichever completes first so the bar fills smoothly in both the
+        // small-list-all-LLM case (e.g. 5 unique desc → 5 slow iters fill
+        // 5/5 of the band) and the large-list-with-cache-hits case (many
+        // fast iters + up to TOP_N_SEEDS slow ones → bar caps at 29%).
+        const phase1Denom = Math.max(1, Math.min(sortedDescAi.length, TOP_N_SEEDS));
+        let phase1Done = 0;
 
         for (const [normalizedName, entries] of sortedDescAi) {
             if (seedCount >= TOP_N_SEEDS) break;
@@ -633,6 +646,13 @@ const processSmartImportJob = async (job) => {
                 logger.warn(`Phase 1 classify failed for "${normalizedName}": ${classifyError.message}`);
                 // Leave rowData.classificationSource = null — user will classify manually
             }
+
+            // Tick progress after each iteration so the bar advances even
+            // when the loop is blocked on slow LLM calls. The 1s throttle
+            // in reportProgress() keeps the Prisma write cadence sane.
+            phase1Done++;
+            const pct = Math.min(29, 20 + Math.floor((phase1Done / phase1Denom) * 9));
+            await reportProgress(pct);
         }
 
         logger.info(
