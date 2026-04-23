@@ -54,15 +54,22 @@ const seedManualAssetValues = async (portfolioItemId, tenantId, transactions) =>
 const processPortfolioChanges = async (job) => {
     const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta } = job.data;
 
+    // Thread the BullMQ lock heartbeat attached by `portfolioWorker`
+    // through to `handleFullRebuild`'s inner loops. Without this,
+    // `job.heartbeat` is out of scope inside the helper (which doesn't
+    // receive `job` directly) and the loops crash with
+    // `ReferenceError: job is not defined`.
+    const heartbeat = job.heartbeat;
+
     if (transactionId) {
         // --- Scoped Update Logic (single transaction) ---
         return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta);
     } else if (accountIds && accountIds.length > 0) {
         // --- Account-scoped rebuild (e.g., after Plaid promote or import) ---
-        return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes, _rebuildMeta);
+        return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat);
     } else {
         // --- Full Rebuild Logic ---
-        return await handleFullRebuild(tenantId, institutionId, undefined, undefined, _rebuildMeta);
+        return await handleFullRebuild(tenantId, institutionId, undefined, undefined, _rebuildMeta, heartbeat);
     }
 };
 
@@ -211,7 +218,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
 };
 
 
-const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes, _rebuildMeta) => {
+const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat) => {
     const isAccountScoped = accountIds && accountIds.length > 0;
     const scope = isAccountScoped
         ? `accounts: [${accountIds.join(', ')}]`
@@ -384,7 +391,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         // BullMQ lock heartbeat — see `utils/jobHeartbeat.js`. Safe
         // to call unconditionally (no-ops when not attached,
         // self rate-limits to ~60s intervals).
-        await job.heartbeat?.();
+        await heartbeat?.();
         // --- Start Change: Sort transactions immediately to avoid side-effects ---
         transactions.sort((a, b) => a.transaction_date - b.transaction_date);
         // --- End Change ---
@@ -456,7 +463,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     // --- Step 5b: Seed ManualAssetValue for newly created MANUAL-source items ---
     for (const itemData of portfolioItemsToCreate) {
-        await job.heartbeat?.();
+        await heartbeat?.();
         if (itemData.source !== 'MANUAL') continue;
 
         const portfolioItem = allItemsMap.get(itemData.symbol);
