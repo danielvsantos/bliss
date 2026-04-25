@@ -55,7 +55,7 @@ export function AppShell({ children }: AppShellProps) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* Sidebar - hidden on mobile unless toggled */}
       <div
         className={cn(
