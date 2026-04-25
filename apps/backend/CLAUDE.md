@@ -240,7 +240,7 @@ logger.warn('Falling back to next classification tier', { description });
 logger.error('Classification failed', { error: err.message, stack: err.stack });
 ```
 
-JSON format with timestamps. Console transport in dev, file transport in production. Level configurable via `LOG_LEVEL` env var.
+JSON format with timestamps. Console-only transport (writes to stdout for the platform's log collector to capture). Level configurable via `LOG_LEVEL` env var. Never add file transports — container PaaS platforms capture stdout, and unrotated file transports silently fill the ephemeral disk and cause Winston to swallow logs after a few days.
 
 ## Testing
 
