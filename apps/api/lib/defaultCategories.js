@@ -132,10 +132,10 @@ export const DEFAULT_CATEGORIES = [
 
   // ── Transfers ─────────────────────────────────────────────────────────────
   { code: 'INHERITANCE',           name: 'Inheritance',           group: 'Inheritance',        type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '⚰️' },
-  { code: 'RECEIVED_DOMESTIC',     name: 'Received Domestic',     group: 'Domestic',           type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '📨' },
-  { code: 'RECEIVED_INTERNATIONAL',name: 'Received International',group: 'International',      type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '🌍' },
-  { code: 'SENT_DOMESTIC',         name: 'Sent Domestic',         group: 'Domestic',           type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '📤' },
-  { code: 'SENT_INTERNATIONAL',    name: 'Sent International',    group: 'International',      type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '✈️' },
+  { code: 'RECEIVED_DOMESTIC',     name: 'Transfer Received — Domestic',     group: 'Domestic',           type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '📨' },
+  { code: 'RECEIVED_INTERNATIONAL',name: 'Transfer Received — International',group: 'International',      type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '🌍' },
+  { code: 'SENT_DOMESTIC',         name: 'Transfer Sent — Domestic',         group: 'Domestic',           type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '📤' },
+  { code: 'SENT_INTERNATIONAL',    name: 'Transfer Sent — International',    group: 'International',      type: 'Transfers',            portfolioItemKeyStrategy: 'IGNORE',  icon: '✈️' },
 
   // ── Ventures (own businesses / side projects) ─────────────────────────────
   // Revenue

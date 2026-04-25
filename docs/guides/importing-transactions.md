@@ -11,6 +11,8 @@ Bliss supports CSV and XLSX imports with automatic format detection, AI classifi
 
 ![Smart Import upload step](/images/smartimport.png)
 
+> **Tip:** For your first import, start with a small batch (a single month or a hundred rows) and review the classifications carefully. Each correction trains the AI on your specific merchants and habits, so subsequent larger imports arrive with far higher auto-classification rates.
+
 ## File format detection
 
 Bliss matches your file's column headers against known adapter signatures. If a match is found, it auto-maps columns. If not, you create a custom adapter.
