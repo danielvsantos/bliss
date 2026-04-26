@@ -324,12 +324,13 @@ The suppression guard in `eventSchedulerWorker` checks `_rebuildMeta?.rebuildTyp
 
 Component: `apps/web/src/components/settings/maintenance-tab.tsx`. The tab is gated on `user?.role === 'admin'` in `apps/web/src/pages/settings/index.tsx` — members and viewers don't see the entry point (and server-side auth returns 403 if they find the URL anyway).
 
-Four rebuild panels:
+Five maintenance panels:
 
 1.  **Rebuild all analytics** → `scope: 'full-analytics'`.
 2.  **Full rebuild** → `scope: 'full-portfolio'`. (Heading and button copy say "Full rebuild", not "Rebuild portfolio", because this scope runs the entire chain — items → cash holdings → analytics → valuation + loan processors — not just the portfolio step. Calling it "portfolio" was misleading; the scope's backend event name `full-portfolio` is kept for wire-format stability.)
 3.  **Rebuild analytics from a date** → date picker + `scope: 'scoped-analytics'`.
-4.  **Rebuild a single asset** → searchable combobox fed by `status.assets` + `scope: 'single-asset'`.
+4.  **Refresh stock fundamentals** → `POST /api/admin/refresh-fundamentals`. Documented in section 3.5 below.
+5.  **Rebuild a single asset** → searchable combobox fed by `status.assets` + `scope: 'single-asset'`.
 
 Button state derives from the polled status response:
 
@@ -341,3 +342,53 @@ Button state derives from the polled status response:
 | Trigger mutation in flight | `Starting…` — disabled |
 
 History panel below the buttons renders the last 20 completed/failed rebuilds with state badge (Completed / Failed / Running / Queued), requester email, elapsed time, and failure reason for failed jobs.
+
+---
+
+## 3.5. Security Master Fundamentals Refresh
+
+Tenant-admin-only endpoint that manually triggers the same global SecurityMaster refresh that runs nightly at 3 AM UTC. Used to recover from a Twelve Data inconsistency without waiting for the next cron, and to force-recompute the `earningsTrusted` / `dividendTrusted` flags after a data fix lands.
+
+Conceptually a sibling of `/api/admin/rebuild` but architecturally simpler:
+- The job is **global, not tenant-scoped** — `SecurityMaster` is a non-tenant table, so a refresh always covers every active stock symbol across all tenants. Any tenant admin can trigger it; this matches the nightly cron's behavior.
+- **No single-flight lock**. BullMQ's `securityMaster` queue runs at concurrency 1, so a duplicate enqueue simply queues serially after the first finishes. Worst-case impact of a re-click is one extra full run (~minutes), not a parallel double-call.
+- **No status endpoint**. There's no in-flight progress UI for this scope — the button toasts "Refresh started" and the user verifies by reloading the Equity Analysis page once the run completes.
+
+### `pages/api/admin/refresh-fundamentals.js`
+
+JWT auth via `withAuth({ requireRole: 'admin' })`. Members and viewers receive `403 Admin access required`.
+
+The route is a **thin proxy** to the backend's existing internal endpoint at `BACKEND_URL/api/security-master/refresh-all`, attaching the `INTERNAL_API_KEY` header. No request body, no payload validation.
+
+**Rate limit**: reuses `rateLimiters.rebuildTrigger` (20 / 5 min per IP) — same usage profile, no need for a dedicated budget.
+
+**Proxy timeout**: `fetchWithTimeout(..., 30_000)`. Enqueueing is fast (Redis SADD-equivalent), but Redis under contention from an active refresh can briefly stall.
+
+### `POST /api/admin/refresh-fundamentals` — Trigger a Fundamentals Refresh
+
+**Request body**: none (empty `{}` is also accepted).
+
+**Response**:
+
+- **`202 Accepted`** — the job was enqueued.
+  ```json
+  {
+    "message": "Full refresh job enqueued",
+    "jobId": "12345"
+  }
+  ```
+- **`403 Forbidden`** — user is not an admin.
+- **`405 Method Not Allowed`** — only POST is supported.
+- **`500 Internal Server Error`** — backend not configured (missing `INTERNAL_API_KEY`) or backend returned an error.
+
+The response body is forwarded verbatim from the backend's `POST /api/security-master/refresh-all` route, which enqueues a `refresh-all-fundamentals` job on the `securityMaster` BullMQ queue. The actual refresh runs asynchronously: each active stock symbol's profile, earnings, dividends, and quote are re-fetched from Twelve Data via `securityMasterService.upsertFundamentals(...)`, which recomputes the trust flags and writes only the fields that this run could verify.
+
+### Why Not GET-Based Status
+
+The existing `GET /api/admin/rebuild` polls every 5 seconds to power the "Running…" indicator on rebuild buttons. We deliberately did **not** add a parallel polling endpoint for fundamentals refresh because:
+
+1.  The user-facing signal is on the **Equity Analysis page** (P/E ratios appearing where there were `—`s), not on the Maintenance tab.
+2.  Adding a poll would mean new BullMQ queries on every Maintenance tab visit even when no refresh is running.
+3.  The button's mutation-pending state already disables clicks for ~1 second during enqueue. Anything beyond that is acceptable serial duplication.
+
+If a future need arises (e.g., displaying "Last refresh: 2h ago" or a real progress bar), the lightweight option would be reading `SecurityMaster.lastFundamentalsUpdate` aggregates rather than introducing a stateful poll.

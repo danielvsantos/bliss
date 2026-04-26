@@ -150,6 +150,11 @@ describe('GET /api/portfolio/equity-analysis', () => {
         week52Low: new Decimal(140),
         averageVolume: new Decimal(55000000),
         logoUrl: 'https://logo.clearbit.com/apple.com',
+        // Trust gate: earnings/dividend fields are surfaced to the response
+        // only when these flags are true. Set explicitly here so the fixture
+        // exercises the populated path.
+        earningsTrusted: true,
+        dividendTrusted: true,
       },
     ]);
 
@@ -181,6 +186,70 @@ describe('GET /api/portfolio/equity-analysis', () => {
     expect(res._body.summary.holdingsCount).toBe(0);
     expect(res._body.summary.totalEquityValue).toBe(0);
     expect(res._body.groups).toEqual([]);
+  });
+
+  it('hides earnings + dividend fields when trust flags are false', async () => {
+    // Trust gate: when Twelve Data returned inconsistent data and the refresh
+    // job marked the row earningsTrusted=false / dividendTrusted=false, the
+    // API must null those fields out so the user sees `—` in the UI rather
+    // than wrong numbers.
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        symbol: 'AAPL',
+        currency: 'USD',
+        assetCurrency: 'USD',
+        quantity: new Decimal(10),
+        costBasis: new Decimal(1500),
+        currentValue: new Decimal(1900),
+        costBasisInUSD: new Decimal(1500),
+        currentValueInUSD: new Decimal(1900),
+        source: 'MANUAL',
+        category: { name: 'Stocks', group: 'US Equities', processingHint: 'API_STOCK' },
+      },
+    ]);
+
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        sector: 'Technology',
+        industry: 'Consumer Electronics',
+        country: 'US',
+        peRatio: new Decimal(28.5),
+        dividendYield: new Decimal(0.005),
+        trailingEps: new Decimal(6.2),
+        latestEpsActual: new Decimal(1.46),
+        latestEpsSurprise: new Decimal(0.04),
+        week52High: new Decimal(200),
+        week52Low: new Decimal(140),
+        averageVolume: new Decimal(55000000),
+        logoUrl: null,
+        earningsTrusted: false,
+        dividendTrusted: false,
+      },
+    ]);
+
+    const req = makeReq({});
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const holding = res._body.groups[0].holdings[0];
+    expect(holding.peRatio).toBeNull();
+    expect(holding.dividendYield).toBeNull();
+    expect(holding.trailingEps).toBeNull();
+    expect(holding.latestEpsActual).toBeNull();
+    expect(holding.latestEpsSurprise).toBeNull();
+    // Quote-derived fields are NOT gated — they come from /quote, not earnings.
+    expect(holding.week52High).toBe(200);
+    expect(holding.week52Low).toBe(140);
+    // Weighted metrics fall through to null when no holding has trusted data.
+    expect(res._body.summary.weightedPeRatio).toBeNull();
+    expect(res._body.summary.weightedDividendYield).toBeNull();
   });
 
   it('handles missing SecurityMaster data gracefully', async () => {

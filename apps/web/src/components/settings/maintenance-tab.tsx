@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { useRebuildStatus, useTriggerRebuild } from '@/hooks/use-rebuild';
+import { useRefreshFundamentals } from '@/hooks/use-refresh-fundamentals';
 import { useToast } from '@/hooks/use-toast';
 
 import { Card } from '@/components/ui/card';
@@ -299,6 +300,50 @@ function RebuildHistoryList({ recent }: { recent: RebuildJob[] }) {
   );
 }
 
+function RefreshFundamentalsButton() {
+  const { toast } = useToast();
+  const mutation = useRefreshFundamentals();
+
+  // No status polling for this scope — the underlying job runs on the
+  // securityMaster queue (concurrency 1, ~2s per symbol). The button
+  // disables only while the enqueue HTTP call is in flight; afterwards
+  // it's clickable again, but BullMQ serializes duplicate enqueues so
+  // the worst-case impact of a re-click is one extra queued run.
+  const handleClick = () => {
+    mutation.mutate(undefined, {
+      onSuccess: () => {
+        toast({
+          title: 'Refresh started',
+          description: 'Stock fundamentals will update over the next few minutes. Reload the Equity Analysis page once complete.',
+        });
+      },
+      onError: (err: unknown) => {
+        const ax = err as AxiosError<{ error?: string }>;
+        toast({
+          title: 'Failed to start refresh',
+          description: ax?.response?.data?.error || ax?.message || 'Unknown error',
+          variant: 'destructive',
+        });
+      },
+    });
+  };
+
+  if (mutation.isPending) {
+    return (
+      <Button disabled className="w-full sm:w-auto">
+        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+        Starting…
+      </Button>
+    );
+  }
+  return (
+    <Button onClick={handleClick} className="w-full sm:w-auto">
+      <RotateCcw className="h-4 w-4 mr-2" />
+      Refresh fundamentals
+    </Button>
+  );
+}
+
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export function MaintenanceTab() {
@@ -461,6 +506,21 @@ export function MaintenanceTab() {
             label="Rebuild from date"
           />
         </div>
+      </Card>
+
+      {/* ─── Refresh stock fundamentals ────────────────────────────────── */}
+      <Card className="p-6 space-y-4">
+        <div>
+          <h3 className="font-medium">Refresh stock fundamentals</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Re-runs the Twelve Data fundamentals refresh for every active stock
+            symbol (profile, earnings, dividends, quote). Use when P/E ratios,
+            EPS, or dividend yields look stale or appear as <code>—</code> on
+            the Equity Analysis page after the nightly refresh has missed data.
+            Each symbol takes ~2 seconds; expect a few minutes for a full run.
+          </p>
+        </div>
+        <RefreshFundamentalsButton />
       </Card>
 
       {/* ─── Single asset ──────────────────────────────────────────────── */}

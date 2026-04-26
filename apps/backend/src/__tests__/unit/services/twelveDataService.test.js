@@ -257,4 +257,118 @@ describe('twelveDataService', () => {
       expect(results).toEqual([]);
     });
   });
+
+  // ─── getEarnings ─────────────────────────────────────────────────────────
+  // The /earnings endpoint returns inconsistent data across symbols
+  // (unsorted arrays, malformed dates, far-future entries). The service
+  // normalizes the response: sort newest-first, drop entries outside a
+  // ±5y/+1y sanity window, and pass through everything else for the
+  // service-layer (securityMasterService) to apply timezone-aware filtering.
+
+  describe('getEarnings()', () => {
+    /** Date n days from today in YYYY-MM-DD. */
+    const offsetDate = (n) => {
+      const d = new Date();
+      d.setDate(d.getDate() + n);
+      return d.toISOString().split('T')[0];
+    };
+
+    it('sorts the earnings array newest-first regardless of API response order', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: {
+          meta: {},
+          // Deliberately scrambled to prove we sort
+          earnings: [
+            { date: offsetDate(-200), eps_actual: '1.0' },
+            { date: offsetDate(-30), eps_actual: '2.0' },
+            { date: offsetDate(-110), eps_actual: '1.5' },
+          ],
+        },
+      });
+
+      const result = await twelveDataService.getEarnings('AAPL');
+
+      expect(result.earnings).toHaveLength(3);
+      expect(result.earnings[0].epsActual).toBe(2.0);
+      expect(result.earnings[1].epsActual).toBe(1.5);
+      expect(result.earnings[2].epsActual).toBe(1.0);
+    });
+
+    it('drops entries older than 5 years (sanity bound on past)', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: {
+          meta: {},
+          earnings: [
+            { date: offsetDate(-2000), eps_actual: '99.0' }, // ~5.5y old, dropped
+            { date: offsetDate(-30), eps_actual: '2.0' },
+          ],
+        },
+      });
+
+      const result = await twelveDataService.getEarnings('AAPL');
+
+      expect(result.earnings).toHaveLength(1);
+      expect(result.earnings[0].epsActual).toBe(2.0);
+    });
+
+    it('drops entries more than 1 year in the future (sanity bound on future)', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: {
+          meta: {},
+          earnings: [
+            { date: offsetDate(400), eps_actual: '99.0' }, // >1y future, dropped
+            { date: offsetDate(-30), eps_actual: '2.0' },
+          ],
+        },
+      });
+
+      const result = await twelveDataService.getEarnings('AAPL');
+
+      expect(result.earnings).toHaveLength(1);
+      expect(result.earnings[0].epsActual).toBe(2.0);
+    });
+
+    it('does NOT drop near-future entries (service layer handles the timezone grace)', async () => {
+      // Earnings dated 1 day ahead must reach the service layer — same-day
+      // reports in non-UTC timezones can appear with a +1 date offset, and
+      // the upsert function applies a 24h grace window.
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: {
+          meta: {},
+          earnings: [
+            { date: offsetDate(1), eps_actual: '2.5' },
+            { date: offsetDate(-90), eps_actual: '2.0' },
+          ],
+        },
+      });
+
+      const result = await twelveDataService.getEarnings('AAPL');
+
+      expect(result.earnings).toHaveLength(2);
+      expect(result.earnings[0].epsActual).toBe(2.5); // newest first
+    });
+
+    it('drops malformed date entries', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: {
+          meta: {},
+          earnings: [
+            { date: 'not-a-date', eps_actual: '99.0' },
+            { date: null, eps_actual: '88.0' },
+            { date: offsetDate(-30), eps_actual: '2.0' },
+          ],
+        },
+      });
+
+      const result = await twelveDataService.getEarnings('AAPL');
+
+      expect(result.earnings).toHaveLength(1);
+      expect(result.earnings[0].epsActual).toBe(2.0);
+    });
+  });
 });

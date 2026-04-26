@@ -134,11 +134,16 @@ export default withAuth(async function handler(req, res) {
           sector: sm.sector || 'Unknown',
           industry: sm.industry || 'Unknown',
           country: sm.country || 'Unknown',
-          peRatio: sm.peRatio ? parseFloat(sm.peRatio.toString()) : null,
-          dividendYield: sm.dividendYield ? parseFloat(sm.dividendYield.toString()) : null,
-          trailingEps: sm.trailingEps ? parseFloat(sm.trailingEps.toString()) : null,
-          latestEpsActual: sm.latestEpsActual ? parseFloat(sm.latestEpsActual.toString()) : null,
-          latestEpsSurprise: sm.latestEpsSurprise ? parseFloat(sm.latestEpsSurprise.toString()) : null,
+          // Trust gate: hide earnings/dividend fields when Twelve Data
+          // returned inconsistent data (see SecurityMaster.earningsTrusted /
+          // dividendTrusted, populated by upsertFundamentals). The frontend
+          // already renders null as `—`, so the user sees missing data
+          // instead of wrong data.
+          peRatio: sm.earningsTrusted && sm.peRatio ? parseFloat(sm.peRatio.toString()) : null,
+          dividendYield: sm.dividendTrusted && sm.dividendYield ? parseFloat(sm.dividendYield.toString()) : null,
+          trailingEps: sm.earningsTrusted && sm.trailingEps ? parseFloat(sm.trailingEps.toString()) : null,
+          latestEpsActual: sm.earningsTrusted && sm.latestEpsActual ? parseFloat(sm.latestEpsActual.toString()) : null,
+          latestEpsSurprise: sm.earningsTrusted && sm.latestEpsSurprise ? parseFloat(sm.latestEpsSurprise.toString()) : null,
           week52High: sm.week52High ? parseFloat(sm.week52High.toString()) : null,
           week52Low: sm.week52Low ? parseFloat(sm.week52Low.toString()) : null,
           averageVolume: sm.averageVolume ? parseFloat(sm.averageVolume.toString()) : null,

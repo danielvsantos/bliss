@@ -15,7 +15,7 @@ only) without touching the database directly.
    your account isn't an admin — ask another admin on your tenant to
    grant the role from **Settings → Users**.
 
-The tab has four rebuild options and a history of the last 20 manual
+The tab has five maintenance options and a history of the last 20 manual
 rebuilds. All operations are **safe to run** — they rebuild caches from
 source-of-truth data, they don't lose transactions or portfolio items.
 
@@ -65,6 +65,39 @@ sync. This can happen after:
   This runs the full pipeline (items → cash → analytics → valuation +
   loan processors). Expect 5-30 minutes depending on history size.
   Heaviest option; use when the damage isn't localized.
+
+### "Stock P/E ratios, EPS, or dividend yields look wrong or show — on the Equity Analysis page"
+
+`SecurityMaster` (the global stock fundamentals table) is refreshed
+nightly at 3 AM UTC from Twelve Data's `/profile`, `/earnings`,
+`/dividends`, and `/quote` endpoints. When the response is inconsistent
+for a given symbol — sparse history, off-by-one timezone on the latest
+quarter, missing fields — the row is flagged untrusted and consumers
+hide the affected fields rather than show wrong numbers. A `—` on the
+Equity Analysis page means "data is missing or untrustworthy," not a
+bug.
+
+**Fix**: Settings → Maintenance → **"Refresh stock fundamentals"** →
+click **Refresh fundamentals**. This enqueues an immediate run of the
+same job the nightly cron triggers, iterating every active stock
+symbol across all tenants and re-fetching from Twelve Data. Each symbol
+takes about 2 seconds (rate-limited at 30 calls/min for the
+fundamentals slot), so a portfolio with 50 stocks finishes in ~2
+minutes. The button only disables briefly while the request enqueues —
+the actual refresh runs in the background.
+
+**Verifying it worked**: reload the Equity Analysis page after a couple
+of minutes. Symbols whose underlying Twelve Data data was salvageable
+will show numbers; symbols where Twelve Data is genuinely
+unreliable will continue to show `—`. That's the trust gate working as
+intended — wrong data is worse than missing data for portfolio
+intelligence and insights.
+
+If you click the button rapidly, BullMQ will queue duplicate runs
+serially (concurrency 1 on the security-master worker). It won't
+double-call Twelve Data per symbol within a single run, but a queued
+duplicate will re-run everything once the first finishes — usually
+harmless, just unnecessary credit usage on Twelve Data.
 
 ### "A transaction I imported doesn't show up in analytics"
 
