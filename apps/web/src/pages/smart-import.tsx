@@ -290,7 +290,7 @@ export default function SmartImportPage() {
   // --- Quick Seed Interview hooks ---
   // Only fetch seeds when seedReady is true and we're still in processing step
   const seedReady = stagedData?.import?.seedReady;
-  const { data: seedItems } = useImportSeeds(
+  const { data: seedItems, isFetched: seedsFetched, isLoading: seedsLoading } = useImportSeeds(
     step === 'processing' && !!seedReady && !seedShownRef.current ? stagedImportId : null,
     15,
   );
@@ -302,11 +302,19 @@ export default function SmartImportPage() {
   const totalPages = pagination?.totalPages ?? 1;
 
   // Transition from processing → review when ready, with toast notification.
-  // Guarded by !seedReady: if seeds are coming we stay in 'processing' so that
-  // useImportSeeds stays enabled and the seedItems useEffect can run.
-  // The seedItems effect (below) handles the review transition for the seedReady=true path.
+  // Normally guarded by !seedReady so the seed interview can run while seeds load.
+  // Escape hatch: if the seeds query has settled without delivering data
+  // (error, stale failure, etc.) the seedItems useEffect will never fire — force
+  // the transition so the UI doesn't stay stuck at 100%.
   const importStatus = stagedData?.import?.status;
-  if (step === 'processing' && importStatus && importStatus !== 'PROCESSING' && !seedReady) {
+  const seedsSettledWithoutData =
+    importStatus === 'READY' && !!seedReady && seedsFetched && !seedsLoading && !seedItems && !seedShownRef.current;
+  if (
+    step === 'processing' &&
+    importStatus &&
+    importStatus !== 'PROCESSING' &&
+    (!seedReady || seedsSettledWithoutData)
+  ) {
     const readyRowCount = stagedData?.import?.totalRows ?? 0;
     toast({
       title: t('smartImport.toast.importReady'),
