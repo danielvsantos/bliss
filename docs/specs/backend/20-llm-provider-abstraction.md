@@ -88,9 +88,11 @@ Every adapter must uphold the following guarantees so consumers can remain provi
 
 All providers produce 768-dimensional vectors. OpenAI's `text-embedding-3-small` is natively 1536-dim; the adapter uses the `dimensions: 768` SDK parameter to project down. This keeps wire compatibility with the existing `vector(768)` pgvector column — no schema changes required when switching providers.
 
-### Classification confidence — hard-capped at 0.85
+### Classification confidence — hard-capped at 0.90
 
-Every `classifyTransaction` call clamps its return to `[0.0, 0.85]`. An LLM classification alone can never cross the `autoPromoteThreshold` (default 0.90), so the transaction always goes through user review. This is a defense against model over-confidence.
+Every `classifyTransaction` call clamps its return to `[0.0, 0.90]` via `validateClassificationResponse` in `services/llm/classificationPromptHelpers.js`. The 0.86–0.90 band is the **ABSOLUTE CERTAINTY** tier and is reserved (in the prompt) for transactions where ALL of the following hold: (a) the merchant is a globally recognized brand, (b) a Plaid CATEGORY hint is provided AND its primary classification confirms the chosen category, (c) the amount falls in a typical range for that category. With the default `autoPromoteThreshold` of 0.90, this is the single path that lets an LLM classification auto-promote — every other LLM result stays at ≤0.85 and goes through human review. Tenants who want LLM never to auto-promote raise their threshold to 0.91+.
+
+The validator also accepts a `null` `categoryId` from the model — that's the explicit "too ambiguous to classify" fallback in the prompt. Adapters surface it as `{ categoryId: null, confidence: 0, reasoning }`; the `categorizationService` re-emits it with `source: 'LLM_UNKNOWN'` so workers can route the row to manual review without inferring intent from a low confidence score.
 
 ### Retry and timeout behavior
 

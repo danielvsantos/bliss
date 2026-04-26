@@ -99,8 +99,8 @@ const { primaryAdapter, embeddingAdapter } = resolveAdapters();
 
 module.exports = {
   generateEmbedding: (text) => embeddingAdapter.generateEmbedding(text),
-  classifyTransaction: (description, merchantName, categories, plaidCategory) =>
-    primaryAdapter.classifyTransaction(description, merchantName, categories, plaidCategory),
+  classifyTransaction: (description, merchantName, categories, plaidCategory, options) =>
+    primaryAdapter.classifyTransaction(description, merchantName, categories, plaidCategory, options),
   generateInsightContent: (prompt, options) => primaryAdapter.generateInsightContent(prompt, options),
   isRateLimitError: (err) => primaryAdapter.isRateLimitError(err),
 

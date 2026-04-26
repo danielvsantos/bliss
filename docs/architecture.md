@@ -310,7 +310,10 @@ using a four-tier waterfall. Each tier is progressively more expensive:
      Configured LLM provider (Gemini Flash / GPT-4.1-mini / Claude Sonnet 4.6)
      Routed through services/llm/ factory (see spec 20)
      Full transaction context + tenant categories
-     Confidence hard-capped at 0.85
+     Confidence hard-capped at 0.90; the 0.86–0.90 ABSOLUTE CERTAINTY band
+     requires recognized brand + matching Plaid hint + typical amount.
+     Model can also return categoryId=null (LLM_UNKNOWN) for ambiguous
+     transactions instead of guessing.
           |
      --> classified
          source: LLM

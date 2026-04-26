@@ -12,7 +12,15 @@
  * EXACT_MATCH          | Fixed constant  | always 1.00
  * VECTOR_MATCH         | Cosine sim.     | 0.70–1.00  (tenant-scoped)
  * VECTOR_MATCH_GLOBAL  | cosine × 0.92   | 0.64–0.92  (cross-tenant, discounted)
- * LLM                  | Gemini-assigned | 0.00–0.85  (hard-capped in geminiService)
+ * LLM                  | LLM-assigned    | 0.00–0.90  (hard-capped in classificationPromptHelpers)
+ * LLM_UNKNOWN          | Fixed 0.0       | always 0.00 (model-declared ambiguous fallback)
+ *
+ * The 0.86–0.90 LLM band is the ABSOLUTE CERTAINTY tier — only valid when
+ * the merchant is a globally recognized brand AND the Plaid hint matches
+ * the chosen category AND the amount is typical. With the default 0.90
+ * autoPromoteThreshold this is the only way an LLM classification
+ * auto-promotes; tenants who want LLM never to auto-promote raise their
+ * threshold to 0.91+.
  *
  * System actions by score (thresholds are per-tenant and stored in the DB;
  * the constants below are the defaults used when no DB record exists):

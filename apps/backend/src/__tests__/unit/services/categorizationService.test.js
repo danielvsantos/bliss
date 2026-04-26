@@ -108,6 +108,49 @@ describe('categorizationService', () => {
         'All classification tiers failed'
       );
     });
+
+    it('returns source=LLM_UNKNOWN with categoryId=null when the LLM invokes the FALLBACK', async () => {
+      // Phase 2: the LLM can decline genuinely ambiguous transactions via a
+      // null categoryId. The service surfaces this distinct from a normal LLM
+      // result so workers can route it to manual review without inferring
+      // intent from a low confidence score.
+      geminiService.classifyTransaction.mockResolvedValueOnce({
+        categoryId: null,
+        confidence: 0,
+        reasoning: 'Too ambiguous to classify',
+      });
+
+      const result = await classify('ADJUSTMENT 0021', null, 'tenant1');
+
+      expect(result).toEqual({
+        categoryId: null,
+        confidence: 0,
+        source: 'LLM_UNKNOWN',
+        reasoning: 'Too ambiguous to classify',
+      });
+    });
+
+    it('forwards options.amount + options.currency to the LLM adapter', async () => {
+      // Phase 2: amount + currency are passed as a disambiguation signal.
+      // Workers (plaid + smart-import) read these from the row and pass them
+      // through; we verify the service plumbs them through unchanged.
+      await classify(
+        'Starbucks #1234',
+        'Starbucks',
+        'tenant1',
+        0.7,
+        null,
+        { amount: 4.85, currency: 'USD' },
+      );
+
+      expect(geminiService.classifyTransaction).toHaveBeenCalledWith(
+        'Starbucks #1234',
+        'Starbucks',
+        expect.any(Array),
+        null,
+        { amount: 4.85, currency: 'USD' },
+      );
+    });
   });
 
   describe('recordFeedback()', () => {

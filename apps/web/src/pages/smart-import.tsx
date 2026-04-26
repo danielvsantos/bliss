@@ -129,7 +129,11 @@ function toReviewItem(
     status = 'needs-enrichment';
   else if (!row.confidence || (row.confidence ?? 0) < 0.5)
     status = 'low-confidence';
-  else if (row.classificationSource === 'LLM' && (row.confidence ?? 0) < 0.85)
+  // 0.90 matches the LLM cap and the default tenant autoPromoteThreshold:
+  // anything LLM-classified below this is a "new merchant" needing review;
+  // 0.86–0.90 is the ABSOLUTE CERTAINTY tier (Plaid match + recognized brand
+  // + typical amount) which auto-confirms instead of flagging for review.
+  else if (row.classificationSource === 'LLM' && (row.confidence ?? 0) < 0.90)
     status = 'new-merchant';
   else
     status = 'ai-approved';
