@@ -176,6 +176,8 @@ export default function SmartImportPage() {
   const [stagedImportId, setStagedImportId] = useState<string | null>(null);
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewFilter, setReviewFilter] = useState<string>('all');
+  // null = no filter (all groups collapsed), 'uncategorized' = NULL-category rows, number = specific category
+  const [importCategoryFilter, setImportCategoryFilter] = useState<number | 'uncategorized' | null>(null);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('grouped');
@@ -265,8 +267,19 @@ export default function SmartImportPage() {
     isError: stagedError,
   } = useStagedImport(
     stagedImportId,
-    { page: reviewPage, limit: 50, status: reviewFilter === 'all' ? undefined : reviewFilter },
+    {
+      page: reviewPage,
+      limit: 50,
+      status: reviewFilter === 'all' ? undefined : reviewFilter,
+      ...(typeof importCategoryFilter === 'number' ? { categoryId: importCategoryFilter } : {}),
+      ...(importCategoryFilter === 'uncategorized' ? { uncategorized: true } : {}),
+    },
   );
+
+  // Reset page when category filter changes so we don't land on a non-existent page
+  useEffect(() => { setReviewPage(1); }, [importCategoryFilter]);
+  // Clear category filter when the staged import changes
+  useEffect(() => { setImportCategoryFilter(null); }, [stagedImportId]);
 
   const updateRow = useUpdateImportRow(stagedImportId);
 
@@ -791,26 +804,38 @@ export default function SmartImportPage() {
     [rows, categoriesMap, accountsMap],
   );
 
-  // Grouped view data (ReviewItems grouped by category)
+  // Server-side category breakdown — accurate counts across ALL pending rows,
+  // not just the current page. Drives grouped-view headers.
+  const importCategorySummary = useMemo(
+    () => stagedData?.categorySummary ?? [],
+    [stagedData],
+  );
+
+  // Grouped view data — server-side summaries drive headers; current-page items
+  // fill rows for the expanded group only. Mirrors the transaction-review pattern.
   const groupedRows = useMemo(() => {
     if (viewMode !== 'grouped') return [];
-    const groups = new Map<number | 'uncategorized', { category: Category | null; items: ReviewItem[]; total: number }>();
 
+    const itemsByCategory = new Map<string, ReviewItem[]>();
     for (const item of reviewItems) {
-      const key = item.categoryId ?? 'uncategorized';
-      if (!groups.has(key)) {
-        const cat = item.categoryId ? (categoriesMap.get(item.categoryId) ?? null) : null;
-        groups.set(key, { category: cat, items: [], total: 0 });
-      }
-      const g = groups.get(key)!;
-      g.items.push(item);
-      g.total += Math.abs(item.amount);
+      const key = item.categoryId?.toString() ?? 'uncategorized';
+      if (!itemsByCategory.has(key)) itemsByCategory.set(key, []);
+      itemsByCategory.get(key)!.push(item);
     }
 
-    return Array.from(groups.entries())
-      .sort(([, a], [, b]) => b.items.length - a.items.length)
-      .map(([key, val]) => ({ key: String(key), ...val }));
-  }, [reviewItems, viewMode, categoriesMap]);
+    return importCategorySummary.map((entry) => {
+      const key = entry.categoryId?.toString() ?? 'uncategorized';
+      const items = itemsByCategory.get(key) ?? [];
+      const category = entry.category ?? (entry.categoryId ? (categoriesMap.get(entry.categoryId) ?? null) : null);
+      return {
+        key,
+        category,
+        items,
+        total: items.reduce((sum, i) => sum + Math.abs(i.amount), 0),
+        totalCount: entry.count,
+      };
+    });
+  }, [reviewItems, viewMode, importCategorySummary, categoriesMap]);
 
   // ═════════════════════════════════════════════════════════════════════
   // RENDER
@@ -1449,14 +1474,14 @@ export default function SmartImportPage() {
               <Button
                 variant={viewMode === 'flat' ? 'secondary' : 'ghost'}
                 size="sm"
-                onClick={() => setViewMode('flat')}
+                onClick={() => { setViewMode('flat'); setImportCategoryFilter(null); }}
               >
                 <LayoutList className="h-4 w-4 mr-1" /> {t('smartImport.review.flat')}
               </Button>
               <Button
                 variant={viewMode === 'grouped' ? 'secondary' : 'ghost'}
                 size="sm"
-                onClick={() => setViewMode('grouped')}
+                onClick={() => { setViewMode('grouped'); setImportCategoryFilter(null); }}
               >
                 <FolderOpen className="h-4 w-4 mr-1" /> {t('smartImport.review.grouped')}
               </Button>
@@ -1486,40 +1511,70 @@ export default function SmartImportPage() {
             </div>
           ) : viewMode === 'grouped' ? (
             <div className="space-y-3">
-              {groupedRows.map((group) => (
-                <GroupCard
-                  key={group.key}
-                  categoryName={group.category?.name ?? t('review.uncategorized')}
-                  items={group.items}
-                  total={group.total}
-                  onApprove={(item) => handleRowStatusChange(item.id, 'CONFIRMED')}
-                  onSkip={(item) => handleRowStatusChange(item.id, 'SKIPPED')}
-                  onApproveAll={() => {
-                    const toConfirm = group.items.filter((i) =>
-                      i.promotionStatus !== 'CONFIRMED' &&
-                      i.promotionStatus !== 'DUPLICATE' &&
-                      // POTENTIAL_DUPLICATE rows must be approved one-by-one
-                      // via the drawer — bulk-approving would silently commit
-                      // re-imported transactions the user never examined.
-                      i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-                      i.promotionStatus !== 'SKIPPED' &&
-                      !itemNeedsEnrichment(i, categoriesMap),
-                    );
-                    toConfirm.forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
-                    // If a status filter is active, reset it so the confirmed
-                    // rows stay visible in their groups rather than dropping
-                    // out of the next fetch. See the toast-action path above
-                    // and transaction-review's `clearStaleCategoryFilters`.
-                    if (toConfirm.length > 0 && reviewFilter !== 'all') {
-                      setReviewFilter('all');
-                      setReviewPage(1);
+              {groupedRows.map((group) => {
+                const catId = group.key === 'uncategorized' ? null : parseInt(group.key, 10);
+                // Filter starts as null so nothing is expanded on first load. Uncategorized
+                // uses the 'uncategorized' sentinel so it's distinguishable from "no filter".
+                const isExpanded = catId === null
+                  ? importCategoryFilter === 'uncategorized'
+                  : importCategoryFilter === catId;
+                return (
+                  <GroupCard
+                    key={group.key}
+                    categoryName={group.category?.name ?? t('review.uncategorized')}
+                    items={isExpanded ? group.items : []}
+                    total={group.total}
+                    totalCount={group.totalCount}
+                    onApprove={(item) => handleRowStatusChange(item.id, 'CONFIRMED')}
+                    onSkip={(item) => handleRowStatusChange(item.id, 'SKIPPED')}
+                    onApproveAll={() => {
+                      const toConfirm = group.items.filter((i) =>
+                        i.promotionStatus !== 'CONFIRMED' &&
+                        i.promotionStatus !== 'DUPLICATE' &&
+                        // POTENTIAL_DUPLICATE rows must be approved one-by-one
+                        // via the drawer — bulk-approving would silently commit
+                        // re-imported transactions the user never examined.
+                        i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
+                        i.promotionStatus !== 'SKIPPED' &&
+                        !itemNeedsEnrichment(i, categoriesMap),
+                      );
+                      toConfirm.forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
+                      // If a status filter is active, reset it so the confirmed
+                      // rows stay visible in their groups rather than dropping
+                      // out of the next fetch.
+                      if (toConfirm.length > 0 && reviewFilter !== 'all') {
+                        setReviewFilter('all');
+                        setReviewPage(1);
+                      }
+                    }}
+                    onItemClick={(item) => setDrawerItem(item)}
+                    disabled={updateRow.isPending}
+                    isExpanded={isExpanded}
+                    onToggle={() => {
+                      const next = catId === null ? 'uncategorized' : catId;
+                      setImportCategoryFilter(isExpanded ? null : next);
+                    }}
+                    pagination={
+                      isExpanded && totalPages > 1 ? (
+                        <div className="flex justify-between items-center">
+                          <p className="text-sm text-muted-foreground">
+                            {t('smartImport.review.pageOf', { current: reviewPage, total: totalPages })}
+                            {pagination?.total ? ` (${t('smartImport.review.nRows', { count: pagination.total })})` : ''}
+                          </p>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setReviewPage((p) => Math.max(1, p - 1))} disabled={reviewPage <= 1}>
+                              <ChevronLeftIcon className="h-4 w-4 mr-1" /> {t('common.previous')}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => setReviewPage((p) => Math.min(totalPages, p + 1))} disabled={reviewPage >= totalPages}>
+                              {t('common.next')} <ChevronRightIcon className="h-4 w-4 ml-1" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : undefined
                     }
-                  }}
-                  onItemClick={(item) => setDrawerItem(item)}
-                  disabled={updateRow.isPending}
-                  defaultExpanded={true}
-                />
-              ))}
+                  />
+                );
+              })}
             </div>
           ) : (
             <>

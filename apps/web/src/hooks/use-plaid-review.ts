@@ -22,6 +22,7 @@ export function usePlaidTransactions(
     minConfidence?: number;
     maxConfidence?: number;
     categoryId?: number;
+    uncategorized?: boolean;
   },
   options?: {
     /** Override stale time (ms). Default: 30 000. Pass 0 to always refetch on mount. */

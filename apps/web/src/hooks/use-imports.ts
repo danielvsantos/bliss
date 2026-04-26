@@ -81,7 +81,7 @@ export function useUploadSmartImport() {
 
 export function useStagedImport(
   id: string | null,
-  params?: { page?: number; limit?: number; status?: string; categoryId?: number },
+  params?: { page?: number; limit?: number; status?: string; categoryId?: number; uncategorized?: boolean },
 ) {
   return useQuery({
     queryKey: importKeys.stagedWithParams(id ?? '', params ?? {}),

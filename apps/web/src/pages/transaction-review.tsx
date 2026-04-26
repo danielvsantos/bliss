@@ -186,13 +186,15 @@ export default function TransactionReviewPage() {
 
   // ── Plaid data ──
   const [plaidPage, setPlaidPage] = useState(1);
-  const [plaidCategoryFilter, setPlaidCategoryFilter] = useState<number | null>(null);
+  // null = no filter (all groups collapsed), 'uncategorized' = NULL-category rows, number = specific category
+  const [plaidCategoryFilter, setPlaidCategoryFilter] = useState<number | 'uncategorized' | null>(null);
   const { data: plaidData, isLoading: plaidLoading } = usePlaidTransactions({
     page: plaidPage,
     limit: 500,
     promotionStatus: 'CLASSIFIED',
     ...(plaidItemIdParam ? { plaidItemId: plaidItemIdParam } : {}),
-    ...(plaidCategoryFilter ? { categoryId: plaidCategoryFilter } : {}),
+    ...(typeof plaidCategoryFilter === 'number' ? { categoryId: plaidCategoryFilter } : {}),
+    ...(plaidCategoryFilter === 'uncategorized' ? { uncategorized: true } : {}),
   });
   const plaidTransactions = useMemo(() => plaidData?.transactions ?? [], [plaidData]);
   const plaidSummary = useMemo(() => plaidData?.summary, [plaidData]);
@@ -213,7 +215,7 @@ export default function TransactionReviewPage() {
 
   const [selectedImportId, setSelectedImportId] = useState<string | null>(importIdParam);
   const [importPage, setImportPage] = useState(1);
-  const [importCategoryFilter, setImportCategoryFilter] = useState<number | null>(null);
+  const [importCategoryFilter, setImportCategoryFilter] = useState<number | 'uncategorized' | null>(null);
   const { data: stagedData, isLoading: stagedLoading } = useStagedImport(
     selectedImportId,
     {
@@ -224,7 +226,8 @@ export default function TransactionReviewPage() {
       // those rows must never reach the Review UI as committable. POTENTIAL_DUPLICATE
       // stays visible so the user can override to CONFIRMED if it's a legit tx.
       status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,CONFIRMED',
-      ...(importCategoryFilter ? { categoryId: importCategoryFilter } : {}),
+      ...(typeof importCategoryFilter === 'number' ? { categoryId: importCategoryFilter } : {}),
+      ...(importCategoryFilter === 'uncategorized' ? { uncategorized: true } : {}),
     },
   );
   const importRows = useMemo(() => stagedData?.rows ?? [], [stagedData]);
@@ -925,7 +928,11 @@ export default function TransactionReviewPage() {
       <div className="space-y-3">
         {groups.map((group) => {
           const catId = group.key === 'uncategorized' ? null : parseInt(group.key, 10);
-          const isExpanded = importCategoryFilter === catId;
+          // Filter starts as null so nothing is expanded on first load. Uncategorized
+          // uses the 'uncategorized' sentinel so it's distinguishable from "no filter".
+          const isExpanded = catId === null
+            ? importCategoryFilter === 'uncategorized'
+            : importCategoryFilter === catId;
           return (
             <GroupCard
               key={group.key}
@@ -940,7 +947,8 @@ export default function TransactionReviewPage() {
               disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
               isExpanded={isExpanded}
               onToggle={() => {
-                setImportCategoryFilter(isExpanded ? null : catId);
+                const next = catId === null ? 'uncategorized' : catId;
+                setImportCategoryFilter(isExpanded ? null : next);
                 setImportPage(1);
               }}
               pagination={isExpanded ? renderPagination(
@@ -961,7 +969,11 @@ export default function TransactionReviewPage() {
       <div className="space-y-3">
         {groups.map((group) => {
           const catId = group.key === 'uncategorized' ? null : parseInt(group.key, 10);
-          const isExpanded = plaidCategoryFilter === catId;
+          // Filter starts as null so nothing is expanded on first load. Uncategorized
+          // uses the 'uncategorized' sentinel so it's distinguishable from "no filter".
+          const isExpanded = catId === null
+            ? plaidCategoryFilter === 'uncategorized'
+            : plaidCategoryFilter === catId;
           return (
             <GroupCard
               key={group.key}
@@ -976,7 +988,8 @@ export default function TransactionReviewPage() {
               disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
               isExpanded={isExpanded}
               onToggle={() => {
-                setPlaidCategoryFilter(isExpanded ? null : catId);
+                const next = catId === null ? 'uncategorized' : catId;
+                setPlaidCategoryFilter(isExpanded ? null : next);
                 setPlaidPage(1);
               }}
               pagination={isExpanded ? renderPagination(

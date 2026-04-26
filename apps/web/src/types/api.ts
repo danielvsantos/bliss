@@ -409,6 +409,11 @@ export type StagedImportRow = {
 export type StagedImportResponse = {
   import: StagedImport;
   rows: StagedImportRow[];
+  categorySummary?: Array<{
+    categoryId: number | null;
+    category: { id: number; name: string; group: string; type: string } | null;
+    count: number;
+  }>;
   pagination: {
     page: number;
     limit: number;

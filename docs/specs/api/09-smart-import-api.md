@@ -79,6 +79,7 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
   - `?page` (default 1), `?limit` (default 50, max 200)
   - `?status` — filter by row status. Accepts a **single value** (e.g. `status=CONFIRMED`) or a **comma-separated list** (e.g. `status=STAGED,POTENTIAL_DUPLICATE`). When multiple values are provided, the query uses an `IN` clause. **When omitted, the endpoint defaults to `['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED']` — `DUPLICATE` (hard duplicate with a wall-clock timestamp match) and `SKIPPED` rows are deliberately hidden** so duplicate-flagged rows can never reach the Review UI as committable. Callers that need to audit those rows must opt in explicitly (e.g. `?status=DUPLICATE`).
   - `?categoryId` — optional integer. Filters rows to a single `suggestedCategoryId`. Used by the grouped-view to paginate within one category group without re-fetching all rows.
+  - `?uncategorized=true` — optional boolean. Filters rows to those with `suggestedCategoryId IS NULL`. Mutually exclusive with `?categoryId` (when both are sent, `?uncategorized` wins). Needed so the "Uncategorized" group in the grouped view is drillable.
 - **Response**: `{ import, rows, categorySummary, pagination }`:
   - `import` — the `StagedImport` record, including a `statusSummary` map of `{ PENDING: N, CONFIRMED: N, STAGED: N, POTENTIAL_DUPLICATE: N, ... }` and `earliestTransactionDate`.
   - `rows` — paginated `StagedImportRow` records, each enriched with `suggestedCategory: { id, name, group, type }`.

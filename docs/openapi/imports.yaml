@@ -44,66 +44,62 @@ components:
             debit: 'Debit'
             credit: 'Credit'
 
-    StagedImport:
-      type: object
-      description: A batch of transactions staged for review after smart import processing.
-      properties:
-        id:
-          type: string
-          example: 'clx...'
-        status:
-          type: string
-          enum: [PENDING, PROCESSING, STAGED, COMMITTED, CANCELLED, FAILED]
-          description: The current processing status of this import batch.
-        fileName:
-          type: string
-          example: 'chase_checking_jan2025.csv'
-        totalRows:
-          type: integer
-        processedRows:
-          type: integer
-        createdAt:
-          type: string
-          format: date-time
-        rows:
-          type: array
-          items:
-            $ref: '#/components/schemas/StagedRow'
-
     StagedRow:
       type: object
-      description: A single transaction row staged for review.
+      description: A single CSV row staged for review, enriched with the resolved category.
       properties:
         id:
           type: string
           example: 'clx...'
+        stagedImportId:
+          type: string
+        rowNumber:
+          type: integer
+          description: 1-based position in the original CSV.
         status:
           type: string
-          enum: [PENDING, DUPLICATE, POTENTIAL_DUPLICATE, OVERRIDDEN]
-          description: The deduplication and review status of this row.
-        date:
+          enum: [PENDING, CONFIRMED, SKIPPED, DUPLICATE, POTENTIAL_DUPLICATE, ERROR, STAGED]
+          description: |
+            Row state. `PENDING` awaits user action; `CONFIRMED` is ready to commit;
+            `POTENTIAL_DUPLICATE` matches an existing transaction softly (date/amount but
+            not timestamp); `DUPLICATE` is a hard match and is hidden from the Review UI by
+            default; `STAGED` is the initial worker output before classification finalises.
+        transactionDate:
           type: string
-          format: date
+          format: date-time
+          nullable: true
         description:
           type: string
-        amount:
-          type: number
-        credit:
-          type: number
           nullable: true
         debit:
           type: number
           nullable: true
+        credit:
+          type: number
+          nullable: true
         currency:
           type: string
+          nullable: true
           example: 'USD'
+        accountId:
+          type: integer
+          nullable: true
         suggestedCategoryId:
           type: integer
           nullable: true
-          description: AI-suggested category ID.
-        suggestedCategoryName:
-          type: string
+        suggestedCategory:
+          type: object
           nullable: true
+          description: Enriched category snapshot joined in by the handler (not stored on the row).
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            group:
+              type: string
+            type:
+              type: string
         classificationSource:
           type: string
           nullable: true
@@ -113,16 +109,41 @@ components:
           type: number
           nullable: true
           description: AI classification confidence (0–1).
-        overrideData:
-          type: object
+        details:
+          type: string
           nullable: true
-          description: User-supplied overrides for this row (e.g., corrected category).
+          description: User-supplied free-text note, persisted to `Transaction.details` on commit.
+        requiresEnrichment:
+          type: boolean
+          nullable: true
+          description: True when this row needs investment-detail enrichment before it can be CONFIRMED.
+        enrichmentType:
+          type: string
+          nullable: true
+          description: e.g. `INVESTMENT`.
+        ticker:
+          type: string
+          nullable: true
+        assetQuantity:
+          type: number
+          nullable: true
+        assetPrice:
+          type: number
+          nullable: true
         tags:
           type: array
           nullable: true
           items:
             type: string
-          description: Optional array of tag name strings (e.g. ["Japan 2026", "Business"]). Tags are auto-created and linked at commit time.
+          description: Optional tag names (e.g. ["Japan 2026", "Business"]). Tags are auto-created and linked at commit time.
+        updateTargetId:
+          type: integer
+          nullable: true
+          description: When non-null, this row updates an existing Transaction rather than creating one.
+        updateDiff:
+          type: object
+          nullable: true
+          description: Computed diff between CSV values and the existing transaction (changed fields only).
 
     SimilarTransactionResult:
       type: object
@@ -389,9 +410,13 @@ paths:
                   stagedImportId:
                     type: string
                     description: The ID of the created StagedImport batch. Use this to poll for status.
+                  status:
+                    type: string
+                    enum: [PROCESSING]
+                    description: Initial status of the newly-created import.
                   message:
                     type: string
-                    example: 'Import started. Check status at /api/imports/{stagedImportId}'
+                    example: 'File uploaded successfully. Import processing has started.'
         '400':
           description: Bad Request — missing file, adapterId, or accountId.
         '401':
@@ -402,18 +427,45 @@ paths:
   /api/imports/pending:
     get:
       summary: List pending/staged imports
-      description: Returns all StagedImport batches for the authenticated tenant that are in PENDING, PROCESSING, or STAGED status.
+      description: |
+        Returns staged imports for the authenticated tenant that still have rows awaiting
+        commit. Each entry is a thin summary (not the full `StagedImport`) and is filtered
+        to those with `pendingRowCount > 0` — where pending counts rows in
+        `CONFIRMED`, `PENDING`, or `POTENTIAL_DUPLICATE` status. The response is sent with
+        `Cache-Control: no-store, no-cache, must-revalidate` to prevent stale 304s.
       tags:
         - Smart Import
       responses:
         '200':
-          description: Array of pending staged import batches.
+          description: Object with the list of pending imports.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StagedImport'
+                type: object
+                properties:
+                  imports:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        fileName:
+                          type: string
+                        adapterName:
+                          type: string
+                          nullable: true
+                        accountId:
+                          type: integer
+                          nullable: true
+                        totalRows:
+                          type: integer
+                        pendingRowCount:
+                          type: integer
+                          description: Rows still in CONFIRMED, PENDING, or POTENTIAL_DUPLICATE.
+                        createdAt:
+                          type: string
+                          format: date-time
         '401':
           description: Unauthorized
         '500':
@@ -432,13 +484,156 @@ paths:
           schema:
             type: string
           description: The StagedImport ID.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Row status filter. Accepts a single value (e.g. `CONFIRMED`) or a comma-separated
+            list (e.g. `STAGED,POTENTIAL_DUPLICATE`). When omitted, defaults to
+            `PENDING,POTENTIAL_DUPLICATE,CONFIRMED,ERROR,STAGED` — `DUPLICATE` and `SKIPPED`
+            are deliberately hidden so duplicate-flagged rows can never reach the Review UI
+            as committable. Callers that need to audit those rows must opt in explicitly.
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: |
+            Filters rows to a single `suggestedCategoryId`. Used by the grouped-view to
+            paginate within one category group without re-fetching all rows.
+        - name: uncategorized
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: |
+            When `true`, filters rows to those with `suggestedCategoryId IS NULL`. Mutually
+            exclusive with `categoryId` (when both are sent, `uncategorized` wins). Needed so
+            the "Uncategorized" group in the grouped view is drillable.
       responses:
         '200':
-          description: The staged import batch with all rows.
+          description: |
+            The staged import wrapper with paginated rows, server-side category breakdown,
+            and pagination metadata.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StagedImport'
+                type: object
+                properties:
+                  import:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                        enum: [PENDING, PROCESSING, READY, COMMITTING, COMMITTED, CANCELLED, FAILED]
+                      fileName:
+                        type: string
+                      adapterName:
+                        type: string
+                        nullable: true
+                      accountId:
+                        type: integer
+                        nullable: true
+                      totalRows:
+                        type: integer
+                      progress:
+                        type: integer
+                        description: 0–100, percent complete during PROCESSING and COMMITTING.
+                      errorCount:
+                        type: integer
+                      errorDetails:
+                        type: string
+                        nullable: true
+                      autoConfirmedCount:
+                        type: integer
+                        nullable: true
+                        description: Rows auto-confirmed via EXACT_MATCH at or above the tenant's auto-promote threshold.
+                      updateCount:
+                        type: integer
+                        description: Rows that match an existing transaction (update path) rather than create.
+                      seedReady:
+                        type: boolean
+                        description: When true, the worker has finished initial classification and the Quick Seed interview should be presented before review.
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                      statusSummary:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                        description: |
+                          Map of `{ <STATUS>: count }` aggregated across the entire import
+                          (all statuses, ignoring the `?status` filter).
+                        example:
+                          PENDING: 12
+                          CONFIRMED: 245
+                          POTENTIAL_DUPLICATE: 3
+                      earliestTransactionDate:
+                        type: string
+                        format: date-time
+                        nullable: true
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StagedRow'
+                  categorySummary:
+                    type: array
+                    description: |
+                      Server-side groupBy across all rows matching the effective `?status` filter
+                      (regardless of pagination). Drives grouped-view headers with accurate
+                      cross-page counts. Sorted descending by count.
+                    items:
+                      type: object
+                      properties:
+                        categoryId:
+                          type: integer
+                          nullable: true
+                        category:
+                          type: object
+                          nullable: true
+                          properties:
+                            id:
+                              type: integer
+                            name:
+                              type: string
+                            group:
+                              type: string
+                            type:
+                              type: string
+                        count:
+                          type: integer
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
         '401':
           description: Unauthorized
         '403':
@@ -450,13 +645,16 @@ paths:
     post:
       summary: Commit or cancel a staged import
       description: |
-        Finalises the import. Action must be either `commit` or `cancel`.
-        - `commit`: Promotes all CONFIRMED rows to permanent Transaction records. For rows with
-          tags, auto-creates Tag records (find-or-create by name) and links them via TransactionTag.
-          After writing transactions, fires non-blocking feedback for each committed LLM/USER_OVERRIDE
-          row to build the pgvector embedding index (Tier 2 classification for future imports).
-        - `cancel`: Marks the batch as cancelled, discarding all staged rows. No embeddings
-          are generated for cancelled imports.
+        Finalises the import. The `action` is read from `?action` query OR the request body
+        (query takes precedence). Must be either `commit` or `cancel`.
+        - `commit`: Transitions the import to `COMMITTING` and dispatches a `SMART_IMPORT_COMMIT`
+          event to the backend worker. Promotes all CONFIRMED rows to permanent Transaction records
+          asynchronously. For rows with tags, auto-creates Tag records (find-or-create by name) and
+          links them via TransactionTag. After writing transactions, the worker fires non-blocking
+          feedback for each committed LLM/USER_OVERRIDE row to build the pgvector embedding index.
+          Requires `import.status === 'READY'`. Optional `rowIds` in the body enables partial commit.
+        - `cancel`: Synchronously deletes all staged rows and marks the batch as `CANCELLED`. No
+          embeddings are generated. Cannot cancel an already-`COMMITTED` import.
       tags:
         - Smart Import
       parameters:
@@ -466,36 +664,61 @@ paths:
           schema:
             type: string
           description: The StagedImport ID.
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [commit, cancel]
+          description: The action to take. Falls back to `body.action` if omitted.
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required:
-                - action
               properties:
                 action:
                   type: string
                   enum: [commit, cancel]
+                  description: Used when `?action` query param is not supplied.
+                rowIds:
+                  type: array
+                  items:
+                    type: string
+                  description: |
+                    Commit-only. When provided and non-empty, only these specific staged rows
+                    will be committed (partial commit). Omit to commit all CONFIRMED rows.
       responses:
         '200':
-          description: Action completed successfully.
+          description: Cancel completed synchronously.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  committed:
-                    type: integer
-                    description: Number of transactions committed (only for commit action).
-                  skipped:
-                    type: integer
-                    description: Number of rows skipped as duplicates.
+                  cancelled:
+                    type: boolean
+                    example: true
+        '202':
+          description: |
+            Commit accepted. The import has transitioned to `COMMITTING`; poll
+            `GET /api/imports/{id}` for progress and final state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [COMMITTING]
                   message:
                     type: string
+                    example: 'Commit process started. Poll for progress.'
         '400':
-          description: Bad Request — invalid action or import not in STAGED status.
+          description: |
+            Bad Request — missing/invalid `action`, commit attempted while import is not in
+            `READY` status, or cancel attempted on a `COMMITTED` import.
         '401':
           description: Unauthorized
         '403':
@@ -503,7 +726,7 @@ paths:
         '404':
           description: Staged import not found.
         '500':
-          description: Internal Server Error
+          description: Internal Server Error — event dispatch failed (commit) or unexpected error.
 
   /api/imports/{id}/rows/{rowId}:
     put:
