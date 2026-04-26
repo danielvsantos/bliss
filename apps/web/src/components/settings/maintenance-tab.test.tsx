@@ -51,7 +51,7 @@ describe('MaintenanceTab', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the four rebuild panels (by heading)', async () => {
+  it('renders all maintenance panels (by heading)', async () => {
     vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
 
     renderTab();
@@ -63,8 +63,29 @@ describe('MaintenanceTab', () => {
     });
     expect(screen.getByRole('heading', { name: 'Full rebuild' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild analytics from a date' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Refresh stock fundamentals' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild a single asset' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Recent rebuilds' })).toBeInTheDocument();
+  });
+
+  it('calls refreshStockFundamentals when the Refresh fundamentals button is clicked', async () => {
+    vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
+    vi.mocked(api.refreshStockFundamentals).mockResolvedValue({
+      message: 'Full refresh job enqueued',
+      jobId: 'job-123',
+    });
+
+    renderTab();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Refresh fundamentals/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Refresh fundamentals/i }));
+
+    await waitFor(() => {
+      expect(api.refreshStockFundamentals).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('calls triggerRebuild with scope=full-analytics when that button is clicked', async () => {

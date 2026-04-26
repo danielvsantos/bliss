@@ -101,3 +101,31 @@ Sortable columns (click header to toggle sort):
 
 - **Route**: `src/routes.tsx` — `{ path: "/reports/equity-analysis", component: EquityAnalysisPage, protected: true }`
 - **Sidebar**: `src/components/layout/Sidebar.tsx` — "Equity Analysis" entry in Reports section with `PieChart` icon from lucide-react
+
+## 19.11. Trust Gate (rendering missing data)
+
+The API can return `null` for `peRatio`, `trailingEps`, `latestEpsActual`, `latestEpsSurprise`, and `dividendYield` even when the underlying SecurityMaster row holds non-null values — this happens when the row's `earningsTrusted` / `dividendTrusted` flag is `false` because Twelve Data returned inconsistent data for that symbol (see backend spec 19, section 19.10).
+
+**The frontend already handles this correctly** — every numeric column in the table renders `—` when its source field is `null`:
+
+```tsx
+{h.peRatio != null ? h.peRatio.toFixed(1) : '—'}
+{h.dividendYield != null ? `${(h.dividendYield * 100).toFixed(2)}%` : '—'}
+{h.trailingEps != null ? h.trailingEps.toFixed(2) : '—'}
+```
+
+No new code or special-case rendering is needed. Quote-derived columns (`week52High`, `week52Low`) are **not** subject to the trust gate — they come from `/quote`, which is reliable. A row with `—` in P/E / EPS / Yield but real numbers in 52-Week Range is the expected appearance for a stock with broken Twelve Data fundamentals.
+
+The summary cards at the top (`weightedPeRatio`, `weightedDividendYield`) are computed by the API across **only the trusted holdings**. If no holding is trusted, both fall through to `null` and the cards show `—`. This is correct: a weighted average across zero trusted samples is undefined.
+
+## 19.12. Manual Fundamentals Refresh
+
+When the equity analysis page shows `—` widely (e.g., right after deploying the trust-flag migration before the next nightly refresh runs, or after a Twelve Data hiccup), an admin can force-recompute the trust flags by triggering a manual refresh:
+
+- **Path**: Settings → Maintenance → "Refresh stock fundamentals" → click **Refresh fundamentals**.
+- **Hook**: `useRefreshFundamentals()` from `src/hooks/use-refresh-fundamentals.ts`.
+- **API client**: `api.refreshStockFundamentals()` in `src/lib/api.ts`.
+
+The mutation resolves once the backend has enqueued the job. Actual refresh runs asynchronously (~2 seconds per active stock symbol). The user reloads the equity analysis page after a few minutes to see updated numbers; symbols whose underlying Twelve Data response is genuinely broken will continue to show `—` even after the refresh, by design.
+
+Frontend implementation lives in `src/components/settings/maintenance-tab.tsx` (the `RefreshFundamentalsButton` sub-component). The button only disables briefly while the enqueue HTTP call is in flight — there's no status polling for this scope, since the user-facing signal is on the equity analysis page, not on the Maintenance tab. See `docs/specs/api/03-reference-data-management.md` section 3.5 for the design rationale.

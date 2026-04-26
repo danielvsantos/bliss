@@ -39,6 +39,8 @@ A global (not per-tenant) table storing stock fundamentals. Key fields:
 | `week52High` | `Decimal(18,4)?` | 52-week high price |
 | `week52Low` | `Decimal(18,4)?` | 52-week low price |
 | `averageVolume` | `Decimal(18,0)?` | Average daily volume |
+| `earningsTrusted` | `Boolean` (default `false`) | Trust gate for `peRatio`, `trailingEps`, `latestEpsActual`, `latestEpsSurprise`. See **19.6** below. |
+| `dividendTrusted` | `Boolean` (default `false`) | Trust gate for `dividendYield`. See **19.6** below. |
 | `lastProfileUpdate` | `DateTime?` | Last time profile fields were refreshed |
 | `lastFundamentalsUpdate` | `DateTime?` | Last time earnings/dividends/quote were refreshed |
 | `createdAt` | `DateTime` | Record creation timestamp |
@@ -46,10 +48,12 @@ A global (not per-tenant) table storing stock fundamentals. Key fields:
 
 Indexes: `sector`, `industry`, `country`, `assetType`.
 
-### Migration
+### Migrations
 
 - **File**: `prisma/migrations/20260313000000_add_security_master/migration.sql`
-- Creates the `SecurityMaster` table with all columns and indexes
+  Creates the `SecurityMaster` table with all columns and indexes.
+- **File**: `prisma/migrations/20260427000000_add_security_master_trust_flags/migration.sql`
+  Adds the `earningsTrusted` and `dividendTrusted` boolean columns (`NOT NULL DEFAULT false`). Existing rows default to untrusted until the next fundamentals refresh recomputes the flags — see the operator note in **19.7** about triggering an immediate refresh after deploying this migration so consumers don't see `—` for every stock until the 3 AM cron runs.
 
 ## 19.3. Equity Analysis Endpoint
 
@@ -126,6 +130,7 @@ Returns equity portfolio composition enriched with fundamental data.
 - SecurityMaster data is fetched via direct Prisma query (same database, no backend HTTP call)
 - Weighted P/E and dividend yield are computed using holdings weights, normalized to exclude holdings without data
 - Portfolio currency conversion applied when tenant's currency differs from USD
+- **Trust gate**: when `sm.earningsTrusted === false`, the response sets `peRatio`, `trailingEps`, `latestEpsActual`, and `latestEpsSurprise` to `null` even if the underlying columns hold values. Same rule for `dividendYield` against `sm.dividendTrusted`. Quote-derived fields (`week52High`, `week52Low`, `averageVolume`) are **not** gated — they come from `/quote`, not from the inconsistent `/earnings` or `/dividends` paths. See **19.6**.
 
 ## 19.4. Ticker Profile Cache Integration
 
@@ -140,3 +145,21 @@ The finance API's ticker search proxy (`/api/ticker/search`) is unaffected. The 
   - Test empty portfolio response
   - Test weighted P/E and dividend yield computation
   - Test method not allowed (POST → 405)
+  - **Test the trust gate**: when fixture sets `earningsTrusted: false` / `dividendTrusted: false`, the response must null-out `peRatio`, `trailingEps`, `latestEpsActual`, `latestEpsSurprise`, `dividendYield` while preserving `week52High` / `week52Low`. The summary's `weightedPeRatio` / `weightedDividendYield` must fall through to `null` when no trusted holding exists.
+
+## 19.6. Trust Gate (consumer contract)
+
+Twelve Data's `/earnings` and `/dividends` responses are inconsistent across symbols (timezone skew on the latest quarter, sparse history, future-only entries, malformed rows). The backend's `securityMasterService.upsertFundamentals()` decides each refresh whether the recomputed values for a symbol are usable, and writes the decision to `earningsTrusted` / `dividendTrusted`.
+
+**Consumer rule**: any code that returns `peRatio`, `trailingEps`, `latestEpsActual`, `latestEpsSurprise`, or `dividendYield` to a downstream client (UI, LLM context, public API) **must** check the corresponding trust flag and substitute `null` when false. The frontend already renders `null` as `—`, and the insights LLM treats null fundamentals as "no data, skip the analysis" — both are correct fallbacks.
+
+The full trust criteria (4 quarters spanning ≤450 days, latest ≤180 days old, etc.) live in the backend service and are documented in **backend spec 19**, section 19.6. The API layer just consumes the booleans.
+
+## 19.7. Manual Fundamentals Refresh (admin)
+
+`POST /api/admin/refresh-fundamentals` triggers an immediate run of the same job the 3 AM cron fires, refreshing all active stock symbols and recomputing trust flags. Endpoint contract is documented in [api spec 03, section 3.5](./03-reference-data-management.md#35-security-master-fundamentals-refresh). Surfaced in the UI via the **Settings → Maintenance** tab's "Refresh stock fundamentals" panel.
+
+**When to use it**:
+- Right after deploying the trust-flag migration — every existing row defaults to `earningsTrusted: false`, so the equity analysis page shows `—` for every holding until a refresh recomputes the flags.
+- After a Twelve Data data fix lands and a previously-untrusted symbol should now be trusted.
+- Diagnostic purposes when investigating a single stale stock.

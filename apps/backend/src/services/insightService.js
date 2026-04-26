@@ -486,6 +486,11 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       week52Low: true,
       averageVolume: true,
       assetType: true,
+      // Trust flags decide whether earnings- and dividend-derived fields
+      // can be passed to the LLM. When false, those fields are nulled out
+      // below — wrong data is worse than missing data for portfolio insights.
+      earningsTrusted: true,
+      dividendTrusted: true,
     },
   });
 
@@ -532,9 +537,13 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       sector: f.sector || fallbackSector,
       industry: f.industry || fallbackSector,
       country: f.country || 'Global',
-      peRatio: f.peRatio ? Number(f.peRatio) : null,
-      dividendYield: f.dividendYield ? Number(f.dividendYield) : null,
-      trailingEps: f.trailingEps ? Number(f.trailingEps) : null,
+      // Earnings-derived fields are gated on earningsTrusted: when Twelve Data
+      // returned inconsistent data (off-by-one timezone, sparse history, stale
+      // last quarter), the upsert flagged the row untrusted. Hide those fields
+      // from the LLM rather than feed it numbers we know to be wrong.
+      peRatio: f.earningsTrusted && f.peRatio ? Number(f.peRatio) : null,
+      trailingEps: f.earningsTrusted && f.trailingEps ? Number(f.trailingEps) : null,
+      dividendYield: f.dividendTrusted && f.dividendYield ? Number(f.dividendYield) : null,
       week52High: f.week52High ? Number(f.week52High) : null,
       week52Low: f.week52Low ? Number(f.week52Low) : null,
       assetType: f.assetType || fallbackSector,

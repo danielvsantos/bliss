@@ -782,6 +782,14 @@ model SecurityMaster {
   week52Low              Decimal?  @db.Decimal(18, 4)
   averageVolume          Decimal?  @db.Decimal(18, 0)
 
+  // ── Trust gates ──
+  // True only when this refresh produced a usable computation: 4 quarters
+  // spanning ≤450 days, most recent ≤180 days old, and a non-null peRatio.
+  // Consumers (insights LLM, equity analysis page) MUST treat the
+  // earnings/dividend fields as null when the corresponding flag is false.
+  earningsTrusted        Boolean   @default(false)
+  dividendTrusted        Boolean   @default(false)
+
   // ── Meta ──
   lastProfileUpdate      DateTime?
   lastFundamentalsUpdate DateTime?                      // covers earnings + dividends + quote refresh

@@ -86,17 +86,87 @@ async function upsertFromProfile(symbol, profileData) {
     logger.info(`[SecurityMaster] Upserted profile for ${symbol} (exchange=${exchange})`);
 }
 
+// Trust-gate windows. Tuned for quarterly reporting:
+//   - 4 quarters with a 30-day buffer before the next is expected ⇒ 450 days
+//   - Most recent quarter no more than 6 months stale ⇒ 180 days
+//   - Dividends: most recent ex-date no more than 6 months old ⇒ 180 days
+const EARNINGS_TRUST_MAX_SPAN_DAYS = 450;
+const EARNINGS_TRUST_MAX_AGE_DAYS = 180;
+const DIVIDEND_TRUST_MAX_AGE_DAYS = 180;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Decide whether earnings-derived fields can be trusted for downstream use
+ * (insights LLM context, equity analysis page).
+ *
+ * Twelve Data's /earnings response is inconsistent across symbols: some
+ * stocks are missing quarters, some return future-only, some report dates
+ * in the exchange's local timezone (which can off-by-one a same-day refresh).
+ * We need 4 quarters spanning a reasonable window AND a recent enough latest
+ * report that combining trailing EPS with the current price is meaningful.
+ */
+function isEarningsTrustworthy(last4, peRatio) {
+    if (last4.length < 4) return false;
+    if (peRatio == null) return false;
+
+    const dates = last4.map(e => new Date(e.date).getTime()).sort((a, b) => b - a);
+    const newestMs = dates[0];
+    const oldestMs = dates[dates.length - 1];
+
+    const spanDays = (newestMs - oldestMs) / MS_PER_DAY;
+    if (spanDays > EARNINGS_TRUST_MAX_SPAN_DAYS) return false;
+
+    const ageDays = (Date.now() - newestMs) / MS_PER_DAY;
+    if (ageDays > EARNINGS_TRUST_MAX_AGE_DAYS) return false;
+
+    return true;
+}
+
+/**
+ * Decide whether dividend-derived fields can be trusted.
+ *
+ * Three valid states:
+ *   1. Stock has never paid dividends (response array empty) — zero is the
+ *      correct answer, mark trusted.
+ *   2. Stock pays dividends and we have a recent ex-date (≤180 days) plus
+ *      a current price for yield computation — mark trusted.
+ *   3. Stock paid dividends historically but nothing in the last 180 days
+ *      OR no current price — mark untrusted.
+ */
+function isDividendTrustworthy({ rawDividends, recentDividends, currentPrice }) {
+    if (rawDividends.length === 0) return true;
+    if (recentDividends.length === 0) return false;
+    if (!currentPrice || currentPrice <= 0) return false;
+
+    const newestMs = recentDividends
+        .map(d => new Date(d.exDate).getTime())
+        .filter(t => !Number.isNaN(t))
+        .sort((a, b) => b - a)[0];
+    if (newestMs == null) return false;
+
+    const ageDays = (Date.now() - newestMs) / MS_PER_DAY;
+    return ageDays <= DIVIDEND_TRUST_MAX_AGE_DAYS;
+}
+
 /**
  * Compute and upsert fundamental fields from earnings, dividends, and quote data.
  *
  * Computation logic:
  * - trailingEps: sum of last 4 quarters eps_actual (skipping nulls)
- * - peRatio: currentPrice / trailingEps (null if trailingEps <= 0 or no price)
+ * - peRatio: currentPrice / trailingEps (omitted from update if non-computable)
  * - annualizedDividend: sum of dividends with ex_date in last 12 months
- * - dividendYield: annualizedDividend / currentPrice (null if no price)
+ * - dividendYield: annualizedDividend / currentPrice (omitted if non-computable)
  * - latestEpsActual: most recent non-null eps_actual
  * - latestEpsSurprise: corresponding surprise_prc
  * - week52High/Low/averageVolume: from extended quote data
+ * - earningsTrusted / dividendTrusted: see isEarningsTrustworthy / isDividendTrustworthy
+ *
+ * **Preservation rule:** when a field cannot be recomputed this run (e.g. the
+ * earnings filter yields nothing), the field is OMITTED from the update payload
+ * rather than being explicitly nulled. The previous value is preserved on the
+ * row, but the trust flag is set to false so consumers hide it. A previous
+ * version of this code unconditionally wrote `null` on the failure path, which
+ * silently wiped good data when a refresh hit a transient API quirk.
  *
  * @param {string} symbol
  * @param {Object} params
@@ -105,64 +175,83 @@ async function upsertFromProfile(symbol, profileData) {
  * @param {Object|null} params.quote — From twelveDataService.getLatestPrice({ extended: true })
  */
 async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
-    const data = { lastFundamentalsUpdate: new Date() };
+    const data = {
+        lastFundamentalsUpdate: new Date(),
+        earningsTrusted: false,
+        dividendTrusted: false,
+    };
 
     // --- Earnings-derived fields ---
     if (earnings && earnings.earnings && earnings.earnings.length > 0) {
-        // Filter to records with a valid numeric epsActual (not null, NaN, or upcoming)
-        // Also exclude future-dated records as a safety net (API layer already filters these)
-        const todayStr = new Date().toISOString().split('T')[0];
-        const withActual = earnings.earnings.filter(e =>
-            e.epsActual != null && Number.isFinite(e.epsActual) &&
-            e.date && e.date <= todayStr
-        );
-        logger.info(`[SecurityMaster] ${symbol}: ${earnings.earnings.length} earnings records, ${withActual.length} with actual EPS (past dates only)`);
+        // Twelve Data returns dates in the stock's exchange timezone. Comparing
+        // against UTC `today` can off-by-one a same-day report (a 4:30 PM ET
+        // earnings call dated `today` fails a strict `<= todayStr` check when
+        // this job runs at midnight UTC, eight hours earlier). The 24-hour
+        // grace absorbs that skew without resolving per-stock timezones.
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-        // Trailing EPS: sum of last 4 quarters
+        const withActual = earnings.earnings
+            .filter(e =>
+                e.epsActual != null && Number.isFinite(e.epsActual) &&
+                e.date && e.date <= tomorrowStr
+            )
+            // Defensive resort: caller is expected to sort newest-first, but
+            // this slice underpins trailing-EPS so guarantee it locally.
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        logger.info(`[SecurityMaster] ${symbol}: ${earnings.earnings.length} earnings records, ${withActual.length} with actual EPS (within 24h grace window)`);
+
         const last4 = withActual.slice(0, 4);
         if (last4.length > 0) {
             const trailingEps = last4.reduce((sum, e) => sum + e.epsActual, 0);
             data.trailingEps = new Decimal(trailingEps.toFixed(4));
 
-            // P/E ratio: currentPrice / trailingEps
             const currentPrice = quote ? quote.close : null;
+            let peRatio = null;
             if (currentPrice && trailingEps > 0) {
-                data.peRatio = new Decimal((currentPrice / trailingEps).toFixed(4));
-            } else {
-                data.peRatio = null;
+                peRatio = new Decimal((currentPrice / trailingEps).toFixed(4));
+                data.peRatio = peRatio;
             }
-        }
+            // else: omit peRatio from update — preserve any previous value.
+            // The trust flag below will be false so consumers ignore it.
 
-        // Latest EPS actual and surprise
-        if (withActual.length > 0) {
             data.latestEpsActual = new Decimal(withActual[0].epsActual.toFixed(4));
             data.latestEpsSurprise = withActual[0].surprisePrc != null
                 ? new Decimal(withActual[0].surprisePrc.toFixed(4))
                 : null;
+
+            data.earningsTrusted = isEarningsTrustworthy(last4, peRatio);
+        } else {
+            logger.warn(`[SecurityMaster] ${symbol}: no past earnings with actual EPS — preserving previous values, marking earnings untrusted`);
         }
+    } else {
+        logger.warn(`[SecurityMaster] ${symbol}: no earnings data available — preserving previous values, marking earnings untrusted`);
     }
 
     // --- Dividend-derived fields ---
-    if (dividends && dividends.dividends && dividends.dividends.length > 0) {
-        // Sum dividends with ex_date in the last 12 months
-        const oneYearAgo = new Date();
-        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-        const recentDividends = dividends.dividends.filter(d => {
-            if (!d.exDate || d.amount == null) return false;
-            return new Date(d.exDate) >= oneYearAgo;
-        });
+    if (dividends && dividends.dividends) {
+        const rawDividends = dividends.dividends.filter(d => d.exDate && d.amount != null);
+        const oneYearAgoMs = Date.now() - 365 * MS_PER_DAY;
+        const recentDividends = rawDividends.filter(
+            d => new Date(d.exDate).getTime() >= oneYearAgoMs
+        );
 
         const annualizedDividend = recentDividends.reduce((sum, d) => sum + d.amount, 0);
         data.annualizedDividend = new Decimal(annualizedDividend.toFixed(4));
 
-        // Dividend yield: annualizedDividend / currentPrice
         const currentPrice = quote ? quote.close : null;
-        if (currentPrice && currentPrice > 0 && annualizedDividend > 0) {
+        if (annualizedDividend === 0) {
+            data.dividendYield = new Decimal('0');
+        } else if (currentPrice && currentPrice > 0) {
             data.dividendYield = new Decimal((annualizedDividend / currentPrice).toFixed(6));
-        } else {
-            data.dividendYield = annualizedDividend > 0 ? null : new Decimal('0');
         }
+        // else: omit dividendYield — preserve previous value, mark untrusted.
+
+        data.dividendTrusted = isDividendTrustworthy({ rawDividends, recentDividends, currentPrice });
+    } else {
+        logger.warn(`[SecurityMaster] ${symbol}: no dividend data available — preserving previous values, marking dividends untrusted`);
     }
 
     // --- Quote-derived fields ---
@@ -179,7 +268,7 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
             create: { symbol, ...data },
             update: data,
         });
-        logger.info(`[SecurityMaster] Upserted fundamentals for ${symbol}`);
+        logger.info(`[SecurityMaster] Upserted fundamentals for ${symbol} (earningsTrusted=${data.earningsTrusted}, dividendTrusted=${data.dividendTrusted})`);
     } catch (error) {
         logger.error(`[SecurityMaster] Error upserting fundamentals for ${symbol}`, { error: error.message });
     }

@@ -955,6 +955,11 @@ class APIClient {
     const response = await this.client.post('/api/admin/rebuild', body);
     return response.data;
   }
+
+  async refreshStockFundamentals(): Promise<{ message: string; jobId: string }> {
+    const response = await this.client.post('/api/admin/refresh-fundamentals');
+    return response.data;
+  }
 }
 
 export const api = new APIClient();

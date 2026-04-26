@@ -343,25 +343,42 @@ async function getEarnings(symbol, { micCode } = {}) {
             return null;
         }
 
+        // Sanity-bound the response: Twelve Data occasionally returns rows
+        // with malformed or wildly out-of-range dates. Anything older than
+        // 5 years is useless for trailing-EPS calculations; anything more
+        // than 1 year in the future is data noise. We do NOT filter out
+        // near-future entries here — the service layer applies its own
+        // time-zone-aware grace window when deciding which entries can
+        // contribute to trailing EPS.
         const meta = response.data.meta || {};
         const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        const fiveYearsAgo = new Date(today);
+        fiveYearsAgo.setFullYear(today.getFullYear() - 5);
+        const oneYearAhead = new Date(today);
+        oneYearAhead.setFullYear(today.getFullYear() + 1);
 
-        const earnings = (response.data.earnings || []).map(e => ({
-            date: e.date || null,
-            epsEstimate: safeParseFloat(e.eps_estimate),
-            epsActual: safeParseFloat(e.eps_actual),
-            difference: safeParseFloat(e.difference),
-            surprisePrc: safeParseFloat(e.surprise_prc),
-        }));
+        const earnings = (response.data.earnings || [])
+            .map(e => ({
+                date: e.date || null,
+                epsEstimate: safeParseFloat(e.eps_estimate),
+                epsActual: safeParseFloat(e.eps_actual),
+                difference: safeParseFloat(e.difference),
+                surprisePrc: safeParseFloat(e.surprise_prc),
+            }))
+            .filter(e => {
+                if (!e.date) return false;
+                const d = new Date(e.date);
+                if (Number.isNaN(d.getTime())) return false;
+                return d >= fiveYearsAgo && d <= oneYearAhead;
+            })
+            // Newest-first. The Twelve Data response is documented as sorted
+            // but is not in practice; consumers rely on slice(0, 4) to grab
+            // the trailing 4 quarters, so we enforce ordering here.
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        // Filter out future-dated earnings (scheduled but not yet reported)
-        const pastEarnings = earnings.filter(e => e.date && e.date <= todayStr);
-        const futureCount = earnings.length - pastEarnings.length;
-
-        const withActual = pastEarnings.filter(e => e.epsActual != null).length;
-        logger.info(`[TwelveData] Earnings for ${symbol}: ${earnings.length} total records, ${futureCount} future (excluded), ${pastEarnings.length} past (${withActual} with actual EPS)`);
-        return { meta, earnings: pastEarnings };
+        const withActual = earnings.filter(e => e.epsActual != null).length;
+        logger.info(`[TwelveData] Earnings for ${symbol}: ${earnings.length} valid records (${withActual} with actual EPS)`);
+        return { meta, earnings };
     } catch (error) {
         logger.error(`[TwelveData] Error fetching earnings for ${symbol}`, { error: error.message });
         return null;
