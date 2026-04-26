@@ -251,6 +251,7 @@ model Category {
   type            String
   tenantId        String
   icon            String?
+  description     String?  // Human-friendly explanation shown in UI tooltips. For default categories, descriptions are sourced from i18n; this column primarily holds user-entered descriptions on custom categories.
   processingHint  String? // Can be 'API_STOCK', 'AMORTIZING_LOAN', 'RECURRING', etc.
   portfolioItemKeyStrategy PortfolioItemKeyStrategy @default(IGNORE)
   defaultCategoryCode String?                      // Sprint B: stable code for default categories (null for custom)

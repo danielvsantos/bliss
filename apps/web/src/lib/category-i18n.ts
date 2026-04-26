@@ -3,6 +3,7 @@ import type { TFunction } from 'i18next';
 interface CategoryLike {
   name: string;
   defaultCategoryCode?: string | null;
+  description?: string | null;
 }
 
 /**
@@ -30,4 +31,19 @@ export function translateCategoryGroup(t: TFunction, group: string): string {
  */
 export function translateCategoryType(t: TFunction, type: string): string {
   return t(`defaultCategories.types.${type}`, type);
+}
+
+/**
+ * Resolve the description for a category:
+ *   1. Default categories: prefer the i18n key keyed by defaultCategoryCode.
+ *   2. Custom categories (or default categories without an i18n description):
+ *      fall back to the user-entered `description` column.
+ *   3. Otherwise return an empty string.
+ */
+export function translateCategoryDescription(t: TFunction, category: CategoryLike): string {
+  const fallback = category.description ?? '';
+  if (category.defaultCategoryCode) {
+    return t(`defaultCategories.descriptions.${category.defaultCategoryCode}`, fallback);
+  }
+  return fallback;
 }

@@ -232,7 +232,7 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
                                 setLocalSeedGroups(initialGroups);
                                 setSeedData(seeds);
                                 try {
-                                    const catData = await api.getCategories({ limit: 200 });
+                                    const catData = await api.getCategories({ limit: 1000 });
                                     setAllCategories(catData.categories ?? []);
                                 } catch { /* non-critical */ }
                                 setSyncPhase('seed');

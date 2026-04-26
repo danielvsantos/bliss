@@ -71,6 +71,7 @@ export type Category = {
   type: string;
   tenantId: string;
   icon?: string;
+  description?: string | null;
   processingHint?: string;
   /** Stable SNAKE_UPPER_CASE code from defaultCategories.js. null for tenant-created custom categories. */
   defaultCategoryCode?: string | null;
@@ -83,6 +84,7 @@ export type CategoryRequest = {
   group: string;
   type: string;
   icon?: string;
+  description?: string | null;
 };
 
 export type CategoryResponse = {

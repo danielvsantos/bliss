@@ -148,9 +148,13 @@ const prisma = new PrismaClient({
         }
 
         // Category validation
+        // Only enforce name length when name is being set — partial updates
+        // (e.g. `{ group: 'X' }` from the category-model-overhaul backfill)
+        // shouldn't have to round-trip the existing name to satisfy the check.
+        // Prisma still enforces the column as required on create.
         if (model === 'Category' && (operation === 'create' || operation === 'update')) {
           const data = args.data;
-          if (!data.name || data.name.length < 2 || data.name.length > 30) {
+          if (data.name !== undefined && (data.name.length < 2 || data.name.length > 30)) {
             throw new Error('Category name must be between 2 and 30 characters.');
           }
           if (data.description && data.description.length > 200) {

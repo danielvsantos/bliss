@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,8 +15,9 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
-import { translateCategoryName, translateCategoryGroup, translateCategoryType } from "@/lib/category-i18n";
+import { translateCategoryName, translateCategoryGroup, translateCategoryType, translateCategoryDescription } from "@/lib/category-i18n";
 import type { Category } from "@/types/api";
 
 const TYPE_ORDER = [
@@ -112,6 +113,7 @@ export function CategoryCombobox({
               <CommandGroup key={type} heading={translateCategoryType(t, type)}>
                 {cats.map((cat) => {
                   const isSelected = cat.id === value;
+                  const description = translateCategoryDescription(t, cat);
                   return (
                     <CommandItem
                       key={cat.id}
@@ -134,6 +136,24 @@ export function CategoryCombobox({
                           </span>
                         )}
                         <span className="truncate">{translateCategoryName(t, cat)}</span>
+                        {description && (
+                          <TooltipProvider delayDuration={150}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="shrink-0 inline-flex"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-xs text-xs">
+                                {description}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </span>
                       <span className="text-xs text-muted-foreground ml-2 shrink-0">
                         {translateCategoryGroup(t, cat.group)}

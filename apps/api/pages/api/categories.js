@@ -150,7 +150,7 @@ async function handleGet(req, res, tenantId) {
 }
 
 async function handlePost(req, res, session, tenantId) {
-  const { name, group, type, icon } = req.body;
+  const { name, group, type, icon, description } = req.body;
 
   if (!name || !group || !type) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Missing required fields: name, group, type' });
@@ -179,6 +179,7 @@ async function handlePost(req, res, session, tenantId) {
           type,
           tenantId,
           icon,
+          description: description ?? null,
         },
       });
 
@@ -202,7 +203,7 @@ async function handlePost(req, res, session, tenantId) {
 
 async function handlePut(req, res, session, tenantId) {
   const { id } = req.query;
-  const { name, group, type, icon } = req.body;
+  const { name, group, type, icon, description } = req.body;
   const categoryId = parseInt(id, 10);
 
   if (isNaN(categoryId)) {
@@ -238,7 +239,7 @@ async function handlePut(req, res, session, tenantId) {
     const result = await prisma.$transaction(async (prisma) => {
       const updatedCategory = await prisma.category.update({
         where: { id: categoryId },
-        data: { name, group, type, icon }
+        data: { name, group, type, icon, description }
       });
 
       return updatedCategory;

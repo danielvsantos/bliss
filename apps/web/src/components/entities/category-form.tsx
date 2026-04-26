@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +46,7 @@ const makeFullSchema = (t: (key: string) => string) =>
     type: z.string().min(1, { message: t('categoryFormPage.typeRequired') }),
     group: z.string().min(1, { message: t('categoryFormPage.groupRequired') }),
     icon: z.string().optional(),
+    description: z.string().optional(),
   });
 
 type RenameFormValues = z.infer<ReturnType<typeof makeRenameSchema>>;
@@ -187,6 +189,7 @@ function FullCategoryForm({
       type: category?.type ?? presetType ?? '',
       group: category?.group ?? '',
       icon: category?.icon ?? '',
+      description: category?.description ?? '',
     },
   });
 
@@ -229,6 +232,7 @@ function FullCategoryForm({
           type: values.type,
           group: values.group,
           icon: values.icon,
+          description: values.description?.trim() ? values.description.trim() : null,
         });
         toast({
           title: t('categoryForm.categoryUpdated'),
@@ -240,6 +244,7 @@ function FullCategoryForm({
           type: values.type,
           group: values.group,
           icon: values.icon,
+          description: values.description?.trim() ? values.description.trim() : null,
         });
         toast({
           title: t('categoryForm.categoryCreated'),
@@ -390,6 +395,32 @@ function FullCategoryForm({
               </FormControl>
               <FormDescription className="text-xs">
                 {t('categoryFormPage.iconHint')}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Description — optional human-friendly explanation shown in tooltips */}
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                {t('categoryFormPage.descriptionLabel')}{' '}
+                <span className="text-muted-foreground font-normal text-xs">{t('categoryFormPage.iconOptional')}</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={3}
+                  placeholder={t('categoryFormPage.descriptionPlaceholder')}
+                  {...field}
+                  value={field.value ?? ''}
+                />
+              </FormControl>
+              <FormDescription className="text-xs">
+                {t('categoryFormPage.descriptionHint')}
               </FormDescription>
               <FormMessage />
             </FormItem>

@@ -13,7 +13,7 @@ import { PlusIcon, SearchIcon, TagIcon, LockIcon, MoreHorizontalIcon } from 'luc
 import { CategoryForm } from '@/components/entities/category-form';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
-import { translateCategoryName, translateCategoryGroup, translateCategoryType } from '@/lib/category-i18n';
+import { translateCategoryName, translateCategoryGroup, translateCategoryType, translateCategoryDescription } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
 import { metadataKeys } from '@/hooks/use-metadata';
 import type { Category } from '@/types/api';
@@ -119,37 +119,46 @@ function CategoryRow({ category, searchQuery, onRename, onEdit, onDelete }: Cate
         {category.icon ?? <TagIcon className="h-4 w-4 text-muted-foreground" />}
       </span>
 
-      {/* Name + badges */}
-      <div className="flex flex-1 items-center gap-2 min-w-0 flex-wrap">
-        <span className="text-sm font-medium truncate">{translateCategoryName(t, category)}</span>
+      {/* Name + badges + optional description */}
+      <div className="flex flex-1 flex-col min-w-0 gap-0.5">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <span className="text-sm font-medium truncate">{translateCategoryName(t, category)}</span>
 
-        {/* Default / system lock badge */}
-        {isDefault && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* span wrapper required: Badge is not a forwardRef component, so
-                  TooltipTrigger's asChild cannot attach a ref to it directly. */}
-              <span>
-                <Badge
-                  variant="outline"
-                  className="text-[10px] font-medium px-1.5 py-0 shrink-0 bg-brand-primary/10 text-brand-primary border-brand-primary/20 cursor-default gap-1"
-                >
-                  <LockIcon className="h-2.5 w-2.5" />
-                  {t('categoriesPage.defaultBadge')}
-                </Badge>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p className="text-xs max-w-[220px]">
-                {t('categoriesPage.systemHint')}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+          {/* Default / system lock badge */}
+          {isDefault && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span wrapper required: Badge is not a forwardRef component, so
+                    TooltipTrigger's asChild cannot attach a ref to it directly. */}
+                <span>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] font-medium px-1.5 py-0 shrink-0 bg-brand-primary/10 text-brand-primary border-brand-primary/20 cursor-default gap-1"
+                  >
+                    <LockIcon className="h-2.5 w-2.5" />
+                    {t('categoriesPage.defaultBadge')}
+                  </Badge>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs max-w-[220px]">
+                  {t('categoriesPage.systemHint')}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
-        {/* Integration / processingHint badge — purely informational */}
-        {category.processingHint && (
-          <ProcessingHintBadge hint={category.processingHint} />
+          {/* Integration / processingHint badge — purely informational */}
+          {category.processingHint && (
+            <ProcessingHintBadge hint={category.processingHint} />
+          )}
+        </div>
+
+        {/* Optional description (default categories from i18n, custom from DB) */}
+        {translateCategoryDescription(t, category) && (
+          <span className="text-xs text-muted-foreground line-clamp-2">
+            {translateCategoryDescription(t, category)}
+          </span>
         )}
       </div>
 
@@ -351,7 +360,7 @@ export default function CategoriesPage() {
   } = useQuery({
     queryKey: ['categories'],
     queryFn: async () => {
-      const res = await api.getCategories();
+      const res = await api.getCategories({ limit: 1000 });
       return res.categories as Category[];
     },
   });
