@@ -622,12 +622,17 @@ const processSmartImportJob = async (job) => {
 
             const rep = entries[0];
             try {
-                // ONE classify() call per unique description
+                // ONE classify() call per unique description. Amount + currency
+                // are passed through as a disambiguation signal — the same
+                // merchant name at $5 vs $500 often belongs in different
+                // categories.
                 const result = await categorizationService.classify(
                     rep.description,
                     null, // No merchantName for CSV imports
                     tenantId,
                     reviewThreshold,
+                    null, // No Plaid hint for CSV imports
+                    { amount: rep.rowData?.amount ?? null, currency: rep.rowData?.currency ?? null },
                 );
 
                 // Apply to all rows with this description
@@ -695,6 +700,8 @@ const processSmartImportJob = async (job) => {
                             null,
                             tenantId,
                             reviewThreshold,
+                            null,
+                            { amount: entry.rowData?.amount ?? null, currency: entry.rowData?.currency ?? null },
                         );
                         const wasAutoConfirmed = applyClassificationToRowData(
                             entry.rowData, result, autoPromoteThreshold, categoryById

@@ -144,7 +144,7 @@ Transaction classification flows through tiers until one succeeds:
 1. **Exact Match** -- O(1) in-memory cache per tenant, backed by the `DescriptionMapping` table (SHA-256 hash → categoryId). Confidence: `1.0`
 2. **Vector Match (tenant)** -- pgvector cosine similarity on `TransactionEmbedding` (768-dim embeddings from the configured provider — Gemini or OpenAI). Threshold: `reviewThreshold` (default 0.70)
 3. **Vector Match (global)** -- Cross-tenant `GlobalEmbedding` table, discounted by `0.92x`
-4. **LLM** -- configured LLM provider via `services/llm/` factory (Gemini `gemini-3-flash-preview` / OpenAI `gpt-4.1-mini` / Anthropic `claude-sonnet-4-6`), temperature 0.1, confidence hard-capped at `0.85`
+4. **LLM** -- configured LLM provider via `services/llm/` factory (Gemini `gemini-3-flash-preview` / OpenAI `gpt-4.1-mini` / Anthropic `claude-sonnet-4-6`), temperature 0.1, confidence hard-capped at `0.90`. The 0.86–0.90 band is the **ABSOLUTE CERTAINTY** tier — only valid when the merchant is a globally recognized brand AND the Plaid hint matches AND the amount is typical, and is the single path that lets an LLM classification auto-promote at the default `autoPromoteThreshold` of 0.90. The model can also return `categoryId: null` (`LLM_UNKNOWN`) when no category fits with confidence ≥0.30, surfacing genuinely ambiguous transactions to manual review instead of guessing.
 
 Thresholds are per-tenant (`Tenant.autoPromoteThreshold`, `Tenant.reviewThreshold`). Config constants live in `apps/backend/src/config/classificationConfig.js` and must stay in sync with Prisma schema defaults.
 

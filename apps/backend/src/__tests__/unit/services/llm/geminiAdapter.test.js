@@ -204,8 +204,11 @@ describe('geminiAdapter', () => {
       );
     });
 
-    it('clamps confidence to the 0-0.85 range', async () => {
-      // Test clamping above 0.85 (hard cap)
+    it('clamps confidence to the 0-0.90 range', async () => {
+      // The cap was raised from 0.85 to 0.90 in Phase 2 to allow the model
+      // to enter an ABSOLUTE CERTAINTY band (0.86–0.90) when the strict
+      // triple criterion holds — recognized brand + Plaid hint match +
+      // typical amount.
       mockGenerateContent.mockResolvedValueOnce({
         response: {
           text: () => JSON.stringify({
@@ -217,7 +220,7 @@ describe('geminiAdapter', () => {
       });
 
       const high = await classifyTransaction('Uber Ride', null, MOCK_CATEGORIES);
-      expect(high.confidence).toBe(0.85);
+      expect(high.confidence).toBe(0.90);
 
       // Test clamping below 0
       mockGenerateContent.mockResolvedValueOnce({
@@ -353,6 +356,61 @@ describe('geminiAdapter', () => {
       expect(promptSent).not.toMatch(/<ignore all>/);
       expect(promptSent).not.toMatch(/\{evil\}/);
       expect(promptSent).not.toMatch(/`/);
+    });
+
+    it('forwards amount + currency into the prompt when options.amount is provided', async () => {
+      // Phase 2: amount + currency are passed as a disambiguation signal — the
+      // helper adds an `Amount: USD 4.85` line above the description block. We
+      // assert only on the line's appearance; full content of the helper is
+      // unit-tested in classificationPromptHelpers.test.js.
+      mockGenerateContent.mockResolvedValueOnce({
+        response: {
+          text: () => JSON.stringify({
+            categoryId: 1,
+            confidence: 0.82,
+            reasoning: 'coffee',
+          }),
+        },
+      });
+
+      await classifyTransaction(
+        'Starbucks #1234',
+        'Starbucks',
+        MOCK_CATEGORIES,
+        null,
+        { amount: 4.85, currency: 'USD' },
+      );
+
+      const promptSent = mockGenerateContent.mock.calls[0][0];
+      expect(promptSent).toMatch(/Amount: USD 4\.85/);
+    });
+
+    it('returns categoryId=null with confidence=0 when the LLM invokes the UNKNOWN fallback', async () => {
+      // Phase 2: the prompt now includes an explicit FALLBACK that lets the
+      // model decline genuinely ambiguous transactions instead of guessing.
+      mockGenerateContent.mockResolvedValueOnce({
+        response: {
+          text: () => JSON.stringify({
+            categoryId: null,
+            confidence: 0.0,
+            reasoning: 'Too ambiguous to classify',
+          }),
+        },
+      });
+
+      const result = await classifyTransaction(
+        'ADJUSTMENT 0021',
+        null,
+        MOCK_CATEGORIES,
+      );
+
+      expect(result).toEqual({
+        categoryId: null,
+        confidence: 0,
+        reasoning: 'Too ambiguous to classify',
+      });
+      // Helper short-circuits — no retry attempted on a valid FALLBACK response.
+      expect(mockGenerateContent).toHaveBeenCalledTimes(1);
     });
   });
 

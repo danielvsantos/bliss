@@ -239,6 +239,10 @@ async function classifyAndStageRow(plaidTx, ctx) {
             tenantId,
             reviewThreshold,
             plaidTx.category,
+            // Amount + currency improve LLM disambiguation for ambiguous merchants.
+            // Plaid stores `amount` as positive-debit; classification doesn't care
+            // about sign so the magnitude is enough.
+            { amount: plaidTx.amount, currency: plaidTx.isoCurrencyCode },
         );
         await processRowWithResult(plaidTx, result, ctx);
     } catch (classifyError) {
@@ -396,9 +400,14 @@ const startPlaidProcessorWorker = () => {
                 const rep = rows[0];
                 try {
                     // ONE classify() call per unique description — all rows in the group
-                    // share the result (the waterfall already caches via addDescriptionEntry)
+                    // share the result (the waterfall already caches via addDescriptionEntry).
+                    // Amount + currency from the representative row improve LLM
+                    // disambiguation; sharing across the group is fine because the
+                    // grouping key already locks down the description, and amount
+                    // variation within a single merchant rarely flips category.
                     const result = await categorizationService.classify(
-                        rep.name, rep.merchantName, tenantId, reviewThreshold, rep.category
+                        rep.name, rep.merchantName, tenantId, reviewThreshold, rep.category,
+                        { amount: rep.amount, currency: rep.isoCurrencyCode },
                     );
 
                     // Process immediately if:

@@ -157,12 +157,12 @@ describe('anthropicAdapter', () => {
       );
     });
 
-    it('clamps confidence to the 0-0.85 range', async () => {
+    it('clamps confidence to the 0-0.90 range', async () => {
       mockMessagesCreate.mockResolvedValueOnce(
         makeMessagesResponse('<json>{"categoryId": 2, "confidence": 1.5, "reasoning": "over"}</json>')
       );
       const high = await classifyTransaction('Uber', null, MOCK_CATEGORIES);
-      expect(high.confidence).toBe(0.85);
+      expect(high.confidence).toBe(0.90);
 
       mockMessagesCreate.mockResolvedValueOnce(
         makeMessagesResponse('<json>{"categoryId": 2, "confidence": -0.3, "reasoning": "under"}</json>')
