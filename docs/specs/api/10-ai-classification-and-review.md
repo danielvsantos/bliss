@@ -37,6 +37,7 @@ This module provides the API layer for reviewing, categorising, and promoting AI
   - `?promotionStatus` — `CLASSIFIED`, `PENDING`, `PROMOTED`, `SKIPPED`, or `ALL`
   - `?minConfidence`, `?maxConfidence` — filter by AI confidence range
   - `?categoryId` — optional integer. Filters rows to a single `suggestedCategoryId`. Used by the grouped-view to paginate within one category group without re-fetching all rows.
+  - `?uncategorized=true` — optional boolean. Filters rows to those with `suggestedCategoryId IS NULL`. Mutually exclusive with `?categoryId` (when both are sent, `?uncategorized` wins). Needed so the "Uncategorized" group in the grouped view is drillable.
   - `?page`, `?limit`
 - **Response**: `{ transactions, pagination, summary }` where `summary` contains counts across all statuses and a category breakdown:
   - `classified` — `promotionStatus = 'CLASSIFIED'` (awaiting user review)

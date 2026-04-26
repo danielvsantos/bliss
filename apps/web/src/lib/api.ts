@@ -696,7 +696,7 @@ class APIClient {
     return response.data;
   }
 
-  async getStagedImport(id: string, params?: { page?: number; limit?: number; status?: string }): Promise<StagedImportResponse> {
+  async getStagedImport(id: string, params?: { page?: number; limit?: number; status?: string; categoryId?: number; uncategorized?: boolean }): Promise<StagedImportResponse> {
     const response = await this.client.get(`/api/imports/${id}`, { params });
     return response.data;
   }
@@ -737,6 +737,8 @@ class APIClient {
     plaidItemId?: string;
     minConfidence?: number;
     maxConfidence?: number;
+    categoryId?: number;
+    uncategorized?: boolean;
   }): Promise<PlaidTransactionsResponse> {
     const response = await this.client.get('/api/plaid/transactions', { params });
     return response.data;

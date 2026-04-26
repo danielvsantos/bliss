@@ -75,13 +75,24 @@ async function handleGet(req, res, user, stagedImportId) {
     ? { status: statusValues[0] }
     : { status: { in: statusValues } };
 
-  // Optional category filter (used by grouped view to paginate within a single category)
-  const categoryIdFilter = req.query.categoryId ? parseInt(req.query.categoryId, 10) : null;
+  // Optional category filter (used by grouped view to paginate within a single category).
+  // `uncategorized=true` is mutually exclusive with `categoryId` and matches rows where
+  // suggestedCategoryId IS NULL — needed so the "Uncategorized" group is drillable.
+  const uncategorizedFilter = req.query.uncategorized === 'true';
+  const categoryIdFilter = !uncategorizedFilter && req.query.categoryId
+    ? parseInt(req.query.categoryId, 10)
+    : null;
+
+  const categoryClause = uncategorizedFilter
+    ? { suggestedCategoryId: null }
+    : categoryIdFilter
+      ? { suggestedCategoryId: categoryIdFilter }
+      : {};
 
   const rowWhere = {
     stagedImportId,
     ...statusClause,
-    ...(categoryIdFilter && { suggestedCategoryId: categoryIdFilter }),
+    ...categoryClause,
   };
 
   // Statuses that still need user action — used for the category breakdown summary.

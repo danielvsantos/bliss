@@ -62,8 +62,13 @@ export default withAuth(async function handler(req, res) {
     }
 
     // Build where clause
-    // Optional category filter (used by grouped view to paginate within a single category)
-    const categoryIdParam = req.query.categoryId ? parseInt(req.query.categoryId, 10) : null;
+    // Optional category filter (used by grouped view to paginate within a single category).
+    // `uncategorized=true` is mutually exclusive with `categoryId` and matches rows where
+    // suggestedCategoryId IS NULL — needed so the "Uncategorized" group is drillable.
+    const uncategorizedParam = req.query.uncategorized === 'true';
+    const categoryIdParam = !uncategorizedParam && req.query.categoryId
+      ? parseInt(req.query.categoryId, 10)
+      : null;
 
     const where = {
       plaidItemId: plaidItemId
@@ -84,7 +89,9 @@ export default withAuth(async function handler(req, res) {
     }
 
     // Optional category filter
-    if (categoryIdParam) {
+    if (uncategorizedParam) {
+      where.suggestedCategoryId = null;
+    } else if (categoryIdParam) {
       where.suggestedCategoryId = categoryIdParam;
     }
 
