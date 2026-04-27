@@ -31,8 +31,27 @@ A collapsible "Import Adapters" section below the file picker lists all availabl
 - **Edit**: pre-fills the form with existing adapter values.
 - **Delete**: soft-deletes the adapter (sets `isActive: false`); tenant-owned only.
 
+**Adapter form — field details:**
+
+| Field | UI control | Notes |
+|-------|-----------|-------|
+| Match Headers | Chip multi-select | Detected headers appear as removable chips. A text input with `+` button lets the user add custom header names. Each chip has an `×` to remove it. |
+| Date / Description / Amount / Debit / Credit columns | Dropdown (detected headers) or plain text input | When detected headers are available, each mapping field shows a `<Select>` populated with those headers. Falls back to `<Input>` when no headers are available (edit mode with no prior detection). |
+| Amount Strategy | Dropdown with inline descriptions | Options: **One column (positive/negative)** (`SINGLE_SIGNED`), **One column inverted (Amex-style)** (`SINGLE_SIGNED_INVERTED`), **Separate debit/credit columns** (`DEBIT_CREDIT_COLUMNS`), **Amount + type column** (`AMOUNT_WITH_TYPE`). Selecting `DEBIT_CREDIT_COLUMNS` reveals Debit Column and Credit Column fields; `AMOUNT_WITH_TYPE` reveals Debit Column and a Type Column field. |
+| Type Column | Dropdown / input | Only shown when strategy is `AMOUNT_WITH_TYPE`. |
+| Date Format | Dropdown with preset formats | Presets: Auto-detect (recommended), `DD/MM/YYYY`, `YYYY-MM-DD`, `MM/DD/YYYY`, `DD-MM-YYYY`, `YYYY/MM/DD`, `MM-DD-YYYY`, Custom (free text). Selecting "Auto-detect" stores an empty string; selecting "Custom" reveals a text input. |
+| Default Currency | Dropdown with ISO codes | Shows a placeholder option ("No default — use account currency") as a sentinel; selecting it stores an empty string. |
+| Skip Rows | Number input | Rows to skip at the top of the file (e.g., metadata lines above the header). |
+
+**Live row preview card:**
+Beneath the form fields, a **Row Preview** card shows how the first `sampleData` row (from the original file detection) will be parsed with the current column/strategy/date-format settings. Updates in real time as the user adjusts form fields. Displays four fields: Date, Description, Amount (formatted as currency), Currency. Shows a placeholder when no sample data is available (edit mode with no prior detection).
+
 **Unknown Format alert:**
-When `POST /api/imports/detect-adapter` returns no match, the "Unknown Format" alert includes a **"Create Adapter for this Format"** button. Clicking it opens the Adapter Manager with the create form pre-filled with the detected headers in the `Match Headers` field, allowing the user to define a new adapter without typing headers manually. After the adapter is saved, adapter detection automatically re-runs on the already-selected file. If it matches, the new adapter is auto-selected and a "Format matched: AdapterName" toast is shown.
+When `POST /api/imports/detect-adapter` returns `matched: false`, the "Unknown Format" alert includes:
+1. A **sample rows table** — shows up to 3 rows from `sampleData` with the detected column headers as table headings. Lets non-technical users see exactly what Bliss is reading from their file before configuring the adapter.
+2. A **"Create Adapter for this Format"** button. Clicking it opens the adapter form with the detected headers **pre-loaded as chips** in the Match Headers field and all column-mapping fields populated from those headers as `<Select>` dropdowns. The live preview card also uses the captured sample data immediately.
+
+After the adapter is saved, adapter detection automatically re-runs on the already-selected file. If it matches, the new adapter is auto-selected and a *"Format matched: AdapterName"* toast is shown.
 
 **Hooks used:** `useAdapters`, `useCreateAdapter`, `useUpdateAdapter`, `useDeleteAdapter`, `useDetectAdapter`, `useUploadSmartImport`
 

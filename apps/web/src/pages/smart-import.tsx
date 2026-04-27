@@ -57,7 +57,9 @@ import {
   useImportSeeds,
   useConfirmImportSeeds,
 } from '@/hooks/use-imports';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { cn, formatCurrency, formatDate } from '@/lib/utils';
+import { previewRow } from '@/lib/adapter-preview';
+import type { AmountStrategy } from '@/lib/adapter-preview';
 import { itemNeedsEnrichment } from '@/lib/investment-utils';
 import type { ImportAdapter, DetectAdapterResult, StagedImportRow, Account, Category, CreateAdapterRequest, SeedItem } from '@/types/api';
 import { TxDataRow } from '@/components/review/tx-data-row';
@@ -204,15 +206,20 @@ export default function SmartImportPage() {
   const [showAdapterManager, setShowAdapterManager] = useState(false);
   const [editingAdapter, setEditingAdapter] = useState<ImportAdapter | null>(null);
   const [showAdapterForm, setShowAdapterForm] = useState(false);
+  const [detectedHeaders, setDetectedHeaders] = useState<string[]>([]);
+  const [detectedSampleData, setDetectedSampleData] = useState<Record<string, unknown>[]>([]);
+  // customHeaderInput tracks the text typed into the "add custom header" input
+  const [customHeaderInput, setCustomHeaderInput] = useState('');
   const [adapterFormData, setAdapterFormData] = useState({
     name: '',
-    matchHeaders: '',
+    matchHeaders: [] as string[],
     dateColumn: '',
     descriptionColumn: '',
-    amountStrategy: 'SINGLE_SIGNED' as 'SINGLE_SIGNED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE',
+    amountStrategy: 'SINGLE_SIGNED' as AmountStrategy,
     amountColumn: '',
     debitColumn: '',
     creditColumn: '',
+    typeColumn: '',
     dateFormat: '',
     currencyDefault: '',
     skipRows: 0,
@@ -494,6 +501,8 @@ export default function SmartImportPage() {
     detectAdapter.mutate(file, {
       onSuccess: (result) => {
         setDetectionResult(result);
+        setDetectedHeaders(result.headers ?? []);
+        setDetectedSampleData((result.sampleData ?? []) as Record<string, unknown>[]);
         if (result.adapter) {
           setSelectedAdapterId(String(result.adapter.id));
         }
@@ -694,6 +703,8 @@ export default function SmartImportPage() {
     setReviewPage(1);
     setReviewFilter('all');
     setCommitResult(null);
+    setDetectedHeaders([]);
+    setDetectedSampleData([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
@@ -720,25 +731,32 @@ export default function SmartImportPage() {
     !uploadImport.isPending;
 
   // --- Adapter Manager handlers ---
-  const openCreateAdapterForm = (prefillHeaders?: string) => {
+  const openCreateAdapterForm = (headers?: string[], sampleData?: Record<string, unknown>[]) => {
     setEditingAdapter(null);
-    setAdapterFormData({ name: '', matchHeaders: prefillHeaders ?? '', dateColumn: '', descriptionColumn: '', amountStrategy: 'SINGLE_SIGNED', amountColumn: '', debitColumn: '', creditColumn: '', dateFormat: '', currencyDefault: '', skipRows: 0 });
+    setDetectedHeaders(headers ?? []);
+    setDetectedSampleData(sampleData ?? []);
+    setCustomHeaderInput('');
+    setAdapterFormData({ name: '', matchHeaders: headers ?? [], dateColumn: '', descriptionColumn: '', amountStrategy: 'SINGLE_SIGNED', amountColumn: '', debitColumn: '', creditColumn: '', typeColumn: '', dateFormat: '', currencyDefault: '', skipRows: 0 });
     setShowAdapterForm(true);
   };
 
   const openEditAdapterForm = (adapter: ImportAdapter) => {
     setEditingAdapter(adapter);
+    setDetectedHeaders([]);
+    setDetectedSampleData([]);
+    setCustomHeaderInput('');
     const sig = ((adapter as ImportAdapter & { matchSignature?: { headers?: string[] } }).matchSignature ?? {}) as { headers?: string[] };
-    const col = (adapter.columnMapping ?? {}) as { date?: string; description?: string; amount?: string; debit?: string; credit?: string; };
+    const col = (adapter.columnMapping ?? {}) as { date?: string; description?: string; amount?: string; debit?: string; credit?: string; type?: string; };
     setAdapterFormData({
       name: adapter.name,
-      matchHeaders: (sig?.headers ?? []).join(', '),
+      matchHeaders: sig?.headers ?? [],
       dateColumn: col?.date ?? '',
       descriptionColumn: col?.description ?? '',
-      amountStrategy: adapter.amountStrategy || 'SINGLE_SIGNED',
+      amountStrategy: (adapter.amountStrategy || 'SINGLE_SIGNED') as AmountStrategy,
       amountColumn: col?.amount ?? '',
       debitColumn: col?.debit ?? '',
       creditColumn: col?.credit ?? '',
+      typeColumn: col?.type ?? '',
       dateFormat: adapter.dateFormat ?? '',
       currencyDefault: adapter.currencyDefault ?? '',
       skipRows: adapter.skipRows ?? 0,
@@ -748,16 +766,20 @@ export default function SmartImportPage() {
 
   const handleSaveAdapter = () => {
     // Build a local object explicitly typed to match what createAdapter expects
+    const columnMapping: Record<string, string> = {
+      date: adapterFormData.dateColumn || '',
+      description: adapterFormData.descriptionColumn || '',
+      amount: adapterFormData.amountColumn || '',
+      debit: adapterFormData.debitColumn || '',
+      credit: adapterFormData.creditColumn || '',
+    };
+    if (adapterFormData.amountStrategy === 'AMOUNT_WITH_TYPE' && adapterFormData.typeColumn) {
+      columnMapping.type = adapterFormData.typeColumn;
+    }
     const payload: CreateAdapterRequest = {
       name: adapterFormData.name,
-      matchSignature: { headers: adapterFormData.matchHeaders.split(',').map(s => s.trim()) },
-      columnMapping: {
-        date: adapterFormData.dateColumn || '',
-        description: adapterFormData.descriptionColumn || '',
-        amount: adapterFormData.amountColumn || '',
-        debit: adapterFormData.debitColumn || '',
-        credit: adapterFormData.creditColumn || '',
-      },
+      matchSignature: { headers: adapterFormData.matchHeaders.filter(h => h.trim()) },
+      columnMapping,
       amountStrategy: adapterFormData.amountStrategy,
       dateFormat: adapterFormData.dateFormat || undefined,
       currencyDefault: adapterFormData.currencyDefault || undefined,
@@ -961,13 +983,44 @@ export default function SmartImportPage() {
                           {t('smartImport.unknownFormatDesc')}{' '}
                           <code className="text-xs">{detectionResult.headers?.join(', ')}</code>
                         </p>
+                        {/* Fix 1 — sample rows table */}
+                        {detectionResult.sampleData && detectionResult.sampleData.length > 0 && detectionResult.headers && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium">{t('smartImport.unknownFormatSamplePreview')}</p>
+                            <div className="rounded border border-destructive/20 overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    {detectionResult.headers.map((h) => (
+                                      <TableHead key={h} className="text-xs py-1 px-2 whitespace-nowrap">{h}</TableHead>
+                                    ))}
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {detectionResult.sampleData.slice(0, 3).map((row, i) => (
+                                    <TableRow key={i}>
+                                      {detectionResult.headers!.map((h) => (
+                                        <TableCell key={h} className="text-xs py-1 px-2 max-w-[160px] truncate">
+                                          {String(row[h] ?? '')}
+                                        </TableCell>
+                                      ))}
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
                           className="border-destructive/50 hover:bg-destructive/10"
                           onClick={() => {
                             setShowAdapterManager(true);
-                            openCreateAdapterForm(detectionResult.headers?.join(', '));
+                            openCreateAdapterForm(
+                              detectionResult.headers ?? [],
+                              (detectionResult.sampleData ?? []) as Record<string, unknown>[],
+                            );
                           }}
                         >
                           <Plus className="h-4 w-4 mr-2" />
@@ -1071,7 +1124,7 @@ export default function SmartImportPage() {
                     <p className="text-sm text-muted-foreground text-center py-2">{t('smartImport.noAdapters')}</p>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => openCreateAdapterForm()}>
+                <Button variant="outline" size="sm" onClick={() => openCreateAdapterForm(detectedHeaders.length ? detectedHeaders : [], detectedSampleData.length ? detectedSampleData : [])}>
                   <Plus className="h-4 w-4 mr-2" /> {t('smartImport.newAdapter')}
                 </Button>
               </CardContent>
@@ -1086,67 +1139,423 @@ export default function SmartImportPage() {
                 <DialogDescription>{t('smartImport.adapterFormDesc')}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
+
+                {/* Name */}
                 <div className="space-y-1">
                   <Label>{t('smartImport.form.name')} *</Label>
                   <Input value={adapterFormData.name} onChange={e => setAdapterFormData(p => ({ ...p, name: e.target.value }))} placeholder={t('smartImport.form.namePlaceholder')} />
                 </div>
-                <div className="space-y-1">
+
+                {/* Fix 2 — Match Header Chips */}
+                <div className="space-y-2">
                   <Label>{t('smartImport.form.matchHeaders')} *</Label>
-                  <Input value={adapterFormData.matchHeaders} onChange={e => setAdapterFormData(p => ({ ...p, matchHeaders: e.target.value }))} placeholder={t('smartImport.form.matchHeadersPlaceholder')} />
-                  <p className="text-xs text-muted-foreground">{t('smartImport.form.matchHeadersHint')}</p>
+                  {detectedHeaders.length > 0 ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">{t('smartImport.form.matchHeadersChipsHint')}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {/* All detected headers as toggleable chips */}
+                        {detectedHeaders.map((h) => {
+                          const selected = adapterFormData.matchHeaders.includes(h);
+                          return (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => setAdapterFormData(p => ({
+                                ...p,
+                                matchHeaders: selected
+                                  ? p.matchHeaders.filter(x => x !== h)
+                                  : [...p.matchHeaders, h],
+                              }))}
+                              className={cn(
+                                'text-xs px-2 py-0.5 rounded-full border transition-colors',
+                                selected
+                                  ? 'bg-positive/10 text-positive border-positive/30 font-medium'
+                                  : 'bg-muted text-muted-foreground border-transparent hover:border-muted-foreground/30',
+                              )}
+                            >
+                              {h}
+                            </button>
+                          );
+                        })}
+                        {/* Custom headers that aren't in detected list */}
+                        {adapterFormData.matchHeaders
+                          .filter(h => !detectedHeaders.includes(h))
+                          .map((h) => (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => setAdapterFormData(p => ({ ...p, matchHeaders: p.matchHeaders.filter(x => x !== h) }))}
+                              className="text-xs px-2 py-0.5 rounded-full border bg-brand-primary/10 text-brand-primary border-brand-primary/30 font-medium flex items-center gap-1"
+                            >
+                              {h} <X className="h-2.5 w-2.5" />
+                            </button>
+                          ))}
+                      </div>
+                      {/* Add custom header input */}
+                      <div className="flex gap-1.5">
+                        <Input
+                          value={customHeaderInput}
+                          onChange={e => setCustomHeaderInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && customHeaderInput.trim()) {
+                              e.preventDefault();
+                              const h = customHeaderInput.trim();
+                              if (!adapterFormData.matchHeaders.includes(h)) {
+                                setAdapterFormData(p => ({ ...p, matchHeaders: [...p.matchHeaders, h] }));
+                              }
+                              setCustomHeaderInput('');
+                            }
+                          }}
+                          placeholder={t('smartImport.form.addCustomHeader')}
+                          className="text-xs h-7"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          disabled={!customHeaderInput.trim()}
+                          onClick={() => {
+                            const h = customHeaderInput.trim();
+                            if (h && !adapterFormData.matchHeaders.includes(h)) {
+                              setAdapterFormData(p => ({ ...p, matchHeaders: [...p.matchHeaders, h] }));
+                            }
+                            setCustomHeaderInput('');
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    /* Edit flow — no detected headers, show chips for current selection + manual input */
+                    <>
+                      <p className="text-xs text-muted-foreground">{t('smartImport.form.matchHeadersHint')}</p>
+                      {adapterFormData.matchHeaders.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {adapterFormData.matchHeaders.map((h) => (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => setAdapterFormData(p => ({ ...p, matchHeaders: p.matchHeaders.filter(x => x !== h) }))}
+                              className="text-xs px-2 py-0.5 rounded-full border bg-positive/10 text-positive border-positive/30 font-medium flex items-center gap-1"
+                            >
+                              {h} <X className="h-2.5 w-2.5" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-1.5">
+                        <Input
+                          value={customHeaderInput}
+                          onChange={e => setCustomHeaderInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && customHeaderInput.trim()) {
+                              e.preventDefault();
+                              const h = customHeaderInput.trim();
+                              if (!adapterFormData.matchHeaders.includes(h)) {
+                                setAdapterFormData(p => ({ ...p, matchHeaders: [...p.matchHeaders, h] }));
+                              }
+                              setCustomHeaderInput('');
+                            }
+                          }}
+                          placeholder={t('smartImport.form.matchHeadersPlaceholder')}
+                          className="text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!customHeaderInput.trim()}
+                          onClick={() => {
+                            const h = customHeaderInput.trim();
+                            if (h && !adapterFormData.matchHeaders.includes(h)) {
+                              setAdapterFormData(p => ({ ...p, matchHeaders: [...p.matchHeaders, h] }));
+                            }
+                            setCustomHeaderInput('');
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
+
+                {/* Fix 3 — Column dropdowns */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label>{t('smartImport.form.dateColumn')} *</Label>
-                    <Input value={adapterFormData.dateColumn} onChange={e => setAdapterFormData(p => ({ ...p, dateColumn: e.target.value }))} placeholder={t('smartImport.form.dateColumnPlaceholder')} />
+                    {detectedHeaders.length > 0 ? (
+                      <Select value={adapterFormData.dateColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, dateColumn: v === '__none' ? '' : v }))}>
+                        <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.dateColumnPlaceholder')} /></SelectTrigger>
+                        <SelectContent>
+                          {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                          <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input value={adapterFormData.dateColumn} onChange={e => setAdapterFormData(p => ({ ...p, dateColumn: e.target.value }))} placeholder={t('smartImport.form.dateColumnPlaceholder')} />
+                    )}
+                    {detectedHeaders.length > 0 && adapterFormData.dateColumn === '' && (
+                      <Input
+                        value={adapterFormData.dateColumn}
+                        onChange={e => setAdapterFormData(p => ({ ...p, dateColumn: e.target.value }))}
+                        placeholder={t('smartImport.form.dateColumnPlaceholder')}
+                        className="text-xs mt-1"
+                      />
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label>{t('smartImport.form.descriptionColumn')} *</Label>
-                    <Input value={adapterFormData.descriptionColumn} onChange={e => setAdapterFormData(p => ({ ...p, descriptionColumn: e.target.value }))} placeholder={t('smartImport.form.descriptionColumnPlaceholder')} />
+                    {detectedHeaders.length > 0 ? (
+                      <Select value={adapterFormData.descriptionColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, descriptionColumn: v === '__none' ? '' : v }))}>
+                        <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.descriptionColumnPlaceholder')} /></SelectTrigger>
+                        <SelectContent>
+                          {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                          <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input value={adapterFormData.descriptionColumn} onChange={e => setAdapterFormData(p => ({ ...p, descriptionColumn: e.target.value }))} placeholder={t('smartImport.form.descriptionColumnPlaceholder')} />
+                    )}
                   </div>
                 </div>
+
+                {/* Fix 4 — Amount strategy with descriptions + SINGLE_SIGNED_INVERTED */}
                 <div className="space-y-1">
                   <Label>{t('smartImport.form.amountStrategy')} *</Label>
-                  <Select value={adapterFormData.amountStrategy} onValueChange={v => setAdapterFormData(p => ({ ...p, amountStrategy: v as 'SINGLE_SIGNED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE' }))}>
+                  <Select value={adapterFormData.amountStrategy} onValueChange={v => setAdapterFormData(p => ({ ...p, amountStrategy: v as AmountStrategy }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="SINGLE_SIGNED">{t('smartImport.form.singleSigned')}</SelectItem>
+                      <SelectItem value="SINGLE_SIGNED_INVERTED">{t('smartImport.form.singleSignedInverted')}</SelectItem>
                       <SelectItem value="DEBIT_CREDIT_COLUMNS">{t('smartImport.form.debitCredit')}</SelectItem>
                       <SelectItem value="AMOUNT_WITH_TYPE">{t('smartImport.form.amountWithType')}</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {adapterFormData.amountStrategy === 'SINGLE_SIGNED' && t('smartImport.form.singleSignedDesc')}
+                    {adapterFormData.amountStrategy === 'SINGLE_SIGNED_INVERTED' && t('smartImport.form.singleSignedInvertedDesc')}
+                    {adapterFormData.amountStrategy === 'DEBIT_CREDIT_COLUMNS' && t('smartImport.form.debitCreditDesc')}
+                    {adapterFormData.amountStrategy === 'AMOUNT_WITH_TYPE' && t('smartImport.form.amountWithTypeDesc')}
+                  </p>
                 </div>
+
+                {/* Amount column fields (depend on strategy) */}
                 {adapterFormData.amountStrategy === 'DEBIT_CREDIT_COLUMNS' ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label>{t('smartImport.form.debitColumn')} *</Label>
-                      <Input value={adapterFormData.debitColumn} onChange={e => setAdapterFormData(p => ({ ...p, debitColumn: e.target.value }))} placeholder={t('smartImport.form.debitColumnPlaceholder')} />
+                      {detectedHeaders.length > 0 ? (
+                        <Select value={adapterFormData.debitColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, debitColumn: v === '__none' ? '' : v }))}>
+                          <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.debitColumnPlaceholder')} /></SelectTrigger>
+                          <SelectContent>
+                            {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                            <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={adapterFormData.debitColumn} onChange={e => setAdapterFormData(p => ({ ...p, debitColumn: e.target.value }))} placeholder={t('smartImport.form.debitColumnPlaceholder')} />
+                      )}
                     </div>
                     <div className="space-y-1">
                       <Label>{t('smartImport.form.creditColumn')} *</Label>
-                      <Input value={adapterFormData.creditColumn} onChange={e => setAdapterFormData(p => ({ ...p, creditColumn: e.target.value }))} placeholder={t('smartImport.form.creditColumnPlaceholder')} />
+                      {detectedHeaders.length > 0 ? (
+                        <Select value={adapterFormData.creditColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, creditColumn: v === '__none' ? '' : v }))}>
+                          <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.creditColumnPlaceholder')} /></SelectTrigger>
+                          <SelectContent>
+                            {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                            <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={adapterFormData.creditColumn} onChange={e => setAdapterFormData(p => ({ ...p, creditColumn: e.target.value }))} placeholder={t('smartImport.form.creditColumnPlaceholder')} />
+                      )}
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-1">
-                    <Label>{t('smartImport.form.amountColumn')} *</Label>
-                    <Input value={adapterFormData.amountColumn} onChange={e => setAdapterFormData(p => ({ ...p, amountColumn: e.target.value }))} placeholder={t('smartImport.form.amountColumnPlaceholder')} />
+                  <div className={cn('space-y-1', adapterFormData.amountStrategy === 'AMOUNT_WITH_TYPE' && 'grid grid-cols-2 gap-3 space-y-0')}>
+                    <div className="space-y-1">
+                      <Label>{t('smartImport.form.amountColumn')} *</Label>
+                      {detectedHeaders.length > 0 ? (
+                        <Select value={adapterFormData.amountColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, amountColumn: v === '__none' ? '' : v }))}>
+                          <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.amountColumnPlaceholder')} /></SelectTrigger>
+                          <SelectContent>
+                            {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                            <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={adapterFormData.amountColumn} onChange={e => setAdapterFormData(p => ({ ...p, amountColumn: e.target.value }))} placeholder={t('smartImport.form.amountColumnPlaceholder')} />
+                      )}
+                    </div>
+                    {adapterFormData.amountStrategy === 'AMOUNT_WITH_TYPE' && (
+                      <div className="space-y-1">
+                        <Label>{t('smartImport.form.typeColumn')} *</Label>
+                        {detectedHeaders.length > 0 ? (
+                          <Select value={adapterFormData.typeColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, typeColumn: v === '__none' ? '' : v }))}>
+                            <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.typeColumnPlaceholder')} /></SelectTrigger>
+                            <SelectContent>
+                              {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                              <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input value={adapterFormData.typeColumn} onChange={e => setAdapterFormData(p => ({ ...p, typeColumn: e.target.value }))} placeholder={t('smartImport.form.typeColumnPlaceholder')} />
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Fix 5 — Date format dropdown + Fix 6 — Currency dropdown */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label>{t('smartImport.form.dateFormat')}</Label>
-                    <Input value={adapterFormData.dateFormat} onChange={e => setAdapterFormData(p => ({ ...p, dateFormat: e.target.value }))} placeholder="MM/DD/YYYY" />
+                    {(() => {
+                      const presets = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD', 'DD.MM.YYYY', 'DD-MM-YYYY'];
+                      const isCustom = adapterFormData.dateFormat !== '' && !presets.includes(adapterFormData.dateFormat);
+                      // '__auto' sentinel: Radix forbids empty-string values on SelectItem
+                      const selectVal = isCustom ? '__custom' : (adapterFormData.dateFormat === '' ? '__auto' : adapterFormData.dateFormat);
+                      const today = new Date();
+                      const pad = (n: number) => String(n).padStart(2, '0');
+                      const d = pad(today.getDate()), m = pad(today.getMonth() + 1), y = today.getFullYear();
+                      const examples: Record<string, string> = {
+                        'MM/DD/YYYY': `${m}/${d}/${y}`,
+                        'DD/MM/YYYY': `${d}/${m}/${y}`,
+                        'YYYY-MM-DD': `${y}-${m}-${d}`,
+                        'DD.MM.YYYY': `${d}.${m}.${y}`,
+                        'DD-MM-YYYY': `${d}-${m}-${y}`,
+                      };
+                      return (
+                        <>
+                          <Select
+                            value={selectVal}
+                            onValueChange={v => {
+                              if (v === '__custom') return; // keep current custom value in dateFormat
+                              // '__auto' maps to empty string (no format = auto-detect)
+                              setAdapterFormData(p => ({ ...p, dateFormat: v === '__auto' ? '' : v }));
+                            }}
+                          >
+                            <SelectTrigger className="text-xs">
+                              <SelectValue placeholder={t('smartImport.form.dateFormatAuto')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__auto" className="text-xs">{t('smartImport.form.dateFormatAuto')}</SelectItem>
+                              {presets.map(fmt => (
+                                <SelectItem key={fmt} value={fmt} className="text-xs">
+                                  {fmt} <span className="text-muted-foreground ml-1">({examples[fmt]})</span>
+                                </SelectItem>
+                              ))}
+                              <SelectItem value="__custom" className="text-xs text-muted-foreground">{t('smartImport.form.dateFormatCustom')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {isCustom && (
+                            <Input
+                              value={adapterFormData.dateFormat}
+                              onChange={e => setAdapterFormData(p => ({ ...p, dateFormat: e.target.value }))}
+                              placeholder="e.g. MM/DD/YYYY"
+                              className="text-xs mt-1"
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="space-y-1">
                     <Label>{t('smartImport.form.defaultCurrency')}</Label>
-                    <Input value={adapterFormData.currencyDefault} onChange={e => setAdapterFormData(p => ({ ...p, currencyDefault: e.target.value }))} placeholder="USD" />
+                    <Select
+                      value={adapterFormData.currencyDefault}
+                      onValueChange={v => setAdapterFormData(p => ({ ...p, currencyDefault: v === '__none' ? '' : v }))}
+                    >
+                      <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.currencyNone')} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.currencyNone')}</SelectItem>
+                        {['USD','EUR','GBP','BRL','CAD','AUD','CHF','JPY','MXN','ARS','CNY','INR','NZD','SEK','NOK','DKK','PLN','CZK','HUF'].map(c => (
+                          <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t('smartImport.form.currencyHint')}</p>
                   </div>
                 </div>
+
                 <div className="space-y-1">
                   <Label>{t('smartImport.form.skipRows')}</Label>
                   <Input type="number" min={0} value={adapterFormData.skipRows} onChange={e => setAdapterFormData(p => ({ ...p, skipRows: parseInt(e.target.value) || 0 }))} />
                 </div>
+
+                {/* Fix 7 — Live row preview */}
+                {(() => {
+                  const sampleRow = detectedSampleData[0];
+                  const hasEnoughConfig =
+                    adapterFormData.dateColumn ||
+                    adapterFormData.descriptionColumn ||
+                    adapterFormData.amountColumn ||
+                    adapterFormData.debitColumn;
+
+                  if (!sampleRow && !hasEnoughConfig) return null;
+
+                  const colMap: Record<string, string | undefined> = {
+                    date: adapterFormData.dateColumn || undefined,
+                    description: adapterFormData.descriptionColumn || undefined,
+                    amount: adapterFormData.amountColumn || undefined,
+                    debit: adapterFormData.debitColumn || undefined,
+                    credit: adapterFormData.creditColumn || undefined,
+                    type: adapterFormData.typeColumn || undefined,
+                  };
+
+                  if (!sampleRow) {
+                    return (
+                      <div className="rounded-md border bg-muted/30 p-3">
+                        <p className="text-xs font-medium mb-1">{t('smartImport.form.previewTitle')}</p>
+                        <p className="text-xs text-muted-foreground">{t('smartImport.form.previewNoData')}</p>
+                      </div>
+                    );
+                  }
+
+                  const result = previewRow(
+                    sampleRow,
+                    colMap,
+                    adapterFormData.amountStrategy,
+                    adapterFormData.dateFormat || undefined,
+                    adapterFormData.currencyDefault || undefined,
+                  );
+
+                  return (
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                      <p className="text-xs font-medium">{t('smartImport.form.previewTitle')}</p>
+                      {(!result.date && !result.description && result.amount === null) ? (
+                        <p className="text-xs text-muted-foreground">{t('smartImport.form.previewHint')}</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('smartImport.form.previewDate')}</p>
+                            <p className="text-xs font-medium">{result.date ?? '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('smartImport.form.previewCurrency')}</p>
+                            <p className="text-xs font-medium">{result.currency ?? '—'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('smartImport.form.previewDescription')}</p>
+                            <p className="text-xs font-medium truncate">{result.description ?? '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('smartImport.form.previewAmount')}</p>
+                            <p className={cn('text-xs font-medium', result.amountType === 'debit' ? 'text-negative' : result.amountType === 'credit' ? 'text-positive' : '')}>
+                              {result.amount !== null
+                                ? `${result.amountType === 'debit' ? '-' : '+'}${result.amount.toFixed(2)}`
+                                : '—'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowAdapterForm(false)}>{t('common.cancel')}</Button>
