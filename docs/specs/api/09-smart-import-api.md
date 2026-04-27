@@ -18,7 +18,10 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
 **POST** `/api/imports/adapters`
 
 - **Purpose**: Creates a new tenant-specific adapter.
-- **Body**: `{ name, description, columnMappings, dateFormat, amountStrategy, matchSignature }`
+- **Body**: `{ name, description, columnMapping, dateFormat, amountStrategy, matchSignature, currencyDefault?, skipRows? }`
+  - `amountStrategy`: one of `SINGLE_SIGNED`, `SINGLE_SIGNED_INVERTED`, `DEBIT_CREDIT_COLUMNS`, `AMOUNT_WITH_TYPE`
+  - `matchSignature`: `{ headers: string[] }` — the ordered list of column names that identify this file format
+  - `columnMapping`: `{ date, description, amount?, debit?, credit?, type?, currency? }` — maps logical fields to CSV column names. `type` is only required for `AMOUNT_WITH_TYPE` strategy.
 - **Security**: Adapter is scoped to the authenticated tenant; global adapters cannot be created via this endpoint.
 
 **PUT** `/api/imports/adapters/:id`
@@ -44,7 +47,12 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
 - **Body**: `multipart/form-data` with `file` field.
 - **Accepted file types**: `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (XLSX), `application/vnd.ms-excel` (XLS). Any other MIME type returns `400` with `{ error: "Unsupported file type..." }`.
 - **Size limit**: 10 MB maximum. Exceeding this returns `400` with `{ error: "File exceeds maximum allowed size of 10 MB" }`.
-- **Response**: `{ matchedAdapter, rawHeaders, previewRows }` — returns the best-matching adapter (if any) and raw data for manual mapping fallback.
+- **Response**: `{ matched: boolean, adapter?: ImportAdapter, confidence?: number, headers?: string[], sampleData?: Record<string, unknown>[] }`
+  - `matched` — `true` if a known adapter was identified.
+  - `adapter` — the matched adapter object (omitted when `matched: false`).
+  - `confidence` — header-intersection confidence score (omitted when `matched: false`).
+  - `headers` — the raw column names extracted from the file's first row (always present).
+  - `sampleData` — up to 3 parsed data rows as key→value maps (always present when the file is readable). ExcelJS may return numbers or booleans for non-text cells.
 - **XLSX**: Reads the first non-empty sheet unless a sheet name is specified.
 - **Header filtering**: `__EMPTY` columns (from merged cells) are excluded.
 
@@ -184,7 +192,8 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
 
 - **`StagedImport`**: Import session record. See `docs/specs/backend/09-smart-import.md` for full schema.
 - **`StagedImportRow`**: Individual staged row. See `docs/specs/backend/09-smart-import.md` for full schema.
-- **`ImportAdapter`**: Adapter definition with `matchSignature`, `columnMappings`, `amountStrategy`, `dateFormat`. Can be global (`tenantId: null`) or tenant-specific.
+- **`ImportAdapter`**: Adapter definition with `matchSignature`, `columnMapping`, `amountStrategy`, `dateFormat`, `currencyDefault`, `skipRows`. Can be global (`tenantId: null`) or tenant-specific.
+  - **Amount strategies**: `SINGLE_SIGNED` (one column, negative = debit), `SINGLE_SIGNED_INVERTED` (one column, positive = debit — used by Amex), `DEBIT_CREDIT_COLUMNS` (separate debit and credit columns), `AMOUNT_WITH_TYPE` (amount column + type indicator column).
 
 ---
 
