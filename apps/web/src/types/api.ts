@@ -344,7 +344,7 @@ export type ImportAdapter = {
   name: string;
   columnMapping: Record<string, string | string[]>;
   dateFormat?: string | null;
-  amountStrategy: 'SINGLE_SIGNED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE';
+  amountStrategy: 'SINGLE_SIGNED' | 'SINGLE_SIGNED_INVERTED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE';
   currencyDefault?: string | null;
   skipRows: number;
   tenantId?: string | null;
@@ -355,7 +355,8 @@ export type DetectAdapterResult = {
   adapter?: ImportAdapter;
   confidence?: number;
   headers?: string[];
-  sampleData?: Record<string, string>[];
+  // ExcelJS-derived rows may contain numbers/booleans — use unknown, coerce with String()
+  sampleData?: Record<string, unknown>[];
 };
 
 export type StagedImport = {
@@ -429,7 +430,7 @@ export type CreateAdapterRequest = {
   matchSignature: { headers: string[] };
   columnMapping: Record<string, string | string[]>;
   dateFormat?: string;
-  amountStrategy: 'SINGLE_SIGNED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE';
+  amountStrategy: 'SINGLE_SIGNED' | 'SINGLE_SIGNED_INVERTED' | 'DEBIT_CREDIT_COLUMNS' | 'AMOUNT_WITH_TYPE';
   currencyDefault?: string;
   skipRows?: number;
 };
