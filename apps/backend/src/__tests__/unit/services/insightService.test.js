@@ -32,6 +32,7 @@ const mockSecurityMasterFindMany = jest.fn();
 const mockInsightFindFirst = jest.fn();
 const mockInsightFindMany = jest.fn();
 const mockInsightCreateMany = jest.fn();
+const mockInsightDeleteMany = jest.fn().mockResolvedValue({ count: 0 });
 jest.mock('../../../../prisma/prisma.js', () => ({
   tenant: {
     findUnique: (...args) => mockTenantFindUnique(...args),
@@ -55,6 +56,7 @@ jest.mock('../../../../prisma/prisma.js', () => ({
     findFirst: (...args) => mockInsightFindFirst(...args),
     findMany: (...args) => mockInsightFindMany(...args),
     createMany: (...args) => mockInsightCreateMany(...args),
+    deleteMany: (...args) => mockInsightDeleteMany(...args),
   },
   $transaction: jest.fn((ops) => Promise.all(ops)),
 }));
@@ -240,9 +242,14 @@ describe('insightService (v1)', () => {
       expect(mockCheckTierCompleteness).toHaveBeenCalledWith(
         'tenant-1', 'MONTHLY', expect.any(Object),
       );
-      // The Flash model path was retired with DAILY; generateInsightContent
-      // is called with a single positional argument (the prompt).
-      expect(mockGenerateInsightContent).toHaveBeenCalledWith(expect.any(String));
+      // Phase 3: generateInsightContent now receives the structured shape
+      // { systemBlocks, userMessage, schema } so adapters can attach
+      // per-block prompt caching and forced-tool/json_schema output.
+      expect(mockGenerateInsightContent).toHaveBeenCalledWith(expect.objectContaining({
+        systemBlocks: expect.any(Array),
+        userMessage: expect.any(String),
+        schema: expect.any(Object),
+      }));
       expect(result.periodKey).toBe('2026-03');
       expect(mockInsightCreateMany).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.arrayContaining([
@@ -299,7 +306,11 @@ describe('insightService (v1)', () => {
         year: 2026, quarter: 1, periodKey: '2026-Q1',
       });
 
-      expect(mockGenerateInsightContent).toHaveBeenCalledWith(expect.any(String));
+      expect(mockGenerateInsightContent).toHaveBeenCalledWith(expect.objectContaining({
+        systemBlocks: expect.any(Array),
+        userMessage: expect.any(String),
+        schema: expect.any(Object),
+      }));
       expect(result.periodKey).toBe('2026-Q1');
     });
   });
@@ -452,7 +463,10 @@ describe('insightService (v1)', () => {
       expect(result.insights[0].category).toBe(LENS_CATEGORY_MAP.SAVINGS_RATE);
     });
 
-    it('returns empty when LLM returns an empty array', async () => {
+    it('returns skipped state when LLM returns an empty array', async () => {
+      // Phase 3: empty-array LLM responses surface as a skipped state with
+      // a user-facing reason rather than an "insights: []" payload.
+      // Frontend uses this to render "No insights for this period yet".
       setupBasicTenantData();
       completenessPasses();
       mockGenerateInsightContent.mockResolvedValue([]);
@@ -460,7 +474,8 @@ describe('insightService (v1)', () => {
       const result = await generateTieredInsights('tenant-1', 'MONTHLY', {
         year: 2026, month: 3,
       });
-      expect(result.insights).toEqual([]);
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toMatch(/No insights for this period yet/);
       expect(mockInsightCreateMany).not.toHaveBeenCalled();
     });
   });

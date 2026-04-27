@@ -52,7 +52,7 @@ A deterministic AI waterfall that learns from your behavior and gets smarter ove
 | **1. Exact Match** | In-memory cache | < 1ms | O(1) lookup against your transaction history. Instantly recognizes recurring merchants. |
 | **2. Vector Match (tenant)** | pgvector cosine search | ~10ms | Semantic matching using 768-dim embeddings (Gemini or OpenAI). Catches variations like "AMZN" vs "Amazon.com". |
 | **3. Vector Match (global)** | Cross-tenant pgvector | ~10ms | Falls back to global embeddings, discounted by 0.92x, for new tenants with sparse data. |
-| **4. LLM Fallback** | Configured LLM provider (Gemini, OpenAI, or Anthropic) | ~500ms | Full AI classification with reasoning for truly novel transactions. |
+| **4. LLM Fallback** | Configured LLM provider (Gemini, OpenAI, or Anthropic) | ~500ms | Full AI classification with reasoning for truly novel transactions. Confidence is hard-capped at 0.90, with the top band reserved for cases where merchant + Plaid hint + amount all agree. The model can decline genuinely opaque transactions instead of guessing. |
 
 Every correction feeds the loop immediately — your override updates the in-memory cache and generates a new vector embedding, so the same merchant is auto-classified next time.
 
@@ -76,7 +76,7 @@ Fifteen financial lenses organized into six categories (Spending, Income, Saving
 - **Annual Report** — Comprehensive year-in-review, triggered on January 3rd
 - **Portfolio Intelligence** — Equity-specific analysis (sector concentration, valuation risk, dividend opportunities) using `SecurityMaster` fundamentals, triggered every Monday
 
-Each tier is calendar-gated and runs a data-completeness check before generation, so partial periods never get compared to full ones. Insights are persisted additively — old batches are kept for historical context and deduplicated by `(tier, periodKey, dataHash)` so identical data never regenerates. Tiered TTL retention keeps monthlies for 2 years, quarterlies for 5 years, and annual reports forever. Dismissed state persists across regenerations, and you can manually refresh any tier for any period from the UI.
+Each tier is calendar-gated and runs a strict data-completeness check before generation, so partial periods never get compared to full ones. A deterministic pre-pass computes all financial deltas, baselines, and anomalies locally — the LLM writes prose about verified math rather than attempting to calculate numbers itself. Insights persist across runs, and you can manually refresh any tier for any period from the UI.
 
 ### The Global Ledger
 
@@ -95,6 +95,7 @@ Your personal income statement, across borders and currencies. Bliss organizes f
 - **FIFO lot tracking** — Automatic cost-basis calculation with historical FX rates per buy lot
 - **Realized & unrealized P&L** — Per-holding and aggregate, in both native and display currencies
 - **Sector and geography analysis** — Break down your equity portfolio by industry, sector, or country
+- **Fundamentals trust gate** — Stock metrics (P/E, EPS, yield) are validated during nightly refreshes. When exchange data is inconsistent or stale, Bliss hides the affected metrics from the equity page and insight prompts rather than surfacing bad numbers
 - **Debt tracking** — Model amortizing loans with interest rates, terms, and paydown schedules
 - **Manual asset support** — Track illiquid assets (real estate, private equity) with user-provided valuations
 
@@ -219,18 +220,6 @@ Claude Code loads the root file everywhere, plus the app-specific file when you'
 
 ---
 
-## Service Overview
-
-| Service | Tech | Port | Role |
-|---------|------|------|------|
-| **web** | React + Vite + shadcn/ui | 8080 | SPA frontend served by nginx (Docker) or Vite dev server |
-| **api** | Next.js | 3000 | Auth, REST API, Prisma ORM, file uploads |
-| **backend** | Express + BullMQ | 3001 | 10 async workers: AI classification, portfolio valuation, Plaid sync, analytics |
-| **postgres** | PostgreSQL 16 + pgvector | 5432 | Primary datastore with vector similarity search |
-| **redis** | Redis 7 | 6379 | Job queues (BullMQ) and caching |
-
----
-
 ## Integrations
 
 ### Required: LLM provider
@@ -257,26 +246,6 @@ Enable additional features by adding API keys. All degrade gracefully if missing
 | Error tracking | [Sentry](https://sentry.io) | `SENTRY_DSN` | Production error monitoring and performance tracing |
 
 Without the optional keys, Bliss still provides full manual transaction management, CSV import, and portfolio management with manual valuations.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, TypeScript, Vite, TanStack Query, Recharts, shadcn/ui, Tailwind CSS, Framer Motion |
-| API | Next.js, NextAuth.js, Prisma ORM |
-| Backend | Express, BullMQ, LLM adapter layer (Google Generative AI / OpenAI / Anthropic SDKs) |
-| Database | PostgreSQL 16 with pgvector extension |
-| Queue | Redis 7 via BullMQ |
-| Storage | Local filesystem (default) or Google Cloud Storage |
-| AI/ML | Provider-agnostic adapter layer: Gemini (Flash + Embedding-001), OpenAI (gpt-4.1-mini + text-embedding-3-small), Anthropic (Claude Sonnet 4.6). 768-dim vectors across all providers. |
-| Market Data | Twelve Data |
-| Currency Rates | CurrencyLayer |
-| Banking | Plaid |
-| Observability | Sentry, OpenTelemetry |
-| Testing | Jest (backend), Vitest (API + frontend), MSW, Playwright (E2E stubs) |
-| CI/CD | GitHub Actions (5 jobs), Docker Compose |
 
 ---
 

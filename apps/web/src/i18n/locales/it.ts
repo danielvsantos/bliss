@@ -104,7 +104,7 @@ const it = {
     expenses: "Spese",
     agents: "Bliss Agents",
     importAgent: "Agente di importazione",
-    insightAgent: "Agente di analisi",
+    insightAgent: "Insights AI",
     travelAgent: "Agente di viaggio",
     assetPriceUpdates: "Aggiornamento prezzi asset",
     assetsLiabilities: "Attivi e passivi",

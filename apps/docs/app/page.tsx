@@ -245,7 +245,7 @@ export default function HomePage() {
             │   └── AI Embeddings: 768-dim Vectors
             │
             └─► 3rd Party Integrations:
-                ├─► AI: Gemini LLM (Classification)
+                ├─► AI: LLM provider abstraction (Gemini / OpenAI / Anthropic)
                 ├─► Banks: Plaid (Sync + Tokens)
                 ├─► Prices: TwelveData (Real-time Stocks)
                 ├─► FX: CurrencyLayer (Historical Rates)
@@ -367,9 +367,11 @@ export default function HomePage() {
                   4-Tier Classification Engine
                 </h3>
                 <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                  A deterministic AI waterfall eradicates manual entry. Transactions cascade through an
-                  exact-match Redis cache, a pgvector similarity search, and a Gemini LLM fallback. User
-                  corrections automatically generate new vector embeddings, creating a reinforcement learning loop.
+                  A deterministic AI waterfall that gets smarter with every correction. Transactions cascade
+                  through an in-memory exact-match cache, pgvector similarity search across your own and
+                  cross-tenant embeddings, and an LLM fallback (Gemini, OpenAI, or Anthropic). Each user
+                  override updates the cache and generates a new embedding — the same merchant is auto-classified
+                  on the next sight.
                 </p>
                 <Link
                   href="/docs/guides/ai-classification"

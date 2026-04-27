@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
 const { generateInsightContent } = require('./llm');
+const { buildSystemBlocks, buildUserMessage } = require('./insightPrompts/builder');
+const { insightArraySchema } = require('./insightPrompts/schema');
 // IMPORTANT: the insights engine is a pure read consumer. It must NEVER
 // import getOrCreateCurrencyRate — that helper is a write-through cache that
 // hits CurrencyLayer and inserts rows into CurrencyRate on a miss. Only the
@@ -233,18 +235,44 @@ async function gatherAnalyticsData(tenantId, months, portfolioCurrency) {
     orderBy: [{ year: 'asc' }, { month: 'asc' }],
   });
 
+  // IMPORTANT — sign convention.
+  //
+  // Each AnalyticsCacheMonthly row stores a signed `balance = credit - debit`.
+  // For Income rows balance is positive in the typical case (deposits) but
+  // can be negative for clawbacks/reversals. For Essentials/Lifestyle/Growth
+  // rows balance is negative in the typical case (purchases) but can be
+  // positive when refunds exceed purchases for the period.
+  //
+  // The Financial Summary page (apps/web/src/lib/financial-summary.ts)
+  // computes `netSavings = sum_signed(Income + Essentials + Lifestyle +
+  // Growth)` and `savingsPercentage = netSavings / netIncome`, where each
+  // type total is the sum of its rows' SIGNED balances. A refund in
+  // Lifestyle correctly reduces total Lifestyle spend rather than adding to
+  // it.
+  //
+  // A previous version of this aggregator used `Math.abs(balance)` per row,
+  // which silently inflated expenses during refund-heavy months and
+  // inflated income during clawback months — causing the savings rate to
+  // drift away from what users see on the Financial Summary page. We mirror
+  // FS's signed math here so the two surfaces always agree.
   const monthlyData = {};
   for (const entry of analyticsData) {
     const key = `${entry.year}-${String(entry.month).padStart(2, '0')}`;
     if (!monthlyData[key]) monthlyData[key] = { income: 0, expenses: 0, groups: {} };
-    const netAmount = Math.abs(Number(entry.balance || 0));
+    const signedBalance = Number(entry.balance || 0);
 
     if (entry.type === 'Income') {
-      monthlyData[key].income += netAmount;
+      // Income balance is signed positive in the normal case; preserve sign
+      // so a clawback row reduces income totals.
+      monthlyData[key].income += signedBalance;
     } else if (['Essentials', 'Lifestyle', 'Growth'].includes(entry.type)) {
-      monthlyData[key].expenses += netAmount;
+      // Expense balance is signed negative in the normal case. Negate to
+      // accumulate expenses as a positive magnitude — but a refund-positive
+      // row contributes a negative amount, correctly reducing total expense.
+      const expenseMagnitude = -signedBalance;
+      monthlyData[key].expenses += expenseMagnitude;
       const group = entry.group || 'Other';
-      monthlyData[key].groups[group] = (monthlyData[key].groups[group] || 0) + netAmount;
+      monthlyData[key].groups[group] = (monthlyData[key].groups[group] || 0) + expenseMagnitude;
     }
   }
 
@@ -321,8 +349,13 @@ function computeIncomeAndSavings(monthlyData, sortedMonths) {
  * Gather portfolio exposure and debt data.
  */
 async function gatherPortfolioData(tenantId, portfolioCurrency, rateCache) {
+  // Cash holdings (`processingHint: 'CASH'`) are deliberately excluded from
+  // the insights pipeline. The portfolio page filters them out of the
+  // user-visible net worth (apps/web/src/pages/reports/portfolio.tsx —
+  // `group !== "Cash"`), so the LLM should reason over the same shape:
+  // investments + tangible assets + debts, no cash drift.
   const portfolioItems = await prisma.portfolioItem.findMany({
-    where: { tenantId },
+    where: { tenantId, category: { processingHint: { not: 'CASH' } } },
     include: {
       category: { select: { name: true, group: true, type: true } },
       debtTerms: true,
@@ -398,12 +431,48 @@ async function gatherPortfolioData(tenantId, portfolioCurrency, rateCache) {
  * collapses each day to a single sum across all assets and ships only
  * two values per row (date + `_sum.valueInUSD`).
  */
-async function gatherNetWorthHistory(tenantId, startDate, portfolioCurrency, rateCache) {
+async function gatherNetWorthHistory(tenantId, startDate, portfolioCurrency, rateCache, endDate = null) {
+  // `endDate` caps the upper bound at the target period's end. Without it,
+  // regenerating insights for a past period (e.g., MONTHLY for March 2026
+  // generated on April 27) would include net-worth entries from after the
+  // period being analyzed, and consumers (KEY SIGNALS' netWorthDecomposition)
+  // would surface the most recent value as "end of March" — wildly wrong if
+  // the portfolio moved meaningfully in the intervening weeks.
+  //
+  // SAMPLING: we pull only the LAST CALENDAR DAY of each month in the
+  // window. This mirrors the portfolio history table at `monthly`
+  // resolution (apps/api/pages/api/portfolio/history.js, buildSampleDates)
+  // so the values the LLM sees and reasons about match what the user sees
+  // on the portfolio page. Sending every daily entry would leave the LLM
+  // free to pick "Feb 5" as "Feb-end" — what users actually see is the
+  // Feb-28 value, so that's what we send.
+  const cap = endDate || new Date();
+  const monthEnds = [];
+  const cursor = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+  while (cursor <= cap) {
+    const lastDay = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0));
+    if (lastDay >= startDate && lastDay <= cap) monthEnds.push(lastDay);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  // If the period ends mid-month (rare for insight runs since we cap at
+  // end-of-month already, but possible for ad-hoc callers), include the
+  // cap itself as the trailing data point.
+  const capStr = cap.toISOString().split('T')[0];
+  if (!monthEnds.some((d) => d.toISOString().split('T')[0] === capStr)) {
+    monthEnds.push(cap);
+  }
+
+  if (monthEnds.length === 0) return [];
+
+  // Cash holdings are excluded from net worth in the insights pipeline —
+  // see gatherPortfolioData for the rationale. This filter mirrors what
+  // the portfolio page does on the client.
   const aggregated = await prisma.portfolioValueHistory.groupBy({
     by: ['date'],
     where: {
-      asset: { tenantId },
-      date: { gte: startDate },
+      asset: { tenantId, category: { processingHint: { not: 'CASH' } } },
+      date: { in: monthEnds },
     },
     _sum: { valueInUSD: true },
     orderBy: { date: 'asc' },
@@ -420,6 +489,90 @@ async function gatherNetWorthHistory(tenantId, startDate, portfolioCurrency, rat
       value: Math.round(convertedValue * 100) / 100,
     };
   });
+}
+
+/**
+ * Decompose net-worth change between the start and end of a TARGET PERIOD
+ * (not the full trend window) into per-CATEGORY-GROUP buckets — Real
+ * Estate, Stock, ETF, Crypto, Mortgage… — so the LLM can attribute
+ * appreciation correctly.
+ *
+ * IMPORTANT — anchor semantics. The caller passes the period boundaries
+ * directly:
+ *   MONTHLY March 2026  → periodStart = Feb 28 2026, periodEnd = Mar 31 2026
+ *   QUARTERLY Q1 2026   → periodStart = Dec 31 2025, periodEnd = Mar 31 2026
+ *   ANNUAL 2026         → periodStart = Dec 31 2025, periodEnd = Dec 31 2026
+ *
+ * A previous version used the full trend window (sixMonthsAgo /
+ * twelveMonthsAgo / threeYearsAgo) as the start anchor, which silently
+ * inflated quarterly/monthly buckets by attributing 14 months of change
+ * to a "Q1" insight. Always pass the period boundaries.
+ *
+ * Returns `[{ group, type, start, end, change, changePct }]` sorted by
+ * absolute change. Empty when either anchor has no snapshot rows.
+ */
+async function gatherNetWorthBreakdown(tenantId, periodStart, periodEnd, portfolioCurrency, rateCache) {
+  if (!(periodStart instanceof Date) || !(periodEnd instanceof Date)) return [];
+  if (periodStart >= periodEnd) return [];
+
+  // Cash holdings excluded — see gatherPortfolioData for the rationale.
+  const rows = await prisma.portfolioValueHistory.groupBy({
+    by: ['date', 'assetId'],
+    where: {
+      asset: { tenantId, category: { processingHint: { not: 'CASH' } } },
+      date: { in: [periodStart, periodEnd] },
+    },
+    _sum: { valueInUSD: true },
+  });
+
+  if (!rows.length) return [];
+
+  const assetIds = [...new Set(rows.map((r) => r.assetId))];
+  const assets = await prisma.portfolioItem.findMany({
+    where: { id: { in: assetIds } },
+    select: { id: true, category: { select: { type: true, group: true } } },
+  });
+  const categoryByAssetId = new Map(
+    assets.map((a) => [
+      a.id,
+      { type: a.category?.type || 'Other', group: a.category?.group || 'Other' },
+    ]),
+  );
+
+  const startStr = periodStart.toISOString().split('T')[0];
+  const endStr = periodEnd.toISOString().split('T')[0];
+
+  // Aggregate by (group, type) — the (group, type) pair lets us keep
+  // distinct buckets if a tenant happens to have, say, "Real Estate"
+  // both under Investments and under Asset. Each bucket is summed in
+  // portfolioCurrency at the snapshot's own date so cross-currency
+  // changes don't get smeared by today's FX rate.
+  const totals = new Map(); // key: `${group}|${type}` → { group, type, start, end }
+  for (const r of rows) {
+    const cat = categoryByAssetId.get(r.assetId) || { type: 'Other', group: 'Other' };
+    const key = `${cat.group}|${cat.type}`;
+    const usd = Number(r._sum?.valueInUSD || 0);
+    const dateStr = r.date.toISOString().split('T')[0];
+    const converted = convertAmount(usd, 'USD', portfolioCurrency, r.date, rateCache);
+    if (!totals.has(key)) totals.set(key, { group: cat.group, type: cat.type, start: 0, end: 0 });
+    const bucket = totals.get(key);
+    if (dateStr === startStr) bucket.start += converted;
+    else if (dateStr === endStr) bucket.end += converted;
+  }
+
+  const breakdown = [...totals.values()].map(({ group, type, start, end }) => ({
+    group,
+    type,
+    start: Math.round(start * 100) / 100,
+    end: Math.round(end * 100) / 100,
+    change: Math.round((end - start) * 100) / 100,
+    changePct: start !== 0 ? Math.round(((end - start) / Math.abs(start)) * 1000) / 10 : null,
+  }));
+
+  // Sort by absolute change (largest mover first) so the LLM sees what
+  // matters at the top of the list.
+  breakdown.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+  return breakdown;
 }
 
 /**
@@ -467,7 +620,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
   });
 
   const symbols = holdings.map((h) => h.symbol).filter(Boolean);
-  if (symbols.length === 0) return { holdings: [], sectorAllocation: {}, totalValue: 0 };
+  if (symbols.length === 0) return { holdings: [], sectorAllocation: {}, industryAllocation: {}, totalValue: 0 };
 
   const fundamentals = await prisma.securityMaster.findMany({
     where: { symbol: { in: symbols } },
@@ -550,15 +703,25 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
     };
   });
 
-  // Compute sector allocation using the already-converted values.
+  // Compute sector + industry allocation using the already-converted values.
+  // Industry-level breakdown lets the LLM go one layer deeper than "Technology
+  // is 47%" — e.g. "Semiconductors carry 28% of the equity book inside that."
+  // Industry rows carry their parent sector so the prompt can group them.
   const totalValue = enrichedHoldings.reduce((sum, h) => sum + Math.abs(h.currentValue), 0);
   const sectorAllocation = {};
+  const industryAllocation = {};
   for (const h of enrichedHoldings) {
     const sector = h.sector || 'Unknown';
     if (!sectorAllocation[sector]) sectorAllocation[sector] = { value: 0, count: 0, holdings: [] };
     sectorAllocation[sector].value += Math.abs(h.currentValue);
     sectorAllocation[sector].count++;
     sectorAllocation[sector].holdings.push(h.symbol);
+
+    const industry = h.industry || sector;
+    if (!industryAllocation[industry]) industryAllocation[industry] = { value: 0, count: 0, sector, holdings: [] };
+    industryAllocation[industry].value += Math.abs(h.currentValue);
+    industryAllocation[industry].count++;
+    industryAllocation[industry].holdings.push(h.symbol);
   }
   for (const sector of Object.keys(sectorAllocation)) {
     sectorAllocation[sector].value = Math.round(sectorAllocation[sector].value * 100) / 100;
@@ -566,10 +729,17 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       ? Math.round((sectorAllocation[sector].value / totalValue) * 10000) / 100
       : 0;
   }
+  for (const industry of Object.keys(industryAllocation)) {
+    industryAllocation[industry].value = Math.round(industryAllocation[industry].value * 100) / 100;
+    industryAllocation[industry].percent = totalValue > 0
+      ? Math.round((industryAllocation[industry].value / totalValue) * 10000) / 100
+      : 0;
+  }
 
   return {
     holdings: enrichedHoldings,
     sectorAllocation,
+    industryAllocation,
     totalValue: Math.round(totalValue * 100) / 100,
   };
 }
@@ -587,11 +757,16 @@ async function gatherMonthlyData(tenantId, year, month, comparisonAvailable) {
   // this, every convertAmount() call is an in-memory cache lookup with
   // zero DB roundtrips and zero external API calls.
   const sixMonthsAgo = new Date(year, month - 7, 1);
+  // End of the target month (last second of the last day). Caps both the
+  // currency-rate prefetch and the netWorthHistory window so a
+  // re-generation of an old period is not contaminated by data from after
+  // that period closed.
+  const endOfTargetMonth = new Date(year, month, 0, 23, 59, 59, 999);
   await prefetchRatesForTier({
     tenantId,
     portfolioCurrency: ctx.portfolioCurrency,
     startDate: sixMonthsAgo,
-    endDate: new Date(),
+    endDate: endOfTargetMonth,
     rateCache: ctx.rateCache,
   });
 
@@ -621,8 +796,15 @@ async function gatherMonthlyData(tenantId, year, month, comparisonAvailable) {
   // Portfolio + debt
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
-  // Net worth (6 months back — same window we pre-fetched above)
-  const netWorthHistory = await gatherNetWorthHistory(tenantId, sixMonthsAgo, ctx.portfolioCurrency, ctx.rateCache);
+  // Net worth (6 months back, capped at end of the target month — see
+  // gatherNetWorthHistory's `endDate` param for why this cap matters).
+  const netWorthHistory = await gatherNetWorthHistory(tenantId, sixMonthsAgo, ctx.portfolioCurrency, ctx.rateCache, endOfTargetMonth);
+  // Net-worth breakdown is anchored to the TARGET PERIOD boundaries
+  // (prior-month-end → target-month-end), NOT the trend-window start. See
+  // gatherNetWorthBreakdown's docstring.
+  const priorMonthEndUTC = new Date(Date.UTC(year, month - 1, 0));
+  const targetMonthEndUTC = new Date(Date.UTC(year, month, 0));
+  const netWorthBreakdown = await gatherNetWorthBreakdown(tenantId, priorMonthEndUTC, targetMonthEndUTC, ctx.portfolioCurrency, ctx.rateCache);
 
   // Same month last year data for comparison
   const yoyKey = `${year - 1}-${String(month).padStart(2, '0')}`;
@@ -640,6 +822,7 @@ async function gatherMonthlyData(tenantId, year, month, comparisonAvailable) {
     savingsHistory,
     ...portfolio,
     netWorthHistory,
+    netWorthBreakdown,
     hasTransactions: analytics.hasTransactions,
     comparisonAvailable,
     yearOverYear: yoyData ? {
@@ -658,14 +841,18 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
   const ctx = await getTenantContext(tenantId);
 
   // Prefetch rates up front — covers the full 12-month net-worth window
-  // that gatherNetWorthHistory will read below.
+  // that gatherNetWorthHistory will read below. End is capped at the last
+  // day of the target quarter so a re-generation of an old quarter doesn't
+  // pull data from after that quarter closed.
   const firstTargetMonth = getQuarterMonths(quarter)[0];
+  const lastTargetMonth = getQuarterMonths(quarter)[2];
   const twelveMonthsAgo = new Date(year, firstTargetMonth - 13, 1);
+  const endOfTargetQuarter = new Date(year, lastTargetMonth, 0, 23, 59, 59, 999);
   await prefetchRatesForTier({
     tenantId,
     portfolioCurrency: ctx.portfolioCurrency,
     startDate: twelveMonthsAgo,
-    endDate: new Date(),
+    endDate: endOfTargetQuarter,
     rateCache: ctx.rateCache,
   });
 
@@ -712,8 +899,12 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
   const { incomeHistory, savingsHistory } = computeIncomeAndSavings(analytics.monthlyData, analytics.sortedMonths);
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
-  // Net worth (12 months back — same window we pre-fetched above)
-  const netWorthHistory = await gatherNetWorthHistory(tenantId, twelveMonthsAgo, ctx.portfolioCurrency, ctx.rateCache);
+  // Net worth (12 months back, capped at end of the target quarter).
+  const netWorthHistory = await gatherNetWorthHistory(tenantId, twelveMonthsAgo, ctx.portfolioCurrency, ctx.rateCache, endOfTargetQuarter);
+  // Breakdown anchors: prior-quarter-end → target-quarter-end.
+  const priorQuarterEndUTC = new Date(Date.UTC(year, firstTargetMonth - 1, 0));
+  const targetQuarterEndUTC = new Date(Date.UTC(year, lastTargetMonth, 0));
+  const netWorthBreakdown = await gatherNetWorthBreakdown(tenantId, priorQuarterEndUTC, targetQuarterEndUTC, ctx.portfolioCurrency, ctx.rateCache);
 
   return {
     tier: 'QUARTERLY',
@@ -727,6 +918,7 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
     savingsHistory,
     ...portfolio,
     netWorthHistory,
+    netWorthBreakdown,
     hasTransactions: analytics.hasTransactions,
     comparisonAvailable,
   };
@@ -741,12 +933,15 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
 
   // Prefetch rates up front — covers the full 3-year net-worth window
   // that gatherNetWorthHistory reads below, plus all intermediate months.
+  // End is capped at the last day of the target year so a re-generation of
+  // an old annual report doesn't pull data from after that year closed.
   const threeYearsAgo = new Date(year - 2, 0, 1);
+  const endOfTargetYear = new Date(year, 12, 0, 23, 59, 59, 999);
   await prefetchRatesForTier({
     tenantId,
     portfolioCurrency: ctx.portfolioCurrency,
     startDate: threeYearsAgo,
-    endDate: new Date(),
+    endDate: endOfTargetYear,
     rateCache: ctx.rateCache,
   });
 
@@ -787,8 +982,12 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
   const { incomeHistory, savingsHistory } = computeIncomeAndSavings(analytics.monthlyData, analytics.sortedMonths);
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
 
-  // Net worth (3 years back — same window we pre-fetched above)
-  const netWorthHistory = await gatherNetWorthHistory(tenantId, threeYearsAgo, ctx.portfolioCurrency, ctx.rateCache);
+  // Net worth (3 years back, capped at end of the target year).
+  const netWorthHistory = await gatherNetWorthHistory(tenantId, threeYearsAgo, ctx.portfolioCurrency, ctx.rateCache, endOfTargetYear);
+  // Breakdown anchors: prior-year-end → target-year-end.
+  const priorYearEndUTC = new Date(Date.UTC(year, 0, 0));
+  const targetYearEndUTC = new Date(Date.UTC(year, 12, 0));
+  const netWorthBreakdown = await gatherNetWorthBreakdown(tenantId, priorYearEndUTC, targetYearEndUTC, ctx.portfolioCurrency, ctx.rateCache);
 
   return {
     tier: 'ANNUAL',
@@ -801,6 +1000,7 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
     savingsHistory,
     ...portfolio,
     netWorthHistory,
+    netWorthBreakdown,
     hasTransactions: analytics.hasTransactions,
     comparisonAvailable,
   };
@@ -810,6 +1010,50 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
  * Gather data for Portfolio Intelligence tier.
  * Current holdings + SecurityMaster fundamentals.
  */
+/**
+ * Sum the user's "Passive Income" category over the last N months from
+ * AnalyticsCacheMonthly. Returns null when the user has no such category or
+ * no rows yet — the caller should treat that as "skip this signal" rather
+ * than "$0 reported."
+ *
+ * The DIVIDEND_OPPORTUNITY lens uses this to anchor on actual realised
+ * income (rent, dividends, interest) instead of a projection from yields,
+ * which is more credible to the user reading the insight.
+ */
+async function gatherPassiveIncomeRecent(tenantId, portfolioCurrency, monthsBack = 3) {
+  const today = new Date();
+  const months = [];
+  for (let i = 0; i < monthsBack; i += 1) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+  }
+
+  const rows = await prisma.analyticsCacheMonthly.findMany({
+    where: {
+      tenantId,
+      currency: portfolioCurrency,
+      type: 'Income',
+      group: 'Passive Income',
+      OR: months.map(({ year, month }) => ({ year, month })),
+    },
+    select: { year: true, month: true, balance: true },
+  });
+
+  if (rows.length === 0) return null;
+
+  const total = rows.reduce((s, r) => s + Number(r.balance || 0), 0);
+  return {
+    monthsCovered: monthsBack,
+    total: Math.round(total * 100) / 100,
+    monthly: rows
+      .map((r) => ({
+        period: `${r.year}-${String(r.month).padStart(2, '0')}`,
+        amount: Math.round(Number(r.balance || 0) * 100) / 100,
+      }))
+      .sort((a, b) => a.period.localeCompare(b.period)),
+  };
+}
+
 async function gatherPortfolioIntelligenceData(tenantId) {
   const ctx = await getTenantContext(tenantId);
 
@@ -829,6 +1073,7 @@ async function gatherPortfolioIntelligenceData(tenantId) {
 
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
   const equityData = await gatherEquityFundamentals(tenantId, ctx.portfolioCurrency, ctx.rateCache);
+  const passiveIncomeRecent = await gatherPassiveIncomeRecent(tenantId, ctx.portfolioCurrency, 3);
 
   return {
     tier: 'PORTFOLIO',
@@ -836,142 +1081,24 @@ async function gatherPortfolioIntelligenceData(tenantId) {
     ...portfolio,
     equityHoldings: equityData.holdings,
     sectorAllocation: equityData.sectorAllocation,
+    industryAllocation: equityData.industryAllocation,
     totalEquityValue: equityData.totalValue,
+    passiveIncomeRecent,
     hasPortfolio: portfolio.hasPortfolio,
   };
 }
 
-// ─── Prompt Templates ────────────────────────────────────────────────────────
-
-function getBaseVoiceRules(symbol, currency) {
-  return `CURRENCY:
-- The user's portfolio currency is ${currency}. All monetary values are in ${currency}.
-- Always format amounts with ${symbol} for ${currency}.
-
-VOICE RULES:
-- Write as a sophisticated financial concierge who has been quietly watching.
-- Never use exclamation points. Never say "Great news!" or "Watch out!"
-- Open with the observation itself, not preamble.
-- Use precise numbers. "${symbol}847" not "increased significantly."
-- Never give explicit financial advice. Observe, contextualize, let the user decide.
-
-SEVERITY GUIDE:
-- POSITIVE: A favorable trend (savings up, debt declining, income stable)
-- INFO: A neutral observation worth noting (spending shift, new category)
-- WARNING: Something deserving attention (single category >40% of spend, savings declining 3+ months)
-- CRITICAL: A pattern that could cause financial stress if unchecked (expenses > income, debt climbing)`;
-}
-
-function getActionTypeInstructions() {
-  return `ACTION TYPES (assign 1-2 per insight in metadata.actionTypes):
-${VALID_ACTION_TYPES.map((t) => `- ${t}`).join('\n')}
-
-RELATED LENSES (in metadata.relatedLenses, list other lenses that tell a connected story):
-For example, if spending velocity is high AND savings rate is dropping, link them.
-
-SUGGESTED ACTION (in metadata.suggestedAction):
-A single sentence suggesting what the user might consider. Frame as an option, not advice.
-Example: "Consider reviewing your dining budget based on the 3-month average."`;
-}
-
-const PROMPT_TEMPLATES = {
-  MONTHLY: (symbol, currency) => `You are Bliss, a financial intelligence system producing a MONTHLY REVIEW.
-Analyze the completed month comprehensively. Compare to prior month and same month last year when available.
-
-${getBaseVoiceRules(symbol, currency)}
-
-MONTHLY REVIEW RULES:
-- Produce exactly one insight per lens provided.
-- Each insight: 2-4 sentences with specific numbers.
-- Title: 8 words max.
-- When year-over-year data is available, always reference it for seasonal context.
-- When comparison data is unavailable, note "No prior comparison available" and focus on the month's standalone metrics.
-
-${getActionTypeInstructions()}
-
-Return a JSON array where each insight has:
-{ "lens", "title" (8 words max), "body" (2-4 sentences), "severity", "priority" (1-100), "category", "metadata": { "dataPoints": {...}, "actionTypes": [...], "relatedLenses": [...], "suggestedAction": "..." } }`,
-
-  QUARTERLY: (symbol, currency) => `You are Bliss, a financial intelligence system producing a QUARTERLY DEEP DIVE.
-This is a strategic analysis. Look for trends, seasonal patterns, and emerging trajectories across 3 months.
-
-${getBaseVoiceRules(symbol, currency)}
-
-QUARTERLY DEEP DIVE RULES:
-- Produce 1-2 insights per lens provided (more depth is allowed for quarterly).
-- Each insight: 3-5 sentences. Connect dots across months. Identify emerging patterns.
-- Title: 10 words max.
-- Compare to prior quarter AND same quarter last year when available.
-- Highlight seasonal patterns explicitly ("Q1 traditionally shows..." when data supports it).
-- For debt: project payoff timelines at current payment rate.
-- For savings: identify the trend direction over the quarter.
-
-${getActionTypeInstructions()}
-
-Return a JSON array where each insight has:
-{ "lens", "title" (10 words max), "body" (3-5 sentences), "severity", "priority" (1-100), "category", "metadata": { "dataPoints": {...}, "actionTypes": [...], "relatedLenses": [...], "suggestedAction": "..." } }`,
-
-  ANNUAL: (symbol, currency) => `You are Bliss, a financial intelligence system producing an ANNUAL REPORT.
-This is the most comprehensive analysis — a year-in-review. Think big-picture trends, milestones, and trajectory.
-
-${getBaseVoiceRules(symbol, currency)}
-
-ANNUAL REPORT RULES:
-- Produce 2-3 insights per CATEGORY (not per lens). Group related lenses into cohesive narratives.
-- Each insight: 4-6 sentences. Year-in-review narrative style.
-- Title: 12 words max.
-- Compare to prior year(s) when available. Highlight year-over-year shifts.
-- Celebrate milestones (net worth crossing thresholds, debt payoff progress, savings rate improvements).
-- Identify the single biggest positive and negative financial event of the year.
-- For portfolio: reference total return, not just current value.
-
-${getActionTypeInstructions()}
-
-Return a JSON array where each insight has:
-{ "lens", "title" (12 words max), "body" (4-6 sentences), "severity", "priority" (1-100), "category", "metadata": { "dataPoints": {...}, "actionTypes": [...], "relatedLenses": [...], "suggestedAction": "..." } }`,
-
-  PORTFOLIO: (symbol, currency) => `You are Bliss, a financial intelligence system producing PORTFOLIO INTELLIGENCE.
-Analyze equity holdings using fundamental data. Think like an investment analyst reviewing a personal portfolio.
-
-${getBaseVoiceRules(symbol, currency)}
-
-PORTFOLIO INTELLIGENCE RULES:
-- Produce exactly one insight per lens provided.
-- Each insight: 2-4 sentences referencing specific fundamentals (P/E, yield, EPS, 52W range).
-- Title: 8 words max.
-- SECTOR_CONCENTRATION: Flag if any sector exceeds 40% allocation. Reference diversification.
-- VALUATION_RISK: Compare P/E ratios to reasonable ranges (15-25 for growth, 10-18 for value). Flag outliers.
-- DIVIDEND_OPPORTUNITY: Highlight meaningful yields (>2%) and any recent yield changes.
-- PORTFOLIO_EXPOSURE: Identify top 3 holdings by weight. Flag if top holding exceeds 25%.
-- Never recommend specific trades. Observe allocation, valuation, and yield.
-
-${getActionTypeInstructions()}
-
-Return a JSON array where each insight has:
-{ "lens", "title" (8 words max), "body" (2-4 sentences), "severity", "priority" (1-100), "category", "metadata": { "dataPoints": {...}, "actionTypes": [...], "relatedLenses": [...], "suggestedAction": "..." } }`,
-};
-
 // ─── Prompt Builder ──────────────────────────────────────────────────────────
+//
+// Prompt content (L1 identity, L2 tier, L3 lens rubrics, L4 few-shot
+// examples) and pre-computed signals live in `services/insightPrompts/`.
+// `buildTieredPrompt` is preserved as a thin compatibility shim for older
+// tests; the live path uses the structured builder + adapter contract.
 
 function buildTieredPrompt(tier, tenantData, activeLenses) {
-  const symbol = CURRENCY_SYMBOLS[tenantData.portfolioCurrency] || tenantData.portfolioCurrency;
-  const systemPrompt = PROMPT_TEMPLATES[tier](symbol, tenantData.portfolioCurrency);
-
-  // Build data section - exclude internal fields
-  const { tier: _t, hasTransactions, hasPortfolio, hasDebt, comparisonAvailable, ...dataForPrompt } = tenantData;
-
-  const dataSection = JSON.stringify(dataForPrompt, null, 2);
-
-  return `${systemPrompt}
-
-ACTIVE LENSES (produce insights for these lenses):
-${activeLenses.join(', ')}
-
-COMPARISON DATA AVAILABILITY:
-${JSON.stringify(comparisonAvailable || {}, null, 2)}
-
-FINANCIAL DATA:
-${dataSection}`;
+  const systemBlocks = buildSystemBlocks(tier, activeLenses);
+  const userMessage = buildUserMessage(tier, tenantData, activeLenses);
+  return `${systemBlocks.map((b) => b.text).join('\n\n')}\n\n${userMessage}`;
 }
 
 // ─── Filter Active Lenses ────────────────────────────────────────────────────
@@ -1024,7 +1151,10 @@ function computeExpiresAt(tier) {
  * they actually describe.
  */
 function derivePeriodKey(tier, params) {
-  if (params.periodKey) return params.periodKey;
+  // The Insight.periodKey column is a String. Always coerce to String so
+  // an upstream caller passing a number (e.g. an integer year for ANNUAL)
+  // doesn't break the dedup query with a Prisma type validation error.
+  if (params.periodKey != null && params.periodKey !== '') return String(params.periodKey);
   const { year, month, quarter } = params;
   if (tier === 'MONTHLY' && year && month) {
     return `${year}-${String(month).padStart(2, '0')}`;
@@ -1037,7 +1167,7 @@ function derivePeriodKey(tier, params) {
   }
   // PORTFOLIO (current-state tier) and any tier called with no period args:
   // the ISO-week / current-period derivation from `new Date()` is correct.
-  return getPeriodKey(tier, new Date());
+  return String(getPeriodKey(tier, new Date()));
 }
 
 /**
@@ -1114,13 +1244,55 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
     return { skipped: true, reason: 'No active lenses' };
   }
 
-  // 5. Build prompt and call LLM
-  const prompt = buildTieredPrompt(tier, tenantData, activeLenses);
-  const rawInsights = await generateInsightContent(prompt);
+  // 5. Build prompt and call LLM via the structured contract — system blocks
+  //    (L1+L2+L3+L4, each cacheable) plus the user message (KEY SIGNALS +
+  //    FINANCIAL DATA + active-lens list). The schema is enforced provider-
+  //    side via Anthropic forced tool-use / OpenAI strict json_schema /
+  //    Gemini responseSchema, so the adapter returns a parsed array directly.
+  const systemBlocks = buildSystemBlocks(tier, activeLenses);
+  const userMessage = buildUserMessage(tier, tenantData, activeLenses);
+
+  // Diagnostic logging: surface the values reaching the LLM so a misaligned
+  // KEY SIGNALS payload (e.g., a net-worth figure that doesn't match the
+  // portfolio holdings page) is visible in the logs without re-running.
+  // Truncated/sampled to keep log volume reasonable on every run.
+  const systemBlockSizes = systemBlocks.map((b) => ({ kind: b.kind, chars: b.text.length }));
+  const userMessageChars = userMessage.length;
+  const netWorthSample = Array.isArray(tenantData.netWorthHistory) && tenantData.netWorthHistory.length > 0
+    ? {
+        entries: tenantData.netWorthHistory.length,
+        first: tenantData.netWorthHistory[0],
+        last: tenantData.netWorthHistory[tenantData.netWorthHistory.length - 1],
+      }
+    : null;
+  logger.info('Insight LLM call about to fire', {
+    tenantId, tier, periodKey, activeLenses,
+    systemBlockSizes, userMessageChars,
+    netWorthSample,
+    portfolioCurrency: tenantData.portfolioCurrency,
+    targetPeriod: tenantData.targetPeriod,
+  });
+
+  const llmStart = Date.now();
+  const rawInsights = await generateInsightContent({
+    systemBlocks,
+    userMessage,
+    schema: insightArraySchema,
+  });
+  logger.info('Insight LLM call returned', {
+    tenantId, tier, periodKey,
+    durationMs: Date.now() - llmStart,
+    insightsReturned: Array.isArray(rawInsights) ? rawInsights.length : 0,
+    lensesReturned: Array.isArray(rawInsights) ? rawInsights.map((i) => i?.lens).filter(Boolean) : [],
+  });
 
   if (!Array.isArray(rawInsights) || rawInsights.length === 0) {
+    // Surface this as a "skipped" outcome the same way completeness gates
+    // and dedup do — the worker hands the same shape back to the API and
+    // the frontend renders the "No insights for this period yet — try
+    // regenerating in a few minutes" empty state.
     logger.warn('LLM returned no insights:', { tenantId, tier });
-    return { insights: [], reason: 'LLM returned empty response' };
+    return { skipped: true, reason: 'No insights for this period yet — try regenerating in a few minutes' };
   }
 
   // 6. Validate, enrich, and store (additive — no deletion)
@@ -1163,7 +1335,7 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
 
   if (insightRecords.length === 0) {
     logger.warn('No valid insights after validation:', { tenantId, tier });
-    return { insights: [], reason: 'All insights failed validation' };
+    return { skipped: true, reason: 'No insights for this period yet — try regenerating in a few minutes' };
   }
 
   // Preserve dismissed state: check if any previous insights for same lens+periodKey were dismissed
@@ -1185,7 +1357,27 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
     }
   }
 
-  // Additive insert (no deletion of old batches)
+  // When the user explicitly forced a regeneration, replace the previous
+  // batch for this (tenantId, tier, periodKey) instead of layering a second
+  // batch on top. The user's intent on "Regenerate" is a fresh take, not
+  // historical archaeology — and a layered list of 8 stale + 8 fresh
+  // insights for the same March is confusing.
+  //
+  // The cron path (force = false) keeps additive behavior so historical
+  // batches accumulate cleanly across the year.
+  let deletedPrevious = 0;
+  if (force) {
+    const deletion = await prisma.insight.deleteMany({
+      where: { tenantId, tier, periodKey },
+    });
+    deletedPrevious = deletion.count;
+    if (deletedPrevious > 0) {
+      logger.info('Force regenerate: cleared previous batch(es) for this period', {
+        tenantId, tier, periodKey, deletedPrevious,
+      });
+    }
+  }
+
   await prisma.insight.createMany({ data: insightRecords });
 
   logger.info('Tiered insight generation complete:', {
@@ -1195,9 +1387,11 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
     periodKey,
     insightCount: insightRecords.length,
     lenses: insightRecords.map((i) => i.lens),
+    deletedPrevious,
+    forceRegenerate: !!force,
   });
 
-  return { insights: insightRecords, batchId, periodKey };
+  return { insights: insightRecords, batchId, periodKey, deletedPrevious };
 }
 
 /**
@@ -1262,6 +1456,7 @@ module.exports = {
   gatherAnnualData,
   gatherPortfolioIntelligenceData,
   gatherEquityFundamentals,
+  gatherPassiveIncomeRecent,
   buildTieredPrompt,
   filterActiveLenses,
   TIER_LENSES,

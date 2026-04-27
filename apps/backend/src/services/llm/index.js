@@ -86,9 +86,35 @@ function resolveAdapters() {
   const primaryAdapter = loadAdapter(primary);
   const embeddingAdapter = embedding === primary ? primaryAdapter : loadAdapter(embedding);
 
+  // Log resolved models alongside the provider names. Each adapter reads
+  // CLASSIFICATION_MODEL / INSIGHT_MODEL / EMBEDDING_MODEL from the environment
+  // at module load — if a stray env var is hijacking the choice (e.g. an
+  // INSIGHT_MODEL exported in the shell or set in .env.local), this is the
+  // line that surfaces it.
+  const primaryModels = primaryAdapter.getDefaultModels?.() ?? {};
+  const embeddingModels = embeddingAdapter.getDefaultModels?.() ?? {};
   logger.info(
-    `LLM provider configured: primary=${primary}, embedding=${embedding}`
+    `LLM provider configured: primary=${primary} (classification=${primaryModels.classification}, insight=${primaryModels.insight}), embedding=${embedding} (model=${embeddingModels.embedding})`
   );
+
+  // Loud warning if the resolved primary models look like they belong to a
+  // different provider — this catches the common "INSIGHT_MODEL leaked from
+  // the shell" footgun before the API call returns a 404.
+  const expectedPrefix = { gemini: 'gemini', openai: 'gpt', anthropic: 'claude' }[primary];
+  if (expectedPrefix) {
+    if (primaryModels.classification && !primaryModels.classification.toLowerCase().startsWith(expectedPrefix)) {
+      logger.warn(
+        `CLASSIFICATION_MODEL "${primaryModels.classification}" does not match the active LLM_PROVIDER (${primary}). ` +
+        `This usually means CLASSIFICATION_MODEL is set in your shell, .env.local, or another env source.`
+      );
+    }
+    if (primaryModels.insight && !primaryModels.insight.toLowerCase().startsWith(expectedPrefix)) {
+      logger.warn(
+        `INSIGHT_MODEL "${primaryModels.insight}" does not match the active LLM_PROVIDER (${primary}). ` +
+        `This usually means INSIGHT_MODEL is set in your shell, .env.local, or another env source.`
+      );
+    }
+  }
 
   return { primary, embedding, primaryAdapter, embeddingAdapter };
 }
