@@ -1,5 +1,4 @@
 const prisma = require('../../prisma/prisma');
-const logger = require('./logger');
 
 /**
  * Find or create tags by name for a tenant.
@@ -13,7 +12,7 @@ const logger = require('./logger');
  * @param {string} userId - User ID (email) for audit logging
  * @returns {Promise<Array<{id: number, name: string}>>}
  */
-async function resolveTagsByName(tagNames, tenantId, userId) {
+async function resolveTagsByName(tagNames, tenantId, _userId) {
     if (!tagNames || !Array.isArray(tagNames) || tagNames.length === 0) {
         return [];
     }

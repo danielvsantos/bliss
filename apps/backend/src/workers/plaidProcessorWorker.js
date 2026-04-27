@@ -1,4 +1,3 @@
-const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const prisma = require('../../prisma/prisma');
 const { getRedisConnection } = require('../utils/redis');
@@ -102,7 +101,7 @@ async function checkHashDuplicate(plaidTx, result, ctx) {
 async function processRowWithResult(plaidTx, result, ctx) {
     const {
         tenantId, autoPromoteThreshold, categoryById,
-        accountByPlaidAccountId, existingByExternalId, hashSetByAccountId,
+        accountByPlaidAccountId, existingByExternalId,
         counters, feedbackCalls,
     } = ctx;
 

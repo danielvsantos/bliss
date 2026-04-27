@@ -97,7 +97,7 @@ describe('securityMasterWorker', () => {
   beforeAll(() => {
     // The worker has a sleep(MIN_MS_PER_SYMBOL) delay per symbol.
     // Override global setTimeout to resolve immediately so tests don't hang.
-    const originalSetTimeout = global.setTimeout;
+    const _originalSetTimeout = global.setTimeout;
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, _ms) => {
       if (typeof fn === 'function') fn();
       return 0;

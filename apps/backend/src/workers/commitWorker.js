@@ -319,7 +319,7 @@ const processCommitJob = async (job) => {
             }
 
             // Convenience alias used by tag-linking and embedding steps below
-            const batchRowIds = batch.map((r) => r.id);
+            const _batchRowIds = batch.map((r) => r.id);
 
             // 4e. Link tags to created transactions (CREATE rows only)
             const rowsWithTags = createRows.filter(

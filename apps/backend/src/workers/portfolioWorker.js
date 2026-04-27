@@ -8,7 +8,6 @@ const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
-const recalculatePortfolioItem = require('./portfolio-handlers/recalculate-portfolio-item');
 const processPortfolioChanges = require('./portfolio-handlers/process-portfolio-changes');
 const simpleLiabilityProcessor = require('./portfolio-handlers/simple-liability-processor');
 const processAmortizingLoan = require('./portfolio-handlers/amortizing-loan-processor');

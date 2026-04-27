@@ -1,36 +1,15 @@
-const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const { Decimal } = require('@prisma/client/runtime/library');
 const logger = require('../utils/logger');
-const { getRedisConnection } = require('../utils/redis'); // Import redisConnection
-const { ANALYTICS_QUEUE_NAME, getAnalyticsQueue } = require('../queues/analyticsQueue'); // Corrected import
-const axios = require('axios');
+const { getRedisConnection } = require('../utils/redis');
+const { ANALYTICS_QUEUE_NAME } = require('../queues/analyticsQueue');
 const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/currencyService');
-const { getCategoryMaps } = require('../utils/categoryCache'); // Import category cache
-const { enqueueEvent } = require('../queues/eventsQueue'); // Corrected import path
+const { enqueueEvent } = require('../queues/eventsQueue');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
 const prisma = require('../../prisma/prisma.js');
-
-const CURRENCYLAYER_API_KEY = process.env.CURRENCYLAYER_API_KEY;
-const CURRENCYLAYER_BASE_URL = "https://api.currencylayer.com/historical";
-
-// --- Currency Rate Helpers ---
-
-async function fetchHistoricalRate(date, currencyFrom, currencyTo) {
-  const url = `${CURRENCYLAYER_BASE_URL}?access_key=${CURRENCYLAYER_API_KEY}&date=${date}&source=${currencyFrom}&currencies=${currencyTo}`;
-  try {
-    const response = await axios.get(url);
-    const data = response.data;
-    if (!data.success || !data.quotes) return null;
-    return data.quotes[`${currencyFrom}${currencyTo}`];
-  } catch (e) {
-    logger.error(`API error for ${currencyFrom}->${currencyTo} on ${date}: ${e.message}`);
-    return null;
-  }
-}
 
 // --- Enhanced Analytics Calculation Logic ---
 

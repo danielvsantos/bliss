@@ -46,7 +46,7 @@ describe('fetchHistoricalRate()', () => {
     // with the var deleted to test this branch.
     jest.resetModules();
 
-    const originalKey = process.env.CURRENCYLAYER_API_KEY;
+    const _originalKey = process.env.CURRENCYLAYER_API_KEY;
     delete process.env.CURRENCYLAYER_API_KEY;
 
     // Re-apply mocks after resetModules

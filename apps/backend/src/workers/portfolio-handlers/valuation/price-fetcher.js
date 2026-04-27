@@ -1,4 +1,3 @@
-const { Decimal } = require('@prisma/client/runtime/library');
 const logger = require('../../../utils/logger');
 const prisma = require('../../../../prisma/prisma.js');
 const path = require('path');

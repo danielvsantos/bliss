@@ -65,7 +65,6 @@ jest.mock('../../../workers/portfolio-handlers/recalculate-portfolio-item', () =
 
 const prisma = require('../../../../prisma/prisma');
 const logger = require('../../../utils/logger');
-const Sentry = require('@sentry/node');
 const processPortfolioChanges = require('../../../workers/portfolio-handlers/process-portfolio-changes');
 const { processCashHoldings } = require('../../../workers/portfolio-handlers/cash-processor');
 const generatePortfolioValuation = require('../../../workers/portfolio-handlers/valuation/index.js');

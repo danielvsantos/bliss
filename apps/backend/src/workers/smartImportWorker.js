@@ -1,4 +1,3 @@
-const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const fs = require('fs');
 const path = require('path');
@@ -246,7 +245,7 @@ function computeUpdateDiff(csvRow, existingTx, resolvedCategoryId, categoryById)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const processSmartImportJob = async (job) => {
-    const { tenantId, userId, accountId, adapterId, fileStorageKey, stagedImportId } = job.data;
+    const { tenantId, accountId, adapterId, fileStorageKey, stagedImportId } = job.data;
 
     // Initialize storage lazily so @google-cloud/storage is only required at job
     // execution time, not at module load time (avoids startup failure when the
@@ -290,7 +289,7 @@ const processSmartImportJob = async (job) => {
         const fileContent = fileType === 'csv'
             ? fs.readFileSync(tempFilePath, 'utf8')
             : fs.readFileSync(tempFilePath);
-        const { rows: normalizedRows, hasTimeInDates } = await parseFile(fileContent, adapter, fileType);
+        const { rows: normalizedRows } = await parseFile(fileContent, adapter, fileType);
 
         if (normalizedRows.length === 0) {
             await prisma.stagedImport.update({
@@ -931,7 +930,7 @@ const processSmartImportJob = async (job) => {
         throw error;
     } finally {
         // Cleanup temp file only — GCS file preserved for retries on failure
-        try { fs.unlinkSync(tempFilePath); } catch (e) { logger.warn(`Failed to cleanup temp file: ${tempFilePath}`); }
+        try { fs.unlinkSync(tempFilePath); } catch (_e) { logger.warn(`Failed to cleanup temp file: ${tempFilePath}`); }
     }
 };
 

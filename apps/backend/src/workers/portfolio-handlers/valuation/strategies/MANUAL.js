@@ -1,7 +1,3 @@
-const { Decimal } = require('@prisma/client/runtime/library');
-const logger = require('../../../../utils/logger');
-const prisma = require('../../../../../prisma/prisma.js');
-
 const getPrice = async (portfolioItem, targetDate, priceCaches) => {
     const targetDateStr = targetDate.toISOString().split('T')[0];
     const { manualValueMap, forwardPriceCache } = priceCaches;
