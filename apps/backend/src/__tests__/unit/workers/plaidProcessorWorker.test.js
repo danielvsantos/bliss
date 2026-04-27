@@ -23,10 +23,10 @@ jest.mock('../../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
-let workerCallback;
+let _workerCallback;
 jest.mock('bullmq', () => ({
   Worker: jest.fn().mockImplementation((_queue, callback) => {
-    workerCallback = callback;
+    _workerCallback = callback;
     return { on: jest.fn(), close: jest.fn() };
   }),
 }));
@@ -108,15 +108,15 @@ jest.mock('../../../config/classificationConfig', () => ({
 
 // ─── Import ─────────────────────────────────────────────────────────────────
 
-const { normalizeDescription, buildFrequencyMap, startPlaidProcessorWorker } = require('../../../workers/plaidProcessorWorker');
+const { normalizeDescription, buildFrequencyMap } = require('../../../workers/plaidProcessorWorker');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function makeJob(name, data = {}) {
+function _makeJob(name, data = {}) {
   return { id: `test-job-${name}`, name, data };
 }
 
-function makePendingTx(overrides = {}) {
+function _makePendingTx(overrides = {}) {
   return {
     id: 1,
     name: 'Starbucks',
@@ -131,7 +131,7 @@ function makePendingTx(overrides = {}) {
   };
 }
 
-function setupWorkerContext() {
+function _setupWorkerContext() {
   mockPlaidItemFindUnique.mockResolvedValue({ tenantId: 'tenant-1' });
   mockTenantFindUnique.mockResolvedValue({ autoPromoteThreshold: 0.90, reviewThreshold: 0.70 });
   mockGetCategoriesForTenant.mockResolvedValue([

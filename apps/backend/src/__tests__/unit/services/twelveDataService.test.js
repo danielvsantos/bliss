@@ -6,9 +6,6 @@ jest.mock('../../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
-const axios = require('axios');
-const { Decimal } = require('@prisma/client/runtime/library');
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('twelveDataService', () => {

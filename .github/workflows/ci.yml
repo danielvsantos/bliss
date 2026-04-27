@@ -237,10 +237,10 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Lint: ESLint across web and api (no infrastructure needed)
-  # apps/web uses --max-warnings 0 so any warning fails the job.
+  # apps/web and apps/backend use --max-warnings 0 so any warning fails the job.
   # ─────────────────────────────────────────────────────────────────────────────
   lint:
-    name: Lint — Web & API
+    name: Lint — Web, API & Backend
     runs-on: ubuntu-latest
 
     steps:
@@ -266,6 +266,9 @@ jobs:
 
       - name: Lint API
         run: pnpm --filter @bliss/api lint
+
+      - name: Lint backend
+        run: pnpm --filter @bliss/backend lint
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Docker: Build & Smoke Test

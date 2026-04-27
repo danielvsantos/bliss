@@ -136,14 +136,6 @@ async function checkMonthCompleteness(tenantId, year, month) {
     return sum + Math.abs(Number(r.credit || 0)) + Math.abs(Number(r.debit || 0));
   }, 0);
 
-  // For completeness, also check actual transaction count in the month
-  const txCount = await prisma.transaction.count({
-    where: {
-      tenantId,
-      date: { gte: start, lte: end },
-    },
-  });
-
   // Count distinct transaction days
   const distinctDays = await prisma.transaction.groupBy({
     by: ['date'],

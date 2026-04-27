@@ -16,11 +16,6 @@ const IMPORT_THROTTLE_MS = Math.ceil(60_000 / 70);          // ~857ms per import
 const VALUATION_THROTTLE_MS = Math.ceil(60_000 / 300);      // ~200ms per valuation slot
 const FUNDAMENTALS_THROTTLE_MS = Math.ceil(60_000 / 30);    // ~2000ms per fundamentals slot
 
-/** Redact the apikey query param from URLs before logging. */
-function sanitizeUrl(url) {
-    return url.replace(/apikey=[^&]+/gi, 'apikey=***');
-}
-
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**

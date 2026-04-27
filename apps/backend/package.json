@@ -12,7 +12,7 @@
     "test:integration": "jest --testPathPatterns=integration",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings 0",
     "knip": "knip",
     "prisma:generate": "prisma generate --schema=../../prisma/schema.prisma",
     "prisma:migrate": "prisma migrate deploy --schema=../../prisma/schema.prisma",

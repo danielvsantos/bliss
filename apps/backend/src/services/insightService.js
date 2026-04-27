@@ -84,11 +84,6 @@ const TIER_TTL_DAYS = {
 
 // ─── Currency Helpers ─────────────────────────────────────────────────────────
 
-const CURRENCY_SYMBOLS = {
-  USD: '$', EUR: '€', GBP: '£', BRL: 'R$', JPY: '¥', CNY: '¥',
-  AUD: 'A$', CAD: 'C$', CHF: 'CHF', INR: '₹', KRW: '₩', MXN: 'MX$',
-};
-
 /**
  * Resolve a currency rate from the job-local cache. Pure function — never
  * queries the DB, never calls external APIs. The cache must have been
@@ -1409,7 +1404,7 @@ async function generateAllDueTiers(tenantId) {
   // Monthly: check if yesterday was the last day of a month
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  const lastDayOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+  const _lastDayOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
   if (now.getDate() <= 3) {
     // We're in the first 3 days of a new month — generate monthly for previous month
     const prevMonth = yesterday.getMonth() + 1;

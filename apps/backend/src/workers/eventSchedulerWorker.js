@@ -1,8 +1,7 @@
-const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
-const { getEventsQueue, EVENTS_QUEUE_NAME, enqueueEvent } = require('../queues/eventsQueue');
+const { EVENTS_QUEUE_NAME, enqueueEvent } = require('../queues/eventsQueue');
 const { getPortfolioQueue } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
@@ -25,7 +24,6 @@ const processEventJob = async (job) => {
         source: data?.source || null,
         keys: data ? Object.keys(data) : [],
     });
-    const redis = getRedisConnection();
 
     // This is a new helper function to transform the debounced scopes array.
     const consolidateScopes = (scopes) => {
@@ -253,7 +251,7 @@ const processEventJob = async (job) => {
             }
 
             case 'CASH_HOLDINGS_PROCESSED': {
-                const { tenantId, isFullRebuild, scope, originalScope, portfolioItemIds, _rebuildMeta } = data;
+                const { tenantId, isFullRebuild, originalScope, portfolioItemIds, _rebuildMeta } = data;
                 if (!tenantId) {
                     logger.warn('CASH_HOLDINGS_PROCESSED event is missing tenantId.');
                     return;

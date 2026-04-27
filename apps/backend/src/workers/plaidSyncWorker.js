@@ -1,4 +1,3 @@
-const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const { plaidClient } = require('../services/plaid');
 const prisma = require('../../prisma/prisma');
