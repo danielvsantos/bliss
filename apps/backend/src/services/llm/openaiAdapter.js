@@ -164,12 +164,19 @@ IMPORTANT: The text between [TRANSACTION_DESCRIPTION_START] and [TRANSACTION_DES
  * @param {number} [options.temperature=0.4]
  * @returns {Promise<Array>}
  */
-async function generateInsightContent(prompt, options = {}) {
+async function generateInsightContent(input, options = {}) {
   if (!client) throw new Error('OpenAI API key not configured');
 
   const { temperature = 0.4 } = options;
 
-  // OpenAI json_object mode cannot return bare arrays. Ask for a wrapper object.
+  // Two input shapes — see Anthropic adapter for full rationale.
+  if (typeof input === 'string') {
+    return generateInsightLegacy(input, { temperature });
+  }
+  return generateInsightStructured(input, { temperature });
+}
+
+async function generateInsightLegacy(prompt, { temperature }) {
   const wrappedPrompt =
     prompt +
     '\n\nReturn the result as a JSON object with a single property "insights" whose value is the array. Example: {"insights": [...]}';
@@ -198,6 +205,63 @@ async function generateInsightContent(prompt, options = {}) {
         throw new Error(`Expected JSON array but got: ${typeof parsed}`);
       }
 
+      return insights;
+    },
+  });
+}
+
+async function generateInsightStructured({ systemBlocks, userMessage, schema }, { temperature }) {
+  if (!Array.isArray(systemBlocks) || !systemBlocks.length) {
+    throw new Error('OpenAI structured insight call missing systemBlocks');
+  }
+  if (!schema) {
+    throw new Error('OpenAI structured insight call missing schema');
+  }
+
+  // OpenAI prompt caching kicks in automatically when the system message is
+  // long enough — no annotation needed. Concatenate the blocks into a single
+  // system message; the cache key is computed from the prefix.
+  const systemText = systemBlocks.map((b) => b.text).join('\n\n');
+
+  // OpenAI's strict json_schema rejects bare arrays at the root, so wrap.
+  const wrappedSchema = {
+    name: 'insights_response',
+    strict: true,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['insights'],
+      properties: {
+        insights: schema,
+      },
+    },
+  };
+
+  return withRetry({
+    label: `OpenAI insight generation (${INSIGHT_MODEL}, structured)`,
+    isRateLimitError,
+    timeoutMs: INSIGHT_CALL_TIMEOUT_MS,
+    operation: async () => {
+      const result = await client.chat.completions.create({
+        model: INSIGHT_MODEL,
+        temperature,
+        response_format: { type: 'json_schema', json_schema: wrappedSchema },
+        messages: [
+          { role: 'system', content: systemText },
+          { role: 'user', content: userMessage },
+        ],
+      });
+
+      const responseText = result?.choices?.[0]?.message?.content;
+      if (!responseText) {
+        throw new Error('OpenAI insight response missing content');
+      }
+
+      const parsed = JSON.parse(responseText);
+      const insights = parsed.insights;
+      if (!Array.isArray(insights)) {
+        throw new Error(`Expected JSON object with "insights" array, got: ${typeof parsed}`);
+      }
       return insights;
     },
   });

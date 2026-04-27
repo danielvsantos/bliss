@@ -156,6 +156,7 @@ Each insight renders as an `InsightCard`. Severity shows up only as the card's l
 - No insights in the active tier at all → `insights.noTierInsightsDesc` with a reassuring illustration and a "Regenerate tier" CTA.
 - Active tier has insights but the selected chips filter them all out → `insights.noCategoryInsights` + `Clear filters` link.
 - Tenant has no insights anywhere → `insights.noInsightsYet` + `insights.noInsightsDesc` (rendered above the tier bar).
+- **Backend returned `skipped: true`** (Phase 3, backend-only at present): when `generateTieredInsights` resolves with `{ skipped: true, reason }` the worker logs the reason at `warn` level and the run produces no new `Insight` rows. From the frontend's perspective the run silently produces no new cards — the existing 45 s watchdog clears `isGenerating` and the empty-state UI applies if and only if the tenant has no insights at all in the active tier. Surfacing the backend's `reason` string to the user as an inline toast is tracked as a follow-up: the API POST `/api/insights` is fire-and-forget (returns 202 with `{ message, tier }` before the worker runs), so the toast wiring needs either a synchronous-wait API contract or a tier-summary polling check that detects an unchanged `latestCreatedAt`.
 
 ### 15.3.7. Loading Skeletons
 

@@ -169,13 +169,26 @@ Wrap the JSON object in <json>…</json> tags.`;
  * @param {number} [options.temperature=0.4]
  * @returns {Promise<Array>}
  */
-async function generateInsightContent(prompt, options = {}) {
+async function generateInsightContent(input, options = {}) {
   if (!client) throw new Error('Anthropic API key not configured');
 
   const { temperature = 0.4 } = options;
 
-  // Append an explicit instruction so Claude wraps the JSON in tags the extractor
-  // can find reliably (fenced blocks and bare JSON also work as fallbacks).
+  // Two input shapes for backwards compatibility during the migration:
+  //   - String (legacy): a single concatenated prompt — wraps in <json>…</json>
+  //     and parses via the regex extractor. Kept so any caller that hasn't
+  //     migrated to the structured shape still works.
+  //   - { systemBlocks, userMessage, schema }: structured shape from the new
+  //     insightPrompts/builder.js. Each system block becomes a cacheable
+  //     content block; the schema is enforced via forced tool use, which
+  //     gives us strict-validated output without regex parsing.
+  if (typeof input === 'string') {
+    return generateInsightLegacy(input, { temperature });
+  }
+  return generateInsightStructured(input, { temperature });
+}
+
+async function generateInsightLegacy(prompt, { temperature }) {
   const promptWithWrapper =
     prompt +
     '\n\nReturn ONLY a JSON array wrapped in <json>…</json> tags. No prose outside the tags.';
@@ -198,13 +211,68 @@ async function generateInsightContent(prompt, options = {}) {
       }
 
       const parsed = extractJson(responseText);
-
-      // Accept either a bare array or an object that wraps it (defensive parsing).
       const insights = Array.isArray(parsed) ? parsed : parsed?.insights;
       if (!Array.isArray(insights)) {
         throw new Error(`Expected JSON array but got: ${typeof parsed}`);
       }
+      return insights;
+    },
+  });
+}
 
+async function generateInsightStructured({ systemBlocks, userMessage, schema }, { temperature }) {
+  if (!Array.isArray(systemBlocks) || !systemBlocks.length) {
+    throw new Error('Anthropic structured insight call missing systemBlocks');
+  }
+  if (!schema) {
+    throw new Error('Anthropic structured insight call missing schema');
+  }
+
+  // Each block becomes its own cacheable content item. cache_control:ephemeral
+  // marks the prefix as cacheable; subsequent runs that reuse the same
+  // identity/tier/lens-set/examples blocks pay the cache-hit token rate.
+  const systemContent = systemBlocks.map((block) => ({
+    type: 'text',
+    text: block.text,
+    cache_control: { type: 'ephemeral' },
+  }));
+
+  // Forced tool use: the only path the model can complete the call is by
+  // emitting a `submit_insights` tool call whose input matches the schema.
+  // No regex parsing, no <json>…</json> wrapping, no defensive fallbacks.
+  const tool = {
+    name: 'submit_insights',
+    description: 'Submit the array of insights for this period.',
+    input_schema: {
+      type: 'object',
+      properties: { insights: schema },
+      required: ['insights'],
+    },
+  };
+
+  return withRetry({
+    label: `Anthropic insight generation (${INSIGHT_MODEL}, structured)`,
+    isRateLimitError,
+    timeoutMs: INSIGHT_CALL_TIMEOUT_MS,
+    operation: async () => {
+      const response = await client.messages.create({
+        model: INSIGHT_MODEL,
+        max_tokens: INSIGHT_MAX_TOKENS,
+        temperature,
+        system: systemContent,
+        messages: [{ role: 'user', content: userMessage }],
+        tools: [tool],
+        tool_choice: { type: 'tool', name: 'submit_insights' },
+      });
+
+      const toolBlock = (response.content || []).find((b) => b.type === 'tool_use' && b.name === 'submit_insights');
+      if (!toolBlock || !toolBlock.input) {
+        throw new Error('Anthropic insight response missing submit_insights tool call');
+      }
+      const insights = toolBlock.input.insights;
+      if (!Array.isArray(insights)) {
+        throw new Error(`Expected insights array in tool input, got: ${typeof insights}`);
+      }
       return insights;
     },
   });

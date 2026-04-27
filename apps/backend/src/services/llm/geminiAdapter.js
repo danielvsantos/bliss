@@ -145,11 +145,19 @@ ${buildClassificationBody({ description, merchantName, amount, currency, categor
  * @param {number} [options.temperature=0.4]
  * @returns {Promise<Array>}
  */
-async function generateInsightContent(prompt, options = {}) {
+async function generateInsightContent(input, options = {}) {
   if (!genAI) throw new Error('Gemini API key not configured');
 
   const { temperature = 0.4 } = options;
 
+  // Two input shapes — see Anthropic adapter for full rationale.
+  if (typeof input === 'string') {
+    return generateInsightLegacy(input, { temperature });
+  }
+  return generateInsightStructured(input, { temperature });
+}
+
+async function generateInsightLegacy(prompt, { temperature }) {
   const model = genAI.getGenerativeModel({
     model: INSIGHT_MODEL,
     generationConfig: {
@@ -167,6 +175,88 @@ async function generateInsightContent(prompt, options = {}) {
       const responseText = result.response.text();
       const parsed = JSON.parse(responseText);
 
+      if (!Array.isArray(parsed)) {
+        throw new Error(`Expected JSON array but got: ${typeof parsed}`);
+      }
+      return parsed;
+    },
+  });
+}
+
+/**
+ * Convert a JSON Schema draft-7 fragment to Gemini's OpenAPI 3.0 dialect.
+ *
+ * Gemini's `responseSchema` is built on the protobuf Schema message
+ * (subset of OpenAPI 3.0), not full JSON Schema. The two practical
+ * incompatibilities the cross-provider insight schema hits:
+ *
+ *   1. `additionalProperties` — not a recognized field. Stripped here.
+ *   2. `type: ['T', 'null']` — Gemini wants `type: 'T'` plus `nullable: true`
+ *      because its `type` field is a singular enum, not a repeated list.
+ *
+ * Anything else (additionalProperties patterns, $ref, oneOf/anyOf/allOf,
+ * draft-2020 keywords) is similarly unsupported and would need stripping if
+ * we ever start using it. The current insight schema sticks to what Gemini
+ * accepts after the two normalizations above.
+ */
+function toGeminiSchema(schema) {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
+
+  const out = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'additionalProperties') {
+      continue; // not supported by Gemini
+    }
+    if (key === 'type' && Array.isArray(value)) {
+      // Convert ['T', 'null'] → type: 'T' + nullable: true
+      const nonNullTypes = value.filter((t) => t !== 'null');
+      const allowsNull = value.includes('null');
+      out.type = nonNullTypes.length === 1 ? nonNullTypes[0] : nonNullTypes;
+      if (allowsNull) out.nullable = true;
+      continue;
+    }
+    out[key] = toGeminiSchema(value);
+  }
+  return out;
+}
+
+async function generateInsightStructured({ systemBlocks, userMessage, schema }, { temperature }) {
+  if (!Array.isArray(systemBlocks) || !systemBlocks.length) {
+    throw new Error('Gemini structured insight call missing systemBlocks');
+  }
+  if (!schema) {
+    throw new Error('Gemini structured insight call missing schema');
+  }
+
+  // Gemini takes the system message as a single string under
+  // `systemInstruction`. Block-level caching is opt-in via the SDK's
+  // `cachedContents.create()` and isn't wired here yet; the prefix is
+  // identical across runs so we still benefit from automatic Gemini
+  // context caching where the SDK supports it.
+  const systemText = systemBlocks.map((b) => b.text).join('\n\n');
+  const geminiSchema = toGeminiSchema(schema);
+
+  const model = genAI.getGenerativeModel({
+    model: INSIGHT_MODEL,
+    systemInstruction: systemText,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: geminiSchema,
+      temperature,
+    },
+  });
+
+  return withRetry({
+    label: `Gemini insight generation (${INSIGHT_MODEL}, structured)`,
+    isRateLimitError,
+    timeoutMs: INSIGHT_CALL_TIMEOUT_MS,
+    operation: async () => {
+      const result = await model.generateContent(userMessage);
+      const responseText = result.response.text();
+      const parsed = JSON.parse(responseText);
+
+      // responseSchema is the bare array form, so the response is the array directly.
       if (!Array.isArray(parsed)) {
         throw new Error(`Expected JSON array but got: ${typeof parsed}`);
       }
@@ -196,4 +286,8 @@ module.exports = {
   isRateLimitError,
   getDefaultModels,
   getEmbeddingDimensions,
+  // Exposed for tests — converts a JSON Schema fragment into Gemini's
+  // OpenAPI 3.0 dialect (drops `additionalProperties`, rewrites
+  // `type: ['T', 'null']` to `type: 'T'` + `nullable: true`).
+  toGeminiSchema,
 };

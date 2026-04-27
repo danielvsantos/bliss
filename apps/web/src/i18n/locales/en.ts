@@ -104,7 +104,7 @@ const en = {
     expenses: "Expenses",
     agents: "Bliss Agents",
     importAgent: "Import Agent",
-    insightAgent: "Insight Agent",
+    insightAgent: "AI Insights",
     travelAgent: "Travel Agent",
     assetPriceUpdates: "Asset Price Updates",
     assetsLiabilities: "Assets & Liabilities",
@@ -407,7 +407,7 @@ const en = {
       import: "Import data",
     },
     insightAgent: {
-      title: "Insight Agent",
+      title: "AI Insights",
       subtitle: "Get personalized financial insights and recommendations",
       description: "Analyze your spending patterns and receive tailored financial advice",
       generating: "Generating insights",

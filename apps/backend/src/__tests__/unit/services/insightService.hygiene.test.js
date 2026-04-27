@@ -88,6 +88,7 @@ jest.mock('../../../../prisma/prisma.js', () => ({
     findFirst: jest.fn().mockResolvedValue(null),
     findMany: jest.fn().mockResolvedValue([]),
     createMany: jest.fn().mockResolvedValue({ count: 1 }),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   transaction: {
     count: jest.fn().mockResolvedValue(0),

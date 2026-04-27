@@ -104,7 +104,7 @@ const pt = {
     expenses: "Despesas",
     agents: "Agentes Bliss",
     importAgent: "Agente de Importação",
-    insightAgent: "Agente de Insights",
+    insightAgent: "Insights de IA",
     travelAgent: "Agente de Viagens",
     assetPriceUpdates: "Atualização de Preços",
     assetsLiabilities: "Ativos e Passivos",
