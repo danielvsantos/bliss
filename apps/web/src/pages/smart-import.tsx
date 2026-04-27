@@ -1416,7 +1416,8 @@ export default function SmartImportPage() {
                     {(() => {
                       const presets = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD', 'DD.MM.YYYY', 'DD-MM-YYYY'];
                       const isCustom = adapterFormData.dateFormat !== '' && !presets.includes(adapterFormData.dateFormat);
-                      const selectVal = isCustom ? '__custom' : adapterFormData.dateFormat;
+                      // '__auto' sentinel: Radix forbids empty-string values on SelectItem
+                      const selectVal = isCustom ? '__custom' : (adapterFormData.dateFormat === '' ? '__auto' : adapterFormData.dateFormat);
                       const today = new Date();
                       const pad = (n: number) => String(n).padStart(2, '0');
                       const d = pad(today.getDate()), m = pad(today.getMonth() + 1), y = today.getFullYear();
@@ -1432,15 +1433,16 @@ export default function SmartImportPage() {
                           <Select
                             value={selectVal}
                             onValueChange={v => {
-                              if (v === '__custom') return; // keep current custom value
-                              setAdapterFormData(p => ({ ...p, dateFormat: v }));
+                              if (v === '__custom') return; // keep current custom value in dateFormat
+                              // '__auto' maps to empty string (no format = auto-detect)
+                              setAdapterFormData(p => ({ ...p, dateFormat: v === '__auto' ? '' : v }));
                             }}
                           >
                             <SelectTrigger className="text-xs">
                               <SelectValue placeholder={t('smartImport.form.dateFormatAuto')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="" className="text-xs">{t('smartImport.form.dateFormatAuto')}</SelectItem>
+                              <SelectItem value="__auto" className="text-xs">{t('smartImport.form.dateFormatAuto')}</SelectItem>
                               {presets.map(fmt => (
                                 <SelectItem key={fmt} value={fmt} className="text-xs">
                                   {fmt} <span className="text-muted-foreground ml-1">({examples[fmt]})</span>
