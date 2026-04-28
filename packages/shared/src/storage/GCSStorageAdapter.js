@@ -4,6 +4,9 @@
  * Requires @google-cloud/storage to be installed.
  * Credentials from GCS_SERVICE_ACCOUNT_JSON (JSON string) or
  * GOOGLE_APPLICATION_CREDENTIALS (file path fallback).
+ *
+ * Uses lazy async import() so this works in both ESM (Vercel/Next.js) and CJS
+ * (Express/backend) runtimes — synchronous require() fails in ESM contexts.
  */
 export class GCSStorageAdapter {
   constructor() {
@@ -13,11 +16,16 @@ export class GCSStorageAdapter {
         'GCS_BUCKET_NAME environment variable is required when STORAGE_BACKEND=gcs'
       );
     }
+    this.bucketName = bucketName;
+    this._storage = null;
+  }
+
+  async _getStorage() {
+    if (this._storage) return this._storage;
 
     let Storage;
     try {
-      // Dynamic import so the package is only required when STORAGE_BACKEND=gcs
-      ({ Storage } = require('@google-cloud/storage'));
+      ({ Storage } = await import('@google-cloud/storage'));
     } catch {
       throw new Error(
         '@google-cloud/storage is not installed. ' +
@@ -28,44 +36,29 @@ export class GCSStorageAdapter {
     const gcsCredentialsJson = process.env.GCS_SERVICE_ACCOUNT_JSON;
     if (gcsCredentialsJson) {
       const credentials = JSON.parse(gcsCredentialsJson);
-      this.storage = new Storage({ credentials, projectId: credentials.project_id });
+      this._storage = new Storage({ credentials, projectId: credentials.project_id });
     } else {
-      // Fallback: GOOGLE_APPLICATION_CREDENTIALS file path
-      this.storage = new Storage();
+      this._storage = new Storage();
     }
 
-    this.bucketName = bucketName;
+    return this._storage;
   }
 
-  /**
-   * Upload a local file to GCS.
-   * @param {string} localPath — absolute path to the source file
-   * @param {string} storageKey — GCS object key (e.g., "imports/1/uuid-file.csv")
-   */
   async uploadFile(localPath, storageKey) {
-    await this.storage.bucket(this.bucketName).upload(localPath, {
+    const storage = await this._getStorage();
+    await storage.bucket(this.bucketName).upload(localPath, {
       destination: storageKey,
       gzip: true,
     });
   }
 
-  /**
-   * Download a file from GCS to a local destination.
-   * @param {string} storageKey — GCS object key
-   * @param {string} destPath — absolute path to write the file
-   */
   async downloadFile(storageKey, destPath) {
-    await this.storage
-      .bucket(this.bucketName)
-      .file(storageKey)
-      .download({ destination: destPath });
+    const storage = await this._getStorage();
+    await storage.bucket(this.bucketName).file(storageKey).download({ destination: destPath });
   }
 
-  /**
-   * Delete a file from GCS. Best-effort — logs warning on failure.
-   * @param {string} storageKey — GCS object key
-   */
   async deleteFile(storageKey) {
-    await this.storage.bucket(this.bucketName).file(storageKey).delete();
+    const storage = await this._getStorage();
+    await storage.bucket(this.bucketName).file(storageKey).delete();
   }
 }
