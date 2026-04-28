@@ -76,18 +76,19 @@ When neither exact nor vector match is found, the description is sent to the con
 3. **Transaction context injected** in the prompt body:
    - **Description + merchant** between sentinel delimiters (`[TRANSACTION_DESCRIPTION_START]`/`[END]`, `[MERCHANT_START]`/`[END]`).
    - **Amount + currency** as a disambiguation signal (e.g. `Amount: USD 4.85`). The same merchant at $5 vs $500 often belongs in different categories.
-   - **Plaid category hint** (Plaid transactions only):
+   - **Bank category hint** (Plaid transactions OR CSV imports with a category column):
      ```
-     PLAID CATEGORY (from the bank — use as a hint, NOT as the answer):
+     BANK CATEGORY HINT (from the source file — use as context, NOT as the answer):
      Primary: "FOOD_AND_DRINK"
      Detailed: "FOOD_AND_DRINK_RESTAURANTS"
      Confidence: "HIGH"
      ```
-   - **Few-shot examples** (5) covering: a clear single-merchant match, an ambiguous merchant disambiguated by amount, an ABSOLUTE CERTAINTY case (Plaid match + recognized brand + typical amount), a Plaid-elevated case that doesn't reach absolute certainty, and a FALLBACK ambiguity.
+     Plaid passes the `personal_finance_category` object; CSV adapters pass the raw cell value as a plain string (normalized to `{ primary: string }` internally). Both shapes are handled by `buildClassificationBody()` in `classificationPromptHelpers.js`.
+   - **Few-shot examples** (5) covering: a clear single-merchant match, an ambiguous merchant disambiguated by amount, an ABSOLUTE CERTAINTY case (bank hint + recognized brand + typical amount), a bank-hint-elevated case that doesn't reach absolute certainty, and a FALLBACK ambiguity.
 4. Parses the structured JSON response: `{ categoryId, confidence, reasoning }`.
 5. Returns one of three result shapes:
    - **Normal classification**: `{ categoryId: <int>, confidence: 0.30–0.90, reasoning, source: 'LLM' }`. Confidence is **hard-capped at 0.90** in `validateClassificationResponse()`.
-   - **ABSOLUTE CERTAINTY**: A confidence in the **0.86–0.90** band, only valid when ALL of: (a) merchant is a globally recognized brand, (b) Plaid hint matches the chosen category, (c) amount is typical for that category. With the default `autoPromoteThreshold` of 0.90, this is the only path an LLM classification can auto-promote.
+   - **ABSOLUTE CERTAINTY**: A confidence in the **0.86–0.90** band, only valid when ALL of: (a) merchant is a globally recognized brand, (b) bank category hint matches the chosen category, (c) amount is typical for that category. With the default `autoPromoteThreshold` of 0.90, this is the only path an LLM classification can auto-promote.
    - **LLM_UNKNOWN**: `{ categoryId: null, confidence: 0, reasoning, source: 'LLM_UNKNOWN' }`. The model invoked the explicit FALLBACK in the prompt because no category fit with confidence ≥0.30. Workers route these rows to manual review (the description shows up unclassified — better than a wrong guess).
    The `reasoning` string is stored in `PlaidTransaction.classificationReasoning` and surfaced in the Transaction Review deep-dive drawer.
 6. On API failure: retries up to 5 times with exponential backoff (shared `withRetry` in `baseAdapter.js`), then throws `'All classification tiers failed…'`. The calling worker handles this by leaving the transaction without a category.
@@ -122,7 +123,7 @@ Provides an O(1) description → categoryId lookup per tenant.
 
 The main classification orchestrator. Key functions:
 
-- **`classify(description, merchantName, tenantId, reviewThreshold, plaidCategory?, options?)`** — Runs the 4-tier waterfall in sequence, returning the first successful result. The optional 5th parameter `plaidCategory` is the raw Plaid `personal_finance_category` JSON object; when present, it is injected as a hint into the Tier 3 LLM prompt. The optional 6th parameter `options` carries `{ amount, currency }` from the calling worker; both are forwarded to the LLM as additional context (see Tier 3 above). Tiers 1 and 2 are unaffected by the new optional args. When the LLM returns the explicit ambiguous fallback (categoryId `null`), `classify` resolves with `source: 'LLM_UNKNOWN'` so workers can distinguish a model-declared "no category" from an outright failure.
+- **`classify(description, merchantName, tenantId, reviewThreshold, bankCategoryHint?, options?)`** — Runs the 4-tier waterfall in sequence, returning the first successful result. The optional 5th parameter `bankCategoryHint` accepts either a Plaid `personal_finance_category` object `{ primary, detailed?, confidence_level? }` or a plain string (CSV category column value); when present it is injected as a hint into the Tier 3 LLM prompt — Tiers 1 and 2 are unaffected. The optional 6th parameter `options` carries `{ amount, currency }` from the calling worker. When the LLM returns the explicit ambiguous fallback (categoryId `null`), `classify` resolves with `source: 'LLM_UNKNOWN'` so workers can distinguish a model-declared "no category" from an outright failure.
 
 - **`findVectorMatch(embedding, tenantId, threshold)`** — Executes the pgvector cosine similarity query against `TransactionEmbedding`. Returns `{ categoryId, confidence }` if similarity ≥ threshold, otherwise `null`.
 

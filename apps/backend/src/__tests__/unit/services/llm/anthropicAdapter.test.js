@@ -227,7 +227,7 @@ describe('anthropicAdapter', () => {
       }
     });
 
-    it('includes Plaid category hint in the user message when provided', async () => {
+    it('includes BANK CATEGORY HINT in the user message when provided', async () => {
       mockMessagesCreate.mockResolvedValueOnce(
         makeMessagesResponse('<json>{"categoryId": 1, "confidence": 0.7, "reasoning": "r"}</json>')
       );
@@ -239,7 +239,7 @@ describe('anthropicAdapter', () => {
       });
 
       const userContent = mockMessagesCreate.mock.calls[0][0].messages[0].content;
-      expect(userContent).toContain('PLAID CATEGORY');
+      expect(userContent).toContain('BANK CATEGORY HINT');
       expect(userContent).toContain('FOOD_AND_DRINK');
     });
 

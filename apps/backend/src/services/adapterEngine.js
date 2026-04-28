@@ -142,6 +142,42 @@ async function detectAdapter(headers, sampleRows, tenantId) {
 // ─── Date Parsing ────────────────────────────────────────────────────────────
 
 /**
+ * Inspect an array of raw date strings from the date column and determine
+ * whether the format is DD/MM/YYYY or MM/DD/YYYY.
+ *
+ * Strategy: find the first string where one of the first two numeric parts
+ * is unambiguously > 12. A value > 12 in position 0 means it must be a day
+ * (DD/MM), in position 1 means it must be a month value that exceeds 12 which
+ * is invalid — so the other position is the month (MM/DD).
+ *
+ * Returns null when every sample has both day and month parts ≤ 12 (genuinely
+ * ambiguous — caller should prompt the user to confirm).
+ *
+ * IMPORTANT: Keep in sync with apps/web/src/lib/adapter-preview.ts
+ *
+ * @param {string[]} dateStrings
+ * @returns {'DD/MM/YYYY' | 'MM/DD/YYYY' | null}
+ */
+function inferDateFormat(dateStrings) {
+  for (const raw of dateStrings) {
+    if (!raw || typeof raw !== 'string') continue;
+    // Strip time component before analysing
+    const datePart = raw.trim().split(/[\sT]/)[0];
+    const parts = datePart.split(/[/\-.]/);
+    if (parts.length < 3) continue;
+    const [p0, p1] = parts;
+    // Skip YYYY-first formats — they are already unambiguous
+    if (p0.length === 4) continue;
+    const n0 = parseInt(p0, 10);
+    const n1 = parseInt(p1, 10);
+    if (isNaN(n0) || isNaN(n1)) continue;
+    if (n0 > 12) return 'DD/MM/YYYY'; // first part can only be a day
+    if (n1 > 12) return 'MM/DD/YYYY'; // second part > 12 → first part must be month
+  }
+  return null;
+}
+
+/**
  * Parse a date string, optionally using a known format.
  * Returns { date: Date|null, hasTime: boolean }.
  */
@@ -157,6 +193,9 @@ function parseDate(dateStr, format) {
   if (format) {
     const parsed = parseDateWithFormat(trimmed, format);
     if (parsed) {
+      // Use data-driven hasTime rather than format-driven: a date-only format
+      // string (e.g. YYYY-MM-DD) should still record hasTime=true when the
+      // actual cell contains "2024-01-15 14:30:00".
       return { date: parsed, hasTime: hasTimeInString };
     }
   }
@@ -174,8 +213,11 @@ function parseDate(dateStr, format) {
     return { date: native, hasTime: hasTimeInString };
   }
 
-  // Fallback: try DD/MM/YYYY and variants
-  const parts = trimmed.split(/[/\-.]/);
+  // Fallback: strip time component first, then try DD/MM/YYYY and variants.
+  // Without stripping, "15/01/2024 09:45:23" splits as ["15", "01", "2024 09", "45", "23"]
+  // and parts[2] becomes "2024 09" — parseInt still works (stops at space) but it's fragile.
+  const dateOnlyStr = trimmed.split(/[\sT]/)[0];
+  const parts = dateOnlyStr.split(/[/\-.]/);
   if (parts.length >= 3) {
     const [p0, p1, p2] = parts;
     let year, month, day;
@@ -204,7 +246,7 @@ function parseDate(dateStr, format) {
 
     const fallback = new Date(Date.UTC(year, month, day));
     if (!isNaN(fallback.getTime())) {
-      return { date: fallback, hasTime: false };
+      return { date: fallback, hasTime: hasTimeInString };
     }
   }
 
@@ -440,6 +482,25 @@ async function parseFile(fileContent, adapter, fileType = 'csv') {
     parsedData = parsed.data;
   }
 
+  // When dateFormat is empty (auto-detect), pre-scan up to 20 date column
+  // values to disambiguate DD/MM/YYYY vs MM/DD/YYYY before the per-row loop.
+  // Without this, "01/02/2024" is indistinguishable row-by-row and the fallback
+  // always assumes DD/MM (international). The scan finds the first decisive sample
+  // (a value where day or month > 12) and uses it as the effective format for the
+  // entire file.
+  let resolvedDateFormat = dateFormat;
+  if (!dateFormat && columnMapping.date) {
+    const sampleDateValues = parsedData
+      .slice(0, 20)
+      .map((r) => getColumnValue(r, columnMapping.date))
+      .filter(Boolean);
+    const inferred = inferDateFormat(sampleDateValues);
+    if (inferred) {
+      resolvedDateFormat = inferred;
+      logger.info(`Auto-detected date format "${inferred}" from column samples`);
+    }
+  }
+
   let globalHasTime = false;
   const rows = [];
 
@@ -448,7 +509,7 @@ async function parseFile(fileContent, adapter, fileType = 'csv') {
 
     // Date
     const dateValue = getColumnValue(raw, columnMapping.date);
-    const { date, hasTime } = parseDate(dateValue, dateFormat);
+    const { date, hasTime } = parseDate(dateValue, resolvedDateFormat);
     if (hasTime) globalHasTime = true;
 
     // Description
@@ -512,5 +573,6 @@ module.exports = {
   parseFile,
   parseDate,
   parseDecimal,
+  inferDateFormat,
   sortAdaptersBySpecificity,
 };

@@ -48,7 +48,7 @@ describe('classificationPromptHelpers', () => {
       description: 'Starbucks #1234',
       merchantName: 'Starbucks',
       categories: MOCK_CATEGORIES,
-      plaidCategory: null,
+      bankCategoryHint: null,
     };
 
     it('includes the AMOUNT line with currency when amount is provided', () => {
@@ -125,7 +125,7 @@ describe('classificationPromptHelpers', () => {
       // Three signals must all hold — assert the specific gates the model
       // must check before using the top band.
       expect(body).toMatch(/globally recognized brand/);
-      expect(body).toMatch(/Plaid CATEGORY hint is provided AND its primary classification confirms/);
+      expect(body).toMatch(/BANK CATEGORY HINT is provided AND its primary value confirms/);
       expect(body).toMatch(/typical for that category/);
       expect(body).toMatch(/All three conditions must hold/);
     });
@@ -155,28 +155,35 @@ describe('classificationPromptHelpers', () => {
       expect(body).not.toMatch(/MERCHANT_START/);
     });
 
-    it('includes a Plaid category section when plaidCategory is provided', () => {
+    it('includes a BANK CATEGORY HINT section when bankCategoryHint is a Plaid object', () => {
       const body = buildClassificationBody({
         ...baseArgs,
-        plaidCategory: { primary: 'TRAVEL', detailed: 'TRAVEL_AIRLINES', confidence_level: 'HIGH' },
+        bankCategoryHint: { primary: 'TRAVEL', detailed: 'TRAVEL_AIRLINES', confidence_level: 'HIGH' },
       });
-      expect(body).toMatch(/PLAID CATEGORY/);
+      expect(body).toMatch(/BANK CATEGORY HINT/);
       expect(body).toMatch(/Primary: "TRAVEL"/);
       expect(body).toMatch(/Detailed: "TRAVEL_AIRLINES"/);
       expect(body).toMatch(/Confidence: "HIGH"/);
     });
 
-    it('omits the Plaid hint block (Primary/Detailed/Confidence) when plaidCategory has no primary', () => {
-      // The static rules text mentions "PLAID CATEGORY" verbatim ("If a PLAID
-      // CATEGORY is provided..."), so we assert on the dynamic block only.
-      const body = buildClassificationBody({ ...baseArgs, plaidCategory: { primary: '' } });
+    it('includes a BANK CATEGORY HINT section when bankCategoryHint is a plain string', () => {
+      const body = buildClassificationBody({
+        ...baseArgs,
+        bankCategoryHint: 'Food & Drink',
+      });
+      expect(body).toMatch(/BANK CATEGORY HINT/);
+      expect(body).toMatch(/Primary: "Food & Drink"/);
+    });
+
+    it('omits the bank hint block (Primary/Detailed/Confidence) when bankCategoryHint has no primary', () => {
+      const body = buildClassificationBody({ ...baseArgs, bankCategoryHint: { primary: '' } });
       expect(body).not.toMatch(/Primary: "[^"]+"/);
     });
 
-    it('sanitizes Plaid hint values to strip injection chars', () => {
+    it('sanitizes bank hint values to strip injection chars', () => {
       const body = buildClassificationBody({
         ...baseArgs,
-        plaidCategory: { primary: '<inject>TRAVEL', detailed: '`evil`AIRLINES' },
+        bankCategoryHint: { primary: '<inject>TRAVEL', detailed: '`evil`AIRLINES' },
       });
       expect(body).not.toMatch(/<inject>/);
       expect(body).not.toMatch(/`evil`/);

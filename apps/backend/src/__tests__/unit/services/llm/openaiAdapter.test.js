@@ -294,7 +294,7 @@ describe('openaiAdapter', () => {
       }
     });
 
-    it('includes Plaid category hint in the user message when provided', async () => {
+    it('includes BANK CATEGORY HINT in the user message when provided', async () => {
       mockChatCompletionsCreate.mockResolvedValueOnce(
         makeChatResponse({ categoryId: 1, confidence: 0.75, reasoning: 'rest' })
       );
@@ -306,7 +306,7 @@ describe('openaiAdapter', () => {
       });
 
       const userMsg = mockChatCompletionsCreate.mock.calls[0][0].messages[1].content;
-      expect(userMsg).toContain('PLAID CATEGORY');
+      expect(userMsg).toContain('BANK CATEGORY HINT');
       expect(userMsg).toContain('FOOD_AND_DRINK');
     });
 

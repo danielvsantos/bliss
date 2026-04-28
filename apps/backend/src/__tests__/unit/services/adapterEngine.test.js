@@ -23,6 +23,7 @@ const {
   sortAdaptersBySpecificity,
   detectAdapter,
   parseFile,
+  inferDateFormat,
 } = require('../../../services/adapterEngine');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -82,6 +83,58 @@ describe('adapterEngine', () => {
       expect(date.toISOString()).toBe('2024-01-25T00:00:00.000Z');
       expect(date.getUTCDate()).toBe(25);
       expect(date.getUTCMonth()).toBe(0); // January
+    });
+
+    it('strips time component before splitting to avoid corrupt date parts', () => {
+      // "15/01/2024 09:45:23" was previously split on "/" producing ["15", "01", "2024 09:45:23"]
+      // which made year = NaN. The fix strips the time first.
+      const { date, hasTime } = parseDate('15/01/2024 09:45:23');
+      expect(date).toBeTruthy();
+      expect(date.getUTCDate()).toBe(15);
+      expect(date.getUTCMonth()).toBe(0);
+      expect(date.getUTCFullYear()).toBe(2024);
+      expect(hasTime).toBe(true);
+    });
+
+    it('sets hasTime=true when the raw string contains a time component', () => {
+      const { hasTime } = parseDate('2024-03-15 14:30:00');
+      expect(hasTime).toBe(true);
+    });
+
+    it('sets hasTime=false for a date-only string', () => {
+      const { hasTime } = parseDate('2024-03-15');
+      expect(hasTime).toBe(false);
+    });
+  });
+
+  describe('inferDateFormat()', () => {
+    it('returns DD/MM/YYYY when the first part exceeds 12', () => {
+      expect(inferDateFormat(['15/01/2024', '20/02/2024'])).toBe('DD/MM/YYYY');
+    });
+
+    it('returns MM/DD/YYYY when the second part exceeds 12', () => {
+      expect(inferDateFormat(['01/15/2024', '02/20/2024'])).toBe('MM/DD/YYYY');
+    });
+
+    it('returns null when all values are ≤ 12 (genuinely ambiguous)', () => {
+      expect(inferDateFormat(['01/12/2024', '03/08/2024'])).toBeNull();
+    });
+
+    it('ignores YYYY-first entries and continues scanning', () => {
+      // First sample is ISO; second is decisive DD/MM
+      expect(inferDateFormat(['2024-01-15', '20/01/2024'])).toBe('DD/MM/YYYY');
+    });
+
+    it('returns null for an empty array', () => {
+      expect(inferDateFormat([])).toBeNull();
+    });
+
+    it('skips non-string or empty entries', () => {
+      expect(inferDateFormat([null, '', undefined, '25/01/2024'])).toBe('DD/MM/YYYY');
+    });
+
+    it('works with datetime strings — strips time before classifying', () => {
+      expect(inferDateFormat(['20/01/2024 09:45:00', '25/02/2024 14:00:00'])).toBe('DD/MM/YYYY');
     });
   });
 
@@ -292,6 +345,36 @@ describe('adapterEngine', () => {
       expect(rows[0].debit).toBe(85.20);
       expect(rows[1].credit).toBe(25.00);
       expect(rows[2].debit).toBe(42.15);
+    });
+  });
+
+  describe('parseFile() — date format pre-scan (auto-infer)', () => {
+    const makeAdapterWithDate = (dateFormat) => ({
+      columnMapping: { date: 'Date', description: 'Description', amount: 'Amount' },
+      amountStrategy: 'SINGLE_SIGNED_INVERTED',
+      dateFormat,
+      skipRows: 0,
+    });
+
+    it('auto-infers DD/MM/YYYY from samples when no dateFormat is set', async () => {
+      // Day values 20 and 25 are > 12 — engine should lock on DD/MM/YYYY
+      const csv = [
+        'Date,Description,Amount',
+        '20/01/2024,Supermarket,50.00',
+        '25/02/2024,Pharmacy,12.00',
+      ].join('\n');
+      const { rows } = await parseFile(csv, makeAdapterWithDate(undefined), 'csv');
+      expect(rows[0].date.toISOString().slice(0, 10)).toBe('2024-01-20');
+      expect(rows[1].date.toISOString().slice(0, 10)).toBe('2024-02-25');
+    });
+
+    it('respects an explicit dateFormat over the auto-inferred one', async () => {
+      const csv = [
+        'Date,Description,Amount',
+        '01/20/2024,Supermarket,50.00',
+      ].join('\n');
+      const { rows } = await parseFile(csv, makeAdapterWithDate('MM/DD/YYYY'), 'csv');
+      expect(rows[0].date.toISOString().slice(0, 10)).toBe('2024-01-20');
     });
   });
 });

@@ -161,7 +161,7 @@ Takes the raw staged data and applies business logic.
 1. **Trigger**: Receives `PLAID_SYNC_COMPLETE` job (`{ plaidItemId, source }`).
 2. **Source guard (`allowSeedHeld`)**: Derives `allowSeedHeld = !source || source === 'INITIAL_SYNC'`. Only `INITIAL_SYNC` enables the Quick Seed interview — `WEBHOOK_HISTORICAL_UPDATE`, `MANUAL_RESYNC`, and other sources skip Phase 1 hold-back entirely (user is not necessarily present).
 3. **Batch**: Fetches all unprocessed `PlaidTransaction` rows where `processed = false` and `promotionStatus = 'PENDING'`.
-4. **Classify**: Calls `categorizationService.classify(description, merchantName, tenantId, reviewThreshold, plaidCategory)` for each row. The Plaid `personal_finance_category` JSON (stored in `PlaidTransaction.category`) is passed as a 5th argument and injected as a `PLAID CATEGORY` hint in the Gemini prompt (used as context, not a direct override). Up to `PHASE2_CONCURRENCY` (5) rows are classified concurrently within a single job.
+4. **Classify**: Calls `categorizationService.classify(description, merchantName, tenantId, reviewThreshold, bankCategoryHint)` for each row. The Plaid `personal_finance_category` JSON (stored in `PlaidTransaction.category`) is passed as the 5th argument `bankCategoryHint` and injected as a `BANK CATEGORY HINT` into the LLM prompt (used as context, not a direct override). Up to `PHASE2_CONCURRENCY` (5) rows are classified concurrently within a single job.
 5. **Investment Detection**: If the classified category has `type = 'Investments'` and a matching `processingHint` (`API_STOCK`, `API_CRYPTO`, `API_FUND`, or `MANUAL`), the row is flagged with `requiresEnrichment: true`, `enrichmentType: 'INVESTMENT'`. These rows are **never auto-promoted** regardless of confidence — they require user-provided ticker/quantity/price.
 6. **Auto-Promote**: If `aiConfidence >= tenant.autoPromoteThreshold` AND not an investment requiring enrichment: creates a `Transaction` immediately (`promotionStatus = 'PROMOTED'`). Calls `recordFeedback()` after commit.
 7. **Phase 1 Hold-Back (Quick Seed — INITIAL_SYNC only)**: When `allowSeedHeld = true`, rows that do **not** meet auto-promote criteria AND have `classificationSource ≠ EXACT_MATCH` are held with `seedHeld = true` for the Quick Seed interview. `EXACT_MATCH` results below threshold go straight to `CLASSIFIED`.
@@ -186,18 +186,18 @@ Takes the raw staged data and applies business logic.
 | `requiresEnrichment` | `true` for investment transactions that need ticker/qty/price before promotion |
 | `enrichmentType` | `'INVESTMENT'` when requiresEnrichment is true |
 
-### Plaid Category Hint
+### Bank Category Hint
 
-`plaidProcessorWorker` passes the Plaid `personal_finance_category` object to `geminiService.classifyTransaction()`. When present, it is injected into the LLM prompt as:
+`plaidProcessorWorker` passes the Plaid `personal_finance_category` object as `bankCategoryHint` to `categorizationService.classify()`. When present, it is injected into the LLM prompt (Tier 3 only) as:
 
 ```
-PLAID CATEGORY (from the bank — use as a hint, NOT as the answer):
+BANK CATEGORY HINT (from the source file — use as context, NOT as the answer):
 Primary: "FOOD_AND_DRINK"
 Detailed: "FOOD_AND_DRINK_RESTAURANTS"
 Confidence: "HIGH"
 ```
 
-The classification rule adds: *"If a PLAID CATEGORY is provided, use it as a contextual hint but always map to the most appropriate category from your list."* This improves accuracy for first-time merchants that miss Tiers 1 & 2.
+The classification rule adds: *"If a BANK CATEGORY HINT is provided, weight it heavily but always map to the most appropriate category from your list."* CSV imports with a mapped category column pass the raw cell string as a plain-string `bankCategoryHint`. Both shapes are normalized by `buildClassificationBody()` in `classificationPromptHelpers.js`.
 
 ---
 

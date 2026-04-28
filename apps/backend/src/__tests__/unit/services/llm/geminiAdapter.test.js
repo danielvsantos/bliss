@@ -314,7 +314,7 @@ describe('geminiAdapter', () => {
       expect(typeof result.categoryId).toBe('number');
     });
 
-    it('includes Plaid category hint in the prompt when provided', async () => {
+    it('includes BANK CATEGORY HINT in the prompt when provided', async () => {
       mockGenerateContent.mockResolvedValueOnce({
         response: {
           text: () => JSON.stringify({
@@ -332,7 +332,7 @@ describe('geminiAdapter', () => {
       });
 
       expect(mockGenerateContent).toHaveBeenCalledWith(
-        expect.stringContaining('PLAID CATEGORY')
+        expect.stringContaining('BANK CATEGORY HINT')
       );
       expect(mockGenerateContent).toHaveBeenCalledWith(
         expect.stringContaining('FOOD_AND_DRINK')
