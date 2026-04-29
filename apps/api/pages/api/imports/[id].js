@@ -62,11 +62,12 @@ async function handleGet(req, res, user, stagedImportId) {
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
 
   // status param: single value OR comma-separated list (e.g. "STAGED,POTENTIAL_DUPLICATE").
-  // When no filter is supplied we DO NOT return the whole table — DUPLICATE and
-  // SKIPPED rows are deliberately hidden so duplicate-flagged rows can never
-  // reach the Review UI as committable. Callers that need to audit those rows
-  // must opt in explicitly via ?status=DUPLICATE or ?status=SKIPPED.
-  const DEFAULT_VISIBLE_STATUSES = ['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED'];
+  // When no filter is supplied we surface every status the user might want to audit —
+  // including DUPLICATE rows (hard wall-clock-timestamp matches), so the user can see what
+  // the dedup pipeline filtered without opting in via `?status=DUPLICATE`. SKIPPED is the
+  // only status hidden by default since those reflect explicit user dismissal. Bulk-confirm
+  // and the per-row PUT both refuse DUPLICATE rows, so visibility is safe.
+  const DEFAULT_VISIBLE_STATUSES = ['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED', 'DUPLICATE'];
   const statusParam = req.query.status || null;
   const statusValues = statusParam
     ? statusParam.split(',').map((s) => s.trim()).filter(Boolean)
@@ -104,7 +105,7 @@ async function handleGet(req, res, user, stagedImportId) {
     status: { in: pendingStatuses },
   };
 
-  const [rows, total, statusCounts, earliestRow, categorySummaryRaw] = await Promise.all([
+  const [rows, total, statusCounts, earliestRow, categorySummaryRaw, eligibleCountsRaw] = await Promise.all([
     prisma.stagedImportRow.findMany({
       where: rowWhere,
       orderBy: { rowNumber: 'asc' },
@@ -129,6 +130,18 @@ async function handleGet(req, res, user, stagedImportId) {
       where: pendingWhere,
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
+    }),
+    // Per-category count of rows that "Approve All" (bulk-confirm) would actually confirm.
+    // Mirrors the bulk-confirm endpoint's eligibility predicate so the GroupCard's
+    // "Approve All (N)" badge reflects all pages, not just the current page.
+    prisma.stagedImportRow.groupBy({
+      by: ['suggestedCategoryId'],
+      where: {
+        stagedImportId,
+        status: { in: ['PENDING', 'ERROR', 'STAGED'] },
+        requiresEnrichment: { not: true },
+      },
+      _count: { id: true },
     }),
   ]);
 
@@ -159,10 +172,14 @@ async function handleGet(req, res, user, stagedImportId) {
   }));
 
   // Build enriched category summary for grouped view
+  const eligibleCountByCategoryId = new Map(
+    eligibleCountsRaw.map((s) => [s.suggestedCategoryId, s._count.id]),
+  );
   const categorySummary = categorySummaryRaw.map((s) => ({
     categoryId: s.suggestedCategoryId,
     category: s.suggestedCategoryId ? categoryMap[s.suggestedCategoryId] || null : null,
     count: s._count.id,
+    eligibleCount: eligibleCountByCategoryId.get(s.suggestedCategoryId) ?? 0,
   }));
 
   return res.status(StatusCodes.OK).json({

@@ -630,7 +630,7 @@ const processSmartImportJob = async (job) => {
                     null, // No merchantName for CSV imports
                     tenantId,
                     reviewThreshold,
-                    null, // No Plaid hint for CSV imports
+                    rep.rowData?.category ?? null, // Bank category column — advisory hint for LLM tier
                     { amount: rep.rowData?.amount ?? null, currency: rep.rowData?.currency ?? null },
                 );
 
@@ -699,7 +699,7 @@ const processSmartImportJob = async (job) => {
                             null,
                             tenantId,
                             reviewThreshold,
-                            null,
+                            entry.rowData?.category ?? null, // Bank category column hint
                             { amount: entry.rowData?.amount ?? null, currency: entry.rowData?.currency ?? null },
                         );
                         const wasAutoConfirmed = applyClassificationToRowData(

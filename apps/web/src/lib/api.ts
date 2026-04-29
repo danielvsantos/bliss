@@ -714,6 +714,14 @@ class APIClient {
     return response.data;
   }
 
+  async bulkConfirmImportRows(
+    id: string,
+    body: { categoryId?: number; uncategorized?: boolean },
+  ): Promise<{ confirmed: number }> {
+    const response = await this.client.post(`/api/imports/${id}/bulk-confirm`, body);
+    return response.data;
+  }
+
   async commitImport(id: string, rowIds?: string[]): Promise<{ status: string; message: string }> {
     const response = await this.client.post(`/api/imports/${id}`, rowIds ? { rowIds } : null, { params: { action: 'commit' } });
     return response.data;

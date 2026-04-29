@@ -21,6 +21,7 @@ export type PreviewResult = {
   amount: number | null;
   amountType: 'debit' | 'credit' | null;
   currency: string | null;
+  externalCategory: string | null;
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -94,6 +95,32 @@ function parseDateWithFormat(str: string, format: string): Date | null {
   return isNaN(date.getTime()) ? null : date;
 }
 
+/**
+ * Inspect an array of raw date strings and determine whether the format is
+ * DD/MM/YYYY or MM/DD/YYYY based on the first decisive sample (a value where
+ * one numeric part unambiguously exceeds 12).
+ *
+ * Returns null when every sample has both parts ≤ 12 (genuinely ambiguous).
+ *
+ * IMPORTANT: Keep in sync with apps/backend/src/services/adapterEngine.js
+ */
+export function inferDateFormat(dateStrings: string[]): 'DD/MM/YYYY' | 'MM/DD/YYYY' | null {
+  for (const raw of dateStrings) {
+    if (!raw || typeof raw !== 'string') continue;
+    const datePart = raw.trim().split(/[\sT]/)[0];
+    const parts = datePart.split(/[/\-.]/);
+    if (parts.length < 3) continue;
+    const [p0, p1] = parts;
+    if (p0.length === 4) continue; // YYYY-first — skip
+    const n0 = parseInt(p0, 10);
+    const n1 = parseInt(p1, 10);
+    if (isNaN(n0) || isNaN(n1)) continue;
+    if (n0 > 12) return 'DD/MM/YYYY';
+    if (n1 > 12) return 'MM/DD/YYYY';
+  }
+  return null;
+}
+
 function parseDate(dateStr: unknown, format?: string): Date | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
   const trimmed = dateStr.trim();
@@ -113,8 +140,10 @@ function parseDate(dateStr: unknown, format?: string): Date | null {
     return native;
   }
 
-  // Fallback: try common European separators
-  const parts = trimmed.split(/[/\-.]/);
+  // Fallback: strip time component first to avoid corrupt part splits.
+  // "15/01/2024 09:45:23".split(/[\sT]/)[0] → "15/01/2024"
+  const dateOnlyStr = trimmed.split(/[\sT]/)[0];
+  const parts = dateOnlyStr.split(/[/\-.]/);
   if (parts.length >= 3) {
     const [p0, p1, p2] = parts;
     let year: number | undefined;
@@ -212,6 +241,8 @@ export function previewRow(
   const currencyCol = getColumnValue(row, columnMapping.currency);
   const currency = currencyDefault || currencyCol || null;
 
+  const externalCategory = getColumnValue(row, columnMapping.category) ?? null;
+
   let amount: number | null = null;
   let amountType: 'debit' | 'credit' | null = null;
   if (debit !== null) {
@@ -228,5 +259,6 @@ export function previewRow(
     amount,
     amountType,
     currency,
+    externalCategory,
   };
 }

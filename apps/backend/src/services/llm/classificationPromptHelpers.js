@@ -45,13 +45,15 @@ function sanitizeDescription(text) {
  * @param {Object} args
  * @param {string} args.description
  * @param {string|null} args.merchantName
- * @param {number|string|null} [args.amount]    — transaction amount (signed or absolute, caller decides)
- * @param {string|null} [args.currency]         — ISO currency code (e.g. "USD", "EUR")
+ * @param {number|string|null} [args.amount]         — transaction amount (signed or absolute, caller decides)
+ * @param {string|null} [args.currency]              — ISO currency code (e.g. "USD", "EUR")
  * @param {Array<{id:number,name:string,group:string,type:string}>} args.categories
- * @param {Object|null} [args.plaidCategory]    — Plaid personal_finance_category object
+ * @param {string|Object|null} [args.bankCategoryHint] — Bank-supplied category: either a Plaid
+ *   personal_finance_category object {primary, detailed?, confidence_level?} or a plain string
+ *   (e.g. from a CSV category column). Both are injected as advisory context into the LLM prompt.
  * @returns {string}
  */
-function buildClassificationBody({ description, merchantName, amount, currency, categories, plaidCategory }) {
+function buildClassificationBody({ description, merchantName, amount, currency, categories, bankCategoryHint }) {
   const categoryList = categories
     .map((c) => `  ID: ${c.id} | Name: "${c.name}" | Group: "${c.group}" | Type: "${c.type}"`)
     .join('\n');
@@ -80,15 +82,26 @@ function buildClassificationBody({ description, merchantName, amount, currency, 
     ? `${amountLine}[TRANSACTION_DESCRIPTION_START]${safeDescription}[TRANSACTION_DESCRIPTION_END]\n[MERCHANT_START]${safeMerchant}[MERCHANT_END]`
     : `${amountLine}[TRANSACTION_DESCRIPTION_START]${safeDescription}[TRANSACTION_DESCRIPTION_END]`;
 
-  let plaidCategorySection = '';
-  if (plaidCategory && typeof plaidCategory === 'object') {
-    const primary = sanitizeDescription(plaidCategory.primary || plaidCategory.PRIMARY || '');
-    const detailed = sanitizeDescription(plaidCategory.detailed || plaidCategory.DETAILED || '');
+  // Normalise bankCategoryHint: accept a plain string (CSV category column) or a Plaid
+  // personal_finance_category object. Both become { primary, detailed?, confidence? }.
+  let bankHintObj = null;
+  if (bankCategoryHint) {
+    if (typeof bankCategoryHint === 'string') {
+      bankHintObj = { primary: bankCategoryHint };
+    } else if (typeof bankCategoryHint === 'object') {
+      bankHintObj = bankCategoryHint;
+    }
+  }
+
+  let bankCategorySection = '';
+  if (bankHintObj) {
+    const primary = sanitizeDescription(bankHintObj.primary || bankHintObj.PRIMARY || '');
+    const detailed = sanitizeDescription(bankHintObj.detailed || bankHintObj.DETAILED || '');
     const confidence = sanitizeDescription(
-      plaidCategory.confidence_level || plaidCategory.CONFIDENCE_LEVEL || ''
+      bankHintObj.confidence_level || bankHintObj.CONFIDENCE_LEVEL || ''
     );
     if (primary) {
-      plaidCategorySection = `\nPLAID CATEGORY (from the bank — use as a contextual hint, NOT as the answer):
+      bankCategorySection = `\nBANK CATEGORY HINT (from the source file — use as context, NOT as the answer):
 Primary: "${primary}"${detailed ? `\nDetailed: "${detailed}"` : ''}${confidence ? `\nConfidence: "${confidence}"` : ''}\n`;
     }
   }
@@ -108,25 +121,25 @@ Example 2 — ambiguous merchant, amount disambiguates:
   Best fit: a Shopping or Lifestyle category, but lower confidence — Amazon spans many categories.
   Output: { "categoryId": <Shopping ID>, "confidence": 0.55, "reasoning": "Small Amazon purchase, likely retail." }
 
-Example 3 — globally recognized brand + Plaid hint matches + typical amount → ABSOLUTE CERTAINTY tier:
-  Transaction: USD 4.85, "STARBUCKS #1234", merchant "Starbucks", Plaid hint "FOOD_AND_DRINK > FOOD_AND_DRINK_RESTAURANTS"
+Example 3 — globally recognized brand + bank hint matches + typical amount → ABSOLUTE CERTAINTY tier:
+  Transaction: USD 4.85, "STARBUCKS #1234", merchant "Starbucks", bank hint "FOOD_AND_DRINK > FOOD_AND_DRINK_RESTAURANTS"
   Best fit: a Food & Dining category. Three signals all agree.
-  Output: { "categoryId": <Food & Dining ID>, "confidence": 0.88, "reasoning": "Recognized brand, Plaid match, typical amount." }
+  Output: { "categoryId": <Food & Dining ID>, "confidence": 0.88, "reasoning": "Recognized brand, bank hint confirms, typical amount." }
 
-Example 4 — Plaid hint elevates a less-recognizable merchant, but not to absolute certainty:
-  Transaction: USD 412.00, "DELTA AIR LINES", Plaid hint "TRAVEL > AIRLINES_AND_AVIATION"
+Example 4 — bank hint elevates a less-recognizable merchant, but not to absolute certainty:
+  Transaction: USD 412.00, "DELTA AIR LINES", bank hint "TRAVEL > AIRLINES_AND_AVIATION"
   Best fit: a Travel category.
-  Output: { "categoryId": <Travel ID>, "confidence": 0.80, "reasoning": "Plaid hint matches travel category strongly." }
+  Output: { "categoryId": <Travel ID>, "confidence": 0.80, "reasoning": "Bank hint matches travel category strongly." }
 
 Example 5 — genuinely ambiguous → use the FALLBACK:
-  Transaction: USD 12.34, "ADJUSTMENT 0021", no merchant, no Plaid hint
+  Transaction: USD 12.34, "ADJUSTMENT 0021", no merchant, no bank hint
   Output: { "categoryId": null, "confidence": 0.0, "reasoning": "Too ambiguous to classify" }
 `;
 
   return `${examples}
 TRANSACTION:
 ${transactionInfo}
-${plaidCategorySection}
+${bankCategorySection}
 AVAILABLE CATEGORIES:
 ${categoryList}
 
@@ -141,12 +154,12 @@ RULES:
 8. "Investments" type categories are for investment purchases/sales.
 9. "Debt" type categories are for loan/credit payments.
 10. "Transfers" type categories are for moving money between accounts.
-11. If a PLAID CATEGORY is provided, weight it heavily but always map to the most appropriate category from YOUR list.
+11. If a BANK CATEGORY HINT is provided, weight it heavily but always map to the most appropriate category from YOUR list.
 
 CONFIDENCE SCALE — calibrate your score to reflect genuine certainty:
 - 0.86–0.90: ABSOLUTE CERTAINTY. Reserved for cases where ALL of the following hold simultaneously:
     (a) the merchant is a globally recognized brand whose primary business maps unambiguously to one category (e.g. Starbucks → dining, Netflix → entertainment, Uber → transport, payroll deposits from a known employer → income),
-    (b) a Plaid CATEGORY hint is provided AND its primary classification confirms the same category you are choosing,
+    (b) a BANK CATEGORY HINT is provided AND its primary value confirms the same category you are choosing,
     (c) the transaction amount falls in a range typical for that category (no contradictory signal — a $5,000 charge labelled "Starbucks" disqualifies the bulletproof tier).
   All three conditions must hold. If any is missing, drop to the 0.78–0.85 band. NEVER use this tier on a guess. NEVER exceed 0.90.
 - 0.78–0.85: Certain. Only one category clearly fits this transaction; default tier for confident classifications without all three bulletproof signals.

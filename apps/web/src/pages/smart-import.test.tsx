@@ -139,4 +139,21 @@ describe('SmartImportPage', () => {
   // would entail simulating the full upload + polling pipeline — out of
   // scope for a small UX fix. The fix itself (smart-import.tsx) mirrors
   // the existing COMMITTED branch one-for-one; regression risk is low.
+
+  it('opens the adapter create dialog and shows the category column field', async () => {
+    renderPage();
+
+    // First expand the adapter manager panel by clicking its header
+    const adapterPanelHeader = screen.getByText('smartImport.importAdapters');
+    fireEvent.click(adapterPanelHeader);
+
+    // Then click "New Adapter" which is now visible
+    const newAdapterBtn = await screen.findByText('smartImport.newAdapter');
+    fireEvent.click(newAdapterBtn);
+
+    // After clicking, the dialog should open and show the Category Column label
+    await waitFor(() => {
+      expect(screen.getByText('smartImport.form.categoryColumn')).toBeInTheDocument();
+    });
+  });
 });

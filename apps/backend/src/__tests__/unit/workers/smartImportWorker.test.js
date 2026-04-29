@@ -149,6 +149,19 @@ describe('smartImportWorker — helper functions', () => {
       expect(wasAutoConfirmed).toBeFalsy();
       expect(rowData.status).toBe('CONFIRMED'); // unchanged
     });
+
+    it('preserves the rowData.category field (bank category hint) unchanged after classification', () => {
+      // The category column value is passed as bankCategoryHint to classify() before this
+      // helper is called. After classification, the original rowData.category must be
+      // preserved so the commit step can persist it as externalCategory.
+      const rowData = { status: 'PENDING', category: 'Food & Drink' };
+      const result = { categoryId: 10, confidence: 0.85, source: 'LLM' };
+      const categoryById = makeCategoryMap();
+
+      applyClassificationToRowData(rowData, result, 0.90, categoryById);
+
+      expect(rowData.category).toBe('Food & Drink');
+    });
   });
 
   // ─── computeUpdateDiff ─────────────────────────────────────────────────────

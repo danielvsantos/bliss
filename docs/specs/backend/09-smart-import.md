@@ -42,7 +42,13 @@ Adapters declare one of four amount parsing strategies via `amountStrategy`:
 
 ### Date Parsing
 
-Adapters declare a `dateFormat` string (e.g., `DD/MM/YYYY`, `MM-DD-YYYY`, `YYYY-MM-DD`). The engine normalises all parsed dates to ISO 8601 before storing.
+Adapters declare an optional `dateFormat` string (e.g., `DD/MM/YYYY`, `MM/DD/YYYY`, `YYYY-MM-DD`, `DD/MM/YYYY HH:mm:ss`). Datetime formats (date + time in a single cell) are also supported. The engine normalises all parsed dates to ISO 8601 before storing.
+
+**Auto-detection**: When `dateFormat` is omitted, `parseFile()` scans up to 20 date column values via `inferDateFormat()` before the row loop. If any sample has a first numeric part > 12, the format is locked to `DD/MM/YYYY`; if the second part > 12, to `MM/DD/YYYY`. This eliminates the most common EU vs. US date ambiguity. Genuinely ambiguous data (all values ≤ 12) still falls through to the per-row fallback parser.
+
+### Category Column (Advisory Hint)
+
+Adapters may declare `columnMapping.category` to map a bank-supplied category column. The extracted value is stored as `rowData.category` and forwarded as the `bankCategoryHint` argument to `categorizationService.classify()` at classification time. This functions identically to the Plaid `personal_finance_category` hint: it is injected into the Tier 3 LLM prompt as advisory context but does not affect Tiers 1 or 2.
 
 ---
 
