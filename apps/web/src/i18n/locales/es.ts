@@ -1643,6 +1643,7 @@ const es = {
     adapterFormDesc: "Define cómo las columnas de tu CSV/Excel bancario se mapean a los campos de transacción de Bliss.",
     form: {
       name: "Nombre",
+      nameRequired: "El nombre del adaptador es obligatorio",
       namePlaceholder: "CSV Cuenta Chase",
       matchHeaders: "Encabezados de coincidencia",
       matchHeadersPlaceholder: "Fecha, Descripción, Monto",

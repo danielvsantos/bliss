@@ -1688,6 +1688,7 @@ const en = {
     adapterFormDesc: "Define how your bank's CSV/Excel columns map to Bliss transaction fields.",
     form: {
       name: "Name",
+      nameRequired: "Adapter name is required",
       namePlaceholder: "Chase Checking CSV",
       matchHeaders: "Match Headers",
       matchHeadersPlaceholder: "Date, Description, Amount",

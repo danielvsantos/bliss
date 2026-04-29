@@ -786,6 +786,10 @@ export default function SmartImportPage() {
   };
 
   const handleSaveAdapter = () => {
+    if (!adapterFormData.name.trim()) {
+      toast({ title: t('smartImport.form.nameRequired'), variant: 'destructive' });
+      return;
+    }
     // Build a local object explicitly typed to match what createAdapter expects
     const columnMapping: Record<string, string> = {
       date: adapterFormData.dateColumn || '',

@@ -1688,6 +1688,7 @@ const it = {
     adapterFormDesc: "Definisci come le colonne CSV/Excel della tua banca si mappano ai campi transazione di Bliss.",
     form: {
       name: "Nome",
+      nameRequired: "Il nome dell'adattatore è obbligatorio",
       namePlaceholder: "CSV Conto Corrente",
       matchHeaders: "Intestazioni di corrispondenza",
       matchHeadersPlaceholder: "Data, Descrizione, Importo",
