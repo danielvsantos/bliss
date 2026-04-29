@@ -506,9 +506,10 @@ paths:
           description: |
             Row status filter. Accepts a single value (e.g. `CONFIRMED`) or a comma-separated
             list (e.g. `STAGED,POTENTIAL_DUPLICATE`). When omitted, defaults to
-            `PENDING,POTENTIAL_DUPLICATE,CONFIRMED,ERROR,STAGED` — `DUPLICATE` and `SKIPPED`
-            are deliberately hidden so duplicate-flagged rows can never reach the Review UI
-            as committable. Callers that need to audit those rows must opt in explicitly.
+            `PENDING,POTENTIAL_DUPLICATE,CONFIRMED,ERROR,STAGED,DUPLICATE` — only `SKIPPED`
+            (explicit user dismissal) is hidden by default. `DUPLICATE` rows surface so the
+            user can audit what dedup filtered; bulk-confirm and the per-row PUT both refuse
+            `DUPLICATE`, so visibility is safe.
         - name: categoryId
           in: query
           required: false
@@ -602,7 +603,7 @@ paths:
                     description: |
                       Server-side groupBy across all rows matching the effective `?status` filter
                       (regardless of pagination). Drives grouped-view headers with accurate
-                      cross-page counts. Sorted descending by count.
+                      cross-page counts. Sorted descending by `count`.
                     items:
                       type: object
                       properties:
@@ -623,6 +624,13 @@ paths:
                               type: string
                         count:
                           type: integer
+                          description: Total rows in this category matching the effective `?status` filter.
+                        eligibleCount:
+                          type: integer
+                          description: |
+                            Rows in this category that bulk-confirm would actually approve —
+                            status in `PENDING`/`ERROR`/`STAGED` AND `requiresEnrichment !== true`.
+                            Drives the "Approve All (N)" badge so it reflects all pages.
                   pagination:
                     type: object
                     properties:
@@ -727,6 +735,68 @@ paths:
           description: Staged import not found.
         '500':
           description: Internal Server Error — event dispatch failed (commit) or unexpected error.
+
+  /api/imports/{id}/bulk-confirm:
+    post:
+      summary: Bulk-confirm staged rows in a single request
+      description: |
+        Confirms every eligible row in a category server-side. Replaces the legacy
+        client-side fan-out (one PUT per row) that broke the grouped-view "Approve All"
+        button — it tripped the rate limiter and only confirmed the visible page when the
+        group spanned multiple pages.
+
+        **Eligibility:** only rows with `status IN ('PENDING','ERROR','STAGED')` AND
+        `requiresEnrichment !== true` are confirmed. `POTENTIAL_DUPLICATE` and rows
+        needing investment enrichment are skipped silently — they must be reviewed via
+        the drawer so re-imported transactions and missing ticker/qty/price data can
+        never auto-commit.
+      tags:
+        - Smart Import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The StagedImport ID.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: |
+                At most one of `categoryId` / `uncategorized` should be sent. When both
+                are sent, `uncategorized` wins. Omitting both confirms all eligible rows
+                for the import (no category filter).
+              properties:
+                categoryId:
+                  type: integer
+                  description: Confirm rows whose `suggestedCategoryId` matches this id.
+                uncategorized:
+                  type: boolean
+                  description: When `true`, confirm rows whose `suggestedCategoryId IS NULL`.
+      responses:
+        '200':
+          description: Bulk confirmation completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  confirmed:
+                    type: integer
+                    description: Number of rows transitioned to `CONFIRMED`.
+        '400':
+          description: |
+            Bad Request — invalid `categoryId`, or the import is `COMMITTED` / `CANCELLED`
+            (rows of a finalised import cannot be modified).
+        '401':
+          description: Unauthorized
+        '404':
+          description: Import not found or belongs to another tenant.
+        '500':
+          description: Internal Server Error.
 
   /api/imports/{id}/rows/{rowId}:
     put:

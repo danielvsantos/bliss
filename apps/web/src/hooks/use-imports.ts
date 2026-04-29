@@ -113,6 +113,21 @@ export function useUpdateImportRow(importId: string | null) {
   });
 }
 
+// --- Bulk Confirm (server-side approve-all) ---
+
+export function useBulkConfirmImportRows(importId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { categoryId?: number; uncategorized?: boolean }) =>
+      api.bulkConfirmImportRows(importId!, body),
+    onSuccess: () => {
+      if (importId) {
+        queryClient.invalidateQueries({ queryKey: importKeys.staged(importId) });
+      }
+    },
+  });
+}
+
 // --- Commit / Cancel ---
 
 export function useCommitImport() {

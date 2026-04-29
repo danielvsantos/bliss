@@ -56,6 +56,7 @@ import {
   useDeleteAdapter,
   useImportSeeds,
   useConfirmImportSeeds,
+  useBulkConfirmImportRows,
 } from '@/hooks/use-imports';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { previewRow, inferDateFormat } from '@/lib/adapter-preview';
@@ -311,6 +312,7 @@ export default function SmartImportPage() {
   useEffect(() => { setImportCategoryFilter(null); }, [stagedImportId]);
 
   const updateRow = useUpdateImportRow(stagedImportId);
+  const bulkConfirmRows = useBulkConfirmImportRows(stagedImportId);
 
   // --- Quick Seed Interview hooks ---
   // Only fetch seeds when seedReady is true and we're still in processing step
@@ -889,6 +891,7 @@ export default function SmartImportPage() {
         items,
         total: items.reduce((sum, i) => sum + Math.abs(i.amount), 0),
         totalCount: entry.count,
+        eligibleCount: entry.eligibleCount ?? 0,
       };
     });
   }, [reviewItems, viewMode, importCategorySummary, categoriesMap]);
@@ -1176,7 +1179,7 @@ export default function SmartImportPage() {
                       <p className="text-xs text-muted-foreground">{t('smartImport.form.matchHeadersChipsHint')}</p>
                       <div className="flex flex-wrap gap-1.5">
                         {/* All detected headers as toggleable chips */}
-                        {detectedHeaders.map((h) => {
+                        {detectedHeaders.filter(Boolean).map((h) => {
                           const selected = adapterFormData.matchHeaders.includes(h);
                           return (
                             <button
@@ -1312,7 +1315,7 @@ export default function SmartImportPage() {
                       <Select value={adapterFormData.dateColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, dateColumn: v === '__none' ? '' : v }))}>
                         <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.dateColumnPlaceholder')} /></SelectTrigger>
                         <SelectContent>
-                          {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                          {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                           <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1334,7 +1337,7 @@ export default function SmartImportPage() {
                       <Select value={adapterFormData.descriptionColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, descriptionColumn: v === '__none' ? '' : v }))}>
                         <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.descriptionColumnPlaceholder')} /></SelectTrigger>
                         <SelectContent>
-                          {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                          {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                           <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1373,7 +1376,7 @@ export default function SmartImportPage() {
                         <Select value={adapterFormData.debitColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, debitColumn: v === '__none' ? '' : v }))}>
                           <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.debitColumnPlaceholder')} /></SelectTrigger>
                           <SelectContent>
-                            {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                            {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                             <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1387,7 +1390,7 @@ export default function SmartImportPage() {
                         <Select value={adapterFormData.creditColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, creditColumn: v === '__none' ? '' : v }))}>
                           <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.creditColumnPlaceholder')} /></SelectTrigger>
                           <SelectContent>
-                            {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                            {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                             <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1404,7 +1407,7 @@ export default function SmartImportPage() {
                         <Select value={adapterFormData.amountColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, amountColumn: v === '__none' ? '' : v }))}>
                           <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.amountColumnPlaceholder')} /></SelectTrigger>
                           <SelectContent>
-                            {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                            {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                             <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1419,7 +1422,7 @@ export default function SmartImportPage() {
                           <Select value={adapterFormData.typeColumn} onValueChange={v => setAdapterFormData(p => ({ ...p, typeColumn: v === '__none' ? '' : v }))}>
                             <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.typeColumnPlaceholder')} /></SelectTrigger>
                             <SelectContent>
-                              {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                              {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                               <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.customColumn')}</SelectItem>
                             </SelectContent>
                           </Select>
@@ -1439,7 +1442,7 @@ export default function SmartImportPage() {
                       <SelectTrigger className="text-xs"><SelectValue placeholder={t('smartImport.form.categoryColumnPlaceholder')} /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none" className="text-xs text-muted-foreground">{t('smartImport.form.categoryColumnPlaceholder')}</SelectItem>
-                        {detectedHeaders.map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                        {detectedHeaders.filter(Boolean).map(h => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (
@@ -2018,30 +2021,39 @@ export default function SmartImportPage() {
                     items={isExpanded ? group.items : []}
                     total={group.total}
                     totalCount={group.totalCount}
+                    pendingCount={group.eligibleCount}
                     onApprove={(item) => handleRowStatusChange(item.id, 'CONFIRMED')}
                     onSkip={(item) => handleRowStatusChange(item.id, 'SKIPPED')}
                     onApproveAll={() => {
-                      const toConfirm = group.items.filter((i) =>
-                        i.promotionStatus !== 'CONFIRMED' &&
-                        i.promotionStatus !== 'DUPLICATE' &&
-                        // POTENTIAL_DUPLICATE rows must be approved one-by-one
-                        // via the drawer — bulk-approving would silently commit
-                        // re-imported transactions the user never examined.
-                        i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-                        i.promotionStatus !== 'SKIPPED' &&
-                        !itemNeedsEnrichment(i, categoriesMap),
-                      );
-                      toConfirm.forEach((i) => handleRowStatusChange(i.id, 'CONFIRMED'));
-                      // If a status filter is active, reset it so the confirmed
-                      // rows stay visible in their groups rather than dropping
-                      // out of the next fetch.
-                      if (toConfirm.length > 0 && reviewFilter !== 'all') {
-                        setReviewFilter('all');
-                        setReviewPage(1);
-                      }
+                      // Single bulk request — server-side confirms every eligible row in this
+                      // group across ALL pages, avoiding the previous parallel-PUT fan-out
+                      // that triggered 429 rate limits and only confirmed the visible page.
+                      // POTENTIAL_DUPLICATE and requiresEnrichment rows are excluded server-side
+                      // and must still be reviewed via the drawer.
+                      const body = catId === null
+                        ? { uncategorized: true as const }
+                        : { categoryId: catId };
+                      bulkConfirmRows.mutate(body, {
+                        onSuccess: ({ confirmed }) => {
+                          if (confirmed > 0) {
+                            toast({ title: t('smartImport.toast.confirmedN', { count: confirmed }) });
+                            // Reset status filter so confirmed rows stay visible in the group.
+                            if (reviewFilter !== 'all') {
+                              setReviewFilter('all');
+                              setReviewPage(1);
+                            }
+                          }
+                        },
+                        onError: (e: unknown) =>
+                          toast({
+                            title: t('smartImport.toast.updateFailed'),
+                            description: (e as Error)?.message ?? '',
+                            variant: 'destructive',
+                          }),
+                      });
                     }}
                     onItemClick={(item) => setDrawerItem(item)}
-                    disabled={updateRow.isPending}
+                    disabled={updateRow.isPending || bulkConfirmRows.isPending}
                     isExpanded={isExpanded}
                     onToggle={() => {
                       const next = catId === null ? 'uncategorized' : catId;

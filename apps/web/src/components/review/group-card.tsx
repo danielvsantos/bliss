@@ -16,6 +16,10 @@ interface GroupCardProps {
   /** Server-side total count across all pages. When provided and > items.length,
    *  the badge shows this value so groups spanning multiple pages display correctly. */
   totalCount?: number;
+  /** Server-side count of rows the "Approve All" action would actually confirm.
+   *  When provided, used for both the (N) label and gating the button — so the
+   *  badge reflects all pages, not just the current page's items. */
+  pendingCount?: number;
   onApprove: (item: ReviewItem) => void;
   onSkip: (item: ReviewItem) => void;
   onApproveAll: () => void;
@@ -35,6 +39,7 @@ export function GroupCard({
   items,
   total,
   totalCount,
+  pendingCount,
   onApprove,
   onSkip,
   onApproveAll,
@@ -49,9 +54,10 @@ export function GroupCard({
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
   const expanded = isExpanded !== undefined ? isExpanded : internalExpanded;
 
-  const pendingCount = items.filter(
+  const fallbackPendingCount = items.filter(
     (i) => i.promotionStatus !== 'PROMOTED' && i.promotionStatus !== 'CONFIRMED' && i.promotionStatus !== 'SKIPPED',
   ).length;
+  const effectivePendingCount = pendingCount ?? fallbackPendingCount;
 
   return (
     <Card className="overflow-hidden">
@@ -90,7 +96,7 @@ export function GroupCard({
           {formatCurrency(total, 'USD')}
         </span>
 
-        {pendingCount > 0 && (
+        {effectivePendingCount > 0 && (
           <Button
             variant="outline"
             size="sm"
@@ -102,7 +108,7 @@ export function GroupCard({
             disabled={disabled}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            {t('review.approveAll')} ({pendingCount})
+            {t('review.approveAll')} ({effectivePendingCount})
           </Button>
         )}
       </div>

@@ -85,15 +85,24 @@ See `docs/specs/backend/09-smart-import.md` for the backend worker pipeline that
 - **`seedReady` field**: When the worker finishes and `StagedImport.seedReady === true`, the response includes this flag. The frontend uses it to gate the Quick Classify step — the status transition to `'review'` is intentionally blocked when `seedReady=true` so the seeds can be presented first.
 - **Query params**:
   - `?page` (default 1), `?limit` (default 50, max 200)
-  - `?status` — filter by row status. Accepts a **single value** (e.g. `status=CONFIRMED`) or a **comma-separated list** (e.g. `status=STAGED,POTENTIAL_DUPLICATE`). When multiple values are provided, the query uses an `IN` clause. **When omitted, the endpoint defaults to `['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED']` — `DUPLICATE` (hard duplicate with a wall-clock timestamp match) and `SKIPPED` rows are deliberately hidden** so duplicate-flagged rows can never reach the Review UI as committable. Callers that need to audit those rows must opt in explicitly (e.g. `?status=DUPLICATE`).
+  - `?status` — filter by row status. Accepts a **single value** (e.g. `status=CONFIRMED`) or a **comma-separated list** (e.g. `status=STAGED,POTENTIAL_DUPLICATE`). When multiple values are provided, the query uses an `IN` clause. **When omitted, the endpoint defaults to `['PENDING', 'POTENTIAL_DUPLICATE', 'CONFIRMED', 'ERROR', 'STAGED', 'DUPLICATE']`** — only `SKIPPED` (explicit user dismissal) is hidden by default. `DUPLICATE` rows (hard wall-clock-timestamp matches) are surfaced so the user can audit what the dedup pipeline filtered; bulk-confirm and the per-row PUT both refuse `DUPLICATE`, so visibility is safe.
   - `?categoryId` — optional integer. Filters rows to a single `suggestedCategoryId`. Used by the grouped-view to paginate within one category group without re-fetching all rows.
   - `?uncategorized=true` — optional boolean. Filters rows to those with `suggestedCategoryId IS NULL`. Mutually exclusive with `?categoryId` (when both are sent, `?uncategorized` wins). Needed so the "Uncategorized" group in the grouped view is drillable.
 - **Response**: `{ import, rows, categorySummary, pagination }`:
   - `import` — the `StagedImport` record, including a `statusSummary` map of `{ PENDING: N, CONFIRMED: N, STAGED: N, POTENTIAL_DUPLICATE: N, ... }` and `earliestTransactionDate`.
   - `rows` — paginated `StagedImportRow` records, each enriched with `suggestedCategory: { id, name, group, type }`.
-  - `categorySummary` — **server-side groupBy across all pending rows** (regardless of the current page). Each entry is `{ categoryId, category: { id, name, group, type }, count }`, sorted descending by count. Computed against the same status filter used for `rows` (default excludes `DUPLICATE` and `SKIPPED`), so grouped-view headers always match the items visible in the paginated list. Used to show accurate cross-page totals without additional requests.
+  - `categorySummary` — **server-side groupBy across all pending rows** (regardless of the current page). Each entry is `{ categoryId, category: { id, name, group, type }, count, eligibleCount }`, sorted descending by `count`. `count` is computed against the same status filter used for `rows` (so grouped-view headers match the items visible in the paginated list). `eligibleCount` is a separate count of rows that **bulk-confirm would actually approve** — `status IN ('PENDING','ERROR','STAGED')` AND `requiresEnrichment !== true` — used to drive the "Approve All (N)" button so the badge reflects all pages, not just the current page.
   - `pagination` — `{ page, limit, total, totalPages }`.
 - **Polling**: The frontend polls this endpoint every 2 seconds while `import.status === 'PROCESSING'`.
+
+**POST** `/api/imports/:id/bulk-confirm`
+
+- **Purpose**: Confirms every eligible row in a category in a single request — replaces the legacy client-side fan-out (one PUT per row) that broke the grouped-view "Approve All" button: it tripped the `importsRead` rate limiter (returning 429) and only confirmed the visible page even when the group spanned multiple pages.
+- **Auth**: JWT.
+- **Body** (mutually exclusive — at most one filter): `{ categoryId?: number, uncategorized?: boolean }`. When both are sent, `uncategorized` wins. Omitting both confirms all eligible rows for the import (used by future "approve everything" flows; current UI always sends one filter).
+- **Eligibility**: only rows with `status IN ('PENDING','ERROR','STAGED')` AND `requiresEnrichment !== true` are confirmed. `POTENTIAL_DUPLICATE` and rows needing investment enrichment are intentionally skipped — they must be reviewed via the deep-dive drawer so re-imported transactions and missing ticker/qty/price data can never auto-commit.
+- **Response**: `{ confirmed: number }`.
+- **Errors**: `404` when the import doesn't exist or belongs to another tenant; `400` for `COMMITTED`/`CANCELLED` imports or invalid `categoryId`.
 
 **GET** `/api/imports/pending`
 

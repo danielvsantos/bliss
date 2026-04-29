@@ -416,6 +416,10 @@ export type StagedImportResponse = {
     categoryId: number | null;
     category: { id: number; name: string; group: string; type: string } | null;
     count: number;
+    /** Server-side count of rows in this category that bulk-confirm would actually approve
+     *  (status in PENDING/ERROR/STAGED, requiresEnrichment !== true). Drives the
+     *  "Approve All (N)" badge so it reflects all pages, not just the current page. */
+    eligibleCount?: number;
   }>;
   pagination: {
     page: number;
