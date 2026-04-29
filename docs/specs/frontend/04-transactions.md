@@ -87,8 +87,9 @@ The investment enrichment section is always visible as a collapsible `Accordion`
 -   When no investment category is selected, the accordion trigger shows a muted hint: "(select an investment category to enable)".
 -   The user can freely open/close the accordion regardless of category.
 -   Fields inside: Ticker (with autocomplete via `useTickerSearch` hook), Asset Price, Asset Quantity (auto-calculated: `assetQuantity = amount / assetPrice`).
--   **Ticker Autocomplete**: The `useTickerSearch` hook calls `GET /api/ticker/search` with debounced input. When a result is selected, it populates resolution metadata fields: `isin`, `exchange`, and `assetCurrency` on the transaction form.
--   **Auto-Calculation**: When the user enters an `assetPrice`, the `assetQuantity` is automatically computed as `amount / assetPrice`. The user can override this manually.
+-   **Ticker Autocomplete**: The `useTickerSearch` hook calls `GET /api/ticker/search` with debounced input. When a result is selected, it populates resolution metadata fields: `isin`, `exchange`, and `assetCurrency` on the transaction form. After selection, the form cross-references the ticker against open portfolio positions via `usePortfolioItems()` — if a matching position exists (`quantity > 0`), a "Close full position" banner is shown.
+-   **Auto-Calculation**: When the user enters an `assetPrice`, the `assetQuantity` is automatically computed as `amount / assetPrice`. The quantity field is read-only while a price is set.
+-   **Close Full Position**: When an open portfolio position is found for the selected ticker and the transaction direction is credit (no debit entered), a "Close full position" banner appears inside the accordion. Activating it switches to quantity-anchor mode: `assetQuantity` is set to the portfolio item's exact holding, and `credit` is derived as `quantity × assetPrice`. This prevents FIFO residual positions caused by floating-point division. If a credit amount was already entered before the toggle is activated, `assetPrice` is back-calculated as `credit / exactQuantity` so all three fields remain consistent. The banner is hidden when a debit value is present (i.e. the transaction is a purchase).
 -   The **Debt Details** accordion remains conditionally rendered (only visible for Debt categories with a credit value).
 
 ---
