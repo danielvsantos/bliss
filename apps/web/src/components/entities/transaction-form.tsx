@@ -13,17 +13,18 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { useToast } from '@/hooks/use-toast';
 import { useAccounts, useCategories } from '@/hooks/use-metadata';
 import { api } from '@/lib/api';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, Target } from 'lucide-react';
 import { format } from 'date-fns';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import type { Transaction as ApiTransaction } from '@/types/api';
+import type { Transaction as ApiTransaction, PortfolioItem } from '@/types/api';
 import { DebtTermsForm } from './DebtTermsForm';
 import { debtTermsSchema } from './debt-terms-schema';
 import { useTickerSearch, type TickerResult } from '@/hooks/use-ticker-search';
 import { CategoryCombobox } from './category-combobox';
 import { TagInput } from './tag-input';
+import { usePortfolioItems } from '@/hooks/use-normalized-portfolio-items';
 
 // Form schema
 const transactionSchema = z.object({
@@ -79,8 +80,13 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
   const [showTickerDropdown, setShowTickerDropdown] = useState(false);
   const tickerDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Close-position state
+  const [closePositionMode, setClosePositionMode] = useState(false);
+  const [matchedPortfolioItem, setMatchedPortfolioItem] = useState<PortfolioItem | null>(null);
+
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const { data: categories, isLoading: categoriesLoading } = useCategories();
+  const { data: portfolioItems } = usePortfolioItems();
 
   const isLoading = accountsLoading || categoriesLoading;
 
@@ -151,13 +157,25 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
   // Sort data for dropdowns
   const sortedAccounts = useMemo(() => accounts?.slice().sort((a, b) => a.name.localeCompare(b.name)), [accounts]);
 
+  // Normal mode: derive quantity from amount / price
   useEffect(() => {
+    if (closePositionMode) return;
     const amount = debitValue || creditValue;
     if (isInvestment && amount && assetPriceValue && assetPriceValue > 0) {
-      const quantity = amount / assetPriceValue;
-      form.setValue('assetQuantity', quantity);
+      form.setValue('assetQuantity', amount / assetPriceValue);
     }
-  }, [debitValue, creditValue, assetPriceValue, isInvestment, form]);
+  }, [debitValue, creditValue, assetPriceValue, isInvestment, closePositionMode, form]);
+
+  // Close-position mode: quantity is the anchor; credit is derived from price × exact quantity
+  useEffect(() => {
+    if (!closePositionMode || !matchedPortfolioItem) return;
+    const exactQty = matchedPortfolioItem.quantity;
+    form.setValue('assetQuantity', exactQty);
+    if (assetPriceValue && assetPriceValue > 0) {
+      form.setValue('credit', parseFloat((exactQty * assetPriceValue).toFixed(2)));
+      form.setValue('debit', undefined);
+    }
+  }, [assetPriceValue, closePositionMode, matchedPortfolioItem, form]);
 
   // Close ticker dropdown on outside click
   useEffect(() => {
@@ -181,6 +199,11 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     form.setValue('isin', undefined);
     setTickerSearchInput(result.symbol);
     setShowTickerDropdown(false);
+
+    // Cross-reference against open portfolio positions
+    const match = portfolioItems?.find(item => item.symbol === result.symbol && item.quantity > 0) ?? null;
+    setMatchedPortfolioItem(match);
+    setClosePositionMode(false);
   };
 
   // Currency mismatch validation: block when assetCurrency ≠ account currency
@@ -329,6 +352,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     type="number"
                     step="0.01"
                     placeholder="0.00"
+                    readOnly={closePositionMode}
                     {...field}
                     value={field.value ?? ''}
                     onChange={e => {
@@ -426,6 +450,42 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
               </span>
             </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
+                {matchedPortfolioItem && !debitValue && (
+                  <div className="flex items-center justify-between rounded-md border border-brand-primary/20 bg-brand-primary/10 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-4 w-4 text-brand-primary shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-brand-primary">{t('transactionFormPage.closePosition')}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t('transactionFormPage.closePositionHint', {
+                            quantity: parseFloat(matchedPortfolioItem.quantity.toFixed(8)).toString(),
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={closePositionMode ? 'default' : 'outline'}
+                      onClick={() => {
+                        const next = !closePositionMode;
+                        setClosePositionMode(next);
+                        if (next && matchedPortfolioItem) {
+                          const exactQty = matchedPortfolioItem.quantity;
+                          form.setValue('assetQuantity', exactQty);
+                          // If user already entered an amount but no price, back-calculate price
+                          const existingAmount = form.getValues('credit') || form.getValues('debit');
+                          const existingPrice = form.getValues('assetPrice');
+                          if (!existingPrice && existingAmount && exactQty > 0) {
+                            form.setValue('assetPrice', parseFloat((existingAmount / exactQty).toFixed(4)));
+                          }
+                        }
+                      }}
+                    >
+                      {closePositionMode ? t('transactionFormPage.closePositionActive') : t('transactionFormPage.closePosition')}
+                    </Button>
+                  </div>
+                )}
                 <div className="flex gap-4">
                   <FormField
                     control={form.control}
@@ -450,6 +510,9 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                                   form.setValue('exchange', undefined);
                                   form.setValue('isin', undefined);
                                 }
+                                // Reset close-position state when ticker changes
+                                setMatchedPortfolioItem(null);
+                                setClosePositionMode(false);
                               }}
                               onFocus={() => tickerSearchInput.length >= 2 && setShowTickerDropdown(true)}
                             />

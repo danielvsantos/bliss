@@ -1541,6 +1541,9 @@ const it = {
     tickerLabel: "Ticker",
     tickerPlaceholder: "es. AAPL, VWCE",
     loadingFormData: "Caricamento dati del modulo...",
+    closePosition: "Chiudi posizione completa",
+    closePositionHint: "Imposta la quantità alla tua posizione esatta di {{quantity}} unità",
+    closePositionActive: "Chiusura posizione attiva",
   },
 
   // Debt terms form

@@ -1508,6 +1508,9 @@ const fr = {
     tickerLabel: "Ticker",
     tickerPlaceholder: "ex., AAPL, VWCE",
     loadingFormData: "Chargement des données du formulaire...",
+    closePosition: "Clôturer la position complète",
+    closePositionHint: "Définit la quantité à votre position exacte de {{quantity}} unités",
+    closePositionActive: "Clôture de position active",
   },
 
   debtTermsForm: {
