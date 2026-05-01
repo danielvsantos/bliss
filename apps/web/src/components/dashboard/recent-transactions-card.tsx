@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDivider } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTransactions } from '@/hooks/use-transactions';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { translateCategoryName } from '@/lib/category-i18n';
 import type { Transaction } from '@/types/api';
 
 /* ── Background color by category type ── */
@@ -180,7 +181,7 @@ export function RecentTransactionsCard({ className }: RecentTransactionsCardProp
                   description={tx.description}
                   emoji={tx.category?.icon || '📋'}
                   categoryType={tx.category?.type}
-                  categoryName={tx.category?.name}
+                  categoryName={tx.category ? translateCategoryName(t, tx.category) : undefined}
                   amount={amount}
                   date={tx.transaction_date}
                   currencyCode={tx.account?.currencyCode ?? tx.currency ?? 'USD'}

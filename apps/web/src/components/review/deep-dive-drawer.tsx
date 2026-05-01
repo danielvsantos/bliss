@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { translateCategoryName } from '@/lib/category-i18n';
 import {
   Sheet,
   SheetContent,
@@ -189,7 +190,7 @@ export function DeepDiveDrawer({
                 </SelectItem>
                 {categories.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id.toString()}>
-                    {cat.name}
+                    {translateCategoryName(t, cat)}
                   </SelectItem>
                 ))}
               </SelectContent>

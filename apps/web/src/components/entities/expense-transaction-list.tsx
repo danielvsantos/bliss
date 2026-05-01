@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTransactions } from '@/hooks/use-transactions';
 import type { TransactionFilters } from '@/hooks/use-transactions';
+import { translateCategoryName } from '@/lib/category-i18n';
 import {
   Table,
   TableBody,
@@ -25,6 +27,7 @@ interface ExpenseTransactionListProps {
 const PAGE_SIZE = 50;
 
 export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: ExpenseTransactionListProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'transactions' | 'categories'>('categories');
   const [page, setPage] = useState(1);
@@ -62,7 +65,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
     if (viewMode !== 'categories' || !summaryData?.transactions) {
       return { categorySummary: [], currencies: [] as string[], currencyTotals: {} as Record<string, number> };
     }
-    const totals: Record<string, { name: string; byCurrency: Record<string, number>; count: number; totalRaw: number }> = {};
+    const totals: Record<string, { name: string; defaultCategoryCode?: string | null; byCurrency: Record<string, number>; count: number; totalRaw: number }> = {};
     const allCurrencies = new Set<string>();
 
     for (const tx of summaryData.transactions) {
@@ -70,7 +73,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
       const cur = tx.currency || currency;
       allCurrencies.add(cur);
       if (!totals[catName]) {
-        totals[catName] = { name: catName, byCurrency: {}, count: 0, totalRaw: 0 };
+        totals[catName] = { name: catName, defaultCategoryCode: tx.category?.defaultCategoryCode, byCurrency: {}, count: 0, totalRaw: 0 };
       }
       totals[catName].byCurrency[cur] = (totals[catName].byCurrency[cur] || 0) + (tx.debit || 0);
       totals[catName].totalRaw += tx.debit || 0;
@@ -168,7 +171,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                   <TableRow key={cat.name}>
                     <TableCell className="font-medium">
                       <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-                        {cat.name}
+                        {translateCategoryName(t, cat)}
                       </span>
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">

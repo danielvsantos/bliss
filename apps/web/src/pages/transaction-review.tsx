@@ -37,6 +37,7 @@ import {
   useCancelImport,
 } from '@/hooks/use-imports';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { translateCategoryName } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
 import { itemNeedsEnrichment } from '@/lib/investment-utils';
 import type { PlaidTransaction, Category, StagedImportRow } from '@/types/api';
@@ -1325,10 +1326,10 @@ export default function TransactionReviewPage() {
         if (!pendingDrawerSave) return null;
         const { item, categoryId } = pendingDrawerSave;
         const effectiveCategoryId = categoryId ?? item.categoryId;
-        const effectiveCategoryName =
-          (effectiveCategoryId
-            ? categories.find((c: Category) => c.id === effectiveCategoryId)?.name
-            : null) ?? item.category;
+        const effectiveCategoryName = (() => {
+          const cat = effectiveCategoryId ? categories.find((c: Category) => c.id === effectiveCategoryId) : null;
+          return cat ? translateCategoryName(t, cat) : (item.category ?? null);
+        })();
         const otherCount = pendingDrawerOtherMatches.length;
         return (
           <Dialog

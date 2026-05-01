@@ -59,6 +59,7 @@ import {
   useBulkConfirmImportRows,
 } from '@/hooks/use-imports';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
+import { translateCategoryName } from '@/lib/category-i18n';
 import { previewRow, inferDateFormat } from '@/lib/adapter-preview';
 import type { AmountStrategy } from '@/lib/adapter-preview';
 import { itemNeedsEnrichment } from '@/lib/investment-utils';
@@ -672,7 +673,10 @@ export default function SmartImportPage() {
       if (data.assetQuantity !== undefined) payload.assetQuantity = data.assetQuantity ? parseFloat(data.assetQuantity) : null;
       if (data.assetPrice !== undefined)    payload.assetPrice    = data.assetPrice    ? parseFloat(data.assetPrice)    : null;
       updateRow.mutate({ rowId: data.item.id, data: payload }, {
-        onSuccess: () => setDrawerItem(null),
+        onSuccess: () => {
+          setDrawerItem(null);
+          setImportCategoryFilter(null);
+        },
       });
     },
     [updateRow],
@@ -681,7 +685,10 @@ export default function SmartImportPage() {
   const handleDrawerSkip = useCallback(() => {
     if (!drawerItem) return;
     updateRow.mutate({ rowId: drawerItem.id, data: { status: 'SKIPPED' } }, {
-      onSuccess: () => setDrawerItem(null),
+      onSuccess: () => {
+        setDrawerItem(null);
+        setImportCategoryFilter(null);
+      },
     });
   }, [drawerItem, updateRow]);
 
@@ -1801,7 +1808,7 @@ export default function SmartImportPage() {
                           <SelectContent className="max-h-60 overflow-auto">
                             {(catsByTypeGroup[localSeedTypes[seed.normalizedDescription]]?.[localSeedGroups[seed.normalizedDescription]] ?? []).map((cat) => (
                               <SelectItem key={cat.id} value={cat.id.toString()} className="text-xs">
-                                {cat.icon ? `${cat.icon} ` : ''}{cat.name}
+                                {cat.icon ? `${cat.icon} ` : ''}{translateCategoryName(t, cat)}
                               </SelectItem>
                             ))}
                           </SelectContent>
