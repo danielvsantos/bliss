@@ -166,7 +166,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
       const decimals = isCrypto ? 8 : 4;
       form.setValue('assetQuantity', parseFloat((amount / assetPriceValue).toFixed(decimals)));
     }
-  }, [debitValue, creditValue, assetPriceValue, isInvestment, closePositionMode, form]);
+  }, [debitValue, creditValue, assetPriceValue, isInvestment, closePositionMode, form, selectedCategory?.processingHint]);
 
   // Close-position mode: quantity is the anchor; credit is derived from price × exact quantity
   useEffect(() => {
