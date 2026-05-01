@@ -1,3 +1,4 @@
+const Sentry = require('@sentry/node');
 const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
 
@@ -138,10 +139,10 @@ async function checkMonthCompleteness(tenantId, year, month) {
 
   // Count distinct transaction days
   const distinctDays = await prisma.transaction.groupBy({
-    by: ['date'],
+    by: ['transaction_date'],
     where: {
       tenantId,
-      date: { gte: start, lte: end },
+      transaction_date: { gte: start, lte: end },
     },
   });
 
@@ -422,6 +423,7 @@ async function checkTierCompleteness(tenantId, tier, params = {}) {
     }
   } catch (error) {
     logger.error('Completeness check failed:', { tenantId, tier, error: error.message });
+    Sentry.captureException(error, { extra: { tenantId, tier } });
     return { canRun: false, error: error.message };
   }
 }

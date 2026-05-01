@@ -458,7 +458,7 @@ export default function TransactionsPage() {
                   ? formatDate(dateObj, { month: 'short', day: 'numeric' })
                   : '';
 
-                const mobileParts = [formattedDateShort, category?.name, account?.name].filter(Boolean);
+                const mobileParts = [formattedDateShort, category ? translateCategoryName(t, category) : undefined, account?.name].filter(Boolean);
 
                 return (
                   <div key={transaction.id}>
@@ -483,7 +483,7 @@ export default function TransactionsPage() {
 
                       {/* Category */}
                       <span className="flex-1 min-w-0 text-xs text-muted-foreground truncate hidden md:block">
-                        {category?.name || '—'}
+                        {category ? translateCategoryName(t, category) : '—'}
                       </span>
 
                       {/* Description + mobile subtitle */}

@@ -162,7 +162,9 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     if (closePositionMode) return;
     const amount = debitValue || creditValue;
     if (isInvestment && amount && assetPriceValue && assetPriceValue > 0) {
-      form.setValue('assetQuantity', amount / assetPriceValue);
+      const isCrypto = selectedCategory?.processingHint === 'API_CRYPTO';
+      const decimals = isCrypto ? 8 : 4;
+      form.setValue('assetQuantity', parseFloat((amount / assetPriceValue).toFixed(decimals)));
     }
   }, [debitValue, creditValue, assetPriceValue, isInvestment, closePositionMode, form]);
 
