@@ -108,7 +108,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
   }
 
   if (isError) {
-    return <div className="text-center text-destructive">Failed to load transactions.</div>;
+    return <div className="text-center text-destructive">{t('notifications.error.generic')}</div>;
   }
 
   const isEmpty = viewMode === 'transactions'
@@ -116,7 +116,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
     : !summaryLoading && categorySummary.length === 0;
 
   if (isEmpty && !isLoading && !summaryLoading) {
-    return <div className="text-center text-muted-foreground">No transactions found for this category in the selected period.</div>;
+    return <div className="text-center text-muted-foreground">{t('pages.transactions.noTransactions')}</div>;
   }
 
   const totalPages = data?.totalPages ?? 1;
@@ -133,7 +133,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
           onClick={() => handleViewChange('categories')}
         >
           <LayoutGrid className="h-3.5 w-3.5" />
-          By Category
+          {t('pages.expenses.breakdown.tabs.byCategory')}
         </Button>
         <Button
           variant={viewMode === 'transactions' ? 'default' : 'outline'}
@@ -142,7 +142,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
           onClick={() => handleViewChange('transactions')}
         >
           <List className="h-3.5 w-3.5" />
-          Transactions
+          {t('common.transactions')}
         </Button>
       </div>
 
@@ -157,11 +157,11 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Transactions</TableHead>
+                  <TableHead>{t('common.category')}</TableHead>
+                  <TableHead className="text-right">{t('common.transactions')}</TableHead>
                   {currencies.map((cur) => (
                     <TableHead key={cur} className="text-right">
-                      Total ({cur})
+                      {t('common.total')} ({cur})
                     </TableHead>
                   ))}
                 </TableRow>
@@ -189,7 +189,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                 <tfoot>
                   <tr className="border-t">
                     <td className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                      Total
+                      {t('common.total')}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                       {categorySummary.reduce((sum, c) => sum + c.count, 0)}
@@ -214,10 +214,10 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>{t('common.date')}</TableHead>
+                  <TableHead>{t('common.description')}</TableHead>
+                  <TableHead>{t('common.category')}</TableHead>
+                  <TableHead className="text-right">{t('common.amount')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,7 +227,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                     <TableCell className="font-medium">{transaction.description}</TableCell>
                     <TableCell>
                       <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-                        {transaction.category?.name}
+                        {transaction.category ? translateCategoryName(t, transaction.category) : '—'}
                       </span>
                     </TableCell>
                     <TableCell className="text-right text-negative font-semibold tabular-nums">
@@ -243,7 +243,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-2">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total}
               </p>
               <div className="flex items-center gap-1">
                 <Button

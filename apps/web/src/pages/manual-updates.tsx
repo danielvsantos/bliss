@@ -282,7 +282,7 @@ export default function ManualUpdatesPage() {
                               onClick={() => handleOpenDialog(asset, "price")}
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              {t("manualUpdates.updatePrice")}
+                              <span className="hidden sm:inline">{t("manualUpdates.updatePrice")}</span>
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -358,7 +358,7 @@ export default function ManualUpdatesPage() {
                               onClick={() => handleOpenDialog(asset, "debt")}
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              {asset.debtTerms ? t("manualUpdates.editTerms") : t("manualUpdates.addTerms")}
+                              <span className="hidden sm:inline">{asset.debtTerms ? t("manualUpdates.editTerms") : t("manualUpdates.addTerms")}</span>
                             </Button>
                           </TableCell>
                         </TableRow>

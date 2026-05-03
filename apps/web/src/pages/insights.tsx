@@ -362,7 +362,7 @@ export default function InsightsPage() {
       </div>
 
       {/* Tier tabs */}
-      <div className="flex gap-1 mb-4 overflow-x-auto pb-1" role="tablist">
+      <div className="flex gap-1 mb-4 overflow-x-auto pb-1 -mx-1 px-1" role="tablist">
         {TIERS.map(({ key, icon: Icon, label }) => {
           const isActive = activeTier === key;
           return (
@@ -371,7 +371,7 @@ export default function InsightsPage() {
               role="tab"
               aria-selected={isActive}
               onClick={() => setActiveTier(key)}
-              className={`flex items-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+              className={`shrink-0 flex items-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"

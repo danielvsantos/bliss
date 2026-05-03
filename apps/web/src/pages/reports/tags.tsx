@@ -311,7 +311,7 @@ export default function TagAnalyticsPage() {
       {primaryTagId && (
         <>
           {/* Summary Cards */}
-          <div className={`grid gap-4 ${compareMode && compareTagId ? 'grid-cols-2' : 'grid-cols-3 lg:grid-cols-6'}`}>
+          <div className={`grid gap-4 ${compareMode && compareTagId ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-6'}`}>
             {/* Primary tag — Total Debit */}
             <motion.div {...fadeUp} transition={{ delay: 0.2 }}>
               <Card>

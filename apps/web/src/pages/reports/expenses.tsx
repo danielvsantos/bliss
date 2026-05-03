@@ -200,15 +200,23 @@ export default function ExpenseTrackingPage() {
   const trendChartData = useMemo(() => {
     if (!analyticsData?.data || selectedGroupsForTrend.length === 0) return [];
     const trendData: { [key: string]: Record<string, number | string> } = {};
+    const typesToMerge = selectedCategoryType === 'All' ? ALLOWED_TYPES : [selectedCategoryType];
     Object.keys(analyticsData.data).forEach(timeKey => {
       trendData[timeKey] = { name: timeKey };
       const periodData = analyticsData.data[timeKey];
-      const expenseData = periodData[selectedCategoryType] || {};
+      // Merge all relevant types into a single group→debit map
+      const expenseData: Record<string, number> = {};
+      for (const type of typesToMerge) {
+        const typeData = periodData[type] || {};
+        for (const group in typeData) {
+          expenseData[group] = (expenseData[group] || 0) + (typeData[group]?.debit || 0);
+        }
+      }
       selectedGroupsForTrend.forEach(group => {
-        trendData[timeKey][group] = expenseData[group]?.debit || 0;
+        trendData[timeKey][group] = expenseData[group] || 0;
       });
     });
-    return Object.values(trendData).sort((a, b) => a.name.localeCompare(b.name));
+    return Object.values(trendData).sort((a, b) => (a.name as string).localeCompare(b.name as string));
   }, [analyticsData, selectedGroupsForTrend, selectedCategoryType]);
 
   const monthsDifference = useMemo(() => {
