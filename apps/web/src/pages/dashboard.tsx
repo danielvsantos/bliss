@@ -151,16 +151,16 @@ export default function Dashboard() {
 
           {/* ── 3-Column Grid ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-6">
-            <motion.div {...fadeUp} transition={{ delay: 0.1, duration: 0.4 }}>
+            <motion.div {...fadeUp} transition={{ delay: 0.1, duration: 0.4 }} className="order-2 lg:order-1">
               <SyncedAccountsCard
                 accounts={accounts}
                 isLoading={accountsLoading}
               />
             </motion.div>
-            <motion.div {...fadeUp} transition={{ delay: 0.15, duration: 0.4 }}>
+            <motion.div {...fadeUp} transition={{ delay: 0.15, duration: 0.4 }} className="order-1 lg:order-2">
               <ExpenseSplitCard currency={portfolioCurrency} />
             </motion.div>
-            <motion.div {...fadeUp} transition={{ delay: 0.2, duration: 0.4 }}>
+            <motion.div {...fadeUp} transition={{ delay: 0.2, duration: 0.4 }} className="order-3 lg:order-3">
               <QuickActionsCard
                 actions={quickActions}
                 signals={signals}

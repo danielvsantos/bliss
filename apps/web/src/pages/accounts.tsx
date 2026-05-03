@@ -10,7 +10,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { PlusIcon, Landmark } from 'lucide-react';
+import { PlusIcon, Landmark, ChevronLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -117,8 +117,8 @@ export default function AccountsPage() {
 
         {/* Master-Detail Body */}
         <div className="flex flex-1 min-h-0">
-          {/* Left — Account List */}
-          <div className="w-[380px] shrink-0">
+          {/* Left — Account List (hidden on mobile when an account is selected) */}
+          <div className={`w-full lg:w-[380px] lg:shrink-0 ${selectedAccountId ? 'hidden lg:block' : 'block'}`}>
             <AccountListPanel
               accounts={accounts}
               selectedAccountId={selectedAccountId}
@@ -127,14 +127,23 @@ export default function AccountsPage() {
             />
           </div>
 
-          {/* Right — Detail */}
-          <div className="flex-1 min-w-0 overflow-y-auto">
+          {/* Right — Detail (hidden on mobile when no account is selected) */}
+          <div className={`flex-1 min-w-0 overflow-y-auto ${selectedAccountId ? 'block' : 'hidden lg:flex'}`}>
             {selectedAccount ? (
-              <AccountDetailPanel
-                account={selectedAccount}
-                onEdit={handleEdit}
-                onRefetch={refetch}
-              />
+              <>
+                {/* Back button — mobile only */}
+                <div className="lg:hidden px-4 pt-3 pb-1">
+                  <Button variant="ghost" size="sm" className="gap-1 -ml-2" onClick={() => setSelectedAccountId(null)}>
+                    <ChevronLeft className="h-4 w-4" />
+                    {t('common.back')}
+                  </Button>
+                </div>
+                <AccountDetailPanel
+                  account={selectedAccount}
+                  onEdit={handleEdit}
+                  onRefetch={refetch}
+                />
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center p-10">
                 <div className="bg-muted rounded-full p-4 mb-4">

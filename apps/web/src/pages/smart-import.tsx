@@ -934,30 +934,32 @@ export default function SmartImportPage() {
       <Separator className="my-6" />
 
       {/* ─── Step Indicator ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 mb-8">
+      <div className="flex items-center gap-1 sm:gap-2 mb-8">
         {[
-          { key: 'upload', label: `1. ${t('smartImport.steps.upload')}` },
-          { key: 'processing', label: `2. ${t('smartImport.steps.processing')}` },
-          { key: 'review', label: `3. ${t('smartImport.steps.review')}` },
-          { key: 'done', label: `4. ${t('smartImport.steps.done')}` },
-        ].map(({ key, label }, idx) => {
+          { key: 'upload', num: '1', label: t('smartImport.steps.upload') },
+          { key: 'processing', num: '2', label: t('smartImport.steps.processing') },
+          { key: 'review', num: '3', label: t('smartImport.steps.review') },
+          { key: 'done', num: '4', label: t('smartImport.steps.done') },
+        ].map(({ key, num, label }, idx) => {
           const isCurrent = step === key;
           const isPast =
             ['upload', 'processing', 'review', 'done'].indexOf(step) >
             ['upload', 'processing', 'review', 'done'].indexOf(key);
           return (
-            <div key={key} className="flex items-center gap-2">
-              {idx > 0 && <div className={`w-8 h-0.5 ${isPast ? 'bg-primary' : 'bg-muted'}`} />}
+            <div key={key} className="flex items-center gap-1 sm:gap-2">
+              {idx > 0 && <div className={`w-4 sm:w-8 h-0.5 shrink-0 ${isPast ? 'bg-primary' : 'bg-muted'}`} />}
               <div
-                className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full ${isCurrent
+                className={`flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm font-medium px-2 sm:px-3 py-1.5 rounded-full whitespace-nowrap ${isCurrent
                   ? 'bg-primary text-primary-foreground'
                   : isPast
                     ? 'bg-primary/10 text-primary'
                     : 'bg-muted text-muted-foreground'
                   }`}
               >
-                {isPast ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-                {label}
+                {isPast
+                  ? <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+                  : <span className="sm:hidden">{num}</span>}
+                <span className="hidden sm:inline">{num}. {label}</span>
               </div>
             </div>
           );

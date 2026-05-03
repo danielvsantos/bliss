@@ -53,6 +53,7 @@ const TYPE_BORDER: Record<string, string> = {
 // processingHint is never editable by the user. Labels are translated via i18n.
 const PROCESSING_HINT_STYLE: Record<string, string> = {
   API_STOCK:        'bg-positive/10 text-positive border-positive/20',
+  API_FUND:         'bg-positive/10 text-positive border-positive/20',
   API_CRYPTO:       'bg-positive/10 text-positive border-positive/20',
   AMORTIZING_LOAN:  'bg-brand-primary/10 text-brand-primary border-brand-primary/20',
   SIMPLE_LIABILITY: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20',

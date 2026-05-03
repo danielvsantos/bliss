@@ -336,16 +336,22 @@ export default function EquityAnalysisPage() {
                       <tr className="border-b border-gray-100">
                         <SortableHeader field="symbol">{t('equityAnalysis.symbol')}</SortableHeader>
                         <SortableHeader field="name">{t('equityAnalysis.name')}</SortableHeader>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           {t('equityAnalysis.sector')}
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           {t('equityAnalysis.industry')}
                         </th>
-                        <SortableHeader field="peRatio">{t('equityAnalysis.pe')}</SortableHeader>
-                        <SortableHeader field="dividendYield">{t('equityAnalysis.divYield')}</SortableHeader>
-                        <SortableHeader field="trailingEps">{t('equityAnalysis.eps')}</SortableHeader>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                        <th className="hidden sm:table-cell px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-brand-deep whitespace-nowrap" onClick={() => handleSort('peRatio')}>
+                          {t('equityAnalysis.pe')}<SortChevron dir={sortField === 'peRatio' ? sortOrder : null} />
+                        </th>
+                        <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-brand-deep whitespace-nowrap" onClick={() => handleSort('dividendYield')}>
+                          {t('equityAnalysis.divYield')}<SortChevron dir={sortField === 'dividendYield' ? sortOrder : null} />
+                        </th>
+                        <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-brand-deep whitespace-nowrap" onClick={() => handleSort('trailingEps')}>
+                          {t('equityAnalysis.eps')}<SortChevron dir={sortField === 'trailingEps' ? sortOrder : null} />
+                        </th>
+                        <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                           {t('equityAnalysis.weekRange')}
                         </th>
                         <SortableHeader field="weight">{t('equityAnalysis.weight')}</SortableHeader>
@@ -356,21 +362,21 @@ export default function EquityAnalysisPage() {
                       {sortedHoldings.map((h: EquityHolding) => (
                         <tr key={h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
                           <td className="px-3 py-2.5 font-medium text-brand-deep">{h.symbol}</td>
-                          <td className="px-3 py-2.5 text-muted-foreground max-w-[160px] truncate">{h.name}</td>
-                          <td className="px-3 py-2.5 text-muted-foreground text-xs">{h.sector}</td>
-                          <td className="px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">{h.industry}</td>
-                          <td className="px-3 py-2.5 tabular-nums">
+                          <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">{h.name}</td>
+                          <td className="hidden md:table-cell px-3 py-2.5 text-muted-foreground text-xs">{h.sector}</td>
+                          <td className="hidden lg:table-cell px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">{h.industry}</td>
+                          <td className="hidden sm:table-cell px-3 py-2.5 tabular-nums">
                             {h.peRatio != null ? h.peRatio.toFixed(1) : '—'}
                           </td>
-                          <td className="px-3 py-2.5 tabular-nums">
+                          <td className="hidden md:table-cell px-3 py-2.5 tabular-nums">
                             {h.dividendYield != null ? `${(h.dividendYield * 100).toFixed(2)}%` : '—'}
                           </td>
-                          <td className="px-3 py-2.5 tabular-nums">
+                          <td className="hidden lg:table-cell px-3 py-2.5 tabular-nums">
                             <span className={h.trailingEps != null && h.trailingEps > 0 ? 'text-positive' : h.trailingEps != null && h.trailingEps < 0 ? 'text-negative' : ''}>
                               {h.trailingEps != null ? h.trailingEps.toFixed(2) : '—'}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                          <td className="hidden lg:table-cell px-3 py-2.5 text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                             {h.week52Low != null && h.week52High != null
                               ? `${formatCurrency(h.week52Low, portfolioCurrency, undefined, { maximumFractionDigits: 0 })} – ${formatCurrency(h.week52High, portfolioCurrency, undefined, { maximumFractionDigits: 0 })}`
                               : '—'}
