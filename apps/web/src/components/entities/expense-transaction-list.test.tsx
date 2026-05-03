@@ -39,7 +39,7 @@ describe('ExpenseTransactionList', () => {
     vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryError());
 
     renderComponent();
-    expect(screen.getByText('Failed to load transactions.')).toBeInTheDocument();
+    expect(screen.getByText('notifications.error.generic')).toBeInTheDocument();
   });
 
   it('renders empty state', () => {
@@ -48,7 +48,7 @@ describe('ExpenseTransactionList', () => {
     );
 
     renderComponent();
-    expect(screen.getByText('No transactions found for this category in the selected period.')).toBeInTheDocument();
+    expect(screen.getByText('pages.transactions.noTransactions')).toBeInTheDocument();
   });
 
   it('renders transaction rows correctly', () => {
@@ -74,7 +74,7 @@ describe('ExpenseTransactionList', () => {
     renderComponent();
 
     // Default view is now "By Category", switch to Transactions
-    fireEvent.click(screen.getByRole('button', { name: /Transactions/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'common.transactions' }));
 
     expect(screen.getByText('Mortgage Payment')).toBeInTheDocument();
     expect(screen.getByText('Mortgage & Rent')).toBeInTheDocument();

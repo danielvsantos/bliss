@@ -53,6 +53,8 @@ import { translateCategoryType, translateCategoryGroup } from "@/lib/category-i1
 import { MobileFilterDrawer } from "@/components/ui/mobile-filter-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
+
 const CHART_COLORS = [
   "hsl(var(--chart-1))",
   "hsl(var(--chart-2))",
@@ -74,7 +76,6 @@ const processAnalyticsData = (
 
   for (const timeKey in analyticsData.data) {
     const periodData = analyticsData.data[timeKey];
-    const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
     const typesToProcess = selectedType === 'All'
       ? Object.keys(periodData).filter(key => ALLOWED_TYPES.includes(key))
       : [selectedType];
@@ -171,8 +172,6 @@ export default function ExpenseTrackingPage() {
     return Array.from(expenseTypes);
   }, [categories]);
 
-  const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
-
   const analyticsFilters = useMemo(() => {
     const typesParam = selectedCategoryType === 'All' ? ALLOWED_TYPES : [selectedCategoryType];
     if (!startDate || !selectedCurrency || selectedCountries.length === 0) {
@@ -191,7 +190,6 @@ export default function ExpenseTrackingPage() {
       filters.endMonth = filters.startMonth;
     }
     return filters;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- ALLOWED_TYPES is a stable constant defined in component scope
   }, [startDate, endDate, selectedCurrency, selectedCountries, selectedCategoryType]);
 
   const { data: analyticsData, isLoading, isError } = useAnalytics(analyticsFilters);
