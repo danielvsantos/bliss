@@ -226,8 +226,7 @@ export default function PortfolioHoldingsPage() {
 
   // ── Data Fetching ──
   const { data: metadata, isLoading: metadataLoading, error: metadataError } = useMetadata();
-  const { data: accountListData } = useAccountList();
-  const accounts = accountListData ?? [];
+  const { accounts } = useAccountList();
 
   // Derive distinct countries from the account list for the country filter
   const distinctCountries = useMemo(() => {
