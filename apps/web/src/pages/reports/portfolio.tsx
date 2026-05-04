@@ -63,6 +63,68 @@ import {
 } from "@/lib/portfolio-utils";
 import { translateCategoryGroup } from "@/lib/category-i18n";
 
+// ── Symbol-level merge (cross-account deduplication) ──────────────────────
+//
+// When the user selects "All accounts", the API returns one PortfolioItem per
+// (symbol, accountId) pair. For display purposes we want a single row per
+// symbol. This helper merges all items that share a symbol by summing their
+// financial summaries and marking the merged item as account-agnostic.
+//
+// Rules:
+//  - quantity          → summed
+//  - costBasis         → summed
+//  - marketValue       → summed
+//  - unrealizedPnL     → summed; unrealizedPnLPercent recalculated
+//  - realizedPnL       → summed
+//  - totalInvested     → summed
+//  - hasLotMismatch    → OR (any account's mismatch surfaces on the merged row)
+//  - accountId         → null  (merged, not tied to one account)
+//  - id                → first item's id (for React keys; doesn't drive any query)
+//  - Everything else   → first item (category, currency, symbol are identical)
+
+function mergeFinancialSummary(
+  items: PortfolioItem[],
+  getBlock: (item: PortfolioItem) => PortfolioItem["native"],
+): PortfolioItem["native"] {
+  const summed = items.reduce(
+    (acc, item) => {
+      const b = getBlock(item);
+      if (!b) return acc;
+      return {
+        costBasis: acc.costBasis + parseDecimal(b.costBasis),
+        marketValue: acc.marketValue + parseDecimal(b.marketValue),
+        unrealizedPnL: acc.unrealizedPnL + parseDecimal(b.unrealizedPnL),
+        unrealizedPnLPercent: 0, // recalculated below
+        realizedPnL: acc.realizedPnL + parseDecimal(b.realizedPnL),
+        totalInvested: acc.totalInvested + parseDecimal(b.totalInvested),
+      };
+    },
+    { costBasis: 0, marketValue: 0, unrealizedPnL: 0, unrealizedPnLPercent: 0, realizedPnL: 0, totalInvested: 0 },
+  );
+  summed.unrealizedPnLPercent =
+    summed.costBasis !== 0 ? (summed.unrealizedPnL / summed.costBasis) * 100 : 0;
+  return summed;
+}
+
+function mergePortfolioItems(items: PortfolioItem[]): PortfolioItem {
+  if (items.length === 1) return items[0];
+  const base = items[0];
+  const quantity = items.reduce((s, i) => s + parseDecimal(i.quantity), 0);
+  const hasLotMismatch = items.some((i) => i.hasLotMismatch);
+  const hasPortfolio = items.some((i) => i.portfolio != null);
+  return {
+    ...base,
+    accountId: null,
+    quantity,
+    hasLotMismatch,
+    native: mergeFinancialSummary(items, (i) => i.native),
+    usd: mergeFinancialSummary(items, (i) => i.usd),
+    ...(hasPortfolio && {
+      portfolio: mergeFinancialSummary(items, (i) => i.portfolio ?? i.usd),
+    }),
+  };
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const EMPTY_ARRAY: [] = [];
@@ -266,17 +328,37 @@ export default function PortfolioHoldingsPage() {
   // ── Data Processing ──
 
   const { assetList, liabilityList } = useMemo(() => {
-    const assets: PortfolioItem[] = [];
-    const liabilities: PortfolioItem[] = [];
+    const rawAssets: PortfolioItem[] = [];
+    const rawLiabilities: PortfolioItem[] = [];
     portfolioItems.forEach((item) => {
       if (item.category.type === "Debt") {
-        liabilities.push(item);
+        rawLiabilities.push(item);
       } else {
-        assets.push(item);
+        rawAssets.push(item);
       }
     });
-    return { assetList: assets, liabilityList: liabilities };
-  }, [portfolioItems]);
+
+    // When viewing all accounts, merge same-symbol items into one row per symbol.
+    // A specific account filter is already applied server-side, so no merge is needed there.
+    if (selectedAccountId !== "all") {
+      return { assetList: rawAssets, liabilityList: rawLiabilities };
+    }
+
+    const mergeBySymbol = (items: PortfolioItem[]): PortfolioItem[] => {
+      const bySymbol = new Map<string, PortfolioItem[]>();
+      for (const item of items) {
+        const key = item.symbol;
+        if (!bySymbol.has(key)) bySymbol.set(key, []);
+        bySymbol.get(key)!.push(item);
+      }
+      return Array.from(bySymbol.values()).map(mergePortfolioItems);
+    };
+
+    return {
+      assetList: mergeBySymbol(rawAssets),
+      liabilityList: mergeBySymbol(rawLiabilities),
+    };
+  }, [portfolioItems, selectedAccountId]);
 
   const totalAssetsValue = useMemo(
     () => assetList
