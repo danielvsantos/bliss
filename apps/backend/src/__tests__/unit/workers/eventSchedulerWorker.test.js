@@ -467,7 +467,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       await processEventJob(job);
 
       expect(logger.warn).toHaveBeenCalledWith(
-        'MANUAL_REBUILD_REQUESTED (single-asset) missing payload.portfolioItemId.'
+        'MANUAL_REBUILD_REQUESTED (single-asset) missing payload.portfolioItemId(s).'
       );
       expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
     });
