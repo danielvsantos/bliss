@@ -485,19 +485,24 @@ const processEventJob = async (job) => {
                         break;
                     }
                     case 'single-asset': {
-                        // Re-value one portfolio item (asset). Uses the
-                        // existing `value-portfolio-items` job which accepts
-                        // a `portfolioItemIds` array.
-                        const { portfolioItemId } = payload || {};
-                        if (!portfolioItemId) {
-                            logger.warn('MANUAL_REBUILD_REQUESTED (single-asset) missing payload.portfolioItemId.');
+                        // Re-value one or more portfolio items (asset). Uses the
+                        // existing `value-portfolio-items` job which accepts a
+                        // `portfolioItemIds` array. Accepts either the legacy
+                        // scalar `portfolioItemId` or the newer `portfolioItemIds`
+                        // array (sent when the same symbol spans multiple accounts).
+                        const { portfolioItemId, portfolioItemIds } = payload || {};
+                        const ids = portfolioItemIds?.length
+                            ? portfolioItemIds
+                            : portfolioItemId ? [portfolioItemId] : [];
+                        if (ids.length === 0) {
+                            logger.warn('MANUAL_REBUILD_REQUESTED (single-asset) missing payload.portfolioItemId(s).');
                             return;
                         }
                         await getPortfolioQueue().add(
                             'value-portfolio-items',
                             {
                                 tenantId,
-                                portfolioItemIds: [portfolioItemId],
+                                portfolioItemIds: ids,
                                 _rebuildMeta: rebuildMeta,
                             },
                             { jobId, ...retentionOpts },

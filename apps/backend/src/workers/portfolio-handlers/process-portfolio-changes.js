@@ -94,11 +94,12 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     let portfolioItem = null;
 
     if (assetKey) {
-        // MANUAL assets (no ticker) use accountId = null — they are identified by their
-        // unique symbol/description across the portfolio and do not need per-account
-        // isolation. Ticker-based assets (stocks, ETFs, crypto) use the real accountId
-        // so that the same symbol held in two accounts stays as two separate items.
-        const itemAccountId = transaction.ticker ? transaction.accountId : null;
+        // MANUAL assets use accountId = null — same rule as the full rebuild:
+        //   1. No ticker on the transaction, OR
+        //   2. Category processingHint === 'MANUAL' (ticker-like symbol, manually priced)
+        // Ticker-based non-MANUAL assets use the real accountId for per-account isolation.
+        const isManualPriced = !transaction.ticker || transaction.category?.processingHint === 'MANUAL';
+        const itemAccountId = isManualPriced ? null : transaction.accountId;
 
         portfolioItem = await prisma.portfolioItem.findUnique({
             where: {
@@ -424,12 +425,15 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         const symbol = generateAssetKey(tx, decrypt);
         if (!symbol) return acc;
 
-        // MANUAL assets (no ticker: real estate, pension plans, private equity, etc.)
-        // are identified by their unique symbol/description and do NOT need per-account
-        // isolation. Forcing accountId = null keeps the PortfolioItem ID stable across
-        // rebuilds, which preserves ManualAssetValue records (FK cascade deletes them
-        // when their parent item is deleted and a new one is created with a different ID).
-        const itemAccountId = tx.ticker ? tx.accountId : null;
+        // MANUAL assets do NOT need per-account isolation. Two conditions trigger this:
+        //   1. No ticker on the transaction (real estate, pension plans, etc.)
+        //   2. Category processingHint === 'MANUAL' (private equity with a ticker-like
+        //      symbol but priced from ManualAssetValue — e.g. LETS in Private Equity)
+        // Forcing accountId = null keeps the PortfolioItem ID stable across rebuilds,
+        // which preserves ManualAssetValue records (FK cascade deletes them when their
+        // parent item is deleted and a new one is created with a different ID).
+        const isManualPriced = !tx.ticker || tx.category?.processingHint === 'MANUAL';
+        const itemAccountId = isManualPriced ? null : tx.accountId;
         const groupKey = `${symbol}::${itemAccountId ?? 'null'}`;
         if (!acc.has(groupKey)) {
             acc.set(groupKey, { symbol, accountId: itemAccountId, transactions: [] });

@@ -151,22 +151,49 @@ function RebuildButton({ scope, status, isPending, disabled, onClick, label }: R
   );
 }
 
+// One entry per unique symbol — all IDs for that symbol (across accounts) bundled together.
+interface SymbolGroup {
+  symbol: string;
+  ids: number[];
+  categoryName: string | null;
+  currency: string;
+  accountCount: number;
+}
+
 interface AssetPickerProps {
   items: RebuildAsset[];
-  value: number | null;
-  onChange: (id: number | null) => void;
+  value: string | null; // selected symbol key
+  onChange: (symbol: string | null, ids: number[]) => void;
 }
 
 function AssetPicker({ items, value, onChange }: AssetPickerProps) {
   const [open, setOpen] = useState(false);
-  const selected = useMemo(() => items.find((i) => i.id === value), [items, value]);
 
-  // Sort alphabetically by symbol. The list can be hundreds of rows for
-  // power users — search + virtualized rendering via shadcn Command
-  // keeps it performant.
-  const sortedItems = useMemo(
-    () => [...items].sort((a, b) => (a.symbol || '').localeCompare(b.symbol || '')),
-    [items],
+  // Group items by symbol — the same ticker across multiple accounts
+  // should appear once in the picker. Selecting it rebuilds all accounts.
+  const symbolGroups = useMemo<SymbolGroup[]>(() => {
+    const map = new Map<string, SymbolGroup>();
+    for (const item of items) {
+      const key = item.symbol;
+      if (map.has(key)) {
+        map.get(key)!.ids.push(item.id);
+        map.get(key)!.accountCount += 1;
+      } else {
+        map.set(key, {
+          symbol: item.symbol,
+          ids: [item.id],
+          categoryName: item.category?.name ?? null,
+          currency: item.currency,
+          accountCount: 1,
+        });
+      }
+    }
+    return [...map.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
+  }, [items]);
+
+  const selected = useMemo(
+    () => symbolGroups.find((g) => g.symbol === value) ?? null,
+    [symbolGroups, value],
   );
 
   return (
@@ -181,11 +208,11 @@ function AssetPicker({ items, value, onChange }: AssetPickerProps) {
           {selected ? (
             <span className="truncate">
               <span className="font-medium">{selected.symbol}</span>
-              {selected.category?.name ? (
-                <span className="text-muted-foreground ml-2">· {selected.category.name}</span>
+              {selected.categoryName ? (
+                <span className="text-muted-foreground ml-2">· {selected.categoryName}</span>
               ) : null}
-              {selected.account?.name ? (
-                <span className="text-muted-foreground ml-1">({selected.account.name})</span>
+              {selected.accountCount > 1 ? (
+                <span className="text-muted-foreground ml-1">({selected.accountCount} accounts)</span>
               ) : null}
             </span>
           ) : (
@@ -200,27 +227,27 @@ function AssetPicker({ items, value, onChange }: AssetPickerProps) {
           <CommandList>
             <CommandEmpty>No assets found.</CommandEmpty>
             <CommandGroup>
-              {sortedItems.map((item) => (
+              {symbolGroups.map((group) => (
                 <CommandItem
-                  key={item.id}
-                  value={`${item.symbol} ${item.category?.name || ''} ${item.account?.name || ''}`}
+                  key={group.symbol}
+                  value={`${group.symbol} ${group.categoryName || ''}`}
                   onSelect={() => {
-                    onChange(item.id);
+                    onChange(group.symbol, group.ids);
                     setOpen(false);
                   }}
                 >
                   <Check
                     className={cn(
                       'mr-2 h-4 w-4',
-                      value === item.id ? 'opacity-100' : 'opacity-0',
+                      value === group.symbol ? 'opacity-100' : 'opacity-0',
                     )}
                   />
                   <div className="flex flex-col min-w-0">
-                    <span className="font-medium truncate">{item.symbol}</span>
+                    <span className="font-medium truncate">{group.symbol}</span>
                     <span className="text-xs text-muted-foreground truncate">
-                      {item.category?.name || '—'}
-                      {item.currency ? ` · ${item.currency}` : ''}
-                      {item.account?.name ? ` · ${item.account.name}` : ''}
+                      {group.categoryName || '—'}
+                      {group.currency ? ` · ${group.currency}` : ''}
+                      {group.accountCount > 1 ? ` · ${group.accountCount} accounts` : ''}
                     </span>
                   </div>
                 </CommandItem>
@@ -364,9 +391,10 @@ export function MaintenanceTab() {
 
   // Per-section local state
   const [scopedDate, setScopedDate] = useState<string>('');
-  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
+  const [selectedAssetSymbol, setSelectedAssetSymbol] = useState<string | null>(null);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<number[]>([]);
 
-  const runTrigger = (scope: RebuildScope, payload?: { earliestDate?: string; portfolioItemId?: number }) => {
+  const runTrigger = (scope: RebuildScope, payload?: { earliestDate?: string; portfolioItemIds?: number[] }) => {
     trigger.mutate(
       { scope, payload },
       {
@@ -545,8 +573,11 @@ export function MaintenanceTab() {
             ) : (
               <AssetPicker
                 items={portfolioItems}
-                value={selectedAssetId}
-                onChange={setSelectedAssetId}
+                value={selectedAssetSymbol}
+                onChange={(sym, ids) => {
+                  setSelectedAssetSymbol(sym);
+                  setSelectedAssetIds(ids);
+                }}
               />
             )}
           </div>
@@ -554,10 +585,10 @@ export function MaintenanceTab() {
             scope="single-asset"
             status={status}
             isPending={trigger.isPending && trigger.variables?.scope === 'single-asset'}
-            disabled={statusLoading || selectedAssetId == null}
+            disabled={statusLoading || selectedAssetIds.length === 0}
             onClick={() => {
-              if (selectedAssetId == null) return;
-              runTrigger('single-asset', { portfolioItemId: selectedAssetId });
+              if (selectedAssetIds.length === 0) return;
+              runTrigger('single-asset', { portfolioItemIds: selectedAssetIds });
             }}
             label="Rebuild asset"
           />
