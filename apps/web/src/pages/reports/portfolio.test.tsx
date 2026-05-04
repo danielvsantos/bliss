@@ -8,6 +8,7 @@ import PortfolioHoldingsPage from './portfolio';
 import * as UseItems from '@/hooks/use-portfolio-items';
 import * as UseHistory from '@/hooks/use-portfolio-history';
 import * as UseMetadata from '@/hooks/use-metadata';
+import * as UseAccountList from '@/hooks/use-account-list';
 import { mockQueryResult } from '@/test/mock-helpers';
 
 // Mocks
@@ -29,6 +30,7 @@ window.ResizeObserver = global.ResizeObserver;
 vi.mock('@/hooks/use-portfolio-items');
 vi.mock('@/hooks/use-portfolio-history');
 vi.mock('@/hooks/use-metadata');
+vi.mock('@/hooks/use-account-list');
 vi.mock('@/lib/portfolio-utils', () => ({
   getDisplayData: (item: { currentPrice: string }) => ({
     marketValue: item.currentPrice,
@@ -70,6 +72,13 @@ describe('PortfolioHoldingsPage', () => {
     vi.mocked(UseMetadata.useMetadata).mockReturnValue(
       mockQueryResult({ categories: [] }),
     );
+
+    vi.mocked(UseAccountList.useAccountList).mockReturnValue({
+      accounts: [],
+      plaidItems: [],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
 
     vi.mocked(UseHistory.usePortfolioHistory).mockReturnValue(
       mockQueryResult({
