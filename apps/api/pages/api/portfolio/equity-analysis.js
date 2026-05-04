@@ -154,10 +154,26 @@ export default withAuth(async function handler(req, res) {
       })
     );
 
-    // 4. Compute total equity value and weights
-    const totalEquityValue = enrichedHoldings.reduce((sum, h) => sum + h.currentValue, 0);
-
+    // 3b. Merge entries for the same symbol held across multiple accounts.
+    //     SecurityMaster data (sector, P/E, etc.) is per-symbol so it is
+    //     identical across accounts — we just sum the financial values.
+    const symbolMap = new Map();
     for (const h of enrichedHoldings) {
+      if (symbolMap.has(h.symbol)) {
+        const existing = symbolMap.get(h.symbol);
+        existing.quantity += h.quantity;
+        existing.currentValue += h.currentValue;
+        existing.currentValueUSD += h.currentValueUSD;
+      } else {
+        symbolMap.set(h.symbol, { ...h });
+      }
+    }
+    const mergedHoldings = [...symbolMap.values()];
+
+    // 4. Compute total equity value and weights
+    const totalEquityValue = mergedHoldings.reduce((sum, h) => sum + h.currentValue, 0);
+
+    for (const h of mergedHoldings) {
       h.weight = totalEquityValue > 0 ? h.currentValue / totalEquityValue : 0;
     }
 
@@ -165,7 +181,7 @@ export default withAuth(async function handler(req, res) {
     let weightedPeRatio = null;
     let weightedDividendYield = null;
 
-    const holdingsWithPe = enrichedHoldings.filter((h) => h.peRatio != null && h.peRatio > 0);
+    const holdingsWithPe = mergedHoldings.filter((h) => h.peRatio != null && h.peRatio > 0);
     if (holdingsWithPe.length > 0) {
       const peWeightSum = holdingsWithPe.reduce((sum, h) => sum + h.weight, 0);
       if (peWeightSum > 0) {
@@ -174,7 +190,7 @@ export default withAuth(async function handler(req, res) {
       }
     }
 
-    const holdingsWithYield = enrichedHoldings.filter((h) => h.dividendYield != null && h.dividendYield > 0);
+    const holdingsWithYield = mergedHoldings.filter((h) => h.dividendYield != null && h.dividendYield > 0);
     if (holdingsWithYield.length > 0) {
       const yieldWeightSum = holdingsWithYield.reduce((sum, h) => sum + h.weight, 0);
       if (yieldWeightSum > 0) {
@@ -185,7 +201,7 @@ export default withAuth(async function handler(req, res) {
 
     // 6. Group by requested field
     const groupMap = {};
-    for (const h of enrichedHoldings) {
+    for (const h of mergedHoldings) {
       const key = h[groupBy] || 'Unknown';
       if (!groupMap[key]) {
         groupMap[key] = { name: key, totalValue: 0, holdingsCount: 0, holdings: [] };
@@ -207,7 +223,7 @@ export default withAuth(async function handler(req, res) {
       portfolioCurrency,
       summary: {
         totalEquityValue: Math.round(totalEquityValue * 100) / 100,
-        holdingsCount: enrichedHoldings.length,
+        holdingsCount: mergedHoldings.length,
         weightedPeRatio,
         weightedDividendYield,
       },

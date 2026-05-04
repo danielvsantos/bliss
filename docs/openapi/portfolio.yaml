@@ -39,6 +39,20 @@ components:
           type: string
         name:
           type: string
+        accountId:
+          type: integer
+          nullable: true
+          description: >
+            The brokerage account this item belongs to.
+            null for manually-entered assets (real estate, private equity, etc.)
+            that have no brokerage binding.
+        hasLotMismatch:
+          type: boolean
+          description: >
+            Set to true when FIFO lot processing produces a negative quantity,
+            indicating a sell transaction with no matching buy in this account
+            (e.g. a cross-account transfer recorded as a close). Surfaced as a
+            data-quality warning in the transaction form.
         quantity:
           type: number
         currency:
@@ -160,6 +174,16 @@ paths:
         - name: source
           in: query
           description: Filter by the data source of the item.
+          schema:
+            type: string
+        - name: accountId
+          in: query
+          description: Filter by brokerage account ID. Pass the literal string "null" to return only manually-entered items with no account binding.
+          schema:
+            type: string
+        - name: countryId
+          in: query
+          description: Filter by the ISO country code of the brokerage account (e.g. "US", "GB"). Based on Account.countryId, not the equity's listed country.
           schema:
             type: string
       responses:
@@ -331,6 +355,16 @@ paths:
           description: Filter by category group.
           schema:
             type: string
+        - name: account
+          in: query
+          description: Filter by brokerage account ID.
+          schema:
+            type: integer
+        - name: countryId
+          in: query
+          description: Filter by the ISO country code of the brokerage account.
+          schema:
+            type: string
         - name: page
           in: query
           schema:
@@ -371,6 +405,99 @@ paths:
           description: 'Filter by asset group (e.g., Equities, Real Estate). Multiple values can be comma-separated.'
           schema:
             type: string
+        - name: accountId
+          in: query
+          description: Filter history to a single brokerage account.
+          schema:
+            type: integer
+
+  /api/portfolio/equity-analysis:
+    get:
+      summary: Fetch equity risk and composition analysis
+      description: >
+        Returns equity holdings grouped by sector, industry, or country,
+        enriched with SecurityMaster fundamentals (P/E, dividend yield, EPS).
+        Holdings for the same symbol held across multiple accounts are
+        automatically merged so each ticker appears once.
+      parameters:
+        - name: groupBy
+          in: query
+          description: 'Dimension to group holdings by. Default: sector.'
+          schema:
+            type: string
+            enum: [sector, industry, country]
+            default: sector
+        - name: accountId
+          in: query
+          description: Restrict analysis to a single brokerage account.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Equity analysis data grouped by the requested dimension.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolioCurrency:
+                    type: string
+                  summary:
+                    type: object
+                    properties:
+                      totalEquityValue:
+                        type: number
+                      holdingsCount:
+                        type: integer
+                      weightedPeRatio:
+                        type: number
+                        nullable: true
+                      weightedDividendYield:
+                        type: number
+                        nullable: true
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        totalValue:
+                          type: number
+                        weight:
+                          type: number
+                        holdingsCount:
+                          type: integer
+                        holdings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              symbol:
+                                type: string
+                              name:
+                                type: string
+                              quantity:
+                                type: number
+                              currentValue:
+                                type: number
+                              weight:
+                                type: number
+                              peRatio:
+                                type: number
+                                nullable: true
+                              dividendYield:
+                                type: number
+                                nullable: true
+                              trailingEps:
+                                type: number
+                                nullable: true
+                              week52High:
+                                type: number
+                                nullable: true
+                              week52Low:
+                                type: number
+                                nullable: true
       responses:
         '200':
           description: A time-series of aggregated daily portfolio values with currency metadata.

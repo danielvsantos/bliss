@@ -124,6 +124,12 @@ export default function EquityAnalysisPage() {
       }));
   }, [allHoldings]);
 
+  // O(1) lookup map for the bar chart tooltip (symbol → holding)
+  const topHoldingsMap = useMemo(
+    () => new Map(topHoldings.map((h) => [h.symbol, h])),
+    [topHoldings],
+  );
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -296,7 +302,7 @@ export default function EquityAnalysisPage() {
                     <Tooltip
                       formatter={(value: number) => [`${value.toFixed(1)}%`, t('equityAnalysis.weight')]}
                       labelFormatter={(label) => {
-                        const h = topHoldings.find((t) => t.symbol === label);
+                        const h = topHoldingsMap.get(label);
                         return h ? `${h.name} (${h.symbol})` : label;
                       }}
                     />
