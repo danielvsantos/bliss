@@ -45,7 +45,7 @@ const { getPortfolioQueue } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
 const prisma = require('../../prisma/prisma.js');
 
-const LOCK_TTL_SECONDS = 60; // 1 minute (reduced for dev; restore to 60 * 60 for production)
+const LOCK_TTL_SECONDS = 60 * 60; // 1 hour
 const RECENT_LIMIT = 20;
 
 const VALID_SCOPES = new Set([
