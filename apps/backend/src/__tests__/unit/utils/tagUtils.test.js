@@ -127,7 +127,7 @@ describe('resolveTagsByName()', () => {
 
   describe('edge cases', () => {
     it('skips empty string tag names', async () => {
-      const result = await resolveTagsByName(['', '  ', 'Valid'], 'tenant-1', 'user@test.com');
+      await resolveTagsByName(['', '  ', 'Valid'], 'tenant-1', 'user@test.com');
 
       // Only 'Valid' should be processed
       expect(mockTagFindFirst).toHaveBeenCalledTimes(1);
@@ -148,7 +148,7 @@ describe('resolveTagsByName()', () => {
 
     it('skips non-string entries gracefully', async () => {
       // Non-string values should produce empty string after trim and be skipped
-      const result = await resolveTagsByName([123, null, 'Valid'], 'tenant-1', 'user@test.com');
+      await resolveTagsByName([123, null, 'Valid'], 'tenant-1', 'user@test.com');
 
       // 123 → '' (from `typeof 123 !== 'string'` → ''), null → '' — both skipped
       // Only 'Valid' is processed

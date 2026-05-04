@@ -74,7 +74,7 @@ describe('useAccountList', () => {
       isLoading: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useMetadata>);
-    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as any);
+    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as unknown as Awaited<ReturnType<typeof api.getPlaidItems>>);
 
     const { result } = renderHook(() => useAccountList(), { wrapper: createWrapper() });
     // Wait until the plaid items query resolves and enriched accounts reflect Plaid status
@@ -98,7 +98,7 @@ describe('useAccountList', () => {
       isLoading: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useMetadata>);
-    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as any);
+    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as unknown as Awaited<ReturnType<typeof api.getPlaidItems>>);
 
     const { result } = renderHook(() => useAccountList(), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.accounts[0]?.status).toBe('action-required'));
@@ -120,7 +120,7 @@ describe('useAccountList', () => {
       isLoading: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useMetadata>);
-    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as any);
+    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as unknown as Awaited<ReturnType<typeof api.getPlaidItems>>);
 
     const { result } = renderHook(() => useAccountList(), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.accounts[0]?.status).toBe('disconnected'));
@@ -169,7 +169,7 @@ describe('useAccountList', () => {
   });
 
   it('returns plaidItems array', async () => {
-    vi.mocked(api.getPlaidItems).mockResolvedValue([{ id: 1 }] as any);
+    vi.mocked(api.getPlaidItems).mockResolvedValue([{ id: 1 }] as unknown as Awaited<ReturnType<typeof api.getPlaidItems>>);
     const { result } = renderHook(() => useAccountList(), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.plaidItems).toHaveLength(1);
@@ -187,7 +187,7 @@ describe('useAccountList', () => {
       isLoading: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useMetadata>);
-    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as any);
+    vi.mocked(api.getPlaidItems).mockResolvedValue([mockPlaidItem] as unknown as Awaited<ReturnType<typeof api.getPlaidItems>>);
 
     const { result } = renderHook(() => useAccountList(), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.accounts[0]?.healthColor).toBe('destructive'));

@@ -24,7 +24,7 @@ const makeAccount = (overrides: Partial<EnrichedAccount> = {}): EnrichedAccount 
   plaidAccountId: null,
   historicalSyncComplete: true,
   earliestTransactionDate: null,
-  originalAccount: {} as any,
+  originalAccount: {} as unknown as EnrichedAccount['originalAccount'],
   ...overrides,
 });
 

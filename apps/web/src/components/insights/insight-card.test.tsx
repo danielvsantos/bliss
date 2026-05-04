@@ -66,7 +66,7 @@ describe('InsightCard', () => {
   it('renders suggestedAction from metadata when present', () => {
     render(
       <InsightCard
-        insight={makeInsight({ metadata: { suggestedAction: 'Cut dining out budget' } as any })}
+        insight={makeInsight({ metadata: { suggestedAction: 'Cut dining out budget' } })}
         onDismiss={vi.fn()}
       />
     );
@@ -82,7 +82,7 @@ describe('InsightCard', () => {
   });
 
   it('renders unknown lens as raw lens name', () => {
-    render(<InsightCard insight={makeInsight({ lens: 'CUSTOM_LENS' as any })} onDismiss={vi.fn()} />);
+    render(<InsightCard insight={makeInsight({ lens: 'CUSTOM_LENS' })} onDismiss={vi.fn()} />);
     expect(screen.getByText('CUSTOM_LENS')).toBeInTheDocument();
   });
 
