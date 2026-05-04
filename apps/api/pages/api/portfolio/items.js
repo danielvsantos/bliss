@@ -99,6 +99,42 @@ export default withAuth(async function handler(req, res) {
       orderBy: { symbol: 'asc' },
     });
 
+    // ── Deduplicated live-price prefetch ─────────────────────────────────────
+    // With per-account portfolio items, the same ticker (e.g. AAPL) may appear
+    // in multiple rows (one per brokerage account). Without deduplication every
+    // row fires its own request to the backend pricing endpoint → TwelveData,
+    // wasting API credits and slowing the response.
+    //
+    // Cache key: symbol + processingHint + priceCurrency + exchange — the exact
+    // tuple forwarded to /api/pricing/prices. Two items that share all four will
+    // receive the same live price, which is correct (same instrument).
+    const livePriceCache = new Map(); // cacheKey → Decimal | null
+    await Promise.all(
+      assetsFromDb
+        .filter((asset) => {
+          const hint = asset.category?.processingHint;
+          const qty  = new Decimal(asset.quantity || 0);
+          return (
+            (hint === 'API_STOCK' || hint === 'API_CRYPTO' || hint === 'API_FUND') &&
+            qty.gt(0) &&
+            asset.source !== 'MANUAL'
+          );
+        })
+        .filter((asset) => {
+          // Only keep the first item per unique price-fetch key; skip duplicates.
+          const key = `${asset.symbol}::${asset.category.processingHint}::${asset.assetCurrency || asset.currency}::${asset.exchange || ''}`;
+          if (livePriceCache.has(key)) return false;
+          livePriceCache.set(key, null); // reserve slot
+          return true;
+        })
+        .map(async (asset) => {
+          const key = `${asset.symbol}::${asset.category.processingHint}::${asset.assetCurrency || asset.currency}::${asset.exchange || ''}`;
+          const price = await calculateAssetCurrentValue(asset);
+          livePriceCache.set(key, price);
+        })
+    );
+    // ─────────────────────────────────────────────────────────────────────────
+
     const enrichedAssets = await Promise.all(
       assetsFromDb.map(async (asset) => {
         const quantity = new Decimal(asset.quantity || 0);
@@ -108,12 +144,13 @@ export default withAuth(async function handler(req, res) {
         let marketValueNative = new Decimal(asset.currentValue || 0);
         let marketValueUSD = new Decimal(asset.currentValueInUSD || 0);
 
-        // For certain assets, fetch a live price to override the stored value.
-        // The price returned by calculateAssetCurrentValue is in the asset's trading
-        // currency (assetCurrency), which may differ from the account currency.
-        // If the live price fetch fails or returns zero, keep the stored values from the DB.
-        if ((hint === 'API_STOCK' || hint === 'API_CRYPTO' || hint === 'API_FUND') && quantity > 0 && asset.source !== 'MANUAL') {
-          const livePricePerUnit = await calculateAssetCurrentValue(asset);
+        // For certain assets, use the pre-fetched live price (deduplicated above).
+        // The price is in the asset's trading currency (assetCurrency), which may
+        // differ from the account currency.
+        // If the live price fetch failed or returned zero, keep the stored values.
+        if ((hint === 'API_STOCK' || hint === 'API_CRYPTO' || hint === 'API_FUND') && quantity.gt(0) && asset.source !== 'MANUAL') {
+          const cacheKey = `${asset.symbol}::${hint}::${asset.assetCurrency || asset.currency}::${asset.exchange || ''}`;
+          const livePricePerUnit = livePriceCache.get(cacheKey) ?? null;
 
           // Only override stored values if we got a meaningful live price.
           // When the API fails (e.g., unresolvable ticker), the fallback returns 0 or cost-basis —
