@@ -182,6 +182,144 @@ describe('POST /api/plaid/webhook', () => {
     });
   });
 
+  it('handles ITEM.USER_PERMISSION_REVOKED', async () => {
+    const req = makeReq({
+      body: {
+        webhook_type: 'ITEM',
+        webhook_code: 'USER_PERMISSION_REVOKED',
+        item_id: 'plaid-item-abc',
+      },
+    });
+    const res = makeRes();
+
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
+      id: 'internal-item-1',
+      tenantId: 'tenant-123',
+      status: 'ACTIVE',
+    });
+    mockPrisma.plaidItem.update.mockResolvedValueOnce({});
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.plaidItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REVOKED' }) })
+    );
+  });
+
+  it('handles ITEM.ERROR with ITEM_LOGIN_REQUIRED error code → sets LOGIN_REQUIRED status', async () => {
+    const req = makeReq({
+      body: {
+        webhook_type: 'ITEM',
+        webhook_code: 'ERROR',
+        item_id: 'plaid-item-abc',
+        error: { error_code: 'ITEM_LOGIN_REQUIRED' },
+      },
+    });
+    const res = makeRes();
+
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
+      id: 'internal-item-1',
+      tenantId: 'tenant-123',
+      status: 'ACTIVE',
+    });
+    mockPrisma.plaidItem.update.mockResolvedValueOnce({});
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.plaidItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'LOGIN_REQUIRED' }) })
+    );
+  });
+
+  it('handles ITEM.WEBHOOK_UPDATE_ACKNOWLEDGED (no-op)', async () => {
+    const req = makeReq({
+      body: {
+        webhook_type: 'ITEM',
+        webhook_code: 'WEBHOOK_UPDATE_ACKNOWLEDGED',
+        item_id: 'plaid-item-abc',
+      },
+    });
+    const res = makeRes();
+
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
+      id: 'internal-item-1',
+      tenantId: 'tenant-123',
+      status: 'ACTIVE',
+    });
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.plaidItem.update).not.toHaveBeenCalled();
+  });
+
+  it('ignores unknown webhook_type', async () => {
+    const req = makeReq({
+      body: {
+        webhook_type: 'HOLDINGS',
+        webhook_code: 'DEFAULT_UPDATE',
+        item_id: 'plaid-item-abc',
+      },
+    });
+    const res = makeRes();
+
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
+      id: 'internal-item-1',
+      tenantId: 'tenant-123',
+      status: 'ACTIVE',
+    });
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.plaidItem.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 even when item_id is missing (ignores silently)', async () => {
+    const req = makeReq({
+      body: { webhook_type: 'TRANSACTIONS', webhook_code: 'SYNC_UPDATES_AVAILABLE' },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.plaidItem.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 when item not found in DB (no-op)', async () => {
+    const req = makeReq({
+      body: { webhook_type: 'TRANSACTIONS', webhook_code: 'SYNC_UPDATES_AVAILABLE', item_id: 'unknown' },
+    });
+    const res = makeRes();
+
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce(null);
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+  });
+
+  it('skips PLAID_SYNC_UPDATES for non-ACTIVE item', async () => {
+    const req = makeReq({
+      body: { webhook_type: 'TRANSACTIONS', webhook_code: 'SYNC_UPDATES_AVAILABLE', item_id: 'plaid-item-abc' },
+    });
+    const res = makeRes();
+
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
+      id: 'internal-item-1',
+      tenantId: 'tenant-123',
+      status: 'LOGIN_REQUIRED',
+    });
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockProduceEvent).not.toHaveBeenCalled();
+  });
+
   it('skips verification in non-production', async () => {
     // In non-production, the handler should NOT reject requests without plaid-verification header
     const req = makeReq({

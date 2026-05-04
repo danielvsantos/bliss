@@ -168,3 +168,82 @@ describe('GET /api/analytics — year view', () => {
     expect(res._body.data).toEqual({});
   });
 });
+
+describe('GET /api/analytics — month view', () => {
+  it('returns analytics grouped by month', async () => {
+    const mockRows = [
+      {
+        year: 2025, month: 6, currency: 'USD', country: 'US',
+        type: 'Expense', group: 'Dining',
+        credit: { toNumber: () => 0 }, debit: { toNumber: () => 100 }, balance: { toNumber: () => -100 },
+      },
+    ];
+    mockPrisma.analyticsCacheMonthly.findMany.mockResolvedValueOnce(mockRows);
+
+    const req = makeReq({
+      method: 'GET',
+      query: { view: 'month', startMonth: '2025-01', endMonth: '2025-12' },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.view).toBe('month');
+    expect(res._body.data['2025-06']).toBeDefined();
+  });
+});
+
+describe('GET /api/analytics — quarter view', () => {
+  it('returns analytics grouped by quarter', async () => {
+    const mockRows = [
+      {
+        year: 2025, month: 3, currency: 'USD', country: 'US',
+        type: 'Income', group: 'Salary',
+        credit: { toNumber: () => 5000 }, debit: { toNumber: () => 0 }, balance: { toNumber: () => 5000 },
+      },
+    ];
+    mockPrisma.analyticsCacheMonthly.findMany.mockResolvedValueOnce(mockRows);
+
+    const req = makeReq({
+      method: 'GET',
+      query: { view: 'quarter', startQuarter: '2025-Q1', endQuarter: '2025-Q4' },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.view).toBe('quarter');
+    expect(res._body.data['2025-Q1']).toBeDefined();
+  });
+});
+
+describe('POST/PUT/DELETE /api/analytics', () => {
+  it('returns 501 for POST', async () => {
+    const req = makeReq({ method: 'POST' });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(501);
+  });
+
+  it('returns 501 for PUT', async () => {
+    const req = makeReq({ method: 'PUT' });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(501);
+  });
+
+  it('returns 501 for DELETE', async () => {
+    const req = makeReq({ method: 'DELETE' });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(501);
+  });
+});
