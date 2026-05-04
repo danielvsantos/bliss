@@ -86,10 +86,17 @@ async function handleTrigger(req, res, user) {
     }
   }
   if (scope === 'single-asset') {
-    const id = payload?.portfolioItemId;
-    if (typeof id !== 'number' || !Number.isFinite(id)) {
+    const hasSingle =
+      typeof payload?.portfolioItemId === 'number' &&
+      Number.isFinite(payload.portfolioItemId);
+    const hasMany =
+      Array.isArray(payload?.portfolioItemIds) &&
+      payload.portfolioItemIds.length > 0 &&
+      payload.portfolioItemIds.every((id) => typeof id === 'number' && Number.isFinite(id));
+    if (!hasSingle && !hasMany) {
       return res.status(StatusCodes.BAD_REQUEST).json({
-        error: 'payload.portfolioItemId (number) is required for scope=single-asset',
+        error:
+          'payload.portfolioItemId (number) or payload.portfolioItemIds (number[]) is required for scope=single-asset',
       });
     }
   }

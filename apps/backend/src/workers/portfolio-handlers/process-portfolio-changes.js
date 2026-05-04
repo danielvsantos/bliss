@@ -538,7 +538,12 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     const transactionUpdates = [];
     for (const tx of allTransactions) {
         const symbol = generateAssetKey(tx, decrypt);
-        const groupKey = `${symbol}::${tx.accountId}`;
+        if (!symbol) continue;
+        // Apply the same MANUAL isolation rule used when grouping: MANUAL-priced
+        // assets live under accountId=null in the map regardless of tx.accountId.
+        const isManualPriced = !tx.ticker || tx.category?.processingHint === 'MANUAL';
+        const itemAccountId = isManualPriced ? null : tx.accountId;
+        const groupKey = `${symbol}::${itemAccountId ?? 'null'}`;
         const portfolioItem = allItemsMap.get(groupKey);
         if (portfolioItem && tx.portfolioItemId !== portfolioItem.id) {
             transactionUpdates.push(
