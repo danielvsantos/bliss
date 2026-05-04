@@ -21,7 +21,10 @@ ALTER TABLE "PortfolioItem"
   ADD CONSTRAINT "PortfolioItem_accountId_fkey"
   FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- Step 3: Remove old unique constraint
+-- Step 3: Remove old unique index/constraint
+-- Prisma creates @@unique as a bare CREATE UNIQUE INDEX (not ADD CONSTRAINT),
+-- so we must DROP INDEX — DROP CONSTRAINT silently no-ops on standalone indexes.
+DROP INDEX IF EXISTS "PortfolioItem_tenantId_symbol_key";
 ALTER TABLE "PortfolioItem" DROP CONSTRAINT IF EXISTS "PortfolioItem_tenantId_symbol_key";
 
 -- Step 4: Delete all transaction-derived portfolio items.
