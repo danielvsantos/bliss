@@ -53,14 +53,17 @@ describe('createHeartbeat()', () => {
     it('does NOT call extendLock when called before intervalMs elapses', async () => {
       const extendLock = jest.fn().mockResolvedValue(undefined);
       const job = { id: 'job-1', extendLock };
+      const now = Date.now();
+
+      // Create heartbeat first — this captures lastExtend = now
       const heartbeat = createHeartbeat(job, 'token', { intervalMs: 30_000, name: 'test' });
 
-      // First call at t=0 should extend (lastExtend starts in the past just enough)
-      jest.setSystemTime(Date.now() + 30_001);
+      // Advance past the interval so the first call fires
+      jest.setSystemTime(now + 30_001);
       await heartbeat();
       expect(extendLock).toHaveBeenCalledTimes(1);
 
-      // Second call immediately after should be rate-limited
+      // Second call immediately — lastExtend was just updated, so elapsed ≈ 0
       await heartbeat();
       expect(extendLock).toHaveBeenCalledTimes(1);
     });
@@ -70,15 +73,17 @@ describe('createHeartbeat()', () => {
       const job = { id: 'job-1', extendLock };
       const now = Date.now();
 
-      jest.setSystemTime(now + 30_001);
+      // Create heartbeat at T=now, lastExtend = now
       const heartbeat = createHeartbeat(job, 'token', { intervalMs: 30_000, name: 'test' });
 
-      await heartbeat(); // triggers extend
+      // First call at T+30001 — extends, lastExtend updated to ~T+30001
+      jest.setSystemTime(now + 30_001);
+      await heartbeat();
       expect(extendLock).toHaveBeenCalledTimes(1);
 
-      // Advance time past the interval
+      // Second call at T+60002 — elapsed since last extend ≈ 30001ms ≥ 30000ms
       jest.setSystemTime(now + 60_002);
-      await heartbeat(); // should trigger again
+      await heartbeat();
       expect(extendLock).toHaveBeenCalledTimes(2);
     });
   });
@@ -88,14 +93,15 @@ describe('createHeartbeat()', () => {
       const extendLock = jest.fn().mockResolvedValue(undefined);
       const job = { id: 'job-2', extendLock };
       const now = Date.now();
-      jest.setSystemTime(now + 300_001);
 
+      // Create first (lastExtend = now), then advance clock
       const heartbeat = createHeartbeat(job, 'my-token', {
         intervalMs: 30_000,
         lockDurationMs: 300_000,
         name: 'testWorker',
       });
 
+      jest.setSystemTime(now + 30_001);
       await heartbeat();
       expect(extendLock).toHaveBeenCalledWith('my-token', 300_000);
     });
@@ -107,13 +113,14 @@ describe('createHeartbeat()', () => {
       const extendLock = jest.fn().mockRejectedValue(lockError);
       const job = { id: 'job-3', extendLock };
       const now = Date.now();
-      jest.setSystemTime(now + 30_001);
 
+      // Create first (lastExtend = now), then advance clock
       const heartbeat = createHeartbeat(job, 'token', {
         intervalMs: 30_000,
         name: 'analyticsWorker',
       });
 
+      jest.setSystemTime(now + 30_001);
       await expect(heartbeat()).rejects.toThrow('Redis connection lost');
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('analyticsWorker'),
@@ -123,13 +130,15 @@ describe('createHeartbeat()', () => {
   });
 
   describe('default option values', () => {
-    it('uses default intervalMs of 30s, lockDurationMs of 300s, and name of "heartbeat"', async () => {
+    it('uses default intervalMs of 30s, lockDurationMs of 300s', async () => {
       const extendLock = jest.fn().mockResolvedValue(undefined);
       const job = { id: 'job-4', extendLock };
       const now = Date.now();
-      jest.setSystemTime(now + 30_001);
 
+      // Create first (lastExtend = now), then advance clock
       const heartbeat = createHeartbeat(job, 'token');
+
+      jest.setSystemTime(now + 30_001);
       await heartbeat();
 
       expect(extendLock).toHaveBeenCalledWith('token', 300_000);

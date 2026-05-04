@@ -15,7 +15,9 @@ const { resolveTagsByName } = require('../../../utils/tagUtils');
 
 describe('resolveTagsByName()', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    // resetAllMocks clears both call history AND mock implementations,
+    // preventing rejection/resolution state from leaking between tests.
+    jest.resetAllMocks();
   });
 
   describe('early-return cases', () => {
