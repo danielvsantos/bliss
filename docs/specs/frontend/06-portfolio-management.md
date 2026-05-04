@@ -43,9 +43,9 @@ A key architectural feature of the portfolio dashboard is its reliance on **serv
 ### 6.2.3. Data Fetching
 
 The dashboard uses the following hooks:
-- `usePortfolioItems`: Fetches the current state of all portfolio items from the `/api/portfolio/items` endpoint. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion.
-- `usePortfolioHistory`: Fetches historical data for the performance chart.
-- `usePortfolioHoldings`: Fetches historical daily `PortfolioHolding` records from `/api/portfolio/holdings`. Accepts optional filters: `account`, `category`, `categoryGroup`, `ticker`.
+- `usePortfolioItems`: Fetches the current state of all portfolio items from `/api/portfolio/items`. Accepts optional filters: `assetType`, `source`, `accountId` (pass `"null"` for manual assets), `countryId`. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion. Each item includes `accountId` (the brokerage account it belongs to, or `null` for manual assets) and `hasLotMismatch` (data-quality flag).
+- `usePortfolioHistory`: Fetches historical data for the performance chart from `/api/portfolio/history`. Accepts optional `accountId` to scope history to a single brokerage account.
+- `usePortfolioHoldings`: Fetches historical daily `PortfolioHolding` records from `/api/portfolio/holdings`. Accepts optional filters: `account`, `countryId`, `category`, `categoryGroup`, `ticker`.
 - `usePortfolioLots`: Fetches FIFO lot data for an individual asset. Accepts an `assetId` parameter and is only enabled when an asset is selected.
 - `useMetadata`: Retrieves category definitions and other metadata.
 

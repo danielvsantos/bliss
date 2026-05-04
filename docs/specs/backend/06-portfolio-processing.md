@@ -59,6 +59,7 @@ The `GET /api/portfolio/history` endpoint checks if the most recent `PortfolioVa
 
 The following unique constraints protect against duplicate records from concurrent job execution (the portfolio worker runs with `concurrency: 5`):
 
+- **`PortfolioItem`**: `@@unique([tenantId, symbol, accountId])` — each (tenant, ticker, account) triple maps to exactly one portfolio item. The `accountId` dimension means that holding AAPL in two different brokerage accounts creates two independent `PortfolioItem` rows with separate FIFO lot stacks and PnL tracking. `accountId` is `null` for manually-entered assets (real estate, private equity, etc.) — those use `(tenantId, symbol, null)` as their key.
 - **`PortfolioHolding`**: `@@unique([portfolioItemId, date])` — prevents duplicate holdings for the same asset on the same date. The `createMany({ skipDuplicates: true })` calls in the cash processor and valuation engine rely on this constraint.
 - **`PortfolioValueHistory`**: `@@unique([assetId, date, source])` — prevents duplicate value history records. The forward-fill logic in the valuation engine creates daily records; this constraint ensures idempotency.
 
@@ -79,6 +80,8 @@ The `PortfolioItem` and `Transaction` models carry additional fields for multi-m
 
 | Table | Field | Type | Purpose |
 |-------|-------|------|---------|
+| `PortfolioItem` | `accountId` | Int? | FK to the brokerage account; `null` for manually-entered assets |
+| `PortfolioItem` | `hasLotMismatch` | Boolean | `true` when FIFO produces a negative quantity (sell with no matching buy in this account). Set by `portfolioItemStateCalculator`. |
 | `PortfolioItem` | `isin` | String? | ISIN code (e.g. `IE00BK5BQT80`), propagated from first transaction |
 | `PortfolioItem` | `exchange` | String? | ISO-10383 MIC code (e.g. `XETR`) |
 | `PortfolioItem` | `assetCurrency` | String? | Currency the asset trades in |
@@ -99,9 +102,9 @@ This stage is handled by the `process-portfolio-changes.js` worker. Its primary 
 
 ### 6.3.1. Logic
 
-1.  **Asset Key Generation**: It uses the `asset-aggregator.js` utility to generate a consistent, unique key for each asset (e.g., the ticker `AAPL` for Apple stock).
-2.  **Transaction Grouping**: It groups all investment and debt transactions by this asset key.
-3.  **Upsert Logic**: It performs a non-destructive "upsert." If a `PortfolioItem` for a given key does not exist, it is created. A key piece of business logic is the **Origination Transaction Rule**: an item is only created if there is at least one "buy" (debit) or "origination" (credit) transaction. This prevents erroneous items from being created from sell-only transactions.
+1.  **Asset Key Generation**: It uses the `asset-aggregator.js` utility to generate a consistent, unique key for each asset (e.g., the ticker `AAPL` for Apple stock). The key is **account-scoped**: the same ticker held in two different brokerage accounts generates two distinct keys (`AAPL::7` and `AAPL::12`), resulting in two independent `PortfolioItem` rows with separate FIFO lot stacks.
+2.  **Transaction Grouping**: It groups all investment and debt transactions by this `symbol::accountId` key.
+3.  **Upsert Logic**: It performs a non-destructive "upsert" using the three-part unique key `(tenantId, symbol, accountId)`. If a `PortfolioItem` for a given key does not exist, it is created. A key piece of business logic is the **Origination Transaction Rule**: an item is only created if there is at least one "buy" (debit) or "origination" (credit) transaction. This prevents erroneous items from being created from sell-only transactions.
 4.  **Initial State Calculation**: Upon creation, it calls the `calculatePortfolioItemState` utility (`src/utils/portfolioItemStateCalculator.js`) to compute the complete initial state of the new item from its transaction history. This utility uses the same transaction normalization logic as the valuation engine to handle BUY/SELL transactions with missing quantities, ensuring consistent calculations across all pipeline stages. The calculation includes all native and USD-denominated fields (`costBasis`, `costBasisInUSD`, etc.). Critically, the USD-denominated `realizedPnLInUSD` is computed using **proper FIFO lot-matching with historical FX rates**: each buy lot records the BRL→USD (or other currency→USD) rate at the buy date, and each sell converts proceeds at the sell-date rate. The per-lot PnL in USD is `(salePrice × qty × sellRate) − (lotPrice × qty × buyRate)`, summed across all FIFO-consumed lots. This ensures accurate USD PnL even when the exchange rate fluctuates between buy and sell dates.
 5.  **Transaction Linking**: It ensures every transaction is linked via the `portfolioItemId` to its parent `PortfolioItem`.
 6.  **Pruning**: It cleans up any "orphan" `PortfolioItem` records that are no longer referenced by any transactions.

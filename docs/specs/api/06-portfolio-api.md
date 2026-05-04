@@ -4,11 +4,12 @@ This document provides the specifications for the Portfolio API endpoints, which
 
 ## 6.1. General Principles
 
-The Portfolio API is divided into three main endpoints, each serving a distinct purpose:
+The Portfolio API is divided into four main endpoints, each serving a distinct purpose:
 
 -   **`GET /api/portfolio/items`**: Fetches the current, real-time state of all portfolio items.
 -   **`GET /api/portfolio/holdings`**: Retrieves historical, daily snapshots of portfolio holdings.
 -   **`GET /api/portfolio/history`**: Provides aggregated historical data for performance charting.
+-   **`GET /api/portfolio/equity-analysis`**: Returns stock holdings grouped by sector, industry, or country, enriched with SecurityMaster fundamentals.
 
 All endpoints are authenticated and tenant-aware.
 
@@ -55,6 +56,8 @@ usd block:     convert(marketValue, priceCurrency → 'USD')
 | `assetType`             | `string` | Filters items by the category `type`.                    |         |
 | `source`                | `string` | Filters items by their data source.                      |         |
 | `include_manual_values` | `string` | When `'true'`, includes the most recent `ManualAssetValue` record for each item. |         |
+| `accountId`             | `string` | Filters by brokerage account ID. Pass the literal string `"null"` to return only manually-entered items with no account binding. |         |
+| `countryId`             | `string` | Filters by the ISO country code of the brokerage account (e.g. `"US"`, `"GB"`). Based on `Account.countryId`, not the equity's listed country. |         |
 
 ### 6.2.3. Response Format
 
@@ -68,6 +71,8 @@ The endpoint returns a wrapped object: `{ portfolioCurrency: string, items: Port
   "symbol": "AAPL",
   "currency": "USD",
   "quantity": 10,
+  "accountId": 7,
+  "hasLotMismatch": false,
   "category": {
     "name": "US Stocks",
     "group": "Stocks",
@@ -109,6 +114,8 @@ This endpoint provides a paginated list of historical, daily `PortfolioHolding` 
 | `ticker`        | `string` | Filters by the asset's symbol.             |         |
 | `category`      | `string` | Filters by the category `name`.            |         |
 | `categoryGroup` | `string` | Filters by the category `group`.           |         |
+| `account`       | `number` | Filters by brokerage account ID.           |         |
+| `countryId`     | `string` | Filters by the ISO country code of the brokerage account. |         |
 | `page`          | `number` | The page number for pagination.            | `1`     |
 | `pageSize`      | `number` | The number of items per page.              | `100`   |
 
@@ -138,6 +145,7 @@ This check is non-blocking: errors are caught silently and never delay the GET r
 | `to`         | `string` | The end date in ISO 8601 format.                                            | Today                  |
 | `type`       | `string` | Comma-separated category types to filter by (e.g., `Investments,Asset`).    |                        |
 | `group`      | `string` | Comma-separated category groups to filter by.                               |                        |
+| `accountId`  | `number` | Restricts history to a single brokerage account.                            |                        |
 | `resolution` | `string` | Data resolution: `daily`, `weekly`, or `monthly`. Overrides auto-detection. |                        |
 
 ### 6.4.3. Auto-Resolution System
@@ -198,12 +206,14 @@ Provides a breakdown of the user's stock holdings grouped by a configurable dime
 - **Auth**: JWT (cookie-based), rate limited via `rateLimiters.portfolio`.
 - **Query Parameters**:
 
-| Parameter | Type     | Description                                        | Default  |
-|-----------|----------|----------------------------------------------------|----------|
-| `groupBy` | `string` | Grouping dimension: `sector`, `industry`, or `country`. | `sector` |
+| Parameter   | Type     | Description                                        | Default  |
+|-------------|----------|----------------------------------------------------|----------|
+| `groupBy`   | `string` | Grouping dimension: `sector`, `industry`, or `country`. | `sector` |
+| `accountId` | `number` | Restricts analysis to a single brokerage account.  |          |
 
 - **Response**: `{ portfolioCurrency, summary: { totalEquityValue, holdingsCount, weightedPeRatio, weightedDividendYield }, groups: [...] }`. Each group contains `name`, `totalValue`, `holdingsCount`, `weight`, and an array of enriched `holdings` with per-stock metrics.
 - **Scope**: Only `API_STOCK` items with positive quantity are included. Funds, crypto, and manual assets are excluded.
+- **Cross-account dedup**: When the same ticker is held in multiple brokerage accounts, the API merges those rows by symbol before grouping — quantities and market values are summed. SecurityMaster data (sector, P/E, etc.) is per-symbol and is therefore identical across accounts. This ensures each ticker appears exactly once in the response regardless of how many accounts hold it.
 
 ---
 
@@ -268,6 +278,8 @@ Portfolio values are stored in USD. Conversion happens at query time:
 | `Transaction` | `isin` | String? | System-resolved ISIN |
 | `Transaction` | `exchange` | String? | ISO-10383 MIC code |
 | `Transaction` | `assetCurrency` | String? | Asset's trading currency |
+| `PortfolioItem` | `accountId` | Int? | FK to the brokerage account; `null` for manually-entered assets (real estate, private equity, etc.) |
+| `PortfolioItem` | `hasLotMismatch` | Boolean | `true` when FIFO lot processing produces a negative quantity (sell with no matching buy in this account). Surfaced as a data-quality warning. |
 | `PortfolioItem` | `isin` | String? | Propagated from first transaction |
 | `PortfolioItem` | `exchange` | String? | Propagated from first transaction |
 | `PortfolioItem` | `assetCurrency` | String? | Propagated from first transaction |
