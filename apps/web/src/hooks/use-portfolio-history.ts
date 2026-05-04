@@ -24,6 +24,8 @@ type PortfolioHistoryFilters = {
    *   > 365 days → monthly
    */
   resolution?: 'daily' | 'weekly' | 'monthly';
+  /** Filter history to a specific brokerage account. Absent = tenant-wide aggregated view. */
+  accountId?: number;
 };
 
 export function usePortfolioHistory(filters: PortfolioHistoryFilters = {}) {

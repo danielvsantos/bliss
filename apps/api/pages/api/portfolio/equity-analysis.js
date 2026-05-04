@@ -26,7 +26,7 @@ export default withAuth(async function handler(req, res) {
   }
 
   try {
-    const { groupBy = 'sector' } = req.query;
+    const { groupBy = 'sector', accountId } = req.query;
 
     if (!VALID_GROUP_BY.includes(groupBy)) {
       return res.status(StatusCodes.BAD_REQUEST).json({
@@ -46,6 +46,7 @@ export default withAuth(async function handler(req, res) {
       where: {
         tenantId: req.user.tenantId,
         quantity: { gt: 0 },
+        ...(accountId && { accountId: parseInt(accountId, 10) }),
         category: {
           processingHint: 'API_STOCK',
         },

@@ -94,9 +94,12 @@ function buildSampleDates(fromDate, toDate, resolution) {
 }
 
 async function handleGet(req, res) {
-  const { from, to, type, group, resolution: resolutionParam } = req.query;
+  const { from, to, type, group, resolution: resolutionParam, accountId } = req.query;
   const user = req.user;
   const tenantId = user.tenantId;
+  // Optional account scope: when provided, history is limited to portfolio items
+  // belonging to that account. Absent = tenant-wide aggregated view.
+  const accountFilter = accountId ? { accountId: parseInt(accountId, 10) } : {};
 
   // --- Staleness check: trigger background revaluation if history is outdated ---
   // This ensures portfolio history stays current even for self-hosters without
@@ -105,7 +108,7 @@ async function handleGet(req, res) {
   try {
     const todayStr = new Date().toISOString().split('T')[0];
     const latestRecord = await prisma.portfolioValueHistory.findFirst({
-      where: { asset: { tenantId } },
+      where: { asset: { tenantId, ...accountFilter } },
       orderBy: { date: 'desc' },
       select: { date: true },
     });
@@ -149,7 +152,7 @@ async function handleGet(req, res) {
     fromDate = new Date(from);
   } else {
     const earliest = await prisma.portfolioValueHistory.findFirst({
-      where: { asset: { tenantId } },
+      where: { asset: { tenantId, ...accountFilter } },
       orderBy: { date: 'asc' },
       select: { date: true },
     });
@@ -191,6 +194,7 @@ async function handleGet(req, res) {
       where: {
         asset: {
           tenantId,
+          ...accountFilter,
           ...(categoryFilter && { category: categoryFilter }),
         },
         date: dateFilter,

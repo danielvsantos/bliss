@@ -202,8 +202,17 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
     setTickerSearchInput(result.symbol);
     setShowTickerDropdown(false);
 
-    // Cross-reference against open portfolio positions
-    const match = portfolioItems?.find(item => item.symbol === result.symbol && item.quantity > 0) ?? null;
+    // Cross-reference against open portfolio positions.
+    // With per-account PortfolioItems, match must be scoped to the selected account —
+    // the same ticker in two accounts produces two independent items with separate lots.
+    // Close position is only offered when the selected account has an open position.
+    const selectedAccountId = form.getValues('accountId');
+    const match = portfolioItems?.find(
+      item =>
+        item.symbol === result.symbol &&
+        item.quantity > 0 &&
+        (selectedAccountId ? item.accountId === selectedAccountId : true)
+    ) ?? null;
     setMatchedPortfolioItem(match);
     setClosePositionMode(false);
   };
@@ -452,6 +461,15 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
               </span>
             </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
+                {matchedPortfolioItem?.hasLotMismatch && (
+                  <div className="flex items-start gap-2 rounded-md border border-warning/20 bg-warning/10 px-3 py-2">
+                    <span className="mt-0.5 h-4 w-4 shrink-0 text-warning">⚠</span>
+                    <div>
+                      <p className="text-sm font-medium text-warning">{t('transactionFormPage.lotMismatchWarning')}</p>
+                      <p className="text-xs text-muted-foreground">{t('transactionFormPage.lotMismatchDetail')}</p>
+                    </div>
+                  </div>
+                )}
                 {matchedPortfolioItem && !debitValue && (
                   <div className="flex items-center justify-between rounded-md border border-brand-primary/20 bg-brand-primary/10 px-3 py-2">
                     <div className="flex items-center gap-2">

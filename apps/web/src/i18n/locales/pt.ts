@@ -1544,6 +1544,8 @@ const pt = {
     closePosition: "Fechar posição completa",
     closePositionHint: "Define a quantidade para sua posição exata de {{quantity}} unidades",
     closePositionActive: "Fechamento de posição ativo",
+    lotMismatchWarning: "Incompatibilidade de quantidade na posição",
+    lotMismatchDetail: "Esta posição apresenta quantidade negativa — pode estar faltando uma transação de compra ou uma transferência entre contas não registrada.",
   },
 
   // Formulário de termos de dívida
@@ -1950,6 +1952,8 @@ const pt = {
     totalValue: "Valor Total",
     roiTooltip: "ROI Total = (P&L Realizado + Não Realizado) / Total Investido",
     showDebt: "Mostrar Dívida",
+    allAccounts: "Todas as contas",
+    allCountries: "Todos os países",
     noHistoricalData: "Sem dados históricos disponíveis para este período.",
     netWorth: "Patrimônio Líquido",
     emptyState: "Sem dados de carteira ainda. Conecte uma conta bancária ou importe transações para começar.",

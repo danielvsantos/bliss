@@ -125,10 +125,11 @@ model Account {
 
   plaidItem      PlaidItem? @relation(fields: [plaidItemId], references: [id])
 
-  bank     Bank     @relation(fields: [bankId], references: [id])
-  country  Country  @relation(fields: [countryId], references: [id])
-  currency Currency @relation(fields: [currencyCode], references: [id])
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bank           Bank           @relation(fields: [bankId], references: [id])
+  country        Country        @relation(fields: [countryId], references: [id])
+  currency       Currency       @relation(fields: [currencyCode], references: [id])
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  portfolioItems PortfolioItem[]
 
   @@index([name])
   @@index([bankId])
@@ -383,6 +384,10 @@ model PortfolioItem {
   id          Int      @id @default(autoincrement())
   tenantId    String
   categoryId  Int
+  // accountId is null for manually-entered assets (real estate, private equity, etc.)
+  // that are not tied to a specific brokerage account. All transaction-derived items
+  // (Plaid, CSV import, manual investment transactions) must have accountId set.
+  accountId   Int?
   symbol      String
   currency    String
   source      String
@@ -400,10 +405,16 @@ model PortfolioItem {
   realizedPnLInUSD  Decimal? @db.Decimal(18, 8)
   totalInvestedInUSD Decimal? @db.Decimal(18, 8)
 
+  // Set to true when FIFO lot calculation produces quantity < 0.
+  // Indicates a missing buy transaction or an unrecorded cross-account transfer.
+  // Surfaced in the UI as a data quality warning; never auto-corrected.
+  hasLotMismatch Boolean @default(false)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   category         Category               @relation(fields: [categoryId], references: [id])
+  account          Account?               @relation(fields: [accountId], references: [id], onDelete: SetNull)
   transactions     Transaction[]
   valueHistory     PortfolioValueHistory[]
   manualValues     ManualAssetValue[]
@@ -411,8 +422,12 @@ model PortfolioItem {
   debtTerms        DebtTerms?
   tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, symbol])
+  // Unique per (tenant, symbol, account). accountId is nullable — PostgreSQL treats
+  // NULLs as distinct in unique constraints, so two manual assets with the same
+  // symbol and accountId=NULL are both allowed (e.g. two manually-entered properties).
+  @@unique([tenantId, symbol, accountId])
   @@index([tenantId])
+  @@index([accountId])
 }
 
 model PortfolioValueHistory {

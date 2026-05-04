@@ -109,7 +109,13 @@ function calculateInvestmentState(transactions) {
         return sum.plus(lot.quantity.times(lot.price));
     }, new Decimal(0));
     
-    return { costBasis, realizedPnL, quantity: totalQuantity };
+    // Detect cross-account close: quantity went negative, meaning a sell
+    // consumed more lots than were ever bought in this account scope.
+    // The caller should persist hasLotMismatch: true and surface a data
+    // quality warning in the UI rather than auto-correcting.
+    const hasLotMismatch = totalQuantity.lt(0);
+
+    return { costBasis, realizedPnL, quantity: totalQuantity, hasLotMismatch };
 }
 
 /**
@@ -214,10 +220,11 @@ const calculatePortfolioItemState = async (transactions, currencyRateCache = new
 
     // --- 2. Calculate state based on item type ---
     if (itemType === 'Investments') {
-        const { costBasis, realizedPnL, quantity } = calculateInvestmentState(convertedTransactions);
+        const { costBasis, realizedPnL, quantity, hasLotMismatch } = calculateInvestmentState(convertedTransactions);
         state.costBasis = costBasis;
         state.realizedPnL = realizedPnL;
         state.quantity = quantity;
+        state.hasLotMismatch = hasLotMismatch;
         state.totalInvested = calculateTotalInvested(convertedTransactions);
         
         // Calculate USD equivalents using proper FIFO with historical rates

@@ -41,6 +41,7 @@ import { startOfYear, subMonths, subYears, format as formatDate } from "date-fns
 import { usePortfolioItems } from "@/hooks/use-portfolio-items";
 import { usePortfolioHistory } from "@/hooks/use-portfolio-history";
 import { useMetadata } from "@/hooks/use-metadata";
+import { useAccountList } from "@/hooks/use-account-list";
 import type { PortfolioItem } from "@/types/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { AggregatedPortfolioHistory } from "@/lib/api";
@@ -52,6 +53,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   parseDecimal,
@@ -218,10 +220,29 @@ export default function PortfolioHoldingsPage() {
   const [closedSectionsVisible, setClosedSectionsVisible] = useState<Record<string, boolean>>({});
   const [timeRange, setTimeRange] = useState("all");
   const [showDebt, setShowDebt] = useState(false);
+  // Account and country filters — "all" means no filter applied
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
+  const [selectedCountryId, setSelectedCountryId] = useState<string>("all");
 
   // ── Data Fetching ──
   const { data: metadata, isLoading: metadataLoading, error: metadataError } = useMetadata();
-  const { data: portfolioData, isLoading: itemsLoading, error: itemsError } = usePortfolioItems();
+  const { data: accountListData } = useAccountList();
+  const accounts = accountListData ?? [];
+
+  // Derive distinct countries from the account list for the country filter
+  const distinctCountries = useMemo(() => {
+    const seen = new Set<string>();
+    return accounts
+      .filter((a) => { if (seen.has(a.countryId)) return false; seen.add(a.countryId); return true; })
+      .map((a) => ({ countryId: a.countryId, label: a.countryId }));
+  }, [accounts]);
+
+  const portfolioFilters = useMemo(() => ({
+    ...(selectedAccountId !== "all" && { accountId: parseInt(selectedAccountId, 10) }),
+    ...(selectedCountryId !== "all" && { countryId: selectedCountryId }),
+  }), [selectedAccountId, selectedCountryId]);
+
+  const { data: portfolioData, isLoading: itemsLoading, error: itemsError } = usePortfolioItems(portfolioFilters);
   const portfolioItems = useMemo(() => portfolioData?.items ?? [], [portfolioData?.items]);
   const portfolioCurrency = portfolioData?.portfolioCurrency ?? "USD";
 
@@ -598,6 +619,40 @@ export default function PortfolioHoldingsPage() {
                   </button>
                 ))}
               </div>
+
+              {/* Account Filter */}
+              {accounts.length > 1 && (
+                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                  <SelectTrigger className="h-7 w-40 text-xs">
+                    <SelectValue placeholder={t("portfolio.allAccounts")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("portfolio.allAccounts")}</SelectItem>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {account.accountName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* Country Filter */}
+              {distinctCountries.length > 1 && (
+                <Select value={selectedCountryId} onValueChange={setSelectedCountryId}>
+                  <SelectTrigger className="h-7 w-36 text-xs">
+                    <SelectValue placeholder={t("portfolio.allCountries")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("portfolio.allCountries")}</SelectItem>
+                    {distinctCountries.map(({ countryId, label }) => (
+                      <SelectItem key={countryId} value={countryId}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               {/* Show Debt Toggle */}
               <div className="flex items-center gap-2">

@@ -94,8 +94,17 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     let portfolioItem = null;
 
     if (assetKey) {
+        // Look up by the new three-part key: (tenantId, symbol, accountId).
+        // accountId comes from the transaction — every transaction-derived item
+        // is scoped to the account where the trade occurred.
         portfolioItem = await prisma.portfolioItem.findUnique({
-            where: { tenantId_symbol: { tenantId, symbol: assetKey } },
+            where: {
+                tenantId_symbol_accountId: {
+                    tenantId,
+                    symbol: assetKey,
+                    accountId: transaction.accountId,
+                },
+            },
         });
 
         // If item does not exist, apply origination rule before creating.
@@ -115,6 +124,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
                     data: {
                         tenantId,
                         categoryId: transaction.categoryId,
+                        accountId: transaction.accountId,
                         symbol: assetKey,
                         currency: transaction.currency,
                         source: transaction.ticker ? 'SYNCED' : 'MANUAL',
@@ -176,12 +186,20 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     });
     if (cashCategory) {
         const cashSymbol = `Cash ${transaction.currency}`;
+        // Cash items are account-scoped: each account gets its own cash balance.
         const cashItem = await prisma.portfolioItem.upsert({
-            where: { tenantId_symbol: { tenantId, symbol: cashSymbol } },
+            where: {
+                tenantId_symbol_accountId: {
+                    tenantId,
+                    symbol: cashSymbol,
+                    accountId: transaction.accountId,
+                },
+            },
             update: {},
             create: {
                 tenantId,
                 categoryId: cashCategory.id,
+                accountId: transaction.accountId,
                 symbol: cashSymbol,
                 currency: transaction.currency,
                 source: 'SYSTEM',
@@ -240,13 +258,17 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     logger.info(`[Sync] Fetching existing portfolio items in scope...`);
     const existingItems = await prisma.portfolioItem.findMany({
         where: portfolioItemWhereScope,
-        select: { id: true, symbol: true },
+        select: { id: true, symbol: true, accountId: true },
     });
-    const existingItemsMap = new Map(existingItems.map(item => [item.symbol, item]));
+    // Key is `symbol::accountId` to separate same-symbol positions in different accounts.
+    // accountId can be null for MANUAL assets — use the string 'null' as the key segment.
+    const existingItemsMap = new Map(
+        existingItems.map(item => [`${item.symbol}::${item.accountId ?? 'null'}`, item])
+    );
     logger.info(`[Sync] Found ${existingItemsMap.size} existing portfolio items in scope.`);
 
-    // This set will track all symbols that are active (found or created) during this run.
-    const activeSymbols = new Set();
+    // Tracks all (symbol::accountId) keys that are active during this run.
+    const activeKeys = new Set();
 
 
     // --- Step 2: Fetch all relevant transactions ---
@@ -288,14 +310,27 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
                     distinct: ['currency']
                 });
                 if (currenciesInScope.length > 0) {
-                    logger.info(`[Sync] Upserting cash portfolio items for ${currenciesInScope.length} currencies in account-scoped early return.`);
+                    // For each (currency, accountId) pair in scope, ensure a cash item exists.
+                    const currencyAccountPairs = await prisma.transaction.findMany({
+                        where: { tenantId, ...accountScopeFilter },
+                        select: { currency: true, accountId: true },
+                        distinct: ['currency', 'accountId'],
+                    });
+                    logger.info(`[Sync] Upserting cash portfolio items for ${currencyAccountPairs.length} (currency, account) pairs in account-scoped early return.`);
                     await prisma.$transaction(
-                        currenciesInScope.map(({ currency }) => prisma.portfolioItem.upsert({
-                            where: { tenantId_symbol: { tenantId, symbol: `Cash ${currency}` } },
+                        currencyAccountPairs.map(({ currency, accountId }) => prisma.portfolioItem.upsert({
+                            where: {
+                                tenantId_symbol_accountId: {
+                                    tenantId,
+                                    symbol: `Cash ${currency}`,
+                                    accountId,
+                                },
+                            },
                             update: {},
                             create: {
                                 tenantId,
                                 categoryId: cashCategory.id,
+                                accountId,
                                 symbol: `Cash ${currency}`,
                                 currency,
                                 source: 'SYSTEM',
@@ -344,24 +379,30 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
 
     // --- Step 2b: Ensure "Cash" Portfolio Items Exist ---
-    const uniqueCurrencies = [...new Set(allTransactions.map(tx => tx.currency))];
-    // Find the category configured for cash handling. This is more robust than using a hardcoded name.
+    // Cash items are now per (currency, accountId): each account has its own cash balance.
+    const uniqueCurrencyAccountPairs = allTransactions.reduce((pairs, tx) => {
+        const key = `${tx.currency}::${tx.accountId}`;
+        if (!pairs.has(key)) pairs.set(key, { currency: tx.currency, accountId: tx.accountId });
+        return pairs;
+    }, new Map());
+
     const cashCategory = await prisma.category.findFirst({
         where: { tenantId, processingHint: 'CASH' },
     });
-    
-    if (cashCategory && uniqueCurrencies.length > 0) {
-        logger.info(`[Sync] Ensuring cash portfolio items exist for currencies: ${uniqueCurrencies.join(', ')}`);
-        const cashItemUpserts = uniqueCurrencies.map(currency => {
+
+    if (cashCategory && uniqueCurrencyAccountPairs.size > 0) {
+        logger.info(`[Sync] Ensuring cash portfolio items exist for ${uniqueCurrencyAccountPairs.size} (currency, account) pairs.`);
+        const cashItemUpserts = [...uniqueCurrencyAccountPairs.values()].map(({ currency, accountId }) => {
             const symbol = `Cash ${currency}`;
-            activeSymbols.add(symbol); // Ensure cash items are not pruned later.
-            
+            activeKeys.add(`${symbol}::${accountId}`); // Ensure cash items are not pruned later.
+
             return prisma.portfolioItem.upsert({
-                where: { tenantId_symbol: { tenantId, symbol } },
+                where: { tenantId_symbol_accountId: { tenantId, symbol, accountId } },
                 update: {},
                 create: {
                     tenantId,
                     categoryId: cashCategory.id,
+                    accountId,
                     symbol,
                     currency,
                     source: 'SYSTEM',
@@ -373,34 +414,36 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         logger.info(`[Sync] Finished upserting ${cashItemUpserts.length} cash portfolio items.`);
     }
 
-    // --- Step 3: Group transactions and perform "upsert" logic ---
+    // --- Step 3: Group transactions by (symbol, accountId) ---
+    // Using a composite key ensures that the same ticker held in two different
+    // accounts produces two separate PortfolioItem rows with independent FIFO lots.
     const transactionsByGroup = allTransactions.reduce((acc, tx) => {
-        const key = generateAssetKey(tx, decrypt);
-        if (!key) return acc;
+        const symbol = generateAssetKey(tx, decrypt);
+        if (!symbol) return acc;
 
-        if (!acc.has(key)) {
-            acc.set(key, []);
+        const groupKey = `${symbol}::${tx.accountId}`;
+        if (!acc.has(groupKey)) {
+            acc.set(groupKey, { symbol, accountId: tx.accountId, transactions: [] });
         }
-        acc.get(key).push(tx);
+        acc.get(groupKey).transactions.push(tx);
         return acc;
     }, new Map());
 
     let portfolioItemsToCreate = [];
 
-    for (const [symbol, transactions] of transactionsByGroup.entries()) {
+    for (const [groupKey, { symbol, accountId, transactions }] of transactionsByGroup.entries()) {
         // BullMQ lock heartbeat — see `utils/jobHeartbeat.js`. Safe
         // to call unconditionally (no-ops when not attached,
         // self rate-limits to ~60s intervals).
         await heartbeat?.();
-        // --- Start Change: Sort transactions immediately to avoid side-effects ---
+        // Sort transactions chronologically for correct FIFO lot calculation.
         transactions.sort((a, b) => a.transaction_date - b.transaction_date);
-        // --- End Change ---
 
-        activeSymbols.add(symbol); // Mark this symbol as active for this run.
+        activeKeys.add(groupKey); // Mark this (symbol, accountId) pair as active for this run.
 
         // If the item already exists in our scope, we don't need to do anything with it here.
         // The transaction linking will handle it.
-        if (existingItemsMap.has(symbol)) {
+        if (existingItemsMap.has(groupKey)) {
             continue;
         }
         
@@ -417,8 +460,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         }
 
         if (!hasOriginationTransaction) {
-            logger.warn(`[Sync] Skipping creation of new portfolio item for symbol '${symbol}' because it has no originating transaction.`);
-            activeSymbols.delete(symbol); // Un-mark as active if we aren't creating it.
+            logger.warn(`[Sync] Skipping creation of new portfolio item for symbol '${symbol}' (account ${accountId}) because it has no originating transaction.`);
+            activeKeys.delete(groupKey); // Un-mark as active if we aren't creating it.
             continue;
         }
         
@@ -429,7 +472,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         const newItemData = {
             tenantId,
             categoryId: firstTx.categoryId,
-            symbol: symbol,
+            accountId,
+            symbol,
             currency: firstTx.currency,
             source: firstTx.ticker ? 'SYNCED' : 'MANUAL',
             ...(firstTx.isin && { isin: firstTx.isin }),
@@ -437,7 +481,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
             ...(firstTx.assetCurrency && { assetCurrency: firstTx.assetCurrency }),
             createdAt: new Date(),
             updatedAt: new Date(),
-            ...initialState, // Spread the calculated state
+            ...initialState, // Spread the calculated state (includes hasLotMismatch)
         };
         
         portfolioItemsToCreate.push(newItemData);
@@ -454,29 +498,35 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     }
 
     // --- Step 5: Link all transactions to their portfolio items ---
-    // Refetch all items for the tenant to get the IDs of newly created ones
+    // Refetch all items for the tenant to get the IDs of newly created ones.
+    // Key by `symbol::accountId` to match the grouping used above.
     const allPortfolioItemsForTenant = await prisma.portfolioItem.findMany({
         where: { tenantId },
-        select: { id: true, symbol: true }
+        select: { id: true, symbol: true, accountId: true }
     });
-    const allItemsMap = new Map(allPortfolioItemsForTenant.map(item => [item.symbol, item]));
+    const allItemsMap = new Map(
+        allPortfolioItemsForTenant.map(item => [`${item.symbol}::${item.accountId ?? 'null'}`, item])
+    );
 
     // --- Step 5b: Seed ManualAssetValue for newly created MANUAL-source items ---
     for (const itemData of portfolioItemsToCreate) {
         await heartbeat?.();
         if (itemData.source !== 'MANUAL') continue;
 
-        const portfolioItem = allItemsMap.get(itemData.symbol);
+        const groupKey = `${itemData.symbol}::${itemData.accountId ?? 'null'}`;
+        const portfolioItem = allItemsMap.get(groupKey);
         if (!portfolioItem) continue;
 
-        const transactions = transactionsByGroup.get(itemData.symbol) || [];
+        const group = transactionsByGroup.get(groupKey);
+        const transactions = group ? group.transactions : [];
         await seedManualAssetValues(portfolioItem.id, tenantId, transactions);
     }
 
     const transactionUpdates = [];
     for (const tx of allTransactions) {
         const symbol = generateAssetKey(tx, decrypt);
-        const portfolioItem = allItemsMap.get(symbol);
+        const groupKey = `${symbol}::${tx.accountId}`;
+        const portfolioItem = allItemsMap.get(groupKey);
         if (portfolioItem && tx.portfolioItemId !== portfolioItem.id) {
             transactionUpdates.push(
                 prisma.transaction.update({
@@ -494,8 +544,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     // --- Step 6: Prune any orphan items that are no longer active ---
     const itemsToDelete = [];
-    for (const [symbol, item] of existingItemsMap.entries()) {
-        if (!activeSymbols.has(symbol)) {
+    for (const [groupKey, item] of existingItemsMap.entries()) {
+        if (!activeKeys.has(groupKey)) {
             itemsToDelete.push(item.id);
         }
     }
@@ -515,8 +565,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     // When account-scoped, emit with the affected portfolio item IDs + date scopes
     // so downstream analytics can process only the affected data.
     // Use allItemsMap (fetched after bulk-create in Step 5) so newly created items are included.
-    const allAffectedItemIds = [...activeSymbols]
-        .map((sym) => allItemsMap.get(sym)?.id)
+    const allAffectedItemIds = [...activeKeys]
+        .map((key) => allItemsMap.get(key)?.id)
         .filter(Boolean);
 
     await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', {

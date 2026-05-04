@@ -23,10 +23,14 @@ export async function handleDebtRepayment(prisma, tenantId, userId, transactionD
     const portfolioItemSymbol = category.name.replace(/\s/g, '_');
 
     // Find a portfolio item that matches the generated symbol and has debt terms.
+    // Prefer the item from the same account as the transaction — with per-account
+    // PortfolioItems, the same debt symbol could theoretically exist in multiple
+    // accounts. If accountId is provided, scope the lookup to that account.
     const portfolioItem = await prisma.portfolioItem.findFirst({
         where: {
             tenantId,
-            symbol: portfolioItemSymbol
+            symbol: portfolioItemSymbol,
+            ...(transactionData.accountId ? { accountId: transactionData.accountId } : {}),
         },
         include: { debtTerms: true }
     });

@@ -558,18 +558,41 @@ class APIClient {
 
   // --- Portfolio ---
 
-  async getPortfolioItems(filters: { assetType?: string; source?: string; include_manual_values?: boolean } = {}): Promise<{ portfolioCurrency: string; items: PortfolioItem[] }> {
+  async getPortfolioItems(filters: {
+    assetType?: string;
+    source?: string;
+    include_manual_values?: boolean;
+    /** Filter by brokerage account ID */
+    accountId?: number | null;
+    /** Filter by account country (ISO 3166-1 alpha-3, e.g. "USA") */
+    countryId?: string;
+  } = {}): Promise<{ portfolioCurrency: string; items: PortfolioItem[] }> {
     const response = await this.client.get('/api/portfolio/items', { params: filters });
     return response.data;
   }
 
-  async getPortfolioHoldings(filters: { account?: string; category?: string; categoryGroup?: string; ticker?: string } = {}): Promise<PortfolioHolding[]> {
+  async getPortfolioHoldings(filters: {
+    /** Filter by brokerage account ID */
+    account?: number;
+    /** Filter by account country (ISO 3166-1 alpha-3) */
+    countryId?: string;
+    category?: string;
+    categoryGroup?: string;
+    ticker?: string;
+  } = {}): Promise<PortfolioHolding[]> {
     const response = await this.client.get('/api/portfolio/holdings', { params: filters });
     return response.data;
   }
 
   async getPortfolioHistory(
-    filters: { from?: string; to?: string; type?: string; group?: string } = {}
+    filters: {
+      from?: string;
+      to?: string;
+      type?: string;
+      group?: string;
+      /** Filter history to a specific brokerage account */
+      accountId?: number;
+    } = {}
   ): Promise<{ portfolioCurrency: string; history: AggregatedPortfolioHistory[] }> {
     const response = await this.client.get('/api/portfolio/history', { params: filters });
     return response.data;
@@ -947,7 +970,11 @@ class APIClient {
 
   // --- Equity Analysis ---
 
-  async getEquityAnalysis(params: { groupBy?: string } = {}): Promise<import('@/types/equity-analysis').EquityAnalysisResponse> {
+  async getEquityAnalysis(params: {
+    groupBy?: string;
+    /** Filter to a specific brokerage account */
+    accountId?: number;
+  } = {}): Promise<import('@/types/equity-analysis').EquityAnalysisResponse> {
     const response = await this.client.get('/api/portfolio/equity-analysis', { params });
     return response.data;
   }

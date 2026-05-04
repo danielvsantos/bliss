@@ -39,15 +39,19 @@ export default withAuth(async function handler(req, res) {
 
 async function handleGet(req, res) {
   const { tenantId } = req.user;
-  const { account, category, categoryGroup, ticker, page = '1', pageSize = '100' } = req.query;
+  const { account, countryId, category, categoryGroup, ticker, page = '1', pageSize = '100' } = req.query;
 
   const pageNum = parseInt(page, 10);
   const pageSizeNum = parseInt(pageSize, 10);
 
-  // Build the 'where' clause for filtering based on the related PortfolioItem
+  // Build the 'where' clause for filtering based on the related PortfolioItem.
+  // account: filter by accountId (previously accepted but unused — now active).
+  // countryId: filter by the country of the brokerage account (Account.countryId).
   const whereClause = {
-    asset: { // Note: 'asset' is the relation field name in PortfolioHolding model
+    asset: {
       tenantId: tenantId,
+      ...(account && { accountId: parseInt(account, 10) }),
+      ...(countryId && { account: { countryId } }),
       ...(ticker && { symbol: ticker }),
       ...(category && { category: { name: category } }),
       ...(categoryGroup && { category: { group: categoryGroup } }),

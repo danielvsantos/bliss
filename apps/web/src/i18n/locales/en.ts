@@ -1544,6 +1544,8 @@ const en = {
     closePosition: "Close full position",
     closePositionHint: "Sets quantity to your exact holding of {{quantity}} units",
     closePositionActive: "Position close active",
+    lotMismatchWarning: "Position quantity mismatch",
+    lotMismatchDetail: "This position shows a negative quantity — you may have a missing buy transaction or an unrecorded cross-account share transfer.",
   },
 
   // Debt terms form
@@ -1950,6 +1952,8 @@ const en = {
     totalValue: "Total Value",
     roiTooltip: "Total ROI = (Realized + Unrealized P&L) / Total Invested",
     showDebt: "Show Debt",
+    allAccounts: "All accounts",
+    allCountries: "All countries",
     noHistoricalData: "No historical data available for this period.",
     netWorth: "Net Worth",
     emptyState: "No portfolio data yet. Connect a bank account or import transactions to get started.",

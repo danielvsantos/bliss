@@ -26,7 +26,7 @@ export default withAuth(async function handler(req, res) {
   }
 
   try {
-    const { assetType, source, include_manual_values } = req.query;
+    const { assetType, source, include_manual_values, accountId, countryId } = req.query;
 
     // Fetch tenant's portfolio currency
     const tenant = await prisma.tenant.findUnique({
@@ -38,6 +38,16 @@ export default withAuth(async function handler(req, res) {
     const filters = {
       tenantId: req.user.tenantId,
       ...(source && { source }),
+      // accountId filter: restrict to a specific brokerage account.
+      // Passing accountId=null explicitly returns only manual assets (no account binding).
+      ...(accountId !== undefined && accountId !== '' && {
+        accountId: accountId === 'null' ? null : parseInt(accountId, 10),
+      }),
+      // countryId filter: restrict to accounts in a specific country.
+      // Joined via PortfolioItem → Account → Country.
+      ...(countryId && {
+        account: { countryId },
+      }),
       category: {
         type: assetType ? assetType : { in: ['Investments', 'Asset', 'Debt'] },
       },
@@ -47,6 +57,8 @@ export default withAuth(async function handler(req, res) {
       id: true,
       symbol: true,
       source: true,
+      accountId: true,
+      hasLotMismatch: true,
       currency: true,
       exchange: true,
       assetCurrency: true,
@@ -164,6 +176,8 @@ export default withAuth(async function handler(req, res) {
         const response = {
           id: asset.id,
           symbol: asset.symbol,
+          accountId: asset.accountId,
+          hasLotMismatch: asset.hasLotMismatch,
           currency: asset.currency,
           quantity: quantity,
           category: {
