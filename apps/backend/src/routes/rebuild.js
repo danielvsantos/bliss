@@ -245,6 +245,7 @@ router.get('/status', apiKeyAuth, async (req, res) => {
                     symbol: true,
                     currency: true,
                     category: { select: { name: true } },
+                    account: { select: { name: true } },
                 },
                 orderBy: { symbol: 'asc' },
             }),

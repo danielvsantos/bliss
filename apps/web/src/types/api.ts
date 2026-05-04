@@ -285,6 +285,7 @@ export type RebuildAsset = {
   symbol: string;
   currency: string;
   category: { name: string } | null;
+  account: { name: string } | null;
 };
 
 export type RebuildStatusResponse = {

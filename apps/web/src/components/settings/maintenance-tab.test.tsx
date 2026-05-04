@@ -41,8 +41,8 @@ const emptyStatus: RebuildStatusResponse = {
   current: [],
   recent: [],
   assets: [
-    { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
-    { id: 2, symbol: 'BTC', currency: 'USD', category: { name: 'Crypto' } },
+    { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' }, account: { name: 'Schwab' } },
+    { id: 2, symbol: 'BTC', currency: 'USD', category: { name: 'Crypto' }, account: null },
   ],
 };
 

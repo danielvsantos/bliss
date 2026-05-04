@@ -94,15 +94,18 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     let portfolioItem = null;
 
     if (assetKey) {
-        // Look up by the new three-part key: (tenantId, symbol, accountId).
-        // accountId comes from the transaction — every transaction-derived item
-        // is scoped to the account where the trade occurred.
+        // MANUAL assets (no ticker) use accountId = null — they are identified by their
+        // unique symbol/description across the portfolio and do not need per-account
+        // isolation. Ticker-based assets (stocks, ETFs, crypto) use the real accountId
+        // so that the same symbol held in two accounts stays as two separate items.
+        const itemAccountId = transaction.ticker ? transaction.accountId : null;
+
         portfolioItem = await prisma.portfolioItem.findUnique({
             where: {
                 tenantId_symbol_accountId: {
                     tenantId,
                     symbol: assetKey,
-                    accountId: transaction.accountId,
+                    accountId: itemAccountId,
                 },
             },
         });
@@ -124,7 +127,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
                     data: {
                         tenantId,
                         categoryId: transaction.categoryId,
-                        accountId: transaction.accountId,
+                        accountId: itemAccountId,
                         symbol: assetKey,
                         currency: transaction.currency,
                         source: transaction.ticker ? 'SYNCED' : 'MANUAL',
@@ -421,9 +424,15 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         const symbol = generateAssetKey(tx, decrypt);
         if (!symbol) return acc;
 
-        const groupKey = `${symbol}::${tx.accountId}`;
+        // MANUAL assets (no ticker: real estate, pension plans, private equity, etc.)
+        // are identified by their unique symbol/description and do NOT need per-account
+        // isolation. Forcing accountId = null keeps the PortfolioItem ID stable across
+        // rebuilds, which preserves ManualAssetValue records (FK cascade deletes them
+        // when their parent item is deleted and a new one is created with a different ID).
+        const itemAccountId = tx.ticker ? tx.accountId : null;
+        const groupKey = `${symbol}::${itemAccountId ?? 'null'}`;
         if (!acc.has(groupKey)) {
-            acc.set(groupKey, { symbol, accountId: tx.accountId, transactions: [] });
+            acc.set(groupKey, { symbol, accountId: itemAccountId, transactions: [] });
         }
         acc.get(groupKey).transactions.push(tx);
         return acc;

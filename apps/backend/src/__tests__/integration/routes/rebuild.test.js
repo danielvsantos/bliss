@@ -278,8 +278,8 @@ describe('GET /api/admin/rebuild/status', () => {
 
   it('returns the single-asset picker list scoped to the tenant (no price fetch)', async () => {
     mockPortfolioItemFindMany.mockResolvedValueOnce([
-      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
-      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
+      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' }, account: { name: 'Schwab' } },
+      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' }, account: null },
     ]);
 
     const res = await request(app)
@@ -288,8 +288,8 @@ describe('GET /api/admin/rebuild/status', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.assets).toEqual([
-      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' } },
-      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' } },
+      { id: 1, symbol: 'AAPL', currency: 'USD', category: { name: 'Stocks' }, account: { name: 'Schwab' } },
+      { id: 2, symbol: 'BTC',  currency: 'USD', category: { name: 'Crypto' }, account: null },
     ]);
 
     // Perf guarantee: the portfolioItem query is scoped by tenantId +
@@ -307,6 +307,7 @@ describe('GET /api/admin/rebuild/status', () => {
           symbol: true,
           currency: true,
           category: { select: { name: true } },
+          account: { select: { name: true } },
         },
       }),
     );

@@ -184,6 +184,9 @@ function AssetPicker({ items, value, onChange }: AssetPickerProps) {
               {selected.category?.name ? (
                 <span className="text-muted-foreground ml-2">· {selected.category.name}</span>
               ) : null}
+              {selected.account?.name ? (
+                <span className="text-muted-foreground ml-1">({selected.account.name})</span>
+              ) : null}
             </span>
           ) : (
             <span className="text-muted-foreground">Select an asset…</span>
@@ -200,7 +203,7 @@ function AssetPicker({ items, value, onChange }: AssetPickerProps) {
               {sortedItems.map((item) => (
                 <CommandItem
                   key={item.id}
-                  value={`${item.symbol} ${item.category?.name || ''}`}
+                  value={`${item.symbol} ${item.category?.name || ''} ${item.account?.name || ''}`}
                   onSelect={() => {
                     onChange(item.id);
                     setOpen(false);
@@ -217,6 +220,7 @@ function AssetPicker({ items, value, onChange }: AssetPickerProps) {
                     <span className="text-xs text-muted-foreground truncate">
                       {item.category?.name || '—'}
                       {item.currency ? ` · ${item.currency}` : ''}
+                      {item.account?.name ? ` · ${item.account.name}` : ''}
                     </span>
                   </div>
                 </CommandItem>
