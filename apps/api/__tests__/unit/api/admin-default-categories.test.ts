@@ -18,9 +18,9 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../prisma/prisma.js', () => ({ default: mockPrisma }));
-vi.mock('../../../../prisma/prisma', () => ({ default: mockPrisma }));
-vi.mock('../../../../lib/defaultCategories', () => ({
+vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
+vi.mock('../../../prisma/prisma', () => ({ default: mockPrisma }));
+vi.mock('../../../lib/defaultCategories', () => ({
   DEFAULT_CATEGORIES: [
     { code: 'FOOD', name: 'Food', group: 'Daily', type: 'Essentials', icon: '🍔' },
     { code: 'RENT', name: 'Rent', group: 'Housing', type: 'Essentials' },

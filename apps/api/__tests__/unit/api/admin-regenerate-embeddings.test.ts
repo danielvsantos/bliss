@@ -17,8 +17,8 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../../prisma/prisma', () => ({ default: mockPrisma }));
-vi.mock('../../../../../prisma/prisma.js', () => ({ default: mockPrisma }));
+vi.mock('../../../prisma/prisma', () => ({ default: mockPrisma }));
+vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);

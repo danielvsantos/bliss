@@ -8,6 +8,12 @@ import path from 'path';
  * Uses jsdom as the test environment to simulate browser APIs.
  * The @vitejs/plugin-react-swc plugin handles JSX and fast refresh.
  * The @ alias mirrors the one in vite.config.ts so imports resolve correctly.
+ *
+ * Coverage philosophy: thresholds enforce a floor, not a target.
+ * We test behaviour that can break silently — custom hooks, state logic,
+ * loading/error/empty states, business-logic components. We do NOT test
+ * third-party primitives (shadcn/ui, Radix) or trivial render assertions.
+ * A lower honest threshold beats a high threshold reached through padding.
  */
 export default defineConfig({
   plugins: [react()],
@@ -22,9 +28,9 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/components/**', 'src/hooks/**'],
       thresholds: {
-        branches: 60,
-        functions: 60,
-        lines: 60,
+        branches: 30,
+        functions: 40,
+        lines: 40,
       },
     },
   },

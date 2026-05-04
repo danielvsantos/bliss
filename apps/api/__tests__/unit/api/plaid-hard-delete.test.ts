@@ -10,11 +10,13 @@ vi.mock('@sentry/nextjs', () => ({
   init: vi.fn(),
 }));
 
-const mockPlaidClient = { itemRemove: vi.fn() };
-vi.mock('../../../../services/plaid.service', () => ({
+const { mockPlaidClient } = vi.hoisted(() => ({
+  mockPlaidClient: { itemRemove: vi.fn() },
+}));
+vi.mock('../../../services/plaid.service', () => ({
   plaidClient: mockPlaidClient,
 }));
-vi.mock('../../../../services/plaid.service.js', () => ({
+vi.mock('../../../services/plaid.service.js', () => ({
   plaidClient: mockPlaidClient,
 }));
 
@@ -28,8 +30,8 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../prisma/prisma', () => ({ default: mockPrisma }));
-vi.mock('../../../../prisma/prisma.js', () => ({ default: mockPrisma }));
+vi.mock('../../../prisma/prisma', () => ({ default: mockPrisma }));
+vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
 
 import handler from '../../../pages/api/plaid/items/hard-delete.js';
 

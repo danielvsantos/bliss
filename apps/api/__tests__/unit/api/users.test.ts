@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-vi.mock('../../utils/rateLimit.js', () => ({
+vi.mock('../../../utils/rateLimit.js', () => ({
   rateLimiters: new Proxy({} as Record<string, unknown>, {
     get: () => (_req: unknown, _res: unknown, next: () => void) => next(),
   }),
@@ -14,14 +14,14 @@ vi.mock('../../utils/rateLimit.js', () => ({
 
 const mockUser = { id: 'user-1', tenantId: 'tenant-abc', role: 'admin', email: 'admin@test.com' };
 
-vi.mock('../../utils/withAuth.js', () => ({
+vi.mock('../../../utils/withAuth.js', () => ({
   withAuth: (handler: any) => async (req: any, res: any) => {
     req.user = { ...mockUser };
     return handler(req, res);
   },
 }));
 
-vi.mock('../../utils/cors.js', () => ({ cors: () => false }));
+vi.mock('../../../utils/cors.js', () => ({ cors: () => false }));
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), init: vi.fn() }));
 
 const { mockPrisma, mockAuthService } = vi.hoisted(() => ({
@@ -35,10 +35,10 @@ const { mockPrisma, mockAuthService } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../prisma/prisma.js', () => ({ default: mockPrisma }));
-vi.mock('../../services/auth.service.js', () => ({ AuthService: mockAuthService }));
+vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
+vi.mock('../../../services/auth.service.js', () => ({ AuthService: mockAuthService }));
 
-import handler from '../../pages/api/users.js';
+import handler from '../../../pages/api/users.js';
 
 function makeReq(overrides: Partial<NextApiRequest> = {}): NextApiRequest {
   return { method: 'GET', headers: {}, cookies: {}, body: {}, query: {}, ...overrides } as unknown as NextApiRequest;
@@ -103,32 +103,8 @@ describe('GET /api/users', () => {
 });
 
 describe('POST /api/users (invite)', () => {
-  it('returns 403 when non-admin tries to invite', async () => {
-    vi.mock('../../utils/withAuth.js', () => ({
-      withAuth: (handler: any) => async (req: any, res: any) => {
-        req.user = { ...mockUser, role: 'member' };
-        return handler(req, res);
-      },
-    }));
-
-    const req = makeReq({ method: 'POST', body: { email: 'new@test.com', password: 'pass123' } });
-    // Directly set user as member
-    (req as any).user = { ...mockUser, role: 'member' };
-
-    const res = makeRes();
-
-    // We need to call the handler with a member user — override via a different approach
-    // by testing the logic after the handler is already set up with admin mock.
-    // This test verifies the admin gate works when req.user.role is member.
-    // The withAuth mock always injects admin, so test via handler re-call simulation
-    // by checking the 400 path (missing email).
-    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
-
-    // With admin mock, gets past role check and hits email validation
-    expect(res._status).toBe(400);
-  });
-
-  it('returns 400 when email is missing', async () => {
+  it('returns 400 when email is missing (admin user gets past role check)', async () => {
+    // The withAuth mock always injects admin. With admin user + missing email, hits 400.
     const req = makeReq({ method: 'POST', body: { password: 'pass123' } });
     const res = makeRes();
 

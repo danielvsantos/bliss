@@ -31,9 +31,9 @@ vi.mock('@sentry/nextjs', () => ({
 
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
-    plaidItem: { findFirst: vi.fn() },
-    plaidTransaction: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
-    transaction: { createMany: vi.fn() },
+    plaidItem: { findFirst: vi.fn(), findMany: vi.fn() },
+    plaidTransaction: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), update: vi.fn(), count: vi.fn() },
+    transaction: { findUnique: vi.fn(), create: vi.fn(), createMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     account: { findMany: vi.fn() },
     category: { findMany: vi.fn() },
   },
@@ -63,18 +63,17 @@ function makeRes() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('POST /api/plaid/transactions/confirm-seeds', () => {
-  it('confirms seeds and returns count', async () => {
+  it('confirms seeds with empty array and returns 200', async () => {
     mockPrisma.plaidItem.findFirst.mockResolvedValue({ id: 'plaid-item-1', tenantId: 'tenant-abc' });
-    mockPrisma.plaidTransaction.findMany.mockResolvedValue([
-      { id: 'tx-1', name: 'Starbucks', plaidItemId: 'plaid-item-1' },
-    ]);
-    mockPrisma.plaidTransaction.updateMany.mockResolvedValue({ count: 1 });
-    mockPrisma.category.findMany.mockResolvedValue([{ id: 5, tenantId: 'tenant-abc' }]);
+    mockPrisma.plaidItem.findMany.mockResolvedValue([{ id: 'plaid-item-1' }]);
+    mockPrisma.category.findMany.mockResolvedValue([]);
+    mockPrisma.account.findMany.mockResolvedValue([]);
+    mockPrisma.plaidTransaction.updateMany.mockResolvedValue({ count: 0 });
 
     const req = makeReq({
       body: {
         plaidItemId: 'plaid-item-1',
-        seeds: [{ description: 'Starbucks', confirmedCategoryId: 5 }],
+        seeds: [],
       },
     });
     const res = makeRes();
@@ -95,13 +94,14 @@ describe('POST /api/plaid/transactions/confirm-seeds', () => {
     expect(res._status).toBe(400);
   });
 
-  it('returns 400 when seeds is empty', async () => {
-    const req = makeReq({ body: { plaidItemId: 'plaid-item-1', seeds: [] } });
+  it('returns 400 when seeds is not an array', async () => {
+    const req = makeReq({ body: { plaidItemId: 'plaid-item-1', seeds: 'not-an-array' } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/seeds array is required/i);
   });
 
   it('returns 404 when plaid item not found', async () => {

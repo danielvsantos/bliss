@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-vi.mock('../../utils/rateLimit.js', () => ({
+vi.mock('../../../utils/rateLimit.js', () => ({
   rateLimiters: new Proxy({} as Record<string, unknown>, {
     get: () => (_req: unknown, _res: unknown, next: () => void) => next(),
   }),
@@ -14,14 +14,14 @@ vi.mock('../../utils/rateLimit.js', () => ({
 
 const mockUser = { id: 1, tenantId: 'tenant-abc', role: 'admin', email: 'admin@test.com' };
 
-vi.mock('../../utils/withAuth.js', () => ({
+vi.mock('../../../utils/withAuth.js', () => ({
   withAuth: (handler: any) => async (req: any, res: any) => {
     req.user = { ...mockUser };
     return handler(req, res);
   },
 }));
 
-vi.mock('../../utils/cors.js', () => ({ cors: () => false }));
+vi.mock('../../../utils/cors.js', () => ({ cors: () => false }));
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), init: vi.fn() }));
 
 const { mockPrisma } = vi.hoisted(() => ({
@@ -32,13 +32,14 @@ const { mockPrisma } = vi.hoisted(() => ({
     tenantBank: { findUnique: vi.fn() },
     user: { findMany: vi.fn() },
     accountOwner: { deleteMany: vi.fn(), createMany: vi.fn() },
+    transaction: { count: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
 
-vi.mock('../../prisma/prisma.js', () => ({ default: mockPrisma }));
+vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
 
-import handler from '../../pages/api/accounts.js';
+import handler from '../../../pages/api/accounts.js';
 
 function makeReq(overrides: Partial<NextApiRequest> = {}): NextApiRequest {
   return { method: 'GET', headers: {}, cookies: {}, body: {}, query: {}, ...overrides } as unknown as NextApiRequest;

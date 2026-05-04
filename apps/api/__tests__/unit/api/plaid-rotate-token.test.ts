@@ -21,11 +21,12 @@ vi.mock('../../../utils/withAuth.js', () => ({
 }));
 
 vi.mock('../../../utils/cors.js', () => ({ cors: () => false }));
-vi.mock('../../../utils/cors', () => ({ cors: () => false }));
 
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), init: vi.fn() }));
 
-const mockPlaidClient = { itemAccessTokenInvalidate: vi.fn() };
+const { mockPlaidClient } = vi.hoisted(() => ({
+  mockPlaidClient: { itemAccessTokenInvalidate: vi.fn() },
+}));
 vi.mock('../../../services/plaid.service', () => ({ plaidClient: mockPlaidClient }));
 vi.mock('../../../services/plaid.service.js', () => ({ plaidClient: mockPlaidClient }));
 
