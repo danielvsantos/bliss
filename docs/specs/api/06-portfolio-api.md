@@ -31,6 +31,15 @@ The API performs a final set of calculations to derive unrealized P&L and then r
 
 **MANUAL-source skip**: When `asset.source === 'MANUAL'` (e.g., manually-tracked funds without real tickers), live price fetching is skipped entirely. The stored `currentValue` from the valuation worker is used as-is.
 
+**Within-request live-price deduplication**: Per-account portfolio items mean the same ticker (e.g. `AAPL`) can appear in multiple rows — one per brokerage account. Without deduplication each row would fire its own request to the backend pricing endpoint, wasting TwelveData API credits and slowing the response. Before the enrichment loop, the endpoint performs a single **prefetch phase**:
+
+1. Filter to API-priced assets (`API_STOCK`, `API_FUND`, `API_CRYPTO`) with `quantity > 0` and `source !== 'MANUAL'`.
+2. Deduplicate by cache key: `${symbol}::${processingHint}::${assetCurrency||currency}::${exchange||''}`.
+3. Fire one `calculateAssetCurrentValue()` call per unique key via `Promise.all`.
+4. Store results in a `Map<cacheKey, Decimal|null>`.
+
+The enrichment loop then reads from this map instead of making individual calls per item. Two items sharing the same (symbol, hint, currency, exchange) tuple receive the same live price — which is correct, since they track the same instrument.
+
 **Cross-currency price handling**: When the live price comes back in a currency different from the account currency (e.g., AAPL trades in USD but account is EUR), the endpoint converts directly from price currency to avoid double-conversion:
 
 ```
