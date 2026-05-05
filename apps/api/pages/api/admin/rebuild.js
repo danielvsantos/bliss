@@ -7,7 +7,7 @@
  *     Body: { scope, payload? }
  *     - scope: 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset'
  *     - payload.earliestDate required for scoped-analytics (ISO date string)
- *     - payload.portfolioItemId required for single-asset (number)
+ *     - payload.portfolioItemId (number) OR payload.portfolioItemIds (number[]) required for single-asset
  *
  *     Forwards to backend `POST /api/admin/rebuild/trigger` with
  *     `tenantId = user.tenantId` and `requestedBy = user.email` injected

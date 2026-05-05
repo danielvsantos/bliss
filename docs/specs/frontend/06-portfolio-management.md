@@ -40,7 +40,20 @@ A key architectural feature of the portfolio dashboard is its reliance on **serv
 - **Filtering and Sorting**: Users can filter the list of assets by their symbol and sort the holdings table by various columns.
 - **Equity Analysis**: Detailed stock equity analysis (P/E ratios, dividend yields, sector breakdowns) is documented in a separate spec (`19-security-master.md`).
 
-### 6.2.3. Data Fetching
+### 6.2.3. Symbol-Level Aggregation ("All Accounts" view)
+
+When the user selects **"All accounts"** from the account filter, the same ticker (e.g. `AAPL`) may appear in multiple API response rows — one per brokerage account. The page merges these into a single display row via `mergePortfolioItems()` / `mergeBySymbol()` **client-side** (no extra API call):
+
+- **Grouping key**: `item.symbol` — all items with the same symbol are merged.
+- **`quantity`**: summed across all per-account rows.
+- **`hasLotMismatch`**: OR'd — true if any account has a mismatch.
+- **`accountId`**: set to `null` on the merged row (no single account applies).
+- **Financial blocks** (`native`, `usd`, `portfolio`): each block is summed field-by-field (`costBasis`, `marketValue`, `unrealizedPnL`, `realizedPnL`, `totalInvested`). `unrealizedPnLPercent` is **recalculated** from the summed `unrealizedPnL / costBasis` — it is never averaged from individual rows, which would be incorrect.
+- **`portfolio` block**: included only when at least one row has a `portfolio` block. If a row has no `portfolio` block its `usd` block is used as a substitute during summation so the merge remains currency-accurate.
+
+When a specific account is selected, no merging occurs — raw per-account rows are displayed as-is.
+
+### 6.2.4. Data Fetching
 
 The dashboard uses the following hooks:
 - `usePortfolioItems`: Fetches the current state of all portfolio items from `/api/portfolio/items`. Accepts optional filters: `assetType`, `source`, `accountId` (pass `"null"` for manual assets), `countryId`. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion. Each item includes `accountId` (the brokerage account it belongs to, or `null` for manual assets) and `hasLotMismatch` (data-quality flag).

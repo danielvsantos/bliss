@@ -103,10 +103,10 @@ This stage is handled by the `process-portfolio-changes.js` worker. Its primary 
 ### 6.3.1. Logic
 
 1.  **Asset Key Generation**: It uses the `asset-aggregator.js` utility to generate a consistent, unique key for each asset (e.g., the ticker `AAPL` for Apple stock). The key is **account-scoped**: the same ticker held in two different brokerage accounts generates two distinct keys (`AAPL::7` and `AAPL::12`), resulting in two independent `PortfolioItem` rows with separate FIFO lot stacks.
-2.  **Transaction Grouping**: It groups all investment and debt transactions by this `symbol::accountId` key.
+2.  **Transaction Grouping**: It groups all investment and debt transactions by this `symbol::accountId` key, **with the MANUAL isolation rule applied**: if a transaction has no ticker (`!tx.ticker`) OR its category `processingHint === 'MANUAL'`, the `accountId` component is forced to `null` regardless of the actual account — producing a key like `LETS::null`. This ensures that manually-priced assets (private equity, government bonds without real tickers, etc.) always merge into a single `PortfolioItem` across accounts, since they cannot be priced independently per account.
 3.  **Upsert Logic**: It performs a non-destructive "upsert" using the three-part unique key `(tenantId, symbol, accountId)`. If a `PortfolioItem` for a given key does not exist, it is created. A key piece of business logic is the **Origination Transaction Rule**: an item is only created if there is at least one "buy" (debit) or "origination" (credit) transaction. This prevents erroneous items from being created from sell-only transactions.
 4.  **Initial State Calculation**: Upon creation, it calls the `calculatePortfolioItemState` utility (`src/utils/portfolioItemStateCalculator.js`) to compute the complete initial state of the new item from its transaction history. This utility uses the same transaction normalization logic as the valuation engine to handle BUY/SELL transactions with missing quantities, ensuring consistent calculations across all pipeline stages. The calculation includes all native and USD-denominated fields (`costBasis`, `costBasisInUSD`, etc.). Critically, the USD-denominated `realizedPnLInUSD` is computed using **proper FIFO lot-matching with historical FX rates**: each buy lot records the BRL→USD (or other currency→USD) rate at the buy date, and each sell converts proceeds at the sell-date rate. The per-lot PnL in USD is `(salePrice × qty × sellRate) − (lotPrice × qty × buyRate)`, summed across all FIFO-consumed lots. This ensures accurate USD PnL even when the exchange rate fluctuates between buy and sell dates.
-5.  **Transaction Linking**: It ensures every transaction is linked via the `portfolioItemId` to its parent `PortfolioItem`.
+5.  **Transaction Linking**: It ensures every transaction is linked via the `portfolioItemId` to its parent `PortfolioItem`. **The MANUAL isolation rule must be applied here too**: when resolving which `PortfolioItem` a transaction belongs to, the same `isManualPriced = !tx.ticker || tx.category?.processingHint === 'MANUAL'` check determines the `itemAccountId` (null for MANUAL, `tx.accountId` for API-priced assets). Using `tx.accountId` directly without this check would cause the lookup to miss MANUAL items (keyed under `::null`) entirely, leaving transactions unlinked and the valuation engine unable to find them.
 6.  **Pruning**: It cleans up any "orphan" `PortfolioItem` records that are no longer referenced by any transactions.
 7.  **Event Emission**: Upon completion, it emits a `PORTFOLIO_CHANGES_PROCESSED` event, which triggers the next stage of the pipeline.
 
@@ -259,6 +259,10 @@ A pricing strategy for funds and ETFs. Mirrors `API_STOCK.js` with two additiona
 - Passes `currency` to `getLatestCryptoPrice()` for `API_CRYPTO`
 - DB fallback (`AssetPrice.findFirst`): filters by `exchange` when provided, ensuring the correct exchange's cached price is returned
 - Source string: `'API:TwelveData'` for both stocks/funds and crypto
+
+**In-process TTL cache**: `priceService.js` maintains a module-level `Map` (`_priceCache`) with a **60-second TTL**. Cache key: `${symbol}::${assetType}::${currency||''}::${exchange||''}`. On a cache hit the function returns immediately without calling TwelveData. Entries older than 2× TTL are lazily evicted on each write to keep memory bounded. This cache is intentionally in-process (not Redis) — prices are volatile and should never outlive a process restart on deploy.
+
+`clearPriceCache()` is exported for test isolation. Call it in `beforeEach` to prevent cross-test pollution from the module-level Map persisting between Jest tests.
 
 ### 6.4.5. Transaction Normalization (`transactionNormalizer.js`)
 
