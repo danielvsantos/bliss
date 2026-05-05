@@ -3,6 +3,42 @@ const { getLatestStockPrice, STOCK_PROVIDER } = require('./stockService');
 const { getLatestCryptoPrice } = require('./cryptoService');
 const prisma = require('../../prisma/prisma.js');
 
+// ── In-process live price cache ───────────────────────────────────────────────
+// Protects TwelveData credits when multiple concurrent requests (e.g. two
+// different query-key variants of /api/portfolio/items) arrive within the same
+// short window. A 60-second TTL is short enough to feel "live" and long enough
+// to collapse all requests that land in the same page-load burst.
+//
+// Key: `${symbol}::${assetType}::${currency||''}::${exchange||''}`
+// Value: { price, source, cachedAt }
+//
+// The cache is intentionally in-process (not Redis) — prices are volatile and
+// we never want a stale cached price to outlive the process restart that happens
+// when we deploy new code.
+
+const PRICE_CACHE_TTL_MS = 60 * 1_000; // 60 seconds
+const _priceCache = new Map();
+
+function _getCached(key) {
+    const entry = _priceCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.cachedAt > PRICE_CACHE_TTL_MS) {
+        _priceCache.delete(key);
+        return null;
+    }
+    return entry;
+}
+
+function _setCache(key, priceData) {
+    _priceCache.set(key, { ...priceData, cachedAt: Date.now() });
+    // Evict entries older than 2× TTL to keep memory bounded.
+    // Runs on every write but is O(1) amortized because the map is small.
+    const horizon = Date.now() - PRICE_CACHE_TTL_MS * 2;
+    for (const [k, v] of _priceCache.entries()) {
+        if (v.cachedAt < horizon) _priceCache.delete(k);
+    }
+}
+
 /**
  * Fetches the latest price for a given asset symbol from the most appropriate source.
  * This is intended for real-time or near-real-time price lookups.
@@ -12,6 +48,15 @@ const prisma = require('../../prisma/prisma.js');
  * @returns {Promise<{price: number, source: string}|null>} The price and its source, or null if not found.
  */
 async function getLatestPrice(symbol, assetType, currency, { exchange } = {}) {
+  const cacheKey = `${symbol}::${assetType}::${currency || ''}::${exchange || ''}`;
+
+  // Fast path: serve from cache if fresh.
+  const cached = _getCached(cacheKey);
+  if (cached) {
+      logger.info(`[PriceService] Cache hit for ${symbol} (${assetType}) — price: ${cached.price}`);
+      return { price: cached.price, source: cached.source };
+  }
+
   logger.info(`[PriceService] Fetching latest price for ${symbol} (${assetType})${exchange ? ` on ${exchange}` : ''}`);
 
   let priceData;
@@ -29,10 +74,10 @@ async function getLatestPrice(symbol, assetType, currency, { exchange } = {}) {
     }
   }
 
-  // If we got a price from an API, we can return it immediately.
+  // If we got a price from an API, cache and return it.
   if (priceData) {
     logger.info(`[PriceService] Live price found for ${symbol}: ${priceData.price} from ${priceData.source}`);
-    // We could add logic here to cache this response in Redis if needed later.
+    _setCache(cacheKey, priceData);
     return priceData;
   }
 
@@ -59,6 +104,12 @@ async function getLatestPrice(symbol, assetType, currency, { exchange } = {}) {
   return null;
 }
 
+/** Clears the in-process price cache. Exported for test isolation only. */
+function clearPriceCache() {
+    _priceCache.clear();
+}
+
 module.exports = {
   getLatestPrice,
+  clearPriceCache,
 }; 

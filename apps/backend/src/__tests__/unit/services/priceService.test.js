@@ -18,7 +18,7 @@ jest.mock('../../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
-const { getLatestPrice } = require('../../../services/priceService');
+const { getLatestPrice, clearPriceCache } = require('../../../services/priceService');
 const { getLatestStockPrice } = require('../../../services/stockService');
 const { getLatestCryptoPrice } = require('../../../services/cryptoService');
 const prisma = require('../../../../prisma/prisma.js');
@@ -28,6 +28,8 @@ const prisma = require('../../../../prisma/prisma.js');
 describe('priceService — getLatestPrice', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset the module-level in-process price cache so each test starts cold.
+    clearPriceCache();
   });
 
   // 1. Returns TwelveData result for API_STOCK
