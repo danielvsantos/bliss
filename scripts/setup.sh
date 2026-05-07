@@ -65,6 +65,22 @@ if [ "$LLM_PROVIDER" = "anthropic" ]; then
   echo ""
 fi
 
+# ─── Google OAuth configuration (OPTIONAL) ───────────────────────────────────
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║  Google OAuth Setup (optional)                               ║"
+echo "║                                                              ║"
+echo "║  Enables 'Sign in with Google'. Skip to use email/password   ║"
+echo "║  only. Credentials: console.cloud.google.com/apis/credentials║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+read -r -p "Paste your GOOGLE_CLIENT_ID (or leave blank to skip): " GOOGLE_CLIENT_ID
+if [ -n "$GOOGLE_CLIENT_ID" ]; then
+  read -r -p "Paste your GOOGLE_CLIENT_SECRET: " GOOGLE_CLIENT_SECRET
+else
+  GOOGLE_CLIENT_SECRET=""
+fi
+echo ""
+
 # ─── Generate secrets ────────────────────────────────────────────────────────
 echo "Generating secrets..."
 ENCRYPTION_SECRET=$(openssl rand -base64 48 | tr -d '\n/+=' | head -c 48)
@@ -97,6 +113,14 @@ if [ -n "$LLM_API_KEY" ]; then
   sed -i.bak -e "s|^$KEY_VAR=.*|$KEY_VAR=$LLM_API_KEY|" "$ENV_FILE"
 fi
 
+# ─── Inject Google OAuth credentials ─────────────────────────────────────────
+if [ -n "$GOOGLE_CLIENT_ID" ]; then
+  sed -i.bak -e "s|^GOOGLE_CLIENT_ID=.*|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|" "$ENV_FILE"
+fi
+if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
+  sed -i.bak -e "s|^GOOGLE_CLIENT_SECRET=.*|GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET|" "$ENV_FILE"
+fi
+
 # Embedding provider (only set when different from primary, i.e. Anthropic path)
 if [ -n "$EMBEDDING_PROVIDER" ]; then
   sed -i.bak -e "s|^EMBEDDING_PROVIDER=.*|EMBEDDING_PROVIDER=$EMBEDDING_PROVIDER|" "$ENV_FILE"
@@ -119,6 +143,10 @@ if [ -z "$LLM_API_KEY" ]; then
 fi
 if [ "$LLM_PROVIDER" = "anthropic" ] && [ -z "$EMB_API_KEY" ]; then
   echo "    (⚠  $EMB_KEY_VAR is blank — add your key to .env before starting)"
+fi
+echo ""
+if [ -z "$GOOGLE_CLIENT_ID" ]; then
+  echo "    (⚠  Google OAuth is not configured — Google Sign-In will be unavailable)"
 fi
 echo ""
 echo "Next steps:"
