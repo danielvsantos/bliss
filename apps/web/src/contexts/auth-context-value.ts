@@ -25,6 +25,7 @@ export interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
+  googleOAuthEnabled: boolean;
   signUp: (data: SignUpData) => Promise<SignUpResponse>;
   signIn: (data: SignInData) => Promise<void>;
   signInWithGoogle: () => Promise<void>;

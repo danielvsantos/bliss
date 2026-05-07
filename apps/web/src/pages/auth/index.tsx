@@ -467,7 +467,7 @@ function useDemoMode(): boolean {
 
 function AuthCard() {
   const { t } = useTranslation();
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, googleOAuthEnabled } = useAuth();
   const [tab, setTab] = useState("signin");
   const isDemo = useDemoMode();
 
@@ -512,8 +512,8 @@ function AuthCard() {
         </div>
       )}
 
-      {/* Google OAuth — hidden in demo mode */}
-      {!isDemo && (
+      {/* Google OAuth — hidden in demo mode or when credentials are not configured */}
+      {!isDemo && googleOAuthEnabled && (
         <>
           <GoogleButton
             label={

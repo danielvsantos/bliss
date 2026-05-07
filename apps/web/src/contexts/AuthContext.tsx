@@ -20,10 +20,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
 
   useEffect(() => {
-    // Check for existing session
     checkSession();
+    const apiUrl = (import.meta.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+    fetch(`${apiUrl}/api/auth/providers`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(providers => setGoogleOAuthEnabled('google' in providers))
+      .catch(() => setGoogleOAuthEnabled(false));
   }, []);
 
   // Listen for session-expired events fired by the API client on 401 responses
@@ -159,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         loading,
         error,
+        googleOAuthEnabled,
         signUp,
         signIn,
         signInWithGoogle,

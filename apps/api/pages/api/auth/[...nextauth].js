@@ -8,11 +8,13 @@ const CredentialsProvider = CredentialsProviderImport.default || CredentialsProv
 import { AuthService } from '../../../services/auth.service';
 import { encode, decode } from 'next-auth/jwt';
 
+const googleOAuthConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+
 // Create the NextAuth handler once at module load — identical to the original
 // single-arg pattern that providers (GoogleProvider, etc.) rely on.
 const nextAuthHandler = NextAuth({
     providers: [
-        GoogleProvider({
+        ...(googleOAuthConfigured ? [GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             profile(profile) {
@@ -24,7 +26,7 @@ const nextAuthHandler = NextAuth({
                     googleId: profile.sub,
                 };
             },
-        }),
+        })] : []),
         CredentialsProvider({
             name: 'Credentials',
             credentials: {
