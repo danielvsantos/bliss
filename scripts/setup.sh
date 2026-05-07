@@ -66,21 +66,6 @@ if [ "$LLM_PROVIDER" = "anthropic" ]; then
 fi
 
 # ─── Optional services ────────────────────────────────────────────────────────
-echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  Optional Services                                           ║"
-echo "╚══════════════════════════════════════════════════════════════╝"
-echo ""
-echo "  1) Google OAuth    — enables Sign in with Google"
-echo "  2) Plaid           — bank connection & real-time transaction sync"
-echo "  3) Twelve Data     — live stock prices & security fundamentals"
-echo "  4) CurrencyLayer   — historical FX rates for multi-currency portfolios"
-echo "  5) Sentry          — error monitoring & alerting"
-echo ""
-read -r -p "Enter numbers to configure (e.g. 1 3), or press Enter to skip all: " OPT_CHOICES
-echo ""
-
-# Parse choices into a lookup string (e.g. " 1 3 ")
-OPT=" $OPT_CHOICES "
 
 # Initialise all optional vars blank
 GOOGLE_CLIENT_ID=""; GOOGLE_CLIENT_SECRET=""
@@ -89,50 +74,78 @@ TWELVE_DATA_API_KEY=""
 CURRENCYLAYER_API_KEY=""
 SENTRY_DSN=""; SENTRY_ORG=""; SENTRY_PROJECT=""
 
-# 1 — Google OAuth
-if [[ "$OPT" == *" 1 "* ]]; then
-  echo "── Google OAuth ─────────────────────────────────────────────────"
-  echo "   Create credentials at: console.cloud.google.com/apis/credentials"
-  echo "   Authorized redirect URI: <NEXTAUTH_URL>/api/auth/callback/google"
-  echo ""
-  read -r -p "  GOOGLE_CLIENT_ID: " GOOGLE_CLIENT_ID
-  read -r -p "  GOOGLE_CLIENT_SECRET: " GOOGLE_CLIENT_SECRET
-  echo ""
-fi
+# Track which services have been configured
+CONFIGURED=""
 
-# 2 — Plaid
-if [[ "$OPT" == *" 2 "* ]]; then
-  echo "── Plaid ────────────────────────────────────────────────────────"
-  read -r -p "  PLAID_CLIENT_ID: " PLAID_CLIENT_ID
-  read -r -p "  PLAID_SECRET: " PLAID_SECRET
-  read -r -p "  PLAID_ENV [sandbox]: " _PLAID_ENV
-  PLAID_ENV=${_PLAID_ENV:-sandbox}
-  read -r -p "  PLAID_WEBHOOK_URL (leave blank if none): " PLAID_WEBHOOK_URL
-  echo ""
-fi
+configure_service() {
+  local choice="$1"
+  case "$choice" in
+    1)
+      echo "── Google OAuth ─────────────────────────────────────────────────"
+      echo "   Create credentials at: console.cloud.google.com/apis/credentials"
+      echo "   Authorized redirect URI: <NEXTAUTH_URL>/api/auth/callback/google"
+      echo ""
+      read -r -p "  GOOGLE_CLIENT_ID: " GOOGLE_CLIENT_ID
+      read -r -p "  GOOGLE_CLIENT_SECRET: " GOOGLE_CLIENT_SECRET
+      echo ""
+      CONFIGURED="$CONFIGURED 1"
+      ;;
+    2)
+      echo "── Plaid ────────────────────────────────────────────────────────"
+      read -r -p "  PLAID_CLIENT_ID: " PLAID_CLIENT_ID
+      read -r -p "  PLAID_SECRET: " PLAID_SECRET
+      read -r -p "  PLAID_ENV [sandbox]: " _PLAID_ENV
+      PLAID_ENV=${_PLAID_ENV:-sandbox}
+      read -r -p "  PLAID_WEBHOOK_URL (leave blank if none): " PLAID_WEBHOOK_URL
+      echo ""
+      CONFIGURED="$CONFIGURED 2"
+      ;;
+    3)
+      echo "── Twelve Data ──────────────────────────────────────────────────"
+      read -r -p "  TWELVE_DATA_API_KEY: " TWELVE_DATA_API_KEY
+      echo ""
+      CONFIGURED="$CONFIGURED 3"
+      ;;
+    4)
+      echo "── CurrencyLayer ────────────────────────────────────────────────"
+      read -r -p "  CURRENCYLAYER_API_KEY: " CURRENCYLAYER_API_KEY
+      echo ""
+      CONFIGURED="$CONFIGURED 4"
+      ;;
+    5)
+      echo "── Sentry ───────────────────────────────────────────────────────"
+      read -r -p "  SENTRY_DSN: " SENTRY_DSN
+      read -r -p "  SENTRY_ORG: " SENTRY_ORG
+      read -r -p "  SENTRY_PROJECT: " SENTRY_PROJECT
+      echo ""
+      CONFIGURED="$CONFIGURED 5"
+      ;;
+  esac
+}
 
-# 3 — Twelve Data
-if [[ "$OPT" == *" 3 "* ]]; then
-  echo "── Twelve Data ──────────────────────────────────────────────────"
-  read -r -p "  TWELVE_DATA_API_KEY: " TWELVE_DATA_API_KEY
+print_services_menu() {
+  echo "╔══════════════════════════════════════════════════════════════╗"
+  echo "║  Optional Services                                           ║"
+  echo "╚══════════════════════════════════════════════════════════════╝"
   echo ""
-fi
+  [[ "$CONFIGURED" != *" 1"* ]] && echo "  1) Google OAuth    — enables Sign in with Google"
+  [[ "$CONFIGURED" != *" 2"* ]] && echo "  2) Plaid           — bank connection & real-time transaction sync"
+  [[ "$CONFIGURED" != *" 3"* ]] && echo "  3) Twelve Data     — live stock prices & security fundamentals"
+  [[ "$CONFIGURED" != *" 4"* ]] && echo "  4) CurrencyLayer   — historical FX rates for multi-currency portfolios"
+  [[ "$CONFIGURED" != *" 5"* ]] && echo "  5) Sentry          — error monitoring & alerting"
+  echo ""
+}
 
-# 4 — CurrencyLayer
-if [[ "$OPT" == *" 4 "* ]]; then
-  echo "── CurrencyLayer ────────────────────────────────────────────────"
-  read -r -p "  CURRENCYLAYER_API_KEY: " CURRENCYLAYER_API_KEY
+while true; do
+  print_services_menu
+  read -r -p "Enter a number to configure, or press Enter to continue: " OPT_CHOICE
   echo ""
-fi
-
-# 5 — Sentry
-if [[ "$OPT" == *" 5 "* ]]; then
-  echo "── Sentry ───────────────────────────────────────────────────────"
-  read -r -p "  SENTRY_DSN: " SENTRY_DSN
-  read -r -p "  SENTRY_ORG: " SENTRY_ORG
-  read -r -p "  SENTRY_PROJECT: " SENTRY_PROJECT
-  echo ""
-fi
+  [ -z "$OPT_CHOICE" ] && break
+  case "$OPT_CHOICE" in
+    1|2|3|4|5) configure_service "$OPT_CHOICE" ;;
+    *) echo "  Invalid choice, please enter a number from the list above." ; echo "" ;;
+  esac
+done
 
 # ─── Generate secrets ────────────────────────────────────────────────────────
 echo "Generating secrets..."
