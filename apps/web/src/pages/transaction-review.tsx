@@ -263,6 +263,12 @@ export default function TransactionReviewPage() {
   const groupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const pendingScrollKey = useRef<string | null>(null);
 
+  // Stable per-category money totals — keyed by category key string (categoryId or 'uncategorized').
+  // Updated only when no filter is active so that expanding a category doesn't reset the
+  // other groups' totals to zero (their items become [] when the API filters by category).
+  const plaidStableTotals = useRef<Map<string, number>>(new Map());
+  const importStableTotals = useRef<Map<string, number>>(new Map());
+
   // Scroll to the newly-expanded category group once its data has loaded.
   useEffect(() => {
     if (plaidLoading || !pendingScrollKey.current) return;
@@ -277,6 +283,30 @@ export default function TransactionReviewPage() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     pendingScrollKey.current = null;
   }, [stagedLoading]);
+
+  // Capture stable per-category money totals from the full unfiltered datasets.
+  // When a category filter is active the API only returns that category's items,
+  // which would make every other group's total collapse to zero — so we only
+  // update when no filter is set and reuse the last known totals while expanded.
+  useEffect(() => {
+    if (plaidCategoryFilter !== null) return;
+    const map = new Map<string, number>();
+    for (const item of plaidReviewItems) {
+      const key = item.categoryId?.toString() ?? 'uncategorized';
+      map.set(key, (map.get(key) ?? 0) + Math.abs(item.amount));
+    }
+    plaidStableTotals.current = map;
+  }, [plaidReviewItems, plaidCategoryFilter]);
+
+  useEffect(() => {
+    if (importCategoryFilter !== null) return;
+    const map = new Map<string, number>();
+    for (const item of importReviewItems) {
+      const key = item.categoryId?.toString() ?? 'uncategorized';
+      map.set(key, (map.get(key) ?? 0) + Math.abs(item.amount));
+    }
+    importStableTotals.current = map;
+  }, [importReviewItems, importCategoryFilter]);
 
   // ── Detect COMMITTING → COMMITTED/READY transition ──
   const prevImportStatusRef = useRef<string | undefined>();
@@ -366,11 +396,14 @@ export default function TransactionReviewPage() {
     return plaidCategoryBreakdown.map((entry) => {
       const key = entry.categoryId?.toString() ?? 'uncategorized';
       const items = itemsByCategory.get(key) ?? [];
+      // Use stable totals captured from the unfiltered dataset so that expanding
+      // one category does not reset other groups' money totals to zero.
+      const total = plaidStableTotals.current.get(key) ?? items.reduce((sum, i) => sum + Math.abs(i.amount), 0);
       return {
         key,
         categoryName: entry.category?.name ?? 'Uncategorized',
         items,
-        total: items.reduce((sum, i) => sum + Math.abs(i.amount), 0),
+        total,
         totalCount: entry.count,
       };
     });
@@ -383,11 +416,14 @@ export default function TransactionReviewPage() {
     return importCategorySummary.map((entry) => {
       const key = entry.categoryId?.toString() ?? 'uncategorized';
       const items = itemsByCategory.get(key) ?? [];
+      // Use stable totals captured from the unfiltered dataset so that expanding
+      // one category does not reset other groups' money totals to zero.
+      const total = importStableTotals.current.get(key) ?? items.reduce((sum, i) => sum + Math.abs(i.amount), 0);
       return {
         key,
         categoryName: entry.category?.name ?? 'Uncategorized',
         items,
-        total: items.reduce((sum, i) => sum + Math.abs(i.amount), 0),
+        total,
         totalCount: entry.count,
       };
     });
