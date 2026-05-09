@@ -284,30 +284,6 @@ export default function TransactionReviewPage() {
     pendingScrollKey.current = null;
   }, [stagedLoading]);
 
-  // Capture stable per-category money totals from the full unfiltered datasets.
-  // When a category filter is active the API only returns that category's items,
-  // which would make every other group's total collapse to zero — so we only
-  // update when no filter is set and reuse the last known totals while expanded.
-  useEffect(() => {
-    if (plaidCategoryFilter !== null) return;
-    const map = new Map<string, number>();
-    for (const item of plaidReviewItems) {
-      const key = item.categoryId?.toString() ?? 'uncategorized';
-      map.set(key, (map.get(key) ?? 0) + Math.abs(item.amount));
-    }
-    plaidStableTotals.current = map;
-  }, [plaidReviewItems, plaidCategoryFilter]);
-
-  useEffect(() => {
-    if (importCategoryFilter !== null) return;
-    const map = new Map<string, number>();
-    for (const item of importReviewItems) {
-      const key = item.categoryId?.toString() ?? 'uncategorized';
-      map.set(key, (map.get(key) ?? 0) + Math.abs(item.amount));
-    }
-    importStableTotals.current = map;
-  }, [importReviewItems, importCategoryFilter]);
-
   // ── Detect COMMITTING → COMMITTED/READY transition ──
   const prevImportStatusRef = useRef<string | undefined>();
   useEffect(() => {
@@ -371,6 +347,33 @@ export default function TransactionReviewPage() {
     () => importRows.map((row) => importRowToReviewItem(row, categoriesMap, accountsMap, reviewThreshold)),
     [importRows, categoriesMap, accountsMap, reviewThreshold],
   );
+
+  // Capture stable per-category money totals from the full unfiltered datasets.
+  // When a category filter is active the API only returns that category's items,
+  // which would make every other group's total collapse to zero — so we only
+  // update when no filter is set and reuse the last known totals while expanded.
+  // NOTE: these effects must live after plaidReviewItems / importReviewItems are
+  // declared — referencing them in a dep array before their const binding is
+  // evaluated causes a Temporal Dead Zone crash in the production build.
+  useEffect(() => {
+    if (plaidCategoryFilter !== null) return;
+    const map = new Map<string, number>();
+    for (const item of plaidReviewItems) {
+      const key = item.categoryId?.toString() ?? 'uncategorized';
+      map.set(key, (map.get(key) ?? 0) + Math.abs(item.amount));
+    }
+    plaidStableTotals.current = map;
+  }, [plaidReviewItems, plaidCategoryFilter]);
+
+  useEffect(() => {
+    if (importCategoryFilter !== null) return;
+    const map = new Map<string, number>();
+    for (const item of importReviewItems) {
+      const key = item.categoryId?.toString() ?? 'uncategorized';
+      map.set(key, (map.get(key) ?? 0) + Math.abs(item.amount));
+    }
+    importStableTotals.current = map;
+  }, [importReviewItems, importCategoryFilter]);
 
   // ── Grouped data — server-side summaries drive headers; current-page items fill rows ──
   //
