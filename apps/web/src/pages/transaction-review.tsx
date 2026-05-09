@@ -259,6 +259,25 @@ export default function TransactionReviewPage() {
   // Clear category filter when the selected import changes
   useEffect(() => { setImportCategoryFilter(null); }, [selectedImportId]);
 
+  // Populated by renderGrouped* — used to scroll the expanded card into view after refetch.
+  const groupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const pendingScrollKey = useRef<string | null>(null);
+
+  // Scroll to the newly-expanded category group once its data has loaded.
+  useEffect(() => {
+    if (plaidLoading || !pendingScrollKey.current) return;
+    const el = groupRefs.current.get(pendingScrollKey.current);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    pendingScrollKey.current = null;
+  }, [plaidLoading]);
+
+  useEffect(() => {
+    if (stagedLoading || !pendingScrollKey.current) return;
+    const el = groupRefs.current.get(pendingScrollKey.current);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    pendingScrollKey.current = null;
+  }, [stagedLoading]);
+
   // ── Detect COMMITTING → COMMITTED/READY transition ──
   const prevImportStatusRef = useRef<string | undefined>();
   useEffect(() => {
@@ -935,31 +954,36 @@ export default function TransactionReviewPage() {
             ? importCategoryFilter === 'uncategorized'
             : importCategoryFilter === catId;
           return (
-            <GroupCard
+            <div
               key={group.key}
-              categoryName={group.categoryName}
-              items={isExpanded ? group.items : []}
-              total={group.total}
-              totalCount={group.totalCount}
-              onApprove={handleItemApprove}
-              onSkip={handleItemSkip}
-              onApproveAll={() => handlePromoteGroup(group.items)}
-              onItemClick={setSelectedItem}
-              disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
-              isExpanded={isExpanded}
-              onToggle={() => {
-                const next = catId === null ? 'uncategorized' : catId;
-                setImportCategoryFilter(isExpanded ? null : next);
-                setImportPage(1);
-              }}
-              pagination={isExpanded ? renderPagination(
-                importPage,
-                importPagination?.totalPages ?? 1,
-                importPagination?.total,
-                setImportPage,
-                'rows',
-              ) : undefined}
-            />
+              ref={(el) => { if (el) groupRefs.current.set(group.key, el); else groupRefs.current.delete(group.key); }}
+            >
+              <GroupCard
+                categoryName={group.categoryName}
+                items={isExpanded ? group.items : []}
+                total={group.total}
+                totalCount={group.totalCount}
+                onApprove={handleItemApprove}
+                onSkip={handleItemSkip}
+                onApproveAll={() => handlePromoteGroup(group.items)}
+                onItemClick={setSelectedItem}
+                disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
+                isExpanded={isExpanded}
+                onToggle={() => {
+                  const next = catId === null ? 'uncategorized' : catId;
+                  if (!isExpanded) pendingScrollKey.current = group.key;
+                  setImportCategoryFilter(isExpanded ? null : next);
+                  setImportPage(1);
+                }}
+                pagination={isExpanded ? renderPagination(
+                  importPage,
+                  importPagination?.totalPages ?? 1,
+                  importPagination?.total,
+                  setImportPage,
+                  'rows',
+                ) : undefined}
+              />
+            </div>
           );
         })}
       </div>
@@ -976,31 +1000,36 @@ export default function TransactionReviewPage() {
             ? plaidCategoryFilter === 'uncategorized'
             : plaidCategoryFilter === catId;
           return (
-            <GroupCard
+            <div
               key={group.key}
-              categoryName={group.categoryName}
-              items={isExpanded ? group.items : []}
-              total={group.total}
-              totalCount={group.totalCount}
-              onApprove={handleItemApprove}
-              onSkip={handleItemSkip}
-              onApproveAll={() => handlePromoteGroup(group.items)}
-              onItemClick={setSelectedItem}
-              disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
-              isExpanded={isExpanded}
-              onToggle={() => {
-                const next = catId === null ? 'uncategorized' : catId;
-                setPlaidCategoryFilter(isExpanded ? null : next);
-                setPlaidPage(1);
-              }}
-              pagination={isExpanded ? renderPagination(
-                plaidPage,
-                plaidPagination?.totalPages ?? 1,
-                plaidPagination?.total,
-                setPlaidPage,
-                'transactions',
-              ) : undefined}
-            />
+              ref={(el) => { if (el) groupRefs.current.set(group.key, el); else groupRefs.current.delete(group.key); }}
+            >
+              <GroupCard
+                categoryName={group.categoryName}
+                items={isExpanded ? group.items : []}
+                total={group.total}
+                totalCount={group.totalCount}
+                onApprove={handleItemApprove}
+                onSkip={handleItemSkip}
+                onApproveAll={() => handlePromoteGroup(group.items)}
+                onItemClick={setSelectedItem}
+                disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
+                isExpanded={isExpanded}
+                onToggle={() => {
+                  const next = catId === null ? 'uncategorized' : catId;
+                  if (!isExpanded) pendingScrollKey.current = group.key;
+                  setPlaidCategoryFilter(isExpanded ? null : next);
+                  setPlaidPage(1);
+                }}
+                pagination={isExpanded ? renderPagination(
+                  plaidPage,
+                  plaidPagination?.totalPages ?? 1,
+                  plaidPagination?.total,
+                  setPlaidPage,
+                  'transactions',
+                ) : undefined}
+              />
+            </div>
           );
         })}
       </div>
