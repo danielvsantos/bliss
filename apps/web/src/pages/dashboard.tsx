@@ -73,9 +73,21 @@ export default function Dashboard() {
   }, [historyResponse]);
 
   const previousNetWorth = useMemo(() => {
-    if (sparklineData.length < 2) return null;
-    return sparklineData[0];
-  }, [sparklineData]);
+    const history = historyResponse?.history ?? [];
+    if (history.length === 0) return null;
+
+    const targetTime = subMonths(new Date(), 1).getTime();
+    const closest = history.reduce((best, entry) => {
+      const diff = Math.abs(new Date(entry.date).getTime() - targetTime);
+      const bestDiff = Math.abs(new Date(best.date).getTime() - targetTime);
+      return diff < bestDiff ? entry : best;
+    });
+
+    const assets = closest.Asset?.total ?? 0;
+    const investments = closest.Investments?.total ?? 0;
+    const debt = closest.Debt?.total ?? 0;
+    return assets + investments - Math.abs(debt);
+  }, [historyResponse]);
 
   const mostRecentSync = useMemo(() => {
     return accounts
