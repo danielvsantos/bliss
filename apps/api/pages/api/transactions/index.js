@@ -349,12 +349,14 @@ async function handlePost(req, res) {
         // If no symbol could be generated (and it's required), this transaction doesn't belong to a portfolio item.
         // We can proceed to create the transaction without linking it.
       } else {
+        const postAccountId = account?.id ?? null;
         portfolioItem = await prisma.portfolioItem.upsert({
-          where: { tenantId_symbol: { tenantId, symbol } },
+          where: { tenantId_symbol_accountId: { tenantId, symbol, accountId: postAccountId } },
           update: {}, // No fields to update on existing item here
           create: {
             tenantId,
             categoryId: category.id,
+            accountId: postAccountId,
             symbol,
             currency,
             source: ticker ? 'SYNCED' : 'MANUAL',
@@ -589,12 +591,14 @@ async function handlePut(req, res) {
       if (!symbol) {
         // If no symbol could be generated, the updated transaction will not be linked to a portfolio item.
       } else {
+        const putAccountId = accountId ? parseInt(accountId, 10) : null;
         portfolioItem = await prisma.portfolioItem.upsert({
-          where: { tenantId_symbol: { tenantId, symbol } },
+          where: { tenantId_symbol_accountId: { tenantId, symbol, accountId: putAccountId } },
           update: {},
           create: {
             tenantId,
             categoryId: newCategory.id,
+            accountId: putAccountId,
             symbol,
             currency,
             source: ticker ? 'SYNCED' : 'MANUAL',
