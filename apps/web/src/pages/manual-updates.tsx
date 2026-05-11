@@ -257,6 +257,12 @@ export default function ManualUpdatesPage() {
                             <div className="font-medium">{asset.symbol}</div>
                             <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
                               <span>{asset.category?.name}</span>
+                              {asset.account?.name && (
+                                <>
+                                  <span className="text-border-color">·</span>
+                                  <span>{asset.account.name}</span>
+                                </>
+                              )}
                               <span className="text-border-color">·</span>
                               <span>{t("manualUpdates.updatedOn", { date: lastUpdateStr })}</span>
                             </div>
@@ -338,7 +344,12 @@ export default function ManualUpdatesPage() {
                           key={asset.id}
                           className={`hover:bg-accent/30 ${idx % 2 === 1 ? "bg-accent/20" : ""}`}
                         >
-                          <TableCell className="font-medium">{asset.symbol}</TableCell>
+                          <TableCell className="font-medium">
+                            <div>{asset.symbol}</div>
+                            {asset.account?.name && (
+                              <div className="text-xs text-muted-foreground mt-0.5">{asset.account.name}</div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-semibold tabular-nums">
                             {formatCurrency(marketValue, portfolioCurrency)}
                           </TableCell>

@@ -150,9 +150,10 @@ type FinancialSummary = {
 export type PortfolioItem = {
   id: number;
   symbol: string;
-  /** Brokerage account this position belongs to. Null for manually-entered assets
-   *  (real estate, private equity, etc.) that are not tied to a specific account. */
+  /** Brokerage account this position belongs to. */
   accountId: number | null;
+  /** Resolved account object — present when the item is linked to an account. */
+  account?: { id: number; name: string } | null;
   /** True when FIFO lot calculation produced a negative quantity — indicates a
    *  missing buy transaction or an unrecorded cross-account share transfer.
    *  Surface this as a data quality warning in the UI. */
