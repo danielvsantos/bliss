@@ -94,12 +94,9 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     let portfolioItem = null;
 
     if (assetKey) {
-        // MANUAL assets use accountId = null — same rule as the full rebuild:
-        //   1. No ticker on the transaction, OR
-        //   2. Category processingHint === 'MANUAL' (ticker-like symbol, manually priced)
-        // Ticker-based non-MANUAL assets use the real accountId for per-account isolation.
-        const isManualPriced = !transaction.ticker || transaction.category?.processingHint === 'MANUAL';
-        const itemAccountId = isManualPriced ? null : transaction.accountId;
+        // All assets — including manually-priced ones — are scoped per account.
+        // This gives consistent per-account FIFO lot tracking regardless of pricing strategy.
+        const itemAccountId = transaction.accountId;
 
         portfolioItem = await prisma.portfolioItem.findUnique({
             where: {
@@ -265,9 +262,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         select: { id: true, symbol: true, accountId: true },
     });
     // Key is `symbol::accountId` to separate same-symbol positions in different accounts.
-    // accountId can be null for MANUAL assets — use the string 'null' as the key segment.
     const existingItemsMap = new Map(
-        existingItems.map(item => [`${item.symbol}::${item.accountId ?? 'null'}`, item])
+        existingItems.map(item => [`${item.symbol}::${item.accountId}`, item])
     );
     logger.info(`[Sync] Found ${existingItemsMap.size} existing portfolio items in scope.`);
 
@@ -425,16 +421,10 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         const symbol = generateAssetKey(tx, decrypt);
         if (!symbol) return acc;
 
-        // MANUAL assets do NOT need per-account isolation. Two conditions trigger this:
-        //   1. No ticker on the transaction (real estate, pension plans, etc.)
-        //   2. Category processingHint === 'MANUAL' (private equity with a ticker-like
-        //      symbol but priced from ManualAssetValue — e.g. LETS in Private Equity)
-        // Forcing accountId = null keeps the PortfolioItem ID stable across rebuilds,
-        // which preserves ManualAssetValue records (FK cascade deletes them when their
-        // parent item is deleted and a new one is created with a different ID).
-        const isManualPriced = !tx.ticker || tx.category?.processingHint === 'MANUAL';
-        const itemAccountId = isManualPriced ? null : tx.accountId;
-        const groupKey = `${symbol}::${itemAccountId ?? 'null'}`;
+        // All assets are scoped per account — consistent FIFO tracking regardless
+        // of pricing strategy (market-priced or manually-valued).
+        const itemAccountId = tx.accountId;
+        const groupKey = `${symbol}::${itemAccountId}`;
         if (!acc.has(groupKey)) {
             acc.set(groupKey, { symbol, accountId: itemAccountId, transactions: [] });
         }
@@ -518,7 +508,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         select: { id: true, symbol: true, accountId: true }
     });
     const allItemsMap = new Map(
-        allPortfolioItemsForTenant.map(item => [`${item.symbol}::${item.accountId ?? 'null'}`, item])
+        allPortfolioItemsForTenant.map(item => [`${item.symbol}::${item.accountId}`, item])
     );
 
     // --- Step 5b: Seed ManualAssetValue for newly created MANUAL-source items ---
@@ -526,7 +516,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         await heartbeat?.();
         if (itemData.source !== 'MANUAL') continue;
 
-        const groupKey = `${itemData.symbol}::${itemData.accountId ?? 'null'}`;
+        const groupKey = `${itemData.symbol}::${itemData.accountId}`;
         const portfolioItem = allItemsMap.get(groupKey);
         if (!portfolioItem) continue;
 
@@ -539,11 +529,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     for (const tx of allTransactions) {
         const symbol = generateAssetKey(tx, decrypt);
         if (!symbol) continue;
-        // Apply the same MANUAL isolation rule used when grouping: MANUAL-priced
-        // assets live under accountId=null in the map regardless of tx.accountId.
-        const isManualPriced = !tx.ticker || tx.category?.processingHint === 'MANUAL';
-        const itemAccountId = isManualPriced ? null : tx.accountId;
-        const groupKey = `${symbol}::${itemAccountId ?? 'null'}`;
+        const groupKey = `${symbol}::${tx.accountId}`;
         const portfolioItem = allItemsMap.get(groupKey);
         if (portfolioItem && tx.portfolioItemId !== portfolioItem.id) {
             transactionUpdates.push(

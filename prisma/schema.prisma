@@ -384,9 +384,9 @@ model PortfolioItem {
   id          Int      @id @default(autoincrement())
   tenantId    String
   categoryId  Int
-  // accountId is null for manually-entered assets (real estate, private equity, etc.)
-  // that are not tied to a specific brokerage account. All transaction-derived items
-  // (Plaid, CSV import, manual investment transactions) must have accountId set.
+  // accountId is set for all transaction-derived items (Plaid, CSV import, manual
+  // investment transactions). It is only null for portfolio items that were created
+  // before the per-account migration and have not yet been rebuilt.
   accountId   Int?
   symbol      String
   currency    String
@@ -422,9 +422,8 @@ model PortfolioItem {
   debtTerms        DebtTerms?
   tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  // Unique per (tenant, symbol, account). accountId is nullable — PostgreSQL treats
-  // NULLs as distinct in unique constraints, so two manual assets with the same
-  // symbol and accountId=NULL are both allowed (e.g. two manually-entered properties).
+  // Unique per (tenant, symbol, account). Each (tenant, symbol, account) triple maps
+  // to exactly one portfolio item with its own independent FIFO lot stack and PnL.
   @@unique([tenantId, symbol, accountId])
   @@index([tenantId])
   @@index([accountId])

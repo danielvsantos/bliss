@@ -65,7 +65,7 @@ usd block:     convert(marketValue, priceCurrency → 'USD')
 | `assetType`             | `string` | Filters items by the category `type`.                    |         |
 | `source`                | `string` | Filters items by their data source.                      |         |
 | `include_manual_values` | `string` | When `'true'`, includes the most recent `ManualAssetValue` record for each item. |         |
-| `accountId`             | `string` | Filters by brokerage account ID. Pass the literal string `"null"` to return only manually-entered items with no account binding. |         |
+| `accountId`             | `string` | Filters by brokerage account ID. |         |
 | `countryId`             | `string` | Filters by the ISO country code of the brokerage account (e.g. `"US"`, `"GB"`). Based on `Account.countryId`, not the equity's listed country. |         |
 
 ### 6.2.3. Response Format
@@ -287,7 +287,7 @@ Portfolio values are stored in USD. Conversion happens at query time:
 | `Transaction` | `isin` | String? | System-resolved ISIN |
 | `Transaction` | `exchange` | String? | ISO-10383 MIC code |
 | `Transaction` | `assetCurrency` | String? | Asset's trading currency |
-| `PortfolioItem` | `accountId` | Int? | FK to the brokerage account; `null` for manually-entered assets (real estate, private equity, etc.) |
+| `PortfolioItem` | `accountId` | Int? | FK to the brokerage account; set for all transaction-derived items |
 | `PortfolioItem` | `hasLotMismatch` | Boolean | `true` when FIFO lot processing produces a negative quantity (sell with no matching buy in this account). Surfaced as a data-quality warning. |
 | `PortfolioItem` | `isin` | String? | Propagated from first transaction |
 | `PortfolioItem` | `exchange` | String? | Propagated from first transaction |

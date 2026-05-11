@@ -80,6 +80,12 @@ export default withAuth(async function handler(req, res) {
           processingHint: true,
         },
       },
+      account: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     };
 
     if (include_manual_values === 'true') {
@@ -245,6 +251,10 @@ export default withAuth(async function handler(req, res) {
         // Add portfolio currency block (only when different from USD)
         if (portfolioBlock) {
           response.portfolio = portfolioBlock;
+        }
+
+        if (asset.account) {
+          response.account = asset.account;
         }
 
         if (asset.manualValues) {

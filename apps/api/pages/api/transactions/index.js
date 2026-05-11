@@ -325,19 +325,25 @@ async function handlePost(req, res) {
     if (category && (category.type === 'Investments' || category.type === 'Debt')) {
       const { ticker, description, currency } = transactionData;
 
-      // Generate symbol using the same logic as the backend's portfolioKeyGenerator
+      // Generate symbol using the same logic as the backend's asset-aggregator.js
       let symbol;
       switch (category.portfolioItemKeyStrategy) {
         case 'TICKER':
           // Validate ticker contains at least one letter — reject pure numeric like "0"
-          symbol = ticker && /[a-zA-Z]/.test(ticker) ? ticker : null;
+          if (ticker && /[a-zA-Z]/.test(ticker)) {
+            symbol = ticker;
+          } else if (category.type === 'Investments' && description) {
+            // Fallback: group by category + description (same as backend TICKER fallback)
+            symbol = `${category.name}:${description}`;
+          } else {
+            symbol = null;
+          }
           break;
         case 'CATEGORY_NAME':
-          symbol = category.name.replace(/\s/g, '_');
+          symbol = category.name;
           break;
         case 'CATEGORY_NAME_PLUS_DESCRIPTION':
-          const safeDescription = description.replace(/[^a-zA-Z0-9]/g, '_');
-          symbol = `${category.name}_${safeDescription}`;
+          symbol = description ? `${category.name}:${description}` : null;
           break;
         case 'IGNORE':
         default:
@@ -568,19 +574,25 @@ async function handlePut(req, res) {
     // We fetch the new category to determine if a portfolio item link is needed.
     const newCategory = await prisma.category.findUnique({ where: { id: parseInt(categoryId, 10) } });
     if (newCategory && (newCategory.type === 'Investments' || newCategory.type === 'Debt')) {
-      // Generate symbol using the same logic as the backend's portfolioKeyGenerator
+      // Generate symbol using the same logic as the backend's asset-aggregator.js
       let symbol;
       switch (newCategory.portfolioItemKeyStrategy) {
         case 'TICKER':
           // Validate ticker contains at least one letter — reject pure numeric like "0"
-          symbol = ticker && /[a-zA-Z]/.test(ticker) ? ticker : null;
+          if (ticker && /[a-zA-Z]/.test(ticker)) {
+            symbol = ticker;
+          } else if (newCategory.type === 'Investments' && description) {
+            // Fallback: group by category + description (same as backend TICKER fallback)
+            symbol = `${newCategory.name}:${description}`;
+          } else {
+            symbol = null;
+          }
           break;
         case 'CATEGORY_NAME':
-          symbol = newCategory.name.replace(/\s/g, '_');
+          symbol = newCategory.name;
           break;
         case 'CATEGORY_NAME_PLUS_DESCRIPTION':
-          const safeDescription = description.replace(/[^a-zA-Z0-9]/g, '_');
-          symbol = `${newCategory.name}_${safeDescription}`;
+          symbol = description ? `${newCategory.name}:${description}` : null;
           break;
         case 'IGNORE':
         default:

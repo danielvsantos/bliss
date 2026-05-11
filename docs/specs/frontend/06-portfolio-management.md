@@ -47,7 +47,7 @@ When the user selects **"All accounts"** from the account filter, the same ticke
 - **Grouping key**: `item.symbol` — all items with the same symbol are merged.
 - **`quantity`**: summed across all per-account rows.
 - **`hasLotMismatch`**: OR'd — true if any account has a mismatch.
-- **`accountId`**: set to `null` on the merged row (no single account applies).
+- **`accountId`**: set to `null` on the merged row (no single account applies when merging across accounts).
 - **Financial blocks** (`native`, `usd`, `portfolio`): each block is summed field-by-field (`costBasis`, `marketValue`, `unrealizedPnL`, `realizedPnL`, `totalInvested`). `unrealizedPnLPercent` is **recalculated** from the summed `unrealizedPnL / costBasis` — it is never averaged from individual rows, which would be incorrect.
 - **`portfolio` block**: included only when at least one row has a `portfolio` block. If a row has no `portfolio` block its `usd` block is used as a substitute during summation so the merge remains currency-accurate.
 
@@ -56,7 +56,7 @@ When a specific account is selected, no merging occurs — raw per-account rows 
 ### 6.2.4. Data Fetching
 
 The dashboard uses the following hooks:
-- `usePortfolioItems`: Fetches the current state of all portfolio items from `/api/portfolio/items`. Accepts optional filters: `assetType`, `source`, `accountId` (pass `"null"` for manual assets), `countryId`. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion. Each item includes `accountId` (the brokerage account it belongs to, or `null` for manual assets) and `hasLotMismatch` (data-quality flag).
+- `usePortfolioItems`: Fetches the current state of all portfolio items from `/api/portfolio/items`. Accepts optional filters: `assetType`, `source`, `accountId`, `countryId`. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion. Each item includes `accountId`, `account` (resolved name), and `hasLotMismatch` (data-quality flag).
 - `usePortfolioHistory`: Fetches historical data for the performance chart from `/api/portfolio/history`. Accepts optional `accountId` to scope history to a single brokerage account.
 - `usePortfolioHoldings`: Fetches historical daily `PortfolioHolding` records from `/api/portfolio/holdings`. Accepts optional filters: `account`, `countryId`, `category`, `categoryGroup`, `ticker`.
 - `usePortfolioLots`: Fetches FIFO lot data for an individual asset. Accepts an `assetId` parameter and is only enabled when an asset is selected.
