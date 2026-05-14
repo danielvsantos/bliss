@@ -10,9 +10,39 @@ import { encode, decode } from 'next-auth/jwt';
 
 const googleOAuthConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
+// SameSite=None is required when the web frontend and the API are on different
+// origins (split-domain deployment). However, SameSite=None cookies also require
+// the Secure flag, which means they are silently dropped on plain HTTP. Enabling
+// them unconditionally would break self-hosters who run Bliss on HTTP with both
+// services behind the same reverse-proxy domain (where SameSite=Lax worked fine).
+//
+// Gate: only use SameSite=None when NEXTAUTH_URL is HTTPS, which is the only
+// context where it is both necessary (cross-origin POST) and permitted (Secure).
+const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://');
+
+const crossDomainCookies = isHttps ? {
+    csrfToken: {
+        name: 'next-auth.csrf-token',
+        options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    callbackUrl: {
+        name: 'next-auth.callback-url',
+        options: { sameSite: 'none', path: '/', secure: true },
+    },
+    state: {
+        name: 'next-auth.state',
+        options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    pkceCodeVerifier: {
+        name: 'next-auth.pkce.code_verifier',
+        options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+} : undefined;
+
 // Create the NextAuth handler once at module load — identical to the original
 // single-arg pattern that providers (GoogleProvider, etc.) rely on.
 const nextAuthHandler = NextAuth({
+    ...(crossDomainCookies ? { cookies: crossDomainCookies } : {}),
     providers: [
         ...(googleOAuthConfigured ? [GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,

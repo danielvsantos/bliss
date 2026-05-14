@@ -62,7 +62,7 @@ Both Vercel and Railway read from environment variables. The critical ones for m
 
 ### Google OAuth
 
-NextAuth.js supports Google as an OAuth provider. Configure in your Vercel environment:
+NextAuth.js supports Google as an OAuth provider. Configure in your environment:
 
 | Variable | Value |
 |----------|-------|
@@ -70,6 +70,12 @@ NextAuth.js supports Google as an OAuth provider. Configure in your Vercel envir
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console |
 
 Users can sign up with Google (creates a tenant automatically) or with email/password. Both flows coexist.
+
+**HTTPS is required.** Google's OAuth policy rejects plain-HTTP redirect URIs. Your `NEXTAUTH_URL` must start with `https://`.
+
+**Cross-domain deployments** (frontend and API on different origins) are fully supported. When `NEXTAUTH_URL` is `https://`, Bliss automatically configures NextAuth cookies as `SameSite=None; Secure`, which is necessary for the cross-origin OAuth form POST to carry its CSRF token. No extra configuration is needed — setting `NEXTAUTH_URL` and `FRONTEND_URL` to their respective public HTTPS URLs is sufficient.
+
+In Google Cloud Console, set the Authorized Redirect URI to `<NEXTAUTH_URL>/api/auth/callback/google`.
 
 ### Sentry
 
