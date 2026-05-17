@@ -52,11 +52,8 @@ async function calculateAssetCurrentValue(asset) {
         });
     }
     
-    // Fallback logic if API fails or returns no price
-    Sentry.captureMessage(`[ValuationService] Falling back to cost basis for ${asset.symbol}`, {
-        level: 'warning',
-        extra: { assetId: asset.id }
-    });
+    // Cost-basis fallback is an expected state (pre-IPO, MANUAL assets, market closures).
+    // The real error (API unreachable) is already captured above via Sentry.captureException.
     const quantity = asset.quantity || asset.holdings?.[0]?.quantity || 1;
     return new Decimal(asset.costBasis || 0).dividedBy(quantity);
 }
