@@ -24,5 +24,10 @@
   },
   "prisma": {
     "seed": "node prisma/seed.js"
+  },
+  "pnpm": {
+    "overrides": {
+      "protobufjs": "^8.0.1"
+    }
   }
 }
