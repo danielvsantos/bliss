@@ -63,6 +63,12 @@ export default async function handler(req, res) {
       return;
     }
 
+    // OAuth-only accounts have no password set — reject gracefully instead of crashing
+    if (!user.passwordHash || !user.passwordSalt) {
+      res.status(StatusCodes.UNAUTHORIZED).json({ error: 'Invalid credentials' });
+      return;
+    }
+
     // Verify password using AuthService
     const isValidPassword = await AuthService.verifyPassword(
       password,
