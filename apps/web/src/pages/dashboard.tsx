@@ -21,6 +21,11 @@ import { RecentTransactionsCard } from '@/components/dashboard/recent-transactio
 import { subMonths, format } from 'date-fns';
 import type { AggregatedPortfolioHistory } from '@/lib/api';
 
+/* ── Helpers ── */
+function netWorthFromEntry(entry: AggregatedPortfolioHistory): number {
+  return (entry.Asset?.total ?? 0) + (entry.Investments?.total ?? 0) - Math.abs(entry.Debt?.total ?? 0);
+}
+
 /* ── Animation presets ── */
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -45,11 +50,23 @@ export default function Dashboard() {
   const { signals, accounts, metrics, portfolioCurrency, metricsLoading, accountsLoading } = useUserSignals(selectedYear);
   const { quickActions, onboardingActions } = useDashboardActions(signals);
 
-  // Portfolio history for sparkline (last 3 months)
-  const historyFilters = useMemo(() => ({
-    from: format(subMonths(new Date(), 3), 'yyyy-MM-dd'),
-    to: format(new Date(), 'yyyy-MM-dd'),
-  }), []);
+  // ── Year-awareness ──
+  const currentYear = new Date().getFullYear().toString();
+  const isCurrentYear = selectedYear === currentYear;
+
+  // Portfolio history — last 3 months for current year; full year for historical
+  const historyFilters = useMemo(() => {
+    if (isCurrentYear) {
+      return {
+        from: format(subMonths(new Date(), 3), 'yyyy-MM-dd'),
+        to: format(new Date(), 'yyyy-MM-dd'),
+      };
+    }
+    return {
+      from: `${selectedYear}-01-01`,
+      to: `${selectedYear}-12-31`,
+    };
+  }, [selectedYear, isCurrentYear]);
   const { data: historyResponse } = usePortfolioHistory(historyFilters);
 
   // ── Computed values ──
@@ -57,12 +74,7 @@ export default function Dashboard() {
     const history = historyResponse?.history ?? [];
     if (history.length === 0) return [];
 
-    const netWorthByDay = history.map((entry: AggregatedPortfolioHistory) => {
-      const assets = entry.Asset?.total ?? 0;
-      const investments = entry.Investments?.total ?? 0;
-      const debt = entry.Debt?.total ?? 0;
-      return assets + investments - Math.abs(debt);
-    });
+    const netWorthByDay = history.map((entry: AggregatedPortfolioHistory) => netWorthFromEntry(entry));
 
     // Sample to ~30 points for the sparkline
     if (netWorthByDay.length <= 30) return netWorthByDay;
@@ -72,22 +84,32 @@ export default function Dashboard() {
     );
   }, [historyResponse]);
 
+  // For current year: live portfolio value; for historical year: last history entry
+  const displayNetWorth = useMemo(() => {
+    if (isCurrentYear) return metrics?.netWorth ?? 0;
+    const history = historyResponse?.history ?? [];
+    if (history.length === 0) return metrics?.netWorth ?? 0;
+    return netWorthFromEntry(history[history.length - 1]);
+  }, [isCurrentYear, metrics?.netWorth, historyResponse]);
+
   const previousNetWorth = useMemo(() => {
     const history = historyResponse?.history ?? [];
     if (history.length === 0) return null;
 
-    const targetTime = subMonths(new Date(), 1).getTime();
-    const closest = history.reduce((best, entry) => {
-      const diff = Math.abs(new Date(entry.date).getTime() - targetTime);
-      const bestDiff = Math.abs(new Date(best.date).getTime() - targetTime);
-      return diff < bestDiff ? entry : best;
-    });
+    if (isCurrentYear) {
+      // Compare to entry closest to 1 month ago
+      const targetTime = subMonths(new Date(), 1).getTime();
+      const closest = history.reduce((best, entry) => {
+        const diff = Math.abs(new Date(entry.date).getTime() - targetTime);
+        const bestDiff = Math.abs(new Date(best.date).getTime() - targetTime);
+        return diff < bestDiff ? entry : best;
+      });
+      return netWorthFromEntry(closest);
+    }
 
-    const assets = closest.Asset?.total ?? 0;
-    const investments = closest.Investments?.total ?? 0;
-    const debt = closest.Debt?.total ?? 0;
-    return assets + investments - Math.abs(debt);
-  }, [historyResponse]);
+    // Historical year: compare end-of-year to start-of-year
+    return netWorthFromEntry(history[0]);
+  }, [historyResponse, isCurrentYear]);
 
   const mostRecentSync = useMemo(() => {
     return accounts
@@ -150,7 +172,7 @@ export default function Dashboard() {
           {/* ── HERO: Net Worth ── */}
           <motion.div {...fadeUp} transition={{ duration: 0.4 }}>
             <HeroNetWorth
-              netWorth={metrics?.netWorth ?? 0}
+              netWorth={displayNetWorth}
               previousNetWorth={previousNetWorth}
               income={metrics?.netIncome ?? 0}
               netSavings={metrics?.netSavings ?? 0}
@@ -170,7 +192,7 @@ export default function Dashboard() {
               />
             </motion.div>
             <motion.div {...fadeUp} transition={{ delay: 0.15, duration: 0.4 }} className="order-1 lg:order-2">
-              <ExpenseSplitCard currency={portfolioCurrency} />
+              <ExpenseSplitCard currency={portfolioCurrency} year={selectedYear} />
             </motion.div>
             <motion.div {...fadeUp} transition={{ delay: 0.2, duration: 0.4 }} className="order-3 lg:order-3">
               <QuickActionsCard

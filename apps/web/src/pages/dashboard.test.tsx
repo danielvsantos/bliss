@@ -6,11 +6,13 @@ import Dashboard from './dashboard';
 import * as UseSignals from '@/hooks/use-user-signals';
 import * as UseActions from '@/hooks/use-dashboard-actions';
 import * as UsePortfolioHistory from '@/hooks/use-portfolio-history';
+import * as TenantMeta from '@/utils/tenantMetaStorage';
 
 // Mocks
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k })
 }));
+vi.mock('@/utils/tenantMetaStorage');
 
 vi.mock('@/hooks/use-user-signals');
 vi.mock('@/hooks/use-dashboard-actions');
@@ -30,10 +32,20 @@ vi.mock('@/components/dashboard/expense-split-card', () => ({ ExpenseSplitCard: 
 vi.mock('@/components/dashboard/quick-actions-card', () => ({ QuickActionsCard: () => <div data-testid="quick-actions-card" /> }));
 vi.mock('@/components/dashboard/recent-transactions-card', () => ({ RecentTransactionsCard: () => <div data-testid="recent-transactions-card" /> }));
 
+const defaultSignals = {
+  signals: {},
+  accounts: [{ id: 1 }],
+  metrics: { netWorth: 100000, netIncome: 5000, discretionaryIncome: 0, netSavings: 0 },
+  portfolioCurrency: 'USD',
+  metricsLoading: false,
+  accountsLoading: false,
+} as unknown as ReturnType<typeof UseSignals.useUserSignals>;
+
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    vi.mocked(TenantMeta.getTenantMeta).mockReturnValue(null);
     vi.mocked(UseActions.useDashboardActions).mockReturnValue(
       { quickActions: [], onboardingActions: [] } as ReturnType<typeof UseActions.useDashboardActions>,
     );
@@ -63,14 +75,7 @@ describe('Dashboard', () => {
   });
 
   it('renders full dashboard when data exists', () => {
-    vi.mocked(UseSignals.useUserSignals).mockReturnValue({
-      signals: {},
-      accounts: [{ id: 1 }],
-      metrics: { netWorth: 100000, netIncome: 5000, discretionaryIncome: 0, netSavings: 0 },
-      portfolioCurrency: 'USD',
-      metricsLoading: false,
-      accountsLoading: false,
-    } as unknown as ReturnType<typeof UseSignals.useUserSignals>);
+    vi.mocked(UseSignals.useUserSignals).mockReturnValue(defaultSignals);
 
     render(<Dashboard />);
 
@@ -104,18 +109,39 @@ describe('Dashboard', () => {
       },
     } as unknown as ReturnType<typeof UsePortfolioHistory.usePortfolioHistory>);
 
-    vi.mocked(UseSignals.useUserSignals).mockReturnValue({
-      signals: {},
-      accounts: [{ id: 1 }],
-      metrics: { netWorth: 100000, netIncome: 5000, discretionaryIncome: 0, netSavings: 0 },
-      portfolioCurrency: 'USD',
-      metricsLoading: false,
-      accountsLoading: false,
-    } as unknown as ReturnType<typeof UseSignals.useUserSignals>);
+    vi.mocked(UseSignals.useUserSignals).mockReturnValue(defaultSignals);
 
     render(<Dashboard />);
 
     // Should pick the entry closest to 1 month ago (80000), not 3 months ago (50000)
     expect(heroNetWorthProps.previousNetWorth).toBe(80000);
+  });
+
+  it('uses last history entry as net worth and first as previousNetWorth for a historical year', () => {
+    // Mock tenant meta to return a historical year as the first available year
+    const historicalYear = (new Date().getFullYear() - 1).toString();
+    vi.mocked(TenantMeta.getTenantMeta).mockReturnValue({
+      transactionYears: [parseInt(historicalYear, 10)],
+    } as unknown as ReturnType<typeof TenantMeta.getTenantMeta>);
+
+    vi.mocked(UsePortfolioHistory.usePortfolioHistory).mockReturnValue({
+      data: {
+        history: [
+          // First entry: start of historical year → Asset=60000
+          { date: `${historicalYear}-01-15`, Asset: { total: 60000, groups: {} } },
+          // Last entry: end of historical year → Asset=90000
+          { date: `${historicalYear}-12-15`, Asset: { total: 90000, groups: {} } },
+        ],
+      },
+    } as unknown as ReturnType<typeof UsePortfolioHistory.usePortfolioHistory>);
+
+    vi.mocked(UseSignals.useUserSignals).mockReturnValue(defaultSignals);
+
+    render(<Dashboard />);
+
+    // Net worth should be the last history entry (90000), not metrics.netWorth (100000)
+    expect(heroNetWorthProps.netWorth).toBe(90000);
+    // previousNetWorth should be the first history entry (start of year: 60000)
+    expect(heroNetWorthProps.previousNetWorth).toBe(60000);
   });
 });
