@@ -127,9 +127,9 @@ describe('Dashboard', () => {
     vi.mocked(UsePortfolioHistory.usePortfolioHistory).mockReturnValue({
       data: {
         history: [
-          // First entry: start of historical year → Asset=60000
+          // First entry: Asset=60000 (no Cash)
           { date: `${historicalYear}-01-15`, Asset: { total: 60000, groups: {} } },
-          // Last entry: end of historical year → Asset=90000
+          // Last entry: Asset=90000 (no Cash)
           { date: `${historicalYear}-12-15`, Asset: { total: 90000, groups: {} } },
         ],
       },
@@ -143,5 +143,32 @@ describe('Dashboard', () => {
     expect(heroNetWorthProps.netWorth).toBe(90000);
     // previousNetWorth should be the first history entry (start of year: 60000)
     expect(heroNetWorthProps.previousNetWorth).toBe(60000);
+  });
+
+  it('excludes Cash group from historical net worth to match current-year behaviour', () => {
+    const historicalYear = (new Date().getFullYear() - 1).toString();
+    vi.mocked(TenantMeta.getTenantMeta).mockReturnValue({
+      transactionYears: [parseInt(historicalYear, 10)],
+    } as unknown as ReturnType<typeof TenantMeta.getTenantMeta>);
+
+    vi.mocked(UsePortfolioHistory.usePortfolioHistory).mockReturnValue({
+      data: {
+        history: [
+          {
+            date: `${historicalYear}-12-31`,
+            // Asset total = 90000 + 10000 cash = 100000, but Cash should be excluded
+            Asset: { total: 100000, groups: { 'Real Estate': 90000, 'Cash': 10000 } },
+            Investments: { total: 50000, groups: { 'Stocks': 50000 } },
+          },
+        ],
+      },
+    } as unknown as ReturnType<typeof UsePortfolioHistory.usePortfolioHistory>);
+
+    vi.mocked(UseSignals.useUserSignals).mockReturnValue(defaultSignals);
+
+    render(<Dashboard />);
+
+    // Should be Asset(90000 excl. cash) + Investments(50000) = 140000, not 150000
+    expect(heroNetWorthProps.netWorth).toBe(140000);
   });
 });

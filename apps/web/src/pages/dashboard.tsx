@@ -23,7 +23,9 @@ import type { AggregatedPortfolioHistory } from '@/lib/api';
 
 /* ── Helpers ── */
 function netWorthFromEntry(entry: AggregatedPortfolioHistory): number {
-  return (entry.Asset?.total ?? 0) + (entry.Investments?.total ?? 0) - Math.abs(entry.Debt?.total ?? 0);
+  // Exclude Cash group to match useDashboardMetrics behaviour (Cash has type='Asset', group='Cash')
+  const cashTotal = entry.Asset?.groups?.['Cash'] ?? 0;
+  return (entry.Asset?.total ?? 0) - cashTotal + (entry.Investments?.total ?? 0) - Math.abs(entry.Debt?.total ?? 0);
 }
 
 /* ── Animation presets ── */
