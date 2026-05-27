@@ -48,6 +48,7 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
 
   const { data: historyResponse, isLoading } = usePortfolioHistory(historyDateFilter);
   const history = useMemo(() => historyResponse?.history ?? [], [historyResponse?.history]);
+  const portfolioCurrency = historyResponse?.portfolioCurrency ?? 'USD';
 
   const formattedHistoryData = useMemo(() => {
     const data = history as AggregatedPortfolioHistory[];
@@ -128,7 +129,14 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: "var(--text-muted)" }}
-                  tickFormatter={(value) => `$${value / 1000}k`}
+                  tickFormatter={(value) =>
+                    new Intl.NumberFormat('en-US', {
+                      style: 'currency',
+                      currency: portfolioCurrency,
+                      notation: 'compact',
+                      maximumFractionDigits: 1,
+                    }).format(value)
+                  }
                   dx={-10}
                 />
                 <CartesianGrid
@@ -138,7 +146,7 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
                 />
                 <Tooltip
                   formatter={(value: number) => [
-                    formatCurrency(value),
+                    formatCurrency(value, portfolioCurrency),
                     "Net Worth",
                   ]}
                   labelFormatter={(label) => `Date: ${label}`}
