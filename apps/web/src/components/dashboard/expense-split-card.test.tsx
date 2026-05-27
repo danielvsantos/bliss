@@ -71,4 +71,16 @@ describe('ExpenseSplitCard', () => {
     // Period selector is always rendered
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
+
+  it('uses the passed year for the year period date range', () => {
+    vi.mocked(useAnalytics).mockReturnValue({
+      data: undefined, isLoading: false, isError: false,
+    } as unknown as ReturnType<typeof useAnalytics>);
+    render(<MemoryRouter><ExpenseSplitCard currency="USD" year="2024" /></MemoryRouter>);
+    const calls = vi.mocked(useAnalytics).mock.calls;
+    const lastCall = calls[calls.length - 1][0];
+    // Historical year: full year range Jan–Dec
+    expect(lastCall.startMonth).toBe('2024-01');
+    expect(lastCall.endMonth).toBe('2024-12');
+  });
 });

@@ -247,6 +247,17 @@ async function handleGet(req, res) {
         const rate = rateMap.get(entry.date);
         if (rate) {
           entry.totalPortfolioCurrency = parseFloat(rate.times(entry.totalUSD).toFixed(2));
+          // Convert each category-type block (Investments, Asset, Debt, etc.) in-place
+          // so consumers receive consistently-converted values without re-converting.
+          for (const key of Object.keys(entry)) {
+            const block = entry[key];
+            if (block && typeof block === 'object' && 'total' in block && 'groups' in block) {
+              block.total = parseFloat(rate.times(block.total).toFixed(2));
+              for (const g of Object.keys(block.groups)) {
+                block.groups[g] = parseFloat(rate.times(block.groups[g]).toFixed(2));
+              }
+            }
+          }
         } else {
           entry.totalPortfolioCurrency = null;
         }

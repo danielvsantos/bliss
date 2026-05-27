@@ -120,21 +120,26 @@ const PERIOD_LABEL_KEYS: Record<ChartPeriod, string> = {
 
 interface ExpenseSplitCardProps {
   currency: string;
+  year?: string;
   className?: string;
 }
 
-export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps) {
+export function ExpenseSplitCard({ currency, year, className }: ExpenseSplitCardProps) {
   const { t } = useTranslation();
   const [period, setPeriod] = useState<ChartPeriod>('year');
 
   const { startMonth, endMonth } = useMemo(() => {
     const now = new Date();
+    const currentYear = now.getFullYear();
+    const targetYear = year ? parseInt(year, 10) : currentYear;
     switch (period) {
-      case 'year':
+      case 'year': {
+        const isHistorical = targetYear < currentYear;
         return {
-          startMonth: format(startOfYear(now), 'yyyy-MM'),
-          endMonth: format(endOfMonth(now), 'yyyy-MM'),
+          startMonth: `${targetYear}-01`,
+          endMonth: isHistorical ? `${targetYear}-12` : format(endOfMonth(now), 'yyyy-MM'),
         };
+      }
       case 'month':
         return {
           startMonth: format(startOfMonth(now), 'yyyy-MM'),
@@ -155,7 +160,7 @@ export function ExpenseSplitCard({ currency, className }: ExpenseSplitCardProps)
         };
       }
     }
-  }, [period]);
+  }, [period, year]);
 
   const { data: analyticsData, isLoading } = useAnalytics({
     view: 'month',

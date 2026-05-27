@@ -45,6 +45,8 @@ import type {
 
 export interface AggregatedPortfolioHistory {
   date: string;
+  totalUSD: number;
+  totalPortfolioCurrency?: number | null;
   Investments?: {
     total: number;
     groups: { [key: string]: number };
