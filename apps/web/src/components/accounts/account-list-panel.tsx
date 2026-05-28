@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Search, Landmark, CreditCard, Wallet, DollarSign, Building, ChevronDown } from 'lucide-react';
@@ -94,7 +93,7 @@ export function AccountListPanel({ accounts, selectedAccountId, onSelectAccount,
       <Separator />
 
       {/* Account list */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {isLoading ? (
           <div className="p-4 space-y-3">
             {[1, 2, 3].map((i) => (
@@ -150,7 +149,7 @@ export function AccountListPanel({ accounts, selectedAccountId, onSelectAccount,
             ))}
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }
