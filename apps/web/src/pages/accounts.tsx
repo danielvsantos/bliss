@@ -118,7 +118,7 @@ export default function AccountsPage() {
         {/* Master-Detail Body */}
         <div className="flex flex-1 min-h-0">
           {/* Left — Account List (hidden on mobile when an account is selected) */}
-          <div className={`w-full lg:w-[380px] lg:shrink-0 overflow-hidden ${selectedAccountId ? 'hidden lg:block' : 'block'}`}>
+          <div className={`w-full lg:w-[380px] lg:shrink-0 ${selectedAccountId ? 'hidden lg:block' : 'block'}`}>
             <AccountListPanel
               accounts={accounts}
               selectedAccountId={selectedAccountId}
