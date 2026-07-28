@@ -5,6 +5,7 @@ import { cors } from '../../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
 import { withAuth } from '../../../../utils/withAuth.js';
+import { resolveTagsByName } from '../../../../utils/tagUtils.js';
 // Hash-based dedup removed from single-promote — plaidProcessorWorker already
 // performed dedup at classification time. The externalId check (line ~176) is
 // sufficient for the promote path. This avoids a costly buildDuplicateHashSet
@@ -68,7 +69,7 @@ export default withAuth(async function handler(req, res) {
       return res.status(StatusCodes.CONFLICT).json({ error: 'Transaction already promoted' });
     }
 
-    const { suggestedCategoryId, promotionStatus, ticker, assetQuantity, assetPrice, details, isin, exchange, assetCurrency } = req.body;
+    const { suggestedCategoryId, promotionStatus, ticker, assetQuantity, assetPrice, details, isin, exchange, assetCurrency, tags } = req.body;
 
     // ─── Re-queue: SKIPPED → CLASSIFIED ────────────────────────────
     if (promotionStatus === 'CLASSIFIED' && plaidTx.promotionStatus === 'SKIPPED') {
@@ -208,6 +209,17 @@ export default withAuth(async function handler(req, res) {
       const day = txDate.getDate();
       const quarter = `Q${Math.ceil(month / 3)}`;
 
+      // Resolve tag names into TransactionTag connections before the
+      // $transaction block — resolveTagsByName() uses the top-level prisma
+      // client, not the tx client, so it must run outside the callback.
+      let tagConnections;
+      if (Array.isArray(tags) && tags.length > 0) {
+        const resolvedTags = await resolveTagsByName(tags, user.tenantId, user.email);
+        if (resolvedTags.length > 0) {
+          tagConnections = { create: resolvedTags.map((tag) => ({ tag: { connect: { id: tag.id } } })) };
+        }
+      }
+
       // Use a Prisma transaction to atomically create + update
       const result = await prisma.$transaction(async (tx) => {
         const newTransaction = await tx.transaction.create({
@@ -236,6 +248,7 @@ export default withAuth(async function handler(req, res) {
             ...(isin && { isin }),
             ...(exchange && { exchange }),
             ...(assetCurrency && { assetCurrency }),
+            ...(tagConnections && { tags: tagConnections }),
           },
         });
 

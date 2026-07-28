@@ -1187,6 +1187,7 @@ const fr = {
     currencyMismatch: "Cet actif est coté en {{assetCurrency}} mais la transaction est en {{txCurrency}}. Les valeurs du portefeuille peuvent nécessiter une conversion de devise.",
     detailsNotes: "Détails / Notes",
     optionalNotes: "Notes optionnelles",
+    tags: "Étiquettes",
     skip: "Passer",
     merchantHistory: "Historique du commerçant",
     noMerchantHistory: "Aucune transaction précédente trouvée pour ce commerçant.",

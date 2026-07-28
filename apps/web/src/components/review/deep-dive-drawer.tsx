@@ -23,6 +23,8 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 import { StatusBadge } from './status-badge';
 import { AIAnalysisPanel } from './ai-analysis-panel';
 import { InvestmentEnrichmentForm } from './investment-enrichment-form';
+import { TagInput } from '@/components/entities/tag-input';
+import { useTags, useCreateTag } from '@/hooks/use-tags';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { ReviewItem } from './types';
 import type { Category } from '@/types/api';
@@ -59,6 +61,7 @@ export interface DrawerSaveData {
   isin?: string;
   exchange?: string;
   assetCurrency?: string;
+  tagNames: string[];
 }
 
 export function DeepDiveDrawer({
@@ -72,6 +75,8 @@ export function DeepDiveDrawer({
   isSaving,
 }: DeepDiveDrawerProps) {
   const { t } = useTranslation();
+  const { data: tags = [] } = useTags();
+  const createTag = useCreateTag();
 
   // ── Local form state ─────────────────────────────────────────────────
   const [drawerCategory, setDrawerCategory] = useState<number | null>(null);
@@ -84,6 +89,7 @@ export function DeepDiveDrawer({
   const [tickerIsin, setTickerIsin] = useState('');
   const [tickerExchange, setTickerExchange] = useState('');
   const [tickerAssetCurrency, setTickerAssetCurrency] = useState('');
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
   // Reset state when item changes
   useEffect(() => {
@@ -104,8 +110,38 @@ export function DeepDiveDrawer({
       setTickerIsin(item.originalImportRow?.isin || '');
       setTickerExchange(item.originalImportRow?.exchange || '');
       setTickerAssetCurrency(item.originalImportRow?.assetCurrency || '');
+
+      // Tags: pre-fill from CSV-parsed row.tags (name strings) for import rows;
+      // empty for Plaid (PlaidTransaction has no tags field). TagInput is
+      // ID-based, so any CSV name with no matching Tag row is eagerly
+      // created here — mirrors the lazy create resolveTagsByName() already
+      // does server-side at commit time, just moved earlier.
+      const rawTagNames = item.originalImportRow?.tags ?? [];
+      if (rawTagNames.length > 0) {
+        const resolvedIds: number[] = [];
+        const unmatchedNames: string[] = [];
+        for (const name of rawTagNames) {
+          const match = tags.find((tg) => tg.name.toLowerCase() === name.toLowerCase());
+          if (match) {
+            resolvedIds.push(match.id);
+          } else {
+            unmatchedNames.push(name);
+          }
+        }
+        setSelectedTagIds(resolvedIds);
+        if (unmatchedNames.length > 0) {
+          Promise.all(unmatchedNames.map((name) => createTag.mutateAsync({ name })))
+            .then((created) => {
+              setSelectedTagIds((prev) => [...prev, ...created.map((tg) => tg.id)]);
+            })
+            .catch(() => {});
+        }
+      } else {
+        setSelectedTagIds([]);
+      }
     }
-  }, [item]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item, tags]);
 
   if (!item) return null;
 
@@ -148,6 +184,7 @@ export function DeepDiveDrawer({
       isin: tickerIsin || undefined,
       exchange: tickerExchange || undefined,
       assetCurrency: tickerAssetCurrency || undefined,
+      tagNames: tags.filter((tg) => selectedTagIds.includes(tg.id)).map((tg) => tg.name),
     });
   };
 
@@ -297,6 +334,14 @@ export function DeepDiveDrawer({
               />
             </div>
           )}
+
+          {/* Tags */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              {t('review.tags')}
+            </label>
+            <TagInput selectedTagIds={selectedTagIds} onChange={setSelectedTagIds} />
+          </div>
         </div>
 
         {/* Footer — always show save button */}

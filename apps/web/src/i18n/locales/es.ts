@@ -1181,6 +1181,7 @@ const es = {
     currencyMismatch: "Este activo cotiza en {{assetCurrency}} pero la transacción es en {{txCurrency}}. Los valores del portafolio pueden requerir conversión de moneda.",
     detailsNotes: "Detalles / Notas",
     optionalNotes: "Notas opcionales",
+    tags: "Etiquetas",
     skip: "Omitir",
     merchantHistory: "Historial del comerciante",
     noMerchantHistory: "No se encontraron transacciones anteriores de este comerciante.",

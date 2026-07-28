@@ -66,6 +66,10 @@ const { mockPrisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       create: vi.fn(),
     },
+    tag: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -228,6 +232,112 @@ describe('PUT /api/plaid/transactions/:id', () => {
     expect(res._status).toBe(400);
     expect(res._body).toEqual({
       error: 'Cannot promote without a category. Please assign a category first.',
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Promote happy path + tags
+  // -------------------------------------------------------------------------
+
+  const CATEGORY = { id: 5, tenantId: 'test-tenant-123', type: 'Expenses', processingHint: null };
+  const LOCAL_ACCOUNT = { id: 10, plaidAccountId: 'plaid-acc-1', tenantId: 'test-tenant-123' };
+  const NEW_TRANSACTION = { id: 999, tenantId: 'test-tenant-123' };
+  const PROMOTED_PLAID_TX = { ...PLAID_TX, promotionStatus: 'PROMOTED', matchedTransactionId: 999 };
+
+  function setUpPromoteMocks() {
+    mockPrisma.plaidTransaction.findUnique.mockResolvedValueOnce({ ...PLAID_TX });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(CATEGORY);
+    mockPrisma.account.findFirst.mockResolvedValueOnce(LOCAL_ACCOUNT);
+    mockPrisma.transaction.findUnique.mockResolvedValueOnce(null); // no existing dedup match
+    mockPrisma.transaction.create.mockResolvedValueOnce(NEW_TRANSACTION);
+    mockPrisma.plaidTransaction.update.mockResolvedValueOnce(PROMOTED_PLAID_TX);
+    mockPrisma.$transaction.mockImplementationOnce(async (cb: any) =>
+      cb({
+        transaction: { create: mockPrisma.transaction.create },
+        plaidTransaction: { update: mockPrisma.plaidTransaction.update },
+      }),
+    );
+  }
+
+  it('promotes without tags when tags is omitted — no tag creation calls', async () => {
+    setUpPromoteMocks();
+
+    const req = makeReq({ method: 'PUT', body: { promotionStatus: 'PROMOTED' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.tag.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.tag.create).not.toHaveBeenCalled();
+    const createCallData = mockPrisma.transaction.create.mock.calls[0][0].data;
+    expect(createCallData.tags).toBeUndefined();
+  });
+
+  it('promotes without tags when tags is an empty array — no tag creation calls', async () => {
+    setUpPromoteMocks();
+
+    const req = makeReq({ method: 'PUT', body: { promotionStatus: 'PROMOTED', tags: [] } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.tag.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.tag.create).not.toHaveBeenCalled();
+    const createCallData = mockPrisma.transaction.create.mock.calls[0][0].data;
+    expect(createCallData.tags).toBeUndefined();
+  });
+
+  it('resolves tag names and attaches TransactionTag rows when promoting with tags', async () => {
+    setUpPromoteMocks();
+    mockPrisma.tag.findFirst
+      .mockResolvedValueOnce(null) // "Japan 2026" doesn't exist yet
+      .mockResolvedValueOnce(null); // "Business" doesn't exist yet
+    mockPrisma.tag.create
+      .mockResolvedValueOnce({ id: 101, name: 'Japan 2026' })
+      .mockResolvedValueOnce({ id: 102, name: 'Business' });
+
+    const req = makeReq({
+      method: 'PUT',
+      body: { promotionStatus: 'PROMOTED', tags: ['Japan 2026', 'Business'] },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const createCallData = mockPrisma.transaction.create.mock.calls[0][0].data;
+    expect(createCallData.tags).toEqual({
+      create: [
+        { tag: { connect: { id: 101 } } },
+        { tag: { connect: { id: 102 } } },
+      ],
+    });
+  });
+
+  it('does not create a duplicate Tag row when a concurrent request creates the same name (P2002)', async () => {
+    setUpPromoteMocks();
+    const existingTag = { id: 55, name: 'Japan 2026' };
+    mockPrisma.tag.findFirst
+      .mockResolvedValueOnce(null) // initial lookup — not found
+      .mockResolvedValueOnce(existingTag); // fallback lookup after P2002
+    mockPrisma.tag.create.mockRejectedValueOnce({ code: 'P2002' });
+
+    const req = makeReq({
+      method: 'PUT',
+      body: { promotionStatus: 'PROMOTED', tags: ['Japan 2026'] },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.tag.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.tag.findFirst).toHaveBeenCalledTimes(2);
+    const createCallData = mockPrisma.transaction.create.mock.calls[0][0].data;
+    expect(createCallData.tags).toEqual({
+      create: [{ tag: { connect: { id: 55 } } }],
     });
   });
 });
