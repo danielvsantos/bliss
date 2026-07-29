@@ -73,6 +73,7 @@ This module provides the API layer for reviewing, categorising, and promoting AI
 - Optional fields accepted at promote time:
   - `details?: string` — overrides the default `plaidTx.name` used as the `Transaction.details` field.
   - `ticker?: string`, `assetQuantity?: number`, `assetPrice?: number` — investment enrichment fields. Required (validation enforced) when the target category has an investment `processingHint` (`API_STOCK`, `API_CRYPTO`, `API_FUND`, or `MANUAL`).
+  - `tags?: string[]` — optional tag names to attach to the newly created `Transaction`. Resolved via the shared `resolveTagsByName()` helper (`apps/api/utils/tagUtils.js`) — find-or-create by name, the same function used by `POST /api/transactions` and Smart Import commit. Called with the top-level `prisma` client *before* the `$transaction` block (`resolveTagsByName()` doesn't accept a transaction client). Only applied when a new `Transaction` is created — the externalId-dedup branch below does not retroactively apply tags to an already-promoted match.
 - Atomically (within a Prisma transaction):
   1. Creates a `Transaction` record with `source: 'PLAID'` and `externalId: plaidTransactionId` (dedup guard).
   2. Updates `PlaidTransaction.promotionStatus = 'PROMOTED'` and sets `matchedTransactionId`.

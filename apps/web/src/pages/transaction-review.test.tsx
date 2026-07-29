@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -7,6 +7,7 @@ import TransactionReviewPage from './transaction-review';
 import * as UsePlaidReview from '@/hooks/use-plaid-review';
 import * as UseImports from '@/hooks/use-imports';
 import * as UseMetadata from '@/hooks/use-metadata';
+import * as UseTags from '@/hooks/use-tags';
 import { mockQueryResult, mockMutationResult } from '@/test/mock-helpers';
 
 vi.mock('react-i18next', () => ({
@@ -16,8 +17,26 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/hooks/use-plaid-review');
 vi.mock('@/hooks/use-imports');
 vi.mock('@/hooks/use-metadata');
+vi.mock('@/hooks/use-tags');
 vi.mock('@/hooks/use-toast', () => ({
   useToast: vi.fn(() => ({ toast: vi.fn() })),
+}));
+
+// TagInput's own Radix/cmdk internals aren't the concern here — stub it so
+// tests can assert the drawer-to-page wiring (tagNames -> payload.tags)
+// without driving the real combobox.
+vi.mock('@/components/entities/tag-input', () => ({
+  TagInput: ({
+    selectedTagIds,
+    onChange,
+  }: {
+    selectedTagIds: number[];
+    onChange: (ids: number[]) => void;
+  }) => (
+    <button type="button" onClick={() => onChange([...selectedTagIds, 1])}>
+      select-tag-1
+    </button>
+  ),
 }));
 
 // jsdom stubs required by shadcn/ui components used on this page
@@ -60,6 +79,9 @@ describe('TransactionReviewPage', () => {
     vi.mocked(UseImports.useUpdateImportRow).mockReturnValue(mockMutationResult());
     vi.mocked(UseImports.useCommitImport).mockReturnValue(mockMutationResult());
     vi.mocked(UseImports.useCancelImport).mockReturnValue(mockMutationResult());
+
+    vi.mocked(UseTags.useTags).mockReturnValue(mockQueryResult([{ id: 1, name: 'Japan 2026' }]));
+    vi.mocked(UseTags.useCreateTag).mockReturnValue(mockMutationResult());
   });
 
   const renderPage = (search = '') =>
@@ -137,5 +159,111 @@ describe('TransactionReviewPage', () => {
     renderPage('?source=imports');
 
     expect(screen.getByText('march.csv', { exact: false })).toBeInTheDocument();
+  });
+
+  it('includes drawer tag selection in the Plaid promote payload', () => {
+    const updateMutate = vi.fn();
+    vi.mocked(UsePlaidReview.useUpdatePlaidTransaction).mockReturnValue(
+      mockMutationResult({ mutate: updateMutate }),
+    );
+    vi.mocked(UsePlaidReview.usePlaidTransactions).mockReturnValue(
+      mockQueryResult({
+        ...emptyPlaidData,
+        transactions: [
+          {
+            id: 'tx-1',
+            plaidItemId: 'item-1',
+            plaidAccountId: 'acc-1',
+            plaidTransactionId: 'plaid-tx-1',
+            name: 'Whole Foods',
+            merchantName: 'Whole Foods',
+            amount: 42.5,
+            date: '2025-05-01',
+            isoCurrencyCode: 'USD',
+            promotionStatus: 'CLASSIFIED',
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'Groceries' },
+            aiConfidence: 0.95,
+            classificationSource: 'VECTOR_MATCH',
+            requiresEnrichment: false,
+          },
+        ],
+        summary: {
+          classified: 1,
+          promoted: 0,
+          skipped: 0,
+          pending: 0,
+          seedHeld: 0,
+          categoryBreakdown: [{ categoryId: 10, count: 1, category: { id: 10, name: 'Groceries' } }],
+        },
+      }),
+    );
+
+    renderPage();
+
+    // Switch to flat view so the row is directly clickable (grouped view
+    // requires expanding a category card first).
+    fireEvent.click(screen.getByText('Grouped'));
+    fireEvent.click(screen.getAllByText('Whole Foods')[0].closest('[role="button"]')!);
+
+    // Select a tag via the stubbed TagInput, then save.
+    fireEvent.click(screen.getByText('select-tag-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'review.saveAndPromote' }));
+
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    const [{ data }] = updateMutate.mock.calls[0];
+    expect(data.tags).toEqual(['Japan 2026']);
+  });
+
+  it('includes drawer tag selection in the import confirm payload', () => {
+    const updateRowMutate = vi.fn();
+    vi.mocked(UseImports.useUpdateImportRow).mockReturnValue(
+      mockMutationResult({ mutate: updateRowMutate }),
+    );
+    vi.mocked(UseImports.usePendingImports).mockReturnValue(
+      mockQueryResult({ imports: [{ id: 'imp-1', fileName: 'march.csv', pendingRowCount: 1 }] }),
+    );
+    vi.mocked(UseImports.useStagedImport).mockReturnValue(
+      mockQueryResult({
+        import: { id: 'imp-1', fileName: 'march.csv' },
+        rows: [
+          {
+            id: 'row-1',
+            stagedImportId: 'imp-1',
+            rowNumber: 1,
+            rawData: {},
+            transactionDate: '2025-05-01',
+            description: 'Coffee Shop',
+            debit: 8,
+            credit: 0,
+            currency: 'USD',
+            accountId: 42,
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'Groceries' },
+            confidence: 0.95,
+            classificationSource: 'VECTOR_MATCH',
+            status: 'PENDING',
+            requiresEnrichment: false,
+          },
+        ],
+        categorySummary: [{ categoryId: 10, count: 1, category: { id: 10, name: 'Groceries' } }],
+        pagination: { page: 1, limit: 50, total: 1 },
+      }),
+    );
+    vi.mocked(UseMetadata.useAccounts).mockReturnValue(
+      mockQueryResult([{ id: 42, name: 'Checking' }]),
+    );
+
+    renderPage('?source=imports');
+
+    fireEvent.click(screen.getByText('Grouped'));
+    fireEvent.click(screen.getAllByText('Coffee Shop')[0].closest('[role="button"]')!);
+
+    fireEvent.click(screen.getByText('select-tag-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'review.saveAndPromote' }));
+
+    expect(updateRowMutate).toHaveBeenCalledTimes(1);
+    const [{ data }] = updateRowMutate.mock.calls[0];
+    expect(data.tags).toEqual(['Japan 2026']);
   });
 });

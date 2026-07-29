@@ -672,6 +672,9 @@ export default function SmartImportPage() {
       if (data.ticker !== undefined)  payload.ticker = data.ticker || null;
       if (data.assetQuantity !== undefined) payload.assetQuantity = data.assetQuantity ? parseFloat(data.assetQuantity) : null;
       if (data.assetPrice !== undefined)    payload.assetPrice    = data.assetPrice    ? parseFloat(data.assetPrice)    : null;
+      // Tags: always include, even empty — drawer edits fully override
+      // row.tags rather than merging with the CSV-parsed value.
+      payload.tags = data.tagNames;
       updateRow.mutate({ rowId: data.item.id, data: payload }, {
         onSuccess: () => {
           setDrawerItem(null);

@@ -780,7 +780,7 @@ export default function TransactionReviewPage() {
   // suppressToast: used when the caller will show its own combined toast (e.g. promote-all flow).
   const executeDrawerSave = useCallback(
     (data: DrawerSaveData, suppressToast = false) => {
-      const { item, categoryId, accountId, ticker, assetQuantity, assetPrice, details, isin, exchange, assetCurrency } = data;
+      const { item, categoryId, accountId, ticker, assetQuantity, assetPrice, details, isin, exchange, assetCurrency, tagNames } = data;
       const isAlreadyProcessed =
         item.promotionStatus === 'PROMOTED' ||
         item.promotionStatus === 'CONFIRMED' ||
@@ -810,6 +810,9 @@ export default function TransactionReviewPage() {
         if (isin) payload.isin = isin;
         if (exchange) payload.exchange = exchange;
         if (assetCurrency) payload.assetCurrency = assetCurrency;
+        // Tags: always include, even empty — "no tags selected" must
+        // produce zero tags, not silently preserve a stale value.
+        payload.tags = tagNames;
 
         updatePlaidTx.mutate(
           { id: item.id, data: payload },
@@ -845,6 +848,9 @@ export default function TransactionReviewPage() {
         if (isin) rowData.isin = isin;
         if (exchange) rowData.exchange = exchange;
         if (assetCurrency) rowData.assetCurrency = assetCurrency;
+        // Tags: always include, even empty — drawer edits fully override
+        // row.tags rather than merging with the CSV-parsed value.
+        rowData.tags = tagNames;
         if (selectedImportId && selectedImportId === row.stagedImportId) {
           updateImportRow.mutate({ rowId: row.id, data: rowData });
         } else {

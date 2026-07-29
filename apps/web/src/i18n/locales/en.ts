@@ -1205,6 +1205,7 @@ const en = {
     currencyMismatch: "This asset trades in {{assetCurrency}} but the transaction is in {{txCurrency}}. Portfolio values may require currency conversion.",
     detailsNotes: "Details / Notes",
     optionalNotes: "Optional notes override",
+    tags: "Tags",
     skip: "Skip",
     merchantHistory: "Merchant History",
     noMerchantHistory: "No previous transactions found for this merchant.",

@@ -1205,6 +1205,7 @@ const it = {
     currencyMismatch: "Questo asset \u00E8 quotato in {{assetCurrency}} ma la transazione \u00E8 in {{txCurrency}}. I valori del portafoglio potrebbero richiedere la conversione valutaria.",
     detailsNotes: "Dettagli / Note",
     optionalNotes: "Sostituzione note opzionale",
+    tags: "Tag",
     skip: "Salta",
     merchantHistory: "Storico esercente",
     noMerchantHistory: "Nessuna transazione precedente trovata per questo esercente.",

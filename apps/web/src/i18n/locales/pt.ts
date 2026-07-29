@@ -1205,6 +1205,7 @@ const pt = {
     currencyMismatch: "Este ativo é negociado em {{assetCurrency}}, mas a transação está em {{txCurrency}}. Os valores da carteira podem precisar de conversão de moeda.",
     detailsNotes: "Detalhes / Notas",
     optionalNotes: "Substituição de notas opcional",
+    tags: "Etiquetas",
     skip: "Pular",
     merchantHistory: "Histórico do Estabelecimento",
     noMerchantHistory: "Nenhuma transação anterior encontrada para este estabelecimento.",
