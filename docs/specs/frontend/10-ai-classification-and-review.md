@@ -50,6 +50,8 @@ The Transaction Review page provides a unified workspace for reviewing and actio
               │  Price per Share  [43.67]                  │
               │  Notes            [textarea]               │
               │ ─────────────────────────────────────────  │
+              │  🏷️ TAGS          [Select tags... ▼]        │
+              │ ─────────────────────────────────────────  │
               │  🕐 MERCHANT HISTORY                       │
               │  Jan 12  -$67.40   Shopping                │
               │  Dec 18  -$112.30  Shopping                │
@@ -225,7 +227,16 @@ Fields:
 
 > Note: There is no Buy/Sell toggle — buy vs. sell is implicit from the transaction amount sign (positive = debit/buy, negative = credit/sell) per Plaid's convention.
 
-### D. Merchant History: `components/review/merchant-history.tsx`
+### D. Tags
+
+Section labeled **🏷️ TAGS**, rendered unconditionally (always visible, unlike the enrichment section) below the enrichment/details block. Reuses `components/entities/tag-input.tsx` (`TagInput`) exactly as-is — same searchable multi-select combobox, inline "Create ⟨name⟩" affordance, and removable pills used on the Transactions page.
+
+- **Pre-fill**: For import rows, `item.originalImportRow.tags` (CSV-parsed name strings) are matched case-insensitively against the tenant's existing tags (`useTags()`). Any name with no match is eagerly created via `useCreateTag()` when the drawer opens, so `TagInput`'s ID-based model can represent it — mirroring the lazy find-or-create that `resolveTagsByName()` already does server-side at commit/promote time, just moved earlier. Plaid transactions always start with an empty selection (`PlaidTransaction` has no pre-existing tags field).
+- **Override, not merge**: Any add/remove the user makes in the drawer is submitted as the complete tag set on save — it fully replaces `row.tags` rather than merging with the original CSV value. Sending an empty array (no tags selected) is a valid, explicit "zero tags" signal, not omitted from the payload.
+- **Submission**: `DrawerSaveData.tagNames: string[]` (tag *names*, not IDs) is computed in `handleSave()` and included unconditionally in both save paths — the Plaid `payload.tags` in `transaction-review.tsx`'s `executeDrawerSave`, and `rowData.tags` / `payload.tags` in the import paths of `transaction-review.tsx` and `smart-import.tsx`.
+- **Persistence**: On the Plaid path, `PUT /api/plaid/transactions/:id` resolves the names via `resolveTagsByName()` and attaches `TransactionTag` rows to the newly created `Transaction`. On the import path, `PUT /api/imports/:id/rows/:rowId` already persisted `tags` onto `StagedImportRow.tags`; resolution to `TransactionTag` rows happens at commit time as before — no change to that path was needed.
+
+### E. Merchant History: `components/review/merchant-history.tsx`
 
 Section labeled **🕐 MERCHANT HISTORY**. Shows the last 10 `Transaction` records for the same merchant/description:
 
@@ -233,11 +244,11 @@ Section labeled **🕐 MERCHANT HISTORY**. Shows the last 10 `Transaction` recor
 - Table: Date | Amount | Category rows with alternating background.
 - Empty state: "No previous transactions found for this merchant."
 
-### E. Footer
+### F. Footer
 
 - **Cancel** → closes drawer without saving.
 - **Skip** → sets `status: 'SKIPPED'` (not shown for already-processed rows).
-- **Reset to Pending** → only visible for **import rows** with `promotionStatus === 'CONFIRMED'`. Moves the row back to `PENDING` via `PUT /api/imports/:id/rows/:rowId` with `{ status: 'PENDING' }`. Closes the drawer on click. See §E.1 below.
+- **Reset to Pending** → only visible for **import rows** with `promotionStatus === 'CONFIRMED'`. Moves the row back to `PENDING` via `PUT /api/imports/:id/rows/:rowId` with `{ status: 'PENDING' }`. Closes the drawer on click. See §F.1 below.
 - **Save & Promote** → the `handleDrawerSave` handler first checks whether other matching transactions exist before committing:
 
 ### Drawer Promote-All Intercept
@@ -271,7 +282,7 @@ After any successful promote mutation:
 - `['plaid-transactions']`, `['merchant-history']` caches are invalidated.
 - The drawer closes.
 
-### E.1 Reset to Pending (import rows only)
+### F.1 Reset to Pending (import rows only)
 
 Auto-promote fires at the tenant's `autoPromoteThreshold` (default 0.90), and a classification landing at e.g. 0.91 confidence gets auto-marked `CONFIRMED` without the user ever seeing it. If the user wants a closer look before commit, they need an escape hatch that doesn't require committing then editing the transaction post-facto.
 

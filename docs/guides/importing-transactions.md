@@ -121,6 +121,7 @@ After processing, review the staged rows. The AI assigns a category and confiden
 - **Accept** individual rows or in bulk
 - **Override** the category with a correction (this trains the AI for future imports)
 - **Skip** duplicates or irrelevant rows
+- **Tag** a row directly in the review drawer — add existing tags or create new ones on the fly, no need to wait until after commit
 
 ![Transaction review with AI drawer](/images/transactionreviewdrawer.png)
 
