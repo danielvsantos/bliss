@@ -1445,12 +1445,19 @@ export default function TransactionReviewPage() {
                     // Save the current transaction immediately (suppress individual toast).
                     executeDrawerSave(saved, true);
 
-                    // Confirm matching import rows with the same category
+                    // Confirm matching import rows with the same category.
+                    // Tags only propagate when the drawer had a non-empty selection —
+                    // an empty selection here means "no tag decision for this batch",
+                    // not "strip tags from these sibling rows" (they may carry their
+                    // own legitimate CSV-parsed tags).
                     for (const match of importMatches) {
                       const row = match.originalImportRow!;
                       const rowData: Record<string, unknown> = { status: 'CONFIRMED' };
                       if (catId && catId !== match.categoryId) {
                         rowData.suggestedCategoryId = catId;
+                      }
+                      if (saved.tagNames.length > 0) {
+                        rowData.tags = saved.tagNames;
                       }
                       if (selectedImportId && selectedImportId === row.stagedImportId) {
                         updateImportRow.mutate({ rowId: row.id, data: rowData });
@@ -1466,6 +1473,7 @@ export default function TransactionReviewPage() {
                         {
                           transactionIds: plaidIds,
                           ...(catId && { overrideCategoryId: catId }),
+                          ...(saved.tagNames.length > 0 && { tags: saved.tagNames }),
                         },
                         {
                           onSuccess: (result) => {
@@ -1475,10 +1483,17 @@ export default function TransactionReviewPage() {
                             clearStaleCategoryFilters();
                             setPendingDrawerSave(null);
                             const total = result.promoted + 1 + importMatches.length;
-                            toast({
-                              title: `Promoted ${total} transaction${total !== 1 ? 's' : ''}`,
-                              description: `1 saved from drawer + ${result.promoted} Plaid + ${importMatches.length} import matching "${item.description}".`,
-                            });
+                            if (result.tagsApplied === false) {
+                              toast({
+                                title: `Promoted ${total} transaction${total !== 1 ? 's' : ''}, but tags failed to apply to the batch`,
+                                variant: 'destructive',
+                              });
+                            } else {
+                              toast({
+                                title: `Promoted ${total} transaction${total !== 1 ? 's' : ''}`,
+                                description: `1 saved from drawer + ${result.promoted} Plaid + ${importMatches.length} import matching "${item.description}".`,
+                              });
+                            }
                           },
                           onError: () => {
                             setPendingDrawerSave(null);
