@@ -62,8 +62,14 @@ export function useUpdatePlaidTransaction() {
 export function useBulkPromotePlaidTransactions() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { minConfidence?: number; plaidItemId?: string; categoryId?: number; transactionIds?: string[] }) =>
-      api.bulkPromotePlaidTransactions(params),
+    mutationFn: (params: {
+      minConfidence?: number;
+      plaidItemId?: string;
+      categoryId?: number;
+      transactionIds?: string[];
+      overrideCategoryId?: number;
+      tags?: string[];
+    }) => api.bulkPromotePlaidTransactions(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: plaidReviewKeys.all });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });

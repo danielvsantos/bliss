@@ -7,6 +7,7 @@ import { produceEvent } from '../../../../utils/produceEvent.js';
 import { withAuth } from '../../../../utils/withAuth.js';
 import { computeTransactionHash, buildDuplicateHashSet } from '../../../../utils/transactionHash.js';
 import { fetchWithTimeout } from '../../../../utils/fetchWithTimeout.js';
+import { resolveTagsByName } from '../../../../utils/tagUtils.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -27,9 +28,15 @@ const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
  *   categoryId?: number (optional filter by category),
  *   transactionIds?: string[] (optional explicit IDs — bypasses confidence gate),
  *   overrideCategoryId?: number (override category for all promoted transactions),
+ *   tags?: string[] (tag names — find-or-create, applied to every newly-created
+ *     Transaction in the batch; never retroactively applied to already-existing
+ *     dedup-linked transactions),
  * }
  *
- * Returns: { promoted: number, skipped: number, errors: number }
+ * Returns: { promoted: number, skipped: number, errors: number, tagsApplied?: boolean }
+ * `tagsApplied` is only present when `tags` was provided — true unless the
+ * best-effort tag-attachment step below failed (the promote itself still
+ * succeeds either way; failing to tag never rolls back or blocks a promote).
  */
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
@@ -63,6 +70,7 @@ export default withAuth(async function handler(req, res) {
     const overrideCategoryId = req.body.overrideCategoryId
       ? parseInt(req.body.overrideCategoryId)
       : null;
+    const tagsInput = Array.isArray(req.body.tags) ? req.body.tags : null;
 
     // ── Parallel setup: category validation + plaid items + linked accounts ──
     const [overrideCat, tenantPlaidItems, linkedAccounts] = await Promise.all([
@@ -118,6 +126,7 @@ export default withAuth(async function handler(req, res) {
     let promoted = 0;
     let skipped = 0;
     let errors = 0;
+    let tagsApplied = true; // stays true (no-op) when there's nothing to tag
     const affectedAccountIds = new Set();
     const affectedDateScopes = new Set();
 
@@ -219,6 +228,20 @@ export default withAuth(async function handler(req, res) {
       affectedDateScopes.add(`${year}-${month}`);
     }
 
+    // ── Resolve tag names once, up front — only if there's something to tag.
+    // Never blocks the promote: a resolution failure just proceeds with no tags
+    // rather than aborting a batch of otherwise-valid transactions.
+    let resolvedTags = [];
+    if (tagsInput?.length > 0 && toCreate.length > 0) {
+      try {
+        resolvedTags = await resolveTagsByName(tagsInput, user.tenantId, user.email);
+      } catch (err) {
+        console.error(`Bulk promote tag resolution error: ${err.message}`);
+        Sentry.captureException(err);
+        resolvedTags = [];
+      }
+    }
+
     // ── Phase 3a: Batch-mark hash duplicates ──────────────────────────────
     if (hashDuplicateIds.length > 0) {
       await prisma.plaidTransaction.updateMany({
@@ -272,6 +295,29 @@ export default withAuth(async function handler(req, res) {
         const externalIdToTxId = new Map(
           createdTransactions.map((t) => [t.externalId, t.id])
         );
+
+        // ── Attach tags to the newly-created transactions — best-effort. ──
+        // Prisma's createMany can't do nested relation writes, so this is a
+        // second, independent query run after the transactions already exist.
+        // A failure here never rolls back or blocks the promote above; it only
+        // flips `tagsApplied` so the caller can surface a distinct warning.
+        if (resolvedTags.length > 0 && externalIdToTxId.size > 0) {
+          try {
+            const tagRows = [];
+            for (const txId of externalIdToTxId.values()) {
+              for (const tag of resolvedTags) {
+                tagRows.push({ transactionId: txId, tagId: tag.id });
+              }
+            }
+            if (tagRows.length > 0) {
+              await prisma.transactionTag.createMany({ data: tagRows, skipDuplicates: true });
+            }
+          } catch (err) {
+            console.error(`Bulk promote tag attachment error: ${err.message}`);
+            Sentry.captureException(err);
+            tagsApplied = false;
+          }
+        }
 
         // Update PlaidTransactions with matchedTransactionId (all in parallel)
         const updateResults = await Promise.allSettled(
@@ -345,7 +391,10 @@ export default withAuth(async function handler(req, res) {
       }).catch(() => {}); // already logs + reports internally
     }
 
-    res.status(StatusCodes.OK).json({ promoted, skipped, errors });
+    res.status(StatusCodes.OK).json({
+      promoted, skipped, errors,
+      ...(tagsInput?.length > 0 && { tagsApplied }),
+    });
   } catch (error) {
     Sentry.captureException(error);
     console.error('Bulk promote error:', error);

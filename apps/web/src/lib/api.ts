@@ -796,7 +796,9 @@ class APIClient {
     transactionIds?: string[];
     /** When set, every transaction in the batch is assigned this category (drawer "promote-all" flow). */
     overrideCategoryId?: number;
-  }): Promise<{ promoted: number; skipped: number; errors: number }> {
+    /** Tag names (find-or-create) applied to every newly-created transaction in the batch. */
+    tags?: string[];
+  }): Promise<{ promoted: number; skipped: number; errors: number; tagsApplied?: boolean }> {
     const response = await this.client.post('/api/plaid/transactions/bulk-promote', params);
     return response.data;
   }

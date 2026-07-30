@@ -98,6 +98,7 @@ This module provides the API layer for reviewing, categorising, and promoting AI
 | `plaidItemId` | `string` | `null` | Filter to transactions from a single Plaid connection. Must belong to the authenticated tenant. |
 | `categoryId` | `number` | `null` | Filter to transactions whose `suggestedCategoryId` matches this value. |
 | `overrideCategoryId` | `number` | `null` | When set, **every promoted transaction receives this category** regardless of its existing `suggestedCategoryId`. Sets `classificationSource: 'USER_OVERRIDE'` and `aiConfidence: 1.0` on the staging row. Validated to belong to the tenant. When set, the `suggestedCategoryId: not null` filter is relaxed (the override supplies the category). |
+| `tags` | `string[]` | `null` | Optional tag names (find-or-create via `resolveTagsByName()`) applied to **every newly-created `Transaction`** in the batch — same one-to-many semantics as `overrideCategoryId`. Used by the drawer's "Promote all N matching transactions" dialog to carry the drawer's tag selection to every sibling transaction, not just the one being directly edited. Never retroactively applied to dedup-linked ("already existing") transactions. |
 
 - **Investment filter**: Transactions with `requiresEnrichment: true` are **always excluded** — they require user-provided ticker/quantity/price and must be promoted individually via the drawer.
 - **Workflow**:
@@ -106,8 +107,9 @@ This module provides the API layer for reviewing, categorising, and promoting AI
   3. **Batch dedup**: Single `findMany` fetches all existing `Transaction` records by `externalId` up-front (O(1) Map lookup per row — avoids N sequential DB roundtrips).
   4. **Parallel execution**: `Promise.all` within batches of 100 — each batch runs concurrently.
   5. For each transaction: creates a `Transaction` record and marks the PlaidTransaction as `PROMOTED`. If `overrideCategoryId` is set, uses it as `effectiveCategoryId` and updates the staging row's `suggestedCategoryId`/`classificationSource`/`aiConfidence`.
-  6. Emits one consolidated `TRANSACTIONS_IMPORTED` event covering all `accountIds` and `dateScopes`.
-- **Response**: `{ promoted: N, skipped: M, errors: N }` — `skipped` includes already-promoted, dedup-skipped, and investment-enrichment-required records; `errors` is a count of per-row failures (the batch continues even when individual rows fail).
+  6. **Tag attachment** (if `tags` provided): tag names are resolved once via `resolveTagsByName()` — skipped entirely if there are no transactions to create, so a batch that resolves to zero new transactions never creates a phantom `Tag` row. Because transactions are batch-inserted via `prisma.transaction.createMany()` (which cannot perform nested relation writes), tags are attached in a **second, independent** `prisma.transactionTag.createMany()` call after the transaction IDs are known. This step is deliberately best-effort: a failure here is caught, logged to Sentry, and reflected only in the `tagsApplied: false` response flag — it never rolls back or blocks the promote, consistent with this endpoint's existing non-atomic batch design (see the file-level comment: batch operations are used instead of per-row interactive transactions to avoid exhausting the Prisma connection pool).
+  7. Emits one consolidated `TRANSACTIONS_IMPORTED` event covering all `accountIds` and `dateScopes`.
+- **Response**: `{ promoted: N, skipped: M, errors: N, tagsApplied?: boolean }` — `skipped` includes already-promoted, dedup-skipped, and investment-enrichment-required records; `errors` is a count of per-row failures (the batch continues even when individual rows fail); `tagsApplied` is present only when `tags` was provided in the request.
 - **Rate limit**: `plaidReview` limiter (150 requests per 5 minutes).
 
 ---

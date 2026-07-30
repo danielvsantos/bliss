@@ -1025,6 +1025,14 @@ paths:
         Sets `classificationSource: 'USER_OVERRIDE'` and `aiConfidence: 1.0` on the staging row.
         The `suggestedCategoryId: not null` filter is relaxed when this param is provided.
 
+        **Tag propagation**: When `tags` is set, the same tag set is resolved once (find-or-create,
+        via the shared `resolveTagsByName()`) and attached to every newly-created Transaction in the
+        batch — same one-to-many semantics as `overrideCategoryId`. Not retroactively applied to
+        dedup-linked ("already existing") transactions. Because this endpoint batches transaction
+        creation via `createMany` (which can't do nested relation writes), tag attachment runs as a
+        separate best-effort step afterward: if it fails, the promote itself is unaffected — only
+        `tagsApplied: false` is returned so the caller can surface a distinct warning.
+
         **Performance**: Uses a single batch dedup query (one `findMany` for all external IDs
         before the loop) and `Promise.all` within batches of 100 for parallel DB execution.
 
@@ -1067,6 +1075,16 @@ paths:
                     When set, every promoted transaction receives this category regardless of its
                     existing suggestedCategoryId. Sets classificationSource to USER_OVERRIDE and
                     aiConfidence to 1.0 on the PlaidTransaction. Validated to belong to the tenant.
+                tags:
+                  type: array
+                  items:
+                    type: string
+                  nullable: true
+                  description: |
+                    Optional tag names (find-or-create) applied to every newly-created Transaction
+                    in the batch. Used by the drawer's "Promote all N matching transactions" flow to
+                    carry the drawer's tag selection to every sibling transaction, not just the one
+                    being edited. Never applied to dedup-linked ("already existing") transactions.
       responses:
         '200':
           description: Promotion complete.
@@ -1084,6 +1102,12 @@ paths:
                   errors:
                     type: integer
                     description: Count of per-row failures (batch continues on individual errors).
+                  tagsApplied:
+                    type: boolean
+                    description: |
+                      Only present when `tags` was provided. True unless the best-effort
+                      tag-attachment step failed after transactions were already created —
+                      a tagging failure never blocks or rolls back the promote itself.
         '400':
           description: Invalid overrideCategoryId (not found or does not belong to tenant).
         '401':

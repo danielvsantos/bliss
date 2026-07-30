@@ -16,6 +16,8 @@ const { mockPrisma, mockProduceEvent, mockComputeTransactionHash, mockBuildDupli
     account: { findMany: vi.fn() },
     plaidTransaction: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
     transaction: { findMany: vi.fn(), createMany: vi.fn() },
+    tag: { findFirst: vi.fn(), create: vi.fn() },
+    transactionTag: { createMany: vi.fn() },
   },
   mockProduceEvent: vi.fn(),
   mockComputeTransactionHash: vi.fn(),
@@ -189,5 +191,122 @@ describe('POST /api/plaid/transactions/bulk-promote', () => {
 
     expect(res._status).toBe(400);
     expect(res._body).toEqual({ error: 'Invalid category' });
+  });
+
+  // -------------------------------------------------------------------------
+  // Tag propagation
+  // -------------------------------------------------------------------------
+
+  function setUpBasicPromoteMocks() {
+    mockPrisma.plaidItem.findMany.mockResolvedValueOnce([{ id: 'pi-1' }]);
+    mockPrisma.account.findMany.mockResolvedValueOnce([
+      { id: 10, plaidAccountId: 'plaid-acc-1' },
+    ]);
+    mockPrisma.plaidTransaction.findMany.mockResolvedValueOnce([
+      {
+        id: 'ptx-1',
+        plaidTransactionId: 'ext-1',
+        plaidAccountId: 'plaid-acc-1',
+        suggestedCategoryId: 5,
+        aiConfidence: 0.95,
+        merchantName: 'Coffee Shop',
+        name: 'COFFEE SHOP',
+        amount: 4.5,
+        date: '2026-03-01',
+        isoCurrencyCode: 'USD',
+        requiresEnrichment: false,
+      },
+    ]);
+    mockPrisma.transaction.findMany
+      .mockResolvedValueOnce([]) // existingByExternalId lookup
+      .mockResolvedValueOnce([{ id: 100, externalId: 'ext-1' }]); // created lookup
+    mockBuildDuplicateHashSet.mockResolvedValue(new Set());
+    mockPrisma.transaction.createMany.mockResolvedValueOnce({ count: 1 });
+    mockPrisma.plaidTransaction.update.mockResolvedValue({});
+    mockProduceEvent.mockResolvedValue(undefined);
+  }
+
+  it('resolves tag names and attaches TransactionTag rows to newly-created transactions', async () => {
+    setUpBasicPromoteMocks();
+    mockPrisma.tag.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockPrisma.tag.create
+      .mockResolvedValueOnce({ id: 101, name: 'Japan 2026' })
+      .mockResolvedValueOnce({ id: 102, name: 'Business' });
+
+    const req = makeReq({
+      body: { transactionIds: ['ptx-1'], tags: ['Japan 2026', 'Business'] },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.promoted).toBe(1);
+    expect(res._body.tagsApplied).toBe(true);
+    expect(mockPrisma.transactionTag.createMany).toHaveBeenCalledWith({
+      data: [
+        { transactionId: 100, tagId: 101 },
+        { transactionId: 100, tagId: 102 },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('omits tagsApplied and skips all tag work when tags is not provided', async () => {
+    setUpBasicPromoteMocks();
+
+    const req = makeReq({ body: { transactionIds: ['ptx-1'] } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.tagsApplied).toBeUndefined();
+    expect(mockPrisma.tag.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.transactionTag.createMany).not.toHaveBeenCalled();
+  });
+
+  it('still promotes successfully and reports tagsApplied: false when tag attachment fails', async () => {
+    setUpBasicPromoteMocks();
+    mockPrisma.tag.findFirst.mockResolvedValueOnce({ id: 101, name: 'Japan 2026' });
+    mockPrisma.transactionTag.createMany.mockRejectedValueOnce(new Error('DB blip'));
+
+    const req = makeReq({
+      body: { transactionIds: ['ptx-1'], tags: ['Japan 2026'] },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    // The promote itself is unaffected by the tag-attachment failure.
+    expect(res._status).toBe(200);
+    expect(res._body.promoted).toBe(1);
+    expect(res._body.errors).toBe(0);
+    expect(res._body.tagsApplied).toBe(false);
+  });
+
+  it('skips tag resolution entirely when there are no transactions to create', async () => {
+    // No eligible transactions at all — nothing to promote or tag.
+    mockPrisma.plaidItem.findMany.mockResolvedValueOnce([{ id: 'pi-1' }]);
+    mockPrisma.account.findMany.mockResolvedValueOnce([]);
+    mockPrisma.plaidTransaction.findMany.mockResolvedValueOnce([]);
+    mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
+
+    const req = makeReq({
+      body: { transactionIds: ['ptx-1'], tags: ['Brand New Tag'] },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.promoted).toBe(0);
+    // No transactions were created, so no Tag row should have been created either —
+    // proves the resolution step doesn't run (and doesn't create a phantom tag)
+    // when there's nothing to attach it to.
+    expect(mockPrisma.tag.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.tag.create).not.toHaveBeenCalled();
   });
 });

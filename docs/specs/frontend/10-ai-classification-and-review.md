@@ -272,8 +272,9 @@ When the user clicks **Save & Promote** for a Plaid transaction that is not alre
 - **"Just this one"**: calls `PUT /api/plaid/transactions/:id` for the drawer's transaction only (category + promote).
 - **"Promote all N+1"**: calls two mutations in sequence:
   1. `PUT /api/plaid/transactions/:id` for the drawer's transaction (suppresses its individual success toast).
-  2. `POST /api/plaid/transactions/bulk-promote` with `{ transactionIds: [<other matching IDs>], overrideCategoryId: <drawerCategoryId> }` — applies the user's chosen category to all matching rows and promotes them in one batch.
-  - A single combined toast shows the total promoted count.
+  2. `POST /api/plaid/transactions/bulk-promote` with `{ transactionIds: [<other matching IDs>], overrideCategoryId: <drawerCategoryId>, tags: <drawerTagNames> }` — applies the user's chosen category *and tags* to all matching rows and promotes them in one batch. `tags` is only included when the drawer's tag selection is non-empty (mirrors the same conditional-include pattern as `overrideCategoryId`) — an empty selection means "no tag decision for this batch," not "strip tags from these sibling rows," since they may carry their own legitimate tags already (e.g. CSV-parsed ones on import matches).
+  - Same-description **import** matches get the tag set too, via their own `PUT /api/imports/:id/rows/:rowId` call in the same loop — that endpoint already accepted `tags` before this dialog did.
+  - A single combined toast shows the total promoted count — unless the bulk-promote response comes back with `tagsApplied: false`, in which case a distinct warning toast is shown instead ("Promoted N transactions, but tags failed to apply to the batch"). The promote itself is never rolled back by a tag-attachment failure.
 - The dialog shows a spinner while mutations are in-flight and closes only on success or error.
 
 State: `pendingDrawerSave` holds the drawer's save payload. `pendingDrawerOtherMatches` memo computes the other matching-description rows each render.

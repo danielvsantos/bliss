@@ -215,6 +215,83 @@ describe('TransactionReviewPage', () => {
     expect(data.tags).toEqual(['Japan 2026']);
   });
 
+  it('propagates the drawer tag selection to bulk-promoted matching transactions', () => {
+    const updateMutate = vi.fn();
+    const bulkPromoteMutate = vi.fn();
+    vi.mocked(UsePlaidReview.useUpdatePlaidTransaction).mockReturnValue(
+      mockMutationResult({ mutate: updateMutate }),
+    );
+    vi.mocked(UsePlaidReview.useBulkPromotePlaidTransactions).mockReturnValue(
+      mockMutationResult({ mutate: bulkPromoteMutate }),
+    );
+    vi.mocked(UsePlaidReview.usePlaidTransactions).mockReturnValue(
+      mockQueryResult({
+        ...emptyPlaidData,
+        transactions: [
+          {
+            id: 'tx-1',
+            plaidItemId: 'item-1',
+            plaidAccountId: 'acc-1',
+            plaidTransactionId: 'plaid-tx-1',
+            name: 'STARBUCKS #1234',
+            merchantName: 'Starbucks',
+            amount: 4.5,
+            date: '2025-05-01',
+            isoCurrencyCode: 'USD',
+            promotionStatus: 'CLASSIFIED',
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'Dining' },
+            aiConfidence: 0.95,
+            classificationSource: 'VECTOR_MATCH',
+            requiresEnrichment: false,
+          },
+          {
+            id: 'tx-2',
+            plaidItemId: 'item-1',
+            plaidAccountId: 'acc-1',
+            plaidTransactionId: 'plaid-tx-2',
+            name: 'STARBUCKS #1234',
+            merchantName: 'Starbucks',
+            amount: 5.0,
+            date: '2025-05-02',
+            isoCurrencyCode: 'USD',
+            promotionStatus: 'CLASSIFIED',
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'Dining' },
+            aiConfidence: 0.9,
+            classificationSource: 'VECTOR_MATCH',
+            requiresEnrichment: false,
+          },
+        ],
+        summary: {
+          classified: 2,
+          promoted: 0,
+          skipped: 0,
+          pending: 0,
+          seedHeld: 0,
+          categoryBreakdown: [{ categoryId: 10, count: 2, category: { id: 10, name: 'Dining' } }],
+        },
+      }),
+    );
+
+    renderPage();
+
+    fireEvent.click(screen.getByText('Grouped'));
+    fireEvent.click(screen.getAllByText('Starbucks')[0].closest('[role="button"]')!);
+
+    fireEvent.click(screen.getByText('select-tag-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'review.saveAndPromote' }));
+
+    // A same-description match exists, so saving opens the "promote all
+    // matches" dialog instead of saving immediately — confirm "promote all"
+    // to exercise the bulk fan-out path.
+    fireEvent.click(screen.getByRole('button', { name: 'review.confirmAllCount' }));
+
+    expect(bulkPromoteMutate).toHaveBeenCalledTimes(1);
+    const [payload] = bulkPromoteMutate.mock.calls[0];
+    expect(payload.tags).toEqual(['Japan 2026']);
+  });
+
   it('includes drawer tag selection in the import confirm payload', () => {
     const updateRowMutate = vi.fn();
     vi.mocked(UseImports.useUpdateImportRow).mockReturnValue(
