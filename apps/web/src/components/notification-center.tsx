@@ -23,6 +23,7 @@ import {
 const SIGNAL_ICONS: Record<string, React.ReactNode> = {
   PENDING_REVIEW: <ClipboardCheck className="h-4 w-4" />,
   PLAID_ACTION_REQUIRED: <AlertTriangle className="h-4 w-4" />,
+  PLAID_CLASSIFICATION_FAILED: <AlertTriangle className="h-4 w-4" />,
   ONBOARDING_INCOMPLETE: <ListChecks className="h-4 w-4" />,
   NEW_INSIGHTS: <Sparkles className="h-4 w-4" />,
 };

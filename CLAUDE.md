@@ -56,6 +56,10 @@ pnpm exec prisma migrate dev --schema=prisma/schema.prisma --name your_migration
 
 Never modify the schema without creating a migration. Both API and backend reference the schema via relative path.
 
+**⚠️ Exception — never run `migrate dev` once `TransactionEmbedding`/`GlobalEmbedding` hold real rows.** Both models' `embedding vector(768)` column is intentionally absent from `schema.prisma` — Prisma has no native pgvector type, so the column only exists as a comment (`// embedding column managed via raw SQL migration: vector(768)`) plus hand-written SQL in `prisma/migrations/`. Because the column isn't declared anywhere in the schema, `migrate dev`'s auto-diff concludes it shouldn't exist and will propose `DROP COLUMN "embedding"` on both tables — silently destroying every stored embedding. **This is not specific to Prisma Accelerate or any managed hosting** — a self-hosted Docker Compose Postgres instance hits the identical trap the moment those tables are populated. If `migrate dev` ever prompts to drop `embedding`, answer no. Instead:
+1. Hand-write the migration SQL yourself (see `prisma/migrations/20260731120000_add_plaid_transaction_retry_count/migration.sql` for a minimal example, or `prisma/migrations/20260224230000_fix_pgvector_missing_columns/migration.sql` for one touching the vector columns directly — use `IF NOT EXISTS` guards for anything touching pgvector state).
+2. Apply it with `pnpm exec prisma migrate deploy --schema=prisma/schema.prisma` instead of `migrate dev` — `deploy` applies migration files literally, with no interactive auto-diff, so it never triggers the false-positive drop.
+
 ### Heavy work goes in workers, not route handlers
 
 Use BullMQ queues for any CPU-intensive or long-running operation. API routes should validate, enqueue, and return `202 Accepted`.
@@ -147,6 +151,8 @@ Transaction classification flows through tiers until one succeeds:
 4. **LLM** -- configured LLM provider via `services/llm/` factory (Gemini `gemini-3-flash-preview` / OpenAI `gpt-4.1-mini` / Anthropic `claude-sonnet-4-6`), temperature 0.1, confidence hard-capped at `0.90`. The 0.86–0.90 band is the **ABSOLUTE CERTAINTY** tier — only valid when the merchant is a globally recognized brand AND the Plaid hint matches AND the amount is typical, and is the single path that lets an LLM classification auto-promote at the default `autoPromoteThreshold` of 0.90. The model can also return `categoryId: null` (`LLM_UNKNOWN`) when no category fits with confidence ≥0.30, surfacing genuinely ambiguous transactions to manual review instead of guessing.
 
 Thresholds are per-tenant (`Tenant.autoPromoteThreshold`, `Tenant.reviewThreshold`). Config constants live in `apps/backend/src/config/classificationConfig.js` and must stay in sync with Prisma schema defaults.
+
+**Plaid classification failures (all tiers exhausted with an error, e.g. an LLM timeout)** go through a two-phase retry in `plaidProcessorWorker.js` rather than silently vanishing: one silent auto-retry (`PlaidTransaction.classificationRetryCount`), then a terminal `promotionStatus: 'FAILED'` — visible in Transaction Review and the notifications badge, with a manual `POST /api/plaid/transactions/:id/retry` action. See [`docs/specs/backend/08-plaid-integration.md`](docs/specs/backend/08-plaid-integration.md#classification-failure--retry).
 
 **Feedback loop:** User corrections update the in-memory cache + `DescriptionMapping` table immediately (via `addDescriptionEntry()` write-through), then asynchronously generate/upsert embeddings.
 

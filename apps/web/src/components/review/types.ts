@@ -4,7 +4,7 @@ import type { PlaidTransaction, StagedImportRow } from '@/types/api';
 // Normalizes both PlaidTransaction and StagedImportRow into a single shape
 // so the grouped view, drawer, and row components work uniformly.
 
-export type TxStatus = 'ai-approved' | 'new-merchant' | 'needs-enrichment' | 'low-confidence' | 'duplicate' | 'potential-duplicate';
+export type TxStatus = 'ai-approved' | 'new-merchant' | 'needs-enrichment' | 'low-confidence' | 'duplicate' | 'potential-duplicate' | 'classification-failed';
 
 export interface ReviewItem {
   id: string;

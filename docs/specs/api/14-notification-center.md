@@ -10,7 +10,7 @@ The Notification Center provides two operations:
 
 | Method | Purpose |
 |--------|---------|
-| `GET /api/notifications/summary` | Aggregate signal types from 7 parallel queries |
+| `GET /api/notifications/summary` | Aggregate signal types from 8 parallel queries |
 | `PUT /api/notifications/summary` | Mark notifications as seen (update `lastNotificationSeenAt`) |
 
 Both endpoints require JWT authentication via `withAuth` and are protected by rate limiting and CORS middleware.
@@ -21,7 +21,7 @@ Both endpoints require JWT authentication via `withAuth` and are protected by ra
 
 ### `GET /api/notifications/summary`
 
-Runs 7 parallel queries against existing tables to produce a unified signal summary.
+Runs 8 parallel queries against existing tables to produce a unified signal summary.
 
 **Response** (`200 OK`):
 
@@ -43,6 +43,14 @@ Runs 7 parallel queries against existing tables to produce a unified signal summ
       "count": 1,
       "label": "Chase needs attention",
       "href": "/accounts",
+      "severity": "warning",
+      "isNew": true
+    },
+    {
+      "type": "PLAID_CLASSIFICATION_FAILED",
+      "count": 2,
+      "label": "2 transactions failed classification",
+      "href": "/agents/review?source=plaid",
       "severity": "warning",
       "isNew": true
     },
@@ -84,12 +92,13 @@ Marks all notifications as seen by updating `User.lastNotificationSeenAt` to the
 
 ## 14.3. Signal Types
 
-Signal types are aggregated from existing tables via 7 parallel queries (including `accountCount`, `hasTransaction`, and `tenant.onboardingCompletedAt` lookups). No dedicated notification storage is needed.
+Signal types are aggregated from existing tables via 8 parallel queries (including `accountCount`, `hasTransaction`, and `tenant.onboardingCompletedAt` lookups). No dedicated notification storage is needed.
 
 | Signal Type | Source Table(s) | Count Logic | `isNew` Logic |
 |-------------|----------------|-------------|---------------|
 | `PENDING_REVIEW` | `PlaidTransaction` (status `CLASSIFIED`) + `StagedImportRow` (status `PENDING`) | Sum of both counts | Always `true` (actionable) |
 | `PLAID_ACTION_REQUIRED` | `PlaidItem` (status `LOGIN_REQUIRED` or `ERROR`) | One signal PER PlaidItem (each with `count: 1` and institution-specific label, e.g., "Chase needs attention") | Always `true` (actionable) |
+| `PLAID_CLASSIFICATION_FAILED` | `PlaidTransaction` (status `FAILED`) | Count of `FAILED` rows | Always `true` (actionable) — kept as its own signal rather than folded into `PENDING_REVIEW`'s count, since a classification failure is a data-completeness risk, not routine pending work |
 | `ONBOARDING_INCOMPLETE` | `Tenant.onboardingCompletedAt` + account/transaction counts | Number of incomplete onboarding steps | Always `false` (not urgent) |
 | `NEW_INSIGHTS` | `Insight` (not dismissed) | Count of insights created after `lastSeenAt` | `true` if any `createdAt > lastSeenAt` |
 

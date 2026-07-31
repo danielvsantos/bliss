@@ -17,6 +17,10 @@ jest.mock('../../../queues/plaidSyncQueue', () => ({
   getPlaidSyncQueue: jest.fn(),
 }));
 
+jest.mock('../../../queues/plaidProcessingQueue', () => ({
+  getPlaidProcessingQueue: jest.fn(),
+}));
+
 jest.mock('../../../queues/smartImportQueue', () => ({
   getSmartImportQueue: jest.fn(),
 }));
@@ -46,6 +50,7 @@ jest.mock('bullmq', () => ({
 const { getPortfolioQueue } = require('../../../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../../../queues/analyticsQueue');
 const { getPlaidSyncQueue } = require('../../../queues/plaidSyncQueue');
+const { getPlaidProcessingQueue } = require('../../../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../../../queues/smartImportQueue');
 const { scheduleDebouncedJob } = require('../../../services/debounceService');
 const logger = require('../../../utils/logger');
@@ -58,11 +63,13 @@ const mockPortfolioQueue = { add: jest.fn().mockResolvedValue({ id: 'p-1' }) };
 const mockAnalyticsQueue = { add: jest.fn().mockResolvedValue({ id: 'a-1' }) };
 const mockPlaidSyncQueue = { add: jest.fn().mockResolvedValue({ id: 'ps-1' }) };
 const mockSmartImportQueue = { add: jest.fn().mockResolvedValue({ id: 'si-1' }) };
+const mockPlaidProcessingQueue = { add: jest.fn().mockResolvedValue({ id: 'pp-1' }) };
 
 getPortfolioQueue.mockReturnValue(mockPortfolioQueue);
 getAnalyticsQueue.mockReturnValue(mockAnalyticsQueue);
 getPlaidSyncQueue.mockReturnValue(mockPlaidSyncQueue);
 getSmartImportQueue.mockReturnValue(mockSmartImportQueue);
+getPlaidProcessingQueue.mockReturnValue(mockPlaidProcessingQueue);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +86,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
     getAnalyticsQueue.mockReturnValue(mockAnalyticsQueue);
     getPlaidSyncQueue.mockReturnValue(mockPlaidSyncQueue);
     getSmartImportQueue.mockReturnValue(mockSmartImportQueue);
+    getPlaidProcessingQueue.mockReturnValue(mockPlaidProcessingQueue);
   });
 
   // ─── SMART_IMPORT_REQUESTED ──────────────────────────────────────────────
@@ -216,6 +224,35 @@ describe('eventSchedulerWorker — processEventJob', () => {
       'PLAID_HISTORICAL_BACKFILL event is missing required data.'
     );
     expect(mockPlaidSyncQueue.add).not.toHaveBeenCalled();
+  });
+
+  // ─── PLAID_TRANSACTION_RETRY ─────────────────────────────────────────────
+
+  it('enqueues plaid-processing job for PLAID_TRANSACTION_RETRY', async () => {
+    const job = makeJob('PLAID_TRANSACTION_RETRY', {
+      plaidItemId: 'pi1',
+      tenantId: 't1',
+    });
+
+    await processEventJob(job);
+
+    expect(mockPlaidProcessingQueue.add).toHaveBeenCalledWith(
+      'PLAID_TRANSACTION_RETRY',
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'MANUAL_RETRY' }
+    );
+    // User-initiated — no delay, unlike the worker's own 60s silent-retry re-queue.
+    expect(mockPlaidProcessingQueue.add.mock.calls[0][2]).toBeUndefined();
+  });
+
+  it('warns and does not enqueue for PLAID_TRANSACTION_RETRY without plaidItemId', async () => {
+    const job = makeJob('PLAID_TRANSACTION_RETRY', { tenantId: 't1' });
+
+    await processEventJob(job);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'PLAID_TRANSACTION_RETRY event is missing plaidItemId.'
+    );
+    expect(mockPlaidProcessingQueue.add).not.toHaveBeenCalled();
   });
 
   // ─── TRANSACTIONS_IMPORTED ───────────────────────────────────────────────

@@ -107,7 +107,9 @@ describe('GET /api/notifications/summary', () => {
   });
 
   it('returns notification summary counts', async () => {
-    mockPrisma.plaidTransaction.count.mockResolvedValueOnce(3);
+    mockPrisma.plaidTransaction.count
+      .mockResolvedValueOnce(3)  // plaidClassifiedCount
+      .mockResolvedValueOnce(0); // plaidFailedCount
     mockPrisma.stagedImportRow.count.mockResolvedValueOnce(2);
     mockPrisma.plaidItem.findMany.mockResolvedValueOnce([
       { id: 'pi-1', institutionName: 'Chase', status: 'LOGIN_REQUIRED' },
@@ -137,10 +139,46 @@ describe('GET /api/notifications/summary', () => {
     // Check PLAID_ACTION_REQUIRED signal
     const plaidSignal = res._body.signals.find((s: any) => s.type === 'PLAID_ACTION_REQUIRED');
     expect(plaidSignal).toBeDefined();
+    // No failed classifications in this scenario
+    expect(res._body.signals.find((s: any) => s.type === 'PLAID_CLASSIFICATION_FAILED')).toBeUndefined();
+  });
+
+  it('includes a distinct PLAID_CLASSIFICATION_FAILED signal, counted separately from PENDING_REVIEW', async () => {
+    mockPrisma.plaidTransaction.count
+      .mockResolvedValueOnce(3)  // plaidClassifiedCount
+      .mockResolvedValueOnce(2); // plaidFailedCount
+    mockPrisma.stagedImportRow.count.mockResolvedValueOnce(0);
+    mockPrisma.plaidItem.findMany.mockResolvedValueOnce([]);
+    mockPrisma.insight.count.mockResolvedValueOnce(0);
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({
+      onboardingProgress: null,
+      onboardingCompletedAt: new Date(),
+    });
+    mockPrisma.account.count.mockResolvedValueOnce(0);
+    mockPrisma.transaction.findFirst.mockResolvedValueOnce(null);
+
+    const req = makeReq();
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const failedSignal = res._body.signals.find((s: any) => s.type === 'PLAID_CLASSIFICATION_FAILED');
+    expect(failedSignal).toBeDefined();
+    expect(failedSignal.count).toBe(2);
+    expect(failedSignal.severity).toBe('warning');
+    expect(failedSignal.isNew).toBe(true);
+    // PENDING_REVIEW stays scoped to CLASSIFIED-only count (3), not inflated by FAILED (2)
+    const reviewSignal = res._body.signals.find((s: any) => s.type === 'PENDING_REVIEW');
+    expect(reviewSignal.count).toBe(3);
+    // totalUnseen sums both distinct signals: 3 (review) + 2 (failed) = 5
+    expect(res._body.totalUnseen).toBe(5);
   });
 
   it('returns empty counts when no notifications', async () => {
-    mockPrisma.plaidTransaction.count.mockResolvedValueOnce(0);
+    mockPrisma.plaidTransaction.count
+      .mockResolvedValueOnce(0)  // plaidClassifiedCount
+      .mockResolvedValueOnce(0); // plaidFailedCount
     mockPrisma.stagedImportRow.count.mockResolvedValueOnce(0);
     mockPrisma.plaidItem.findMany.mockResolvedValueOnce([]);
     mockPrisma.insight.count.mockResolvedValueOnce(0);

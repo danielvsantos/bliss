@@ -179,6 +179,7 @@ This module handles secure connection establishment, real-time webhook processin
 See [`10-ai-classification-and-review.md`](./10-ai-classification-and-review.md) for full documentation of:
 - `GET /api/plaid/transactions` — list transactions for review
 - `PUT /api/plaid/transactions/:id` — promote, skip, re-queue, category override, investment enrichment
+- `POST /api/plaid/transactions/:id/retry` — retry classification for a `FAILED` row
 - `POST /api/plaid/transactions/bulk-promote` — bulk promote above confidence threshold
 
 ### 10a. Quick Seed Interview
@@ -291,7 +292,9 @@ The `/api/plaid/webhook` endpoint does **not** require CORS headers — it is a 
 
 ### Hash-Based Duplicate Detection
 
-The `PUT /api/plaid/transactions/:id` promote path and `POST /api/plaid/transactions/bulk-promote` both apply hash-based duplicate detection in addition to `externalId` dedup. A SHA-256 hash of `(isoDate + normalizedDescription + amount + accountId)` is computed and checked against existing `Transaction` records. This catches manual-entry duplicates that `externalId`-based dedup cannot detect (manually entered transactions have `externalId = null`). When a hash collision is found, the promotion is skipped and the PlaidTransaction is marked as a duplicate.
+`POST /api/plaid/transactions/bulk-promote` and `plaidProcessorWorker`'s own classification pipeline apply hash-based duplicate detection in addition to `externalId` dedup. A SHA-256 hash of `(isoDate + normalizedDescription + amount + accountId)` is computed and checked against existing `Transaction` records. This catches manual-entry duplicates that `externalId`-based dedup cannot detect (manually entered transactions have `externalId = null`). When a hash collision is found, the promotion is skipped and the PlaidTransaction is marked as a duplicate.
+
+**⚠️ `PUT /api/plaid/transactions/:id` (single-row promote) does NOT run this check** — it was deliberately removed, on the assumption that the worker already deduped the row at classification time. That assumption does not hold for `FAILED` rows (they never reached the check before failing) or for `POST /api/plaid/transactions/:id/retry` (routes back through the worker pipeline, so it *is* covered) — the gap is specifically the single-row Promote endpoint, and specifically for rows that skipped the worker's own dedup pass. `computeTransactionHash()` is also an exact match only (date + normalized description + amount + account) — a hand-typed description that differs at all from Plaid's raw string won't be caught by any path. See `docs/specs/backend/08-plaid-integration.md#classification-failure--retry` for the FAILED-row-specific risk. Re-enabling/extending dedup on the single-row promote endpoint is tracked as a separate follow-up, not fixed here.
 
 ---
 

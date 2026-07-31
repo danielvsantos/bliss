@@ -15,6 +15,7 @@ describe('StatusBadge', () => {
     'low-confidence',
     'duplicate',
     'potential-duplicate',
+    'classification-failed',
   ];
 
   it('renders a badge for each status', () => {
@@ -53,5 +54,10 @@ describe('StatusBadge', () => {
   it('renders potential-duplicate with warning color', () => {
     render(<StatusBadge status="potential-duplicate" />);
     expect(screen.getByText('review.possibleDup')).toHaveClass('text-warning');
+  });
+
+  it('renders classification-failed with destructive color', () => {
+    render(<StatusBadge status="classification-failed" />);
+    expect(screen.getByText('review.classificationFailed')).toHaveClass('text-destructive');
   });
 });

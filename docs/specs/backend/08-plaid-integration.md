@@ -167,7 +167,10 @@ Takes the raw staged data and applies business logic.
 7. **Phase 1 Hold-Back (Quick Seed — INITIAL_SYNC only)**: When `allowSeedHeld = true`, rows that do **not** meet auto-promote criteria AND have `classificationSource ≠ EXACT_MATCH` are held with `seedHeld = true` for the Quick Seed interview. `EXACT_MATCH` results below threshold go straight to `CLASSIFIED`.
 8. **Staged**: All other classified rows remain with `promotionStatus = 'CLASSIFIED'` for manual review.
 9. **Rate-limit handling**: If `geminiService.classifyTransaction()` exhausts retries due to a 429 (quota), the row is **not** marked `processed = true` — it is left eligible for the next job run. After Phase 2, if any rows were deferred, the worker re-queues itself with a 60-second delay.
-10. **Completion**: Emits `TRANSACTIONS_IMPORTED` to trigger the analytics chain.
+10. **Non-rate-limit classification failure (two-phase retry)**: Any other classification error (e.g. an LLM call timing out — see `baseAdapter.js`'s hard 5-second timeout) is handled by `handleClassificationFailure()`, shared by both the Phase 1 and Phase 2 failure paths:
+    - **First failure** (`classificationRetryCount < 1`): the row is left `processed = false`, `promotionStatus = 'PENDING'` — invisible to the user — with `classificationRetryCount` incremented and `processingError` recorded. The end-of-job re-queue (60-second delay) picks it up again, same mechanism as the rate-limit path.
+    - **Second failure** (`classificationRetryCount >= 1`): the row goes terminal — `processed = true`, `promotionStatus = 'FAILED'`, `processingError` set to the latest message. This is now visible in Transaction Review and counted in the "needs attention" badge. Without this two-phase handling, a transient failure would previously leave the row `processed = true` with `promotionStatus` still `'PENDING'` — invisible to every read path (Review's default `CLASSIFIED` filter, the notifications badge, and this same `allPending` query) and never retried.
+11. **Completion**: Emits `TRANSACTIONS_IMPORTED` to trigger the analytics chain.
 
 ---
 
@@ -181,10 +184,11 @@ Takes the raw staged data and applies business logic.
 | `aiConfidence` | Classification confidence (0.0–1.0) |
 | `classificationSource` | `'EXACT_MATCH'` / `'VECTOR_MATCH'` / `'VECTOR_MATCH_GLOBAL'` / `'LLM'` / `'USER_OVERRIDE'` |
 | `classificationReasoning` | Free-text reasoning string returned by the Gemini LLM (null for EXACT_MATCH, VECTOR_MATCH, and VECTOR_MATCH_GLOBAL) |
-| `promotionStatus` | `'PENDING'` / `'CLASSIFIED'` / `'PROMOTED'` / `'SKIPPED'` |
+| `promotionStatus` | `'PENDING'` / `'CLASSIFIED'` / `'PROMOTED'` / `'SKIPPED'` / `'FAILED'` |
 | `seedHeld` | `true` while the row is held for the Quick Seed interview. **Only set during `INITIAL_SYNC`** (`allowSeedHeld = true`). Condition: `confidence < autoPromoteThreshold` AND `classificationSource ≠ EXACT_MATCH`. Cleared by `confirm-seeds` (on confirm) or bulk `updateMany` (on exclude). |
 | `requiresEnrichment` | `true` for investment transactions that need ticker/qty/price before promotion |
 | `enrichmentType` | `'INVESTMENT'` when requiresEnrichment is true |
+| `classificationRetryCount` | `Int`, default `0`. Silent auto-retries attempted before the row goes terminal (`FAILED`). Manual Retry (see below) resets it to `1`, not `0` — a repeat failure after a manual retry goes straight to `FAILED` instead of silently re-queuing another invisible retry. |
 
 ### Bank Category Hint
 
@@ -212,6 +216,21 @@ For each classified `PlaidTransaction`:
 - **429 rate limit** → row left with `processed = false`, `promotionStatus = 'PENDING'`. Worker re-queues itself with a 60-second delay to retry.
 
 **Logging**: `logger.warn()` is emitted when auto-promote is eligible but `localAccount` is null.
+
+### Classification Failure & Retry
+
+Any transaction that exhausts one silent auto-retry (see step 10 above) lands in the terminal `promotionStatus = 'FAILED'` state, distinct from `'PENDING'`. This is visible in Transaction Review (`GET /api/plaid/transactions?promotionStatus=FAILED`, plus a `failed` count in the endpoint's `summary`) and counted in the `PLAID_CLASSIFICATION_FAILED` notification signal (`GET /api/notifications/summary`).
+
+**Manual retry** — `POST /api/plaid/transactions/:id/retry`:
+- Validates tenant ownership and that `promotionStatus === 'FAILED'` (409 otherwise).
+- Resets the row: `processed = false`, `promotionStatus = 'PENDING'`, `processingError = null`, `classificationRetryCount = 1`.
+- Produces a `PLAID_TRANSACTION_RETRY` event (`eventSchedulerWorker` routes it to the `plaid-processing` queue with no delay — user-initiated, unlike the worker's own 60-second silent-retry delay).
+- Returns `202 Accepted` immediately; the actual reclassification happens asynchronously when `plaidProcessorWorker` picks up the re-queued job. Follows the project convention of routes validating + enqueuing rather than doing synchronous work.
+- Because `classificationRetryCount` is reset to `1` (not `0`), a repeat failure on the retried attempt goes straight back to `FAILED` — a user-initiated retry always resolves to a new terminal state, never back to an invisible wait.
+
+**Manual categorize-and-promote** — a `FAILED` row can also be resolved without retrying classification: `PUT /api/plaid/transactions/:id` with a `suggestedCategoryId` and `promotionStatus: 'PROMOTED'` works identically to promoting a `CLASSIFIED` row (the endpoint only blocks rows already `promotionStatus === 'PROMOTED'`, not `FAILED`).
+
+**⚠️ Duplicate-detection gap on the promote path**: hash-based duplicate detection (`checkHashDuplicate()`) only runs inside `plaidProcessorWorker`'s classification pipeline. The single-row promote endpoint (`PUT /api/plaid/transactions/:id`) does not re-run it, on the assumption the worker already deduped — an assumption that does not hold for `FAILED` rows, which never reached that check before failing, or for hand-typed descriptions that don't exactly match Plaid's raw string (`computeTransactionHash()` requires an exact match). Resolving `FAILED` rows via Promote or Retry can therefore create a duplicate if the user already entered the same transaction manually. Not fixed as part of this capability — tracked as a separate follow-up (re-enabling/extending dedup on the promote endpoint).
 
 ### Gemini Resilience
 
@@ -257,8 +276,9 @@ See [`docs/specs/api/10-ai-classification-and-review.md`](../api/10-ai-classific
 - **Category override** — `PUT /api/plaid/transactions/:id` with `suggestedCategoryId`
 - **Skip** — `PUT /api/plaid/transactions/:id` with `promotionStatus: 'SKIPPED'`
 - **Re-queue** — `PUT /api/plaid/transactions/:id` with `promotionStatus: 'CLASSIFIED'` (only from `SKIPPED`)
-- **Promote** — `PUT /api/plaid/transactions/:id` with `promotionStatus: 'PROMOTED'`, optional investment fields
+- **Promote** — `PUT /api/plaid/transactions/:id` with `promotionStatus: 'PROMOTED'`, optional investment fields (works from `CLASSIFIED` or `FAILED`)
 - **Bulk promote** — `POST /api/plaid/transactions/bulk-promote` (excludes `requiresEnrichment: true` rows)
+- **Retry** — `POST /api/plaid/transactions/:id/retry` (only from `FAILED`) — see "Classification Failure & Retry" above
 
 ---
 

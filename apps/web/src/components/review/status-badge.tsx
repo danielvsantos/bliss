@@ -9,6 +9,7 @@ const statusStyles: Record<TxStatus, string> = {
   'low-confidence': 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10',
   'duplicate': 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10',
   'potential-duplicate': 'bg-warning/10 text-warning border-warning/20 hover:bg-warning/10',
+  'classification-failed': 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10',
 };
 
 const statusLabelKeys: Record<TxStatus, string> = {
@@ -18,6 +19,7 @@ const statusLabelKeys: Record<TxStatus, string> = {
   'low-confidence': 'review.uncertain',
   'duplicate': 'review.duplicate',
   'potential-duplicate': 'review.possibleDup',
+  'classification-failed': 'review.classificationFailed',
 };
 
 interface StatusBadgeProps {

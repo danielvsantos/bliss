@@ -58,6 +58,7 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 | `SMART_IMPORT_COMMIT` | smart-import | smartImportWorker (commit path) |
 | `PLAID_INITIAL_SYNC`, `PLAID_SYNC_UPDATES` | plaid-sync | plaidSyncWorker |
 | `PLAID_HISTORICAL_BACKFILL` | plaid-sync | plaidSyncWorker |
+| `PLAID_TRANSACTION_RETRY` | plaid-processing | plaidProcessorWorker (no delay — user-initiated) |
 | `MANUAL_PORTFOLIO_PRICE_UPDATED` | portfolio | portfolioWorker |
 | `MANUAL_TRANSACTION_MODIFIED`, `MANUAL_TRANSACTION_CREATED` | portfolio | portfolioWorker |
 | `TRANSACTIONS_IMPORTED` | portfolio | portfolioWorker |

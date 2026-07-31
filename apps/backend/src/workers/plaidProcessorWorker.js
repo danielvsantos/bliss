@@ -226,6 +226,39 @@ async function processRowWithResult(plaidTx, result, ctx) {
 }
 
 /**
+ * Record a classification failure for a row: one silent auto-retry, then terminal FAILED.
+ * First failure leaves processed=false/promotionStatus=PENDING so the row is picked up again
+ * by the next job run (see the end-of-job requeue below) — invisible to the user. Second
+ * failure marks the row processed=true/promotionStatus='FAILED', surfacing it in Review.
+ * Mutates ctx.counters in-place.
+ */
+async function handleClassificationFailure(row, errorMessage, ctx) {
+    const { counters } = ctx;
+    const truncatedError = errorMessage.substring(0, 500);
+
+    if ((row.classificationRetryCount || 0) < 1) {
+        await prisma.plaidTransaction.update({
+            where: { id: row.id },
+            data: {
+                classificationRetryCount: { increment: 1 },
+                processingError: truncatedError,
+            },
+        });
+        counters.totalRetryScheduled++;
+    } else {
+        await prisma.plaidTransaction.update({
+            where: { id: row.id },
+            data: {
+                processed: true,
+                promotionStatus: 'FAILED',
+                processingError: truncatedError,
+            },
+        });
+        counters.totalFailed++;
+    }
+}
+
+/**
  * Classify a row via the 4-tier waterfall, then stage it.
  * Used in Phase 2 where each row gets its own classify() call.
  */
@@ -257,14 +290,7 @@ async function classifyAndStageRow(plaidTx, ctx) {
         logger.warn(
             `classifyAndStageRow failed for PlaidTransaction ${plaidTx.id} ("${plaidTx.name}"): ${classifyError.message}`
         );
-        await prisma.plaidTransaction.update({
-            where: { id: plaidTx.id },
-            data: {
-                processed: true,
-                processingError: classifyError.message.substring(0, 500),
-            },
-        });
-        counters.totalFailed++;
+        await handleClassificationFailure(plaidTx, classifyError.message, ctx);
     }
 }
 
@@ -328,6 +354,7 @@ const startPlaidProcessorWorker = () => {
                 totalAutoPromoted: 0,
                 totalFailed: 0,
                 totalRateLimited: 0, // rows skipped due to 429 — left as processed=false for retry
+                totalRetryScheduled: 0, // rows given their one silent auto-retry — left as processed=false
                 autoPromotedAccountIds: new Set(),
                 autoPromotedMinYear: null,
                 autoPromotedMinMonth: null,
@@ -341,6 +368,7 @@ const startPlaidProcessorWorker = () => {
                     id: true, name: true, merchantName: true,
                     amount: true, date: true, isoCurrencyCode: true,
                     plaidAccountId: true, plaidTransactionId: true, category: true,
+                    classificationRetryCount: true,
                 },
             });
 
@@ -459,11 +487,7 @@ const startPlaidProcessorWorker = () => {
                 } catch (classifyError) {
                     logger.warn(`Phase 1 classify failed for "${normalizedName}": ${classifyError.message}`);
                     for (const row of rows) {
-                        await prisma.plaidTransaction.update({
-                            where: { id: row.id },
-                            data: { processed: true, processingError: classifyError.message.substring(0, 500) },
-                        });
-                        counters.totalFailed++;
+                        await handleClassificationFailure(row, classifyError.message, ctx);
                     }
                 }
             }
@@ -493,6 +517,7 @@ const startPlaidProcessorWorker = () => {
                     id: true, name: true, merchantName: true,
                     amount: true, date: true, isoCurrencyCode: true,
                     plaidAccountId: true, plaidTransactionId: true, category: true,
+                    classificationRetryCount: true,
                 },
             });
 
@@ -520,15 +545,17 @@ const startPlaidProcessorWorker = () => {
                 `${counters.totalClassified} classified, ` +
                 `${counters.totalAutoPromoted} auto-promoted, ` +
                 `${counters.totalFailed} failed, ` +
+                `${counters.totalRetryScheduled} scheduled for silent retry, ` +
                 `${counters.totalRateLimited} deferred (rate limited).`
             );
 
-            // ─── Re-queue if rows were skipped due to Gemini rate limits ─────────
-            // Rate-limited rows have processed=false still — a fresh job will pick them up.
-            // Delay 60s to let the quota window reset before the next run.
-            if (counters.totalRateLimited > 0) {
+            // ─── Re-queue if rows were skipped due to rate limits or given their one silent retry ─
+            // Both leave processed=false still — a fresh job will pick them up.
+            // Delay 60s to let a transient blip (quota window, slow LLM call) clear before retrying.
+            if (counters.totalRateLimited > 0 || counters.totalRetryScheduled > 0) {
                 logger.info(
-                    `Re-queuing PlaidItem ${plaidItemId} in 60s to retry ${counters.totalRateLimited} rate-limited rows`
+                    `Re-queuing PlaidItem ${plaidItemId} in 60s to retry ${counters.totalRateLimited} rate-limited ` +
+                    `and ${counters.totalRetryScheduled} failed row(s)`
                 );
                 const retryQueue = getPlaidProcessingQueue();
                 await retryQueue.add('PLAID_SYNC_COMPLETE', { plaidItemId, source }, { delay: 60_000 });
@@ -593,4 +620,4 @@ const startPlaidProcessorWorker = () => {
     return worker;
 };
 
-module.exports = { startPlaidProcessorWorker, normalizeDescription, buildFrequencyMap };
+module.exports = { startPlaidProcessorWorker, normalizeDescription, buildFrequencyMap, handleClassificationFailure };

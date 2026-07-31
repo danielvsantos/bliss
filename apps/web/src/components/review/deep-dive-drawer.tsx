@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, RotateCw } from 'lucide-react';
 import { StatusBadge } from './status-badge';
 import { AIAnalysisPanel } from './ai-analysis-panel';
 import { InvestmentEnrichmentForm } from './investment-enrichment-form';
@@ -47,6 +47,19 @@ interface DeepDiveDrawerProps {
    */
   onResetToPending?: () => void;
   isSaving?: boolean;
+  /** Retries classification for a FAILED PlaidTransaction. Only shown when
+   *  item.originalPlaidTx.promotionStatus === 'FAILED'. */
+  onRetry?: () => void;
+  isRetrying?: boolean;
+}
+
+/** Maps a raw backend processingError message to an i18n key with user-friendly copy. */
+function getHumanizedErrorKey(message: string | null | undefined): string {
+  if (!message) return 'review.errorGeneric';
+  const lower = message.toLowerCase();
+  if (lower.includes('timed out') || lower.includes('timeout')) return 'review.errorTimedOut';
+  if (lower.includes('rate limit')) return 'review.errorRateLimited';
+  return 'review.errorGeneric';
 }
 
 export interface DrawerSaveData {
@@ -73,6 +86,8 @@ export function DeepDiveDrawer({
   onSkip,
   onResetToPending,
   isSaving,
+  onRetry,
+  isRetrying,
 }: DeepDiveDrawerProps) {
   const { t } = useTranslation();
   const { data: tags = [] } = useTags();
@@ -273,6 +288,30 @@ export function DeepDiveDrawer({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {/* Classification failure — retry or categorize manually below */}
+          {item.originalPlaidTx?.promotionStatus === 'FAILED' && (
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-md bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{t(getHumanizedErrorKey(item.originalPlaidTx.processingError))}</span>
+              </div>
+              {onRetry && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1 shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={onRetry}
+                  disabled={isRetrying}
+                >
+                  {isRetrying
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <RotateCw className="h-3.5 w-3.5" />}
+                  {t('review.retryClassification')}
+                </Button>
+              )}
             </div>
           )}
 

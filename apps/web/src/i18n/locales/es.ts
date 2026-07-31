@@ -1264,6 +1264,15 @@ const es = {
     confirming: "Confirmando...",
     pageOf: "Página {{current}} de {{total}}",
     unknown: "Desconocido",
+    // Fallo de clasificación y reintento
+    classificationFailed: "Clasificación fallida",
+    retryClassification: "Reintentar clasificación",
+    failedTransactionsBanner: "{{count}} transacción(es) con clasificación fallida",
+    retrySuccess: "Reintento iniciado",
+    retryError: "No se pudo iniciar el reintento",
+    errorTimedOut: "La clasificación de IA superó el tiempo de espera — vuelve a intentarlo o clasifica manualmente",
+    errorRateLimited: "Se alcanzó el límite de solicitudes del proveedor de IA — vuelve a intentarlo en breve",
+    errorGeneric: "La clasificación de IA falló — vuelve a intentarlo o clasifica manualmente",
   },
 
   currencyRates: {

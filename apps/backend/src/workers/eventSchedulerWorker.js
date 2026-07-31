@@ -5,6 +5,7 @@ const { EVENTS_QUEUE_NAME, enqueueEvent } = require('../queues/eventsQueue');
 const { getPortfolioQueue } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
+const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
 const { scheduleDebouncedJob } = require('../services/debounceService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
@@ -116,6 +117,21 @@ const processEventJob = async (job) => {
                 }
                 logger.info(`[Event] Scheduling Plaid historical backfill for Item ${plaidItemId}, fromDate=${fromDate}`);
                 await getPlaidSyncQueue().add('plaid-sync-job', { plaidItemId, tenantId, source: 'HISTORICAL_BACKFILL', fromDate });
+                break;
+            }
+
+            case 'PLAID_TRANSACTION_RETRY': {
+                const { plaidItemId, tenantId } = data;
+                if (!plaidItemId) {
+                    logger.warn('PLAID_TRANSACTION_RETRY event is missing plaidItemId.');
+                    return;
+                }
+                // No delay — user-initiated, unlike the worker's own 60s silent-retry re-queue.
+                // Reuses the same processing queue/worker entry point; the worker re-fetches
+                // all processed:false/PENDING rows for the item, which now includes the
+                // manually-reset row.
+                logger.info(`[Event] Scheduling manual Plaid transaction retry for Item ${plaidItemId}`);
+                await getPlaidProcessingQueue().add('PLAID_TRANSACTION_RETRY', { plaidItemId, tenantId, source: 'MANUAL_RETRY' });
                 break;
             }
 
