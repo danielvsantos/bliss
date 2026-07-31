@@ -7,7 +7,7 @@ import { withAuth } from '../../../utils/withAuth.js';
 
 /**
  * GET /api/notifications/summary
- * Aggregates 4 signals from existing tables. Pure read — no notification table.
+ * Aggregates 5 signals from existing tables. Pure read — no notification table.
  *
  * PUT /api/notifications/summary
  * Marks notifications as seen (updates User.lastNotificationSeenAt).
@@ -37,6 +37,7 @@ export default withAuth(async function handler(req, res) {
         tenant,
         accountCount,
         hasTransaction,
+        plaidFailedCount,
       ] = await Promise.all([
         // 1. Plaid transactions awaiting review
         prisma.plaidTransaction.count({
@@ -80,6 +81,13 @@ export default withAuth(async function handler(req, res) {
           where: { tenantId: user.tenantId },
           select: { id: true },
         }),
+        // 8. Plaid transactions that failed classification (need retry or manual categorize)
+        prisma.plaidTransaction.count({
+          where: {
+            plaidItem: { tenantId: user.tenantId },
+            promotionStatus: 'FAILED',
+          },
+        }),
       ]);
 
       const totalReviewCount = plaidClassifiedCount + pendingImportCount;
@@ -109,7 +117,20 @@ export default withAuth(async function handler(req, res) {
         });
       }
 
-      // Signal 3: Onboarding incomplete (never "new" — persistent state)
+      // Signal 3: Plaid transactions that failed classification (kept distinct from
+      // PENDING_REVIEW so a data-loss risk isn't silently folded into a routine count)
+      if (plaidFailedCount > 0) {
+        signals.push({
+          type: 'PLAID_CLASSIFICATION_FAILED',
+          count: plaidFailedCount,
+          label: `${plaidFailedCount} transaction${plaidFailedCount !== 1 ? 's' : ''} failed classification`,
+          href: '/agents/review?source=plaid',
+          severity: 'warning',
+          isNew: true,
+        });
+      }
+
+      // Signal 4: Onboarding incomplete (never "new" — persistent state)
       if (tenant && !tenant.onboardingCompletedAt) {
         const checklist = tenant.onboardingProgress?.checklist;
         if (checklist) {
@@ -132,7 +153,7 @@ export default withAuth(async function handler(req, res) {
         }
       }
 
-      // Signal 4: New insights
+      // Signal 5: New insights
       if (newInsightCount > 0) {
         signals.push({
           type: 'NEW_INSIGHTS',

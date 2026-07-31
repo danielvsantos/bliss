@@ -57,7 +57,7 @@ export default withAuth(async function handler(req, res) {
       return res.status(StatusCodes.OK).json({
         transactions: [],
         pagination: { page, limit, total: 0, totalPages: 0 },
-        summary: { classified: 0, pending: 0, promoted: 0, skipped: 0 },
+        summary: { classified: 0, pending: 0, promoted: 0, skipped: 0, failed: 0 },
       });
     }
 
@@ -143,17 +143,20 @@ export default withAuth(async function handler(req, res) {
       ? [plaidItemId]
       : tenantPlaidItemIds;
     const summaryWhere = { plaidItemId: { in: summaryPlaidIds } };
-    const [classifiedCount, pendingCount, promotedCount, skippedCount, seedHeldCount, categoryBreakdownRaw] = await Promise.all([
+    const [classifiedCount, pendingCount, promotedCount, skippedCount, failedCount, seedHeldCount, categoryBreakdownRaw] = await Promise.all([
       prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'CLASSIFIED' } }),
       prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'PENDING', seedHeld: false } }),
       prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'PROMOTED' } }),
       prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'SKIPPED' } }),
+      prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'FAILED' } }),
       prisma.plaidTransaction.count({ where: { ...summaryWhere, seedHeld: true } }),
-      // Category breakdown across ALL CLASSIFIED transactions (not just the current page).
-      // Drives grouped-view headers with accurate cross-page counts.
+      // Category breakdown across ALL CLASSIFIED + FAILED transactions (not just the
+      // current page). Drives grouped-view headers with accurate cross-page counts.
+      // FAILED is included so the (always-uncategorized) failed backlog surfaces a
+      // group header/count even when there happen to be zero CLASSIFIED-uncategorized rows.
       prisma.plaidTransaction.groupBy({
         by: ['suggestedCategoryId'],
-        where: { ...summaryWhere, promotionStatus: 'CLASSIFIED' },
+        where: { ...summaryWhere, promotionStatus: { in: ['CLASSIFIED', 'FAILED'] } },
         _count: { id: true },
         orderBy: { _count: { id: 'desc' } },
       }),
@@ -211,6 +214,7 @@ export default withAuth(async function handler(req, res) {
         pending: pendingCount,
         promoted: promotedCount,
         skipped: skippedCount,
+        failed: failedCount,
         seedHeld: seedHeldCount,
         categoryBreakdown,
       },

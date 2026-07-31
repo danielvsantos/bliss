@@ -57,6 +57,20 @@ export function useUpdatePlaidTransaction() {
   });
 }
 
+// --- Retry classification for a FAILED PlaidTransaction ---
+
+export function useRetryPlaidTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.retryPlaidTransaction(id),
+    onSuccess: () => {
+      // Row goes back to PENDING until the requeued job completes — no new
+      // Transaction is created here, so ['transactions'] doesn't need invalidating.
+      queryClient.invalidateQueries({ queryKey: plaidReviewKeys.all });
+    },
+  });
+}
+
 // --- Bulk promote high-confidence transactions ---
 
 export function useBulkPromotePlaidTransactions() {

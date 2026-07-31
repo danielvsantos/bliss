@@ -1270,6 +1270,15 @@ const fr = {
     confirming: "Confirmation...",
     pageOf: "Page {{current}} sur {{total}}",
     unknown: "Inconnu",
+    // Échec de classification et nouvelle tentative
+    classificationFailed: "Échec de la classification",
+    retryClassification: "Réessayer la classification",
+    failedTransactionsBanner: "{{count}} transaction(s) en échec de classification",
+    retrySuccess: "Nouvelle tentative lancée",
+    retryError: "Échec du lancement de la nouvelle tentative",
+    errorTimedOut: "Le délai de classification IA a expiré — réessayez ou classez manuellement",
+    errorRateLimited: "Limite de requêtes du fournisseur IA atteinte — réessayez sous peu",
+    errorGeneric: "La classification IA a échoué — réessayez ou classez manuellement",
   },
 
   currencyRates: {

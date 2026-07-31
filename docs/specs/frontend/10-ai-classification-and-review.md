@@ -164,7 +164,7 @@ State: `pendingApproveItem` holds the row the user clicked. `pendingApproveMatch
 
 ## Status Badge: `components/review/status-badge.tsx`
 
-Four status types using design system tokens:
+Status types using design system tokens:
 
 | Status | Design Token | When applied |
 |---|---|---|
@@ -172,11 +172,13 @@ Four status types using design system tokens:
 | `new-merchant` | `bg-brand-primary/10 text-brand-primary border-brand-primary/20` | No transaction history found for this merchant |
 | `needs-enrichment` | `bg-warning/10 text-warning border-warning/20` | `requiresEnrichment === true` |
 | `low-confidence` | `bg-destructive/10 text-destructive border-destructive/20` | `confidence < reviewThreshold` |
+| `classification-failed` | `bg-destructive/10 text-destructive border-destructive/20` | `PlaidTransaction.promotionStatus === 'FAILED'` — all classification tiers errored out (checked first, before enrichment/confidence) |
 
 **Status mapping logic**:
 ```typescript
 const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND', 'MANUAL']);
-if (item.requiresEnrichment) → 'needs-enrichment'
+if (tx.promotionStatus === 'FAILED') → 'classification-failed'
+else if (item.requiresEnrichment) → 'needs-enrichment'
 else if (item.confidence < reviewThreshold) → 'low-confidence'
 else if (noMerchantHistory) → 'new-merchant'
 else → 'ai-approved'
@@ -205,6 +207,15 @@ Card section labeled **✨ BLISS ANALYSIS**:
 | Source | `Badge` showing `EXACT_MATCH` / `VECTOR_MATCH` / `VECTOR_MATCH_GLOBAL` / `LLM` / `USER_OVERRIDE` |
 | Plaid Category | `plaidHint` from Plaid `personal_finance_category` (Plaid transactions only) |
 | Why I chose this | `classificationReasoning` text block (LLM results only; hidden for EXACT_MATCH, VECTOR_MATCH, and VECTOR_MATCH_GLOBAL) |
+
+### B.1 Classification Failure Banner (FAILED Plaid rows only)
+
+Shown when `item.originalPlaidTx?.promotionStatus === 'FAILED'`, positioned above the AI Analysis panel — the first thing the user sees when opening a failed row.
+
+- Destructive-token banner (`bg-destructive/10 border-destructive/20 text-destructive`) with an `AlertTriangle` icon.
+- **Humanized error text**, not the raw `processingError` backend message. `getHumanizedErrorKey()` substring-matches the raw message and maps it to one of three i18n keys: `review.errorTimedOut` (message contains "timed out"/"timeout"), `review.errorRateLimited` (contains "rate limit"), or `review.errorGeneric` (fallback). E.g. `"Gemini classification timed out after 5000ms"` renders as *"AI classification timed out — try again or categorize manually"*.
+- **Retry button** (`RotateCw` icon, `review.retryClassification` label) — calls the `onRetry` prop, which posts to `POST /api/plaid/transactions/:id/retry` via `useRetryPlaidTransaction()`. Shows a spinner and disables while `isRetrying`.
+- Manual categorize-and-promote needs no special-case code: a `FAILED` row is just a row with `categoryId: null` — once the user picks a category in the header `Select` and clicks **Save & Promote**, the existing `onSaveAndPromote` → `PUT /api/plaid/transactions/:id` path handles it identically to a `CLASSIFIED` row (the endpoint only blocks rows already `promotionStatus === 'PROMOTED'`).
 
 ### C. Investment Enrichment Form: `components/review/investment-enrichment-form.tsx`
 
@@ -329,12 +340,26 @@ Shown on `/dashboard` when `classified + importPending > 0`:
 | `usePlaidTransactions` | `hooks/use-plaid-review.ts` | Fetch CLASSIFIED PlaidTransactions (limit: 500) |
 | `useUpdatePlaidTransaction` | `hooks/use-plaid-review.ts` | Promote / skip / re-queue / category override |
 | `useBulkPromotePlaidTransactions` | `hooks/use-plaid-review.ts` | Bulk promote — accepts `transactionIds`, `overrideCategoryId`, `categoryId`, `plaidItemId`, `minConfidence` |
+| `useRetryPlaidTransaction` | `hooks/use-plaid-review.ts` | Retries a `FAILED` PlaidTransaction — `POST /api/plaid/transactions/:id/retry`, invalidates `plaidReviewKeys.all` on success |
 | `usePendingImports` | `hooks/use-imports.ts` | Fetch READY imports with pending rows |
 | `useStagedImport` | `hooks/use-imports.ts` | Fetch staged rows for a single import |
 | `useUpdateImportRow` | `hooks/use-imports.ts` | Confirm / skip / category override on import row |
 | `useCommitImport` | `hooks/use-imports.ts` | Commit import → creates Transaction records |
 | `useMerchantHistory` | `hooks/use-merchant-history.ts` | Fetch recent transactions for same merchant |
 | `useMetadata` | `hooks/use-metadata.ts` | Categories, accounts for dropdowns |
+
+---
+
+## Classification Failure Visibility & Retry
+
+`FAILED` PlaidTransactions (all classification tiers errored out after one silent worker-side retry — see `docs/specs/backend/08-plaid-integration.md`) are surfaced in Transaction Review rather than hidden by the default `CLASSIFIED`-only filter:
+
+- The page fires a second, independently-parameterized `usePlaidTransactions({ promotionStatus: 'FAILED', ... })` query (same `plaidItemId` scoping as the main `CLASSIFIED` query, but unfiltered by category/uncategorized so the full failed backlog is always visible). Its results are merged into the same `plaidReviewItems` list consumed by both the grouped and flat views — `FAILED` rows land in the "Uncategorized" group since they never received a category suggestion.
+- The category-breakdown query backing the grouped view's headers (`GET /api/plaid/transactions` → `summary.categoryBreakdown`) includes both `CLASSIFIED` and `FAILED` rows, specifically so the Uncategorized group header/count appears even when there are zero CLASSIFIED-uncategorized rows to anchor it — otherwise a tenant whose only uncategorized rows are `FAILED` would see them silently dropped from the grouped view.
+- A destructive-styled banner ("N transaction(s) failed classification") appears in the page header next to the existing "Re-queue Skipped" button whenever `summary.failed > 0`. No bulk-resolve action is offered — retry is deliberately per-row, to avoid mass-retrying a burst of real outage-driven failures at once.
+- The "All Pending" tab badge/empty-state count includes the failed count (`plaidCount + importCount + (plaidSummary?.failed ?? 0)`) so a tenant whose only outstanding items are failures doesn't see a false "all caught up" state. The progress bar's completion percentage is intentionally left unaffected — failures are neither "pending" nor "done" in that sense.
+- **Row-level retry**: `tx-data-row.tsx` swaps the ✓ Approve icon for a `RotateCw` Retry icon when `item.status === 'classification-failed'` (there is no category yet to approve) — the Skip button remains available unchanged. `group-card.tsx`'s "Approve All" count excludes `classification-failed` items, since bulk-promote only ever targets `CLASSIFIED` rows and would otherwise overstate what the button actually promotes.
+- **Drawer retry**: see §B.1 above.
 
 ---
 

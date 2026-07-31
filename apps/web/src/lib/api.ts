@@ -875,6 +875,11 @@ class APIClient {
     return response.data;
   }
 
+  async retryPlaidTransaction(id: string): Promise<PlaidTransaction> {
+    const response = await this.client.post(`/api/plaid/transactions/${id}/retry`);
+    return response.data;
+  }
+
   // --- Quick Seed Interview ---
 
   async getPlaidSeeds(plaidItemId: string, limit?: number): Promise<SeedItem[]> {

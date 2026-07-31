@@ -54,7 +54,7 @@ if (typeof window.PointerEvent === 'undefined') {
 
 const emptyPlaidData = {
   transactions: [],
-  summary: { classified: 0, promoted: 0, skipped: 0, pending: 0, seedHeld: 0, categoryBreakdown: [] },
+  summary: { classified: 0, promoted: 0, skipped: 0, pending: 0, failed: 0, seedHeld: 0, categoryBreakdown: [] },
   pagination: { total: 0, totalPages: 1, page: 1, limit: 500 },
   accounts: [],
 };
@@ -71,6 +71,7 @@ describe('TransactionReviewPage', () => {
     );
     vi.mocked(UsePlaidReview.useUpdatePlaidTransaction).mockReturnValue(mockMutationResult());
     vi.mocked(UsePlaidReview.useBulkPromotePlaidTransactions).mockReturnValue(mockMutationResult());
+    vi.mocked(UsePlaidReview.useRetryPlaidTransaction).mockReturnValue(mockMutationResult());
 
     vi.mocked(UseImports.usePendingImports).mockReturnValue(
       mockQueryResult({ imports: [] }),
@@ -342,5 +343,82 @@ describe('TransactionReviewPage', () => {
     expect(updateRowMutate).toHaveBeenCalledTimes(1);
     const [{ data }] = updateRowMutate.mock.calls[0];
     expect(data.tags).toEqual(['Japan 2026']);
+  });
+
+  // ─── FAILED transactions — visibility & retry ────────────────────────────
+
+  const FAILED_TX = {
+    id: 'tx-failed-1',
+    plaidItemId: 'item-1',
+    plaidAccountId: 'acc-1',
+    plaidTransactionId: 'plaid-tx-failed-1',
+    name: 'PAGO CON TARJETA DE TASA',
+    merchantName: null,
+    amount: 100,
+    date: '2025-05-03',
+    isoCurrencyCode: 'USD',
+    promotionStatus: 'FAILED',
+    suggestedCategoryId: null,
+    aiConfidence: null,
+    classificationSource: null,
+    requiresEnrichment: false,
+    processingError: 'Gemini classification timed out after 5000ms',
+  };
+
+  /** Mocks usePlaidTransactions so the CLASSIFIED-scoped call and the
+   *  FAILED-scoped call (both fired by the page) return distinct data,
+   *  mirroring how the two independently-parameterized API calls behave
+   *  in the real app. */
+  function mockPlaidWithFailedRow() {
+    vi.mocked(UsePlaidReview.usePlaidTransactions).mockImplementation((params?: { promotionStatus?: string }) => {
+      if (params?.promotionStatus === 'FAILED') {
+        return mockQueryResult({
+          ...emptyPlaidData,
+          transactions: [FAILED_TX],
+          summary: { ...emptyPlaidData.summary, failed: 1 },
+        });
+      }
+      return mockQueryResult({
+        ...emptyPlaidData,
+        summary: { ...emptyPlaidData.summary, failed: 1 },
+      });
+    });
+  }
+
+  it('shows FAILED Plaid transactions with a classification-failed badge, not hidden by the CLASSIFIED-only filter', () => {
+    mockPlaidWithFailedRow();
+
+    renderPage();
+
+    // Failed-count banner in the page header is visible regardless of view mode
+    expect(screen.getByText('review.failedTransactionsBanner')).toBeInTheDocument();
+
+    // Switch to flat view so the row renders directly (grouped view requires
+    // expanding the Uncategorized category card first).
+    fireEvent.click(screen.getByText('Grouped'));
+
+    // Status badge label comes from statusLabelKeys['classification-failed'] = 'review.classificationFailed'
+    // (desktop + mobile row variants both render in jsdom)
+    expect(screen.getAllByText('review.classificationFailed').length).toBeGreaterThan(0);
+  });
+
+  it('clicking the retry action on a FAILED row calls the retry mutation with the transaction id', () => {
+    mockPlaidWithFailedRow();
+    const retryMutate = vi.fn();
+    vi.mocked(UsePlaidReview.useRetryPlaidTransaction).mockReturnValue(
+      mockMutationResult({ mutate: retryMutate }),
+    );
+
+    renderPage();
+    fireEvent.click(screen.getByText('Grouped'));
+
+    // Desktop and mobile row variants both render in jsdom (CSS media queries
+    // don't hide either in the test DOM) — same pattern as other tests in this
+    // file that pick [0] from getAllBy* for dual-rendered row elements.
+    fireEvent.click(screen.getAllByTitle('Retry classification')[0]);
+
+    expect(retryMutate).toHaveBeenCalledTimes(1);
+    const [id] = retryMutate.mock.calls[0];
+    expect(id).toBe('tx-failed-1');
   });
 });

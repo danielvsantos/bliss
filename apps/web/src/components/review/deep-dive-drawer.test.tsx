@@ -207,3 +207,55 @@ describe('DeepDiveDrawer — tags', () => {
     expect(payload.tagNames).toEqual([]);
   });
 });
+
+describe('DeepDiveDrawer — FAILED classification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(UseTags.useTags).mockReturnValue(mockQueryResult(TAGS));
+    vi.mocked(UseTags.useCreateTag).mockReturnValue(mockMutationResult());
+  });
+
+  const FAILED_ITEM: ReviewItem = {
+    ...PLAID_ITEM,
+    status: 'classification-failed',
+    categoryId: null,
+    promotionStatus: 'FAILED',
+    originalPlaidTx: {
+      ...PLAID_ITEM.originalPlaidTx!,
+      promotionStatus: 'FAILED',
+      processingError: 'Gemini classification timed out after 5000ms',
+    } as ReviewItem['originalPlaidTx'],
+  };
+
+  it('shows humanized error text for a timeout, not the raw backend message', () => {
+    renderDrawer({ item: FAILED_ITEM, onRetry: vi.fn() });
+
+    expect(screen.getByText('review.errorTimedOut')).toBeInTheDocument();
+    expect(screen.queryByText(/Gemini classification timed out/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the generic error key for an unrecognized message', () => {
+    const item = {
+      ...FAILED_ITEM,
+      originalPlaidTx: { ...FAILED_ITEM.originalPlaidTx!, processingError: 'Some unexpected provider error' },
+    } as ReviewItem;
+    renderDrawer({ item, onRetry: vi.fn() });
+
+    expect(screen.getByText('review.errorGeneric')).toBeInTheDocument();
+  });
+
+  it('calls onRetry when the retry button is clicked', () => {
+    const onRetry = vi.fn();
+    renderDrawer({ item: FAILED_ITEM, onRetry });
+
+    fireEvent.click(screen.getByText('review.retryClassification'));
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render the failure banner for a non-FAILED item', () => {
+    renderDrawer({ item: PLAID_ITEM, onRetry: vi.fn() });
+
+    expect(screen.queryByText('review.retryClassification')).not.toBeInTheDocument();
+  });
+});

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, XCircle, ArrowRight, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowRight, RefreshCw, RotateCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { StatusBadge } from './status-badge';
 import { ConfidenceDisplay } from './confidence-display';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -12,6 +12,7 @@ interface TxDataRowProps {
   onApprove: () => void;
   onSkip: () => void;
   onClick: () => void;
+  onRetry?: () => void;
   disabled?: boolean;
 }
 
@@ -80,11 +81,12 @@ function DiffDisplay({ diff }: { diff: Record<string, { old: unknown; new: unkno
   );
 }
 
-export function TxDataRow({ item, onApprove, onSkip, onClick, disabled }: TxDataRowProps) {
+export function TxDataRow({ item, onApprove, onSkip, onClick, onRetry, disabled }: TxDataRowProps) {
   const [showDiff, setShowDiff] = useState(false);
   const isIncome = item.amount < 0;
   const isPromoted = item.promotionStatus === 'PROMOTED' || item.promotionStatus === 'CONFIRMED';
   const isSkipped = item.promotionStatus === 'SKIPPED';
+  const isFailed = item.status === 'classification-failed';
   const isDuplicate = item.promotionStatus === 'DUPLICATE' || item.promotionStatus === 'POTENTIAL_DUPLICATE';
   const isUpdate = !!item.updateTargetId;
   const hasDiff = isUpdate && item.updateDiff && Object.keys(item.updateDiff).length > 0;
@@ -164,16 +166,29 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, disabled }: TxData
           )}
           {showActions && (
             <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-7 w-7 ${approveColor}`}
-                onClick={(e) => { e.stopPropagation(); onApprove(); }}
-                disabled={disabled}
-                title={approveTitle}
-              >
-                {approveIcon}
-              </Button>
+              {isFailed ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-warning hover:text-warning hover:bg-warning/10"
+                  onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
+                  disabled={disabled}
+                  title="Retry classification"
+                >
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${approveColor}`}
+                  onClick={(e) => { e.stopPropagation(); onApprove(); }}
+                  disabled={disabled}
+                  title={approveTitle}
+                >
+                  {approveIcon}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -255,16 +270,29 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, disabled }: TxData
                   {showDiff ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-6 w-6 ${approveColor}`}
-                onClick={(e) => { e.stopPropagation(); onApprove(); }}
-                disabled={disabled}
-                title={approveTitleMobile}
-              >
-                {approveIconMobile}
-              </Button>
+              {isFailed ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-warning hover:text-warning hover:bg-warning/10"
+                  onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
+                  disabled={disabled}
+                  title="Retry classification"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-6 w-6 ${approveColor}`}
+                  onClick={(e) => { e.stopPropagation(); onApprove(); }}
+                  disabled={disabled}
+                  title={approveTitleMobile}
+                >
+                  {approveIconMobile}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"

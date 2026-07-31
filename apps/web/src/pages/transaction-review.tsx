@@ -28,6 +28,7 @@ import {
   usePlaidTransactions,
   useUpdatePlaidTransaction,
   useBulkPromotePlaidTransactions,
+  useRetryPlaidTransaction,
 } from '@/hooks/use-plaid-review';
 import {
   usePendingImports,
@@ -68,7 +69,9 @@ function plaidTxToReviewItem(
 
   // Determine review status
   let status: TxStatus = 'ai-approved';
-  if (tx.requiresEnrichment) {
+  if (tx.promotionStatus === 'FAILED') {
+    status = 'classification-failed';
+  } else if (tx.requiresEnrichment) {
     status = 'needs-enrichment';
   } else if (tx.aiConfidence != null && tx.aiConfidence < reviewThreshold) {
     status = 'low-confidence';
@@ -197,7 +200,21 @@ export default function TransactionReviewPage() {
     ...(typeof plaidCategoryFilter === 'number' ? { categoryId: plaidCategoryFilter } : {}),
     ...(plaidCategoryFilter === 'uncategorized' ? { uncategorized: true } : {}),
   });
-  const plaidTransactions = useMemo(() => plaidData?.transactions ?? [], [plaidData]);
+  // FAILED rows are fetched separately (unfiltered by category/uncategorized so the
+  // full backlog is always visible regardless of the CLASSIFIED-browsing filter state)
+  // and merged into the same grouped/flat Plaid view below.
+  const { data: plaidFailedData } = usePlaidTransactions({
+    page: 1,
+    limit: 500,
+    promotionStatus: 'FAILED',
+    ...(plaidItemIdParam ? { plaidItemId: plaidItemIdParam } : {}),
+  });
+  const plaidFailedTransactions = useMemo(() => plaidFailedData?.transactions ?? [], [plaidFailedData]);
+
+  const plaidTransactions = useMemo(
+    () => [...(plaidData?.transactions ?? []), ...plaidFailedTransactions],
+    [plaidData, plaidFailedTransactions],
+  );
   const plaidSummary = useMemo(() => plaidData?.summary, [plaidData]);
   const plaidPagination = useMemo(() => plaidData?.pagination, [plaidData]);
   // Server-side category breakdown — accurate counts across ALL pages
@@ -332,6 +349,7 @@ export default function TransactionReviewPage() {
 
   // ── Mutations ──
   const updatePlaidTx = useUpdatePlaidTransaction();
+  const retryPlaidTx = useRetryPlaidTransaction();
   const bulkPromote = useBulkPromotePlaidTransactions();
   const updateImportRow = useUpdateImportRow(selectedImportId);
   const commitImport = useCommitImport();
@@ -541,6 +559,16 @@ export default function TransactionReviewPage() {
       );
     },
     [updatePlaidTx, toast, plaidReviewItems, plaidCategoryFilter, plaidTransactions.length],
+  );
+
+  const handlePlaidRetry = useCallback(
+    (id: string) => {
+      retryPlaidTx.mutate(id, {
+        onSuccess: () => toast({ title: t('review.retrySuccess') }),
+        onError: () => toast({ title: t('review.retryError'), variant: 'destructive' }),
+      });
+    },
+    [retryPlaidTx, toast, t],
   );
 
   // Clear any active category filter after a bulk operation so the user isn't
@@ -920,7 +948,9 @@ export default function TransactionReviewPage() {
     () => pendingImports.reduce((sum: number, imp: { pendingRowCount: number }) => sum + imp.pendingRowCount, 0),
     [pendingImports],
   );
-  const totalCount = plaidCount + importCount;
+  // Includes FAILED so the "All Pending" tab badge and empty-state gate don't
+  // hide a tenant whose only outstanding items are classification failures.
+  const totalCount = plaidCount + importCount + (plaidSummary?.failed ?? 0);
 
   // Progress calculation
   const promotedCount = (plaidSummary?.promoted ?? 0) + (plaidSummary?.skipped ?? 0);
@@ -955,7 +985,7 @@ export default function TransactionReviewPage() {
   };
 
   // ── Flat view renderer ──
-  const renderFlatList = (items: ReviewItem[]) => (
+  const renderFlatList = (items: ReviewItem[], onRetry?: (item: ReviewItem) => void) => (
     <Card className="overflow-hidden">
       {/* Column headers */}
       <div className="hidden md:flex items-center gap-3 px-4 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider bg-muted/30">
@@ -975,6 +1005,7 @@ export default function TransactionReviewPage() {
             item={item}
             onApprove={() => handleItemApprove(item)}
             onSkip={() => handleItemSkip(item)}
+            onRetry={onRetry ? () => onRetry(item) : undefined}
             onClick={() => setSelectedItem(item)}
             disabled={updatePlaidTx.isPending || updateImportRow.isPending}
           />
@@ -1056,6 +1087,7 @@ export default function TransactionReviewPage() {
                 totalCount={group.totalCount}
                 onApprove={handleItemApprove}
                 onSkip={handleItemSkip}
+                onRetry={(item) => handlePlaidRetry(item.id)}
                 onApproveAll={() => handlePromoteGroup(group.items)}
                 onItemClick={setSelectedItem}
                 disabled={updatePlaidTx.isPending || bulkPromote.isPending || updateImportRow.isPending}
@@ -1112,6 +1144,14 @@ export default function TransactionReviewPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {(plaidSummary?.failed ?? 0) > 0 && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20">
+              {t('review.failedTransactionsBanner', {
+                count: plaidSummary?.failed ?? 0,
+                plural: (plaidSummary?.failed ?? 0) !== 1 ? 's' : '',
+              })}
+            </div>
+          )}
           {(plaidSummary?.skipped ?? 0) > 0 && (
             <Button
               variant="outline"
@@ -1200,7 +1240,7 @@ export default function TransactionReviewPage() {
                   </h3>
                   {viewMode === 'grouped'
                     ? renderGroupedPlaid(groupedPlaid)
-                    : renderFlatList(plaidReviewItems)}
+                    : renderFlatList(plaidReviewItems, (item) => handlePlaidRetry(item.id))}
                 </div>
               )}
 
@@ -1256,7 +1296,7 @@ export default function TransactionReviewPage() {
                 ? renderGroupedPlaid(groupedPlaid)
                 : (
                   <>
-                    {renderFlatList(plaidReviewItems)}
+                    {renderFlatList(plaidReviewItems, (item) => handlePlaidRetry(item.id))}
                     {renderPagination(
                       plaidPage,
                       plaidPagination?.totalPages ?? 1,
@@ -1393,6 +1433,12 @@ export default function TransactionReviewPage() {
             : undefined
         }
         isSaving={updatePlaidTx.isPending || updateImportRow.isPending}
+        onRetry={
+          selectedItem?.source === 'plaid' && selectedItem.originalPlaidTx?.promotionStatus === 'FAILED'
+            ? () => handlePlaidRetry(selectedItem.id)
+            : undefined
+        }
+        isRetrying={retryPlaidTx.isPending}
       />
 
       {/* ── Drawer Promote-All Dialog ─────────────────────────────── */}

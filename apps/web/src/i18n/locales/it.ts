@@ -1295,6 +1295,15 @@ const it = {
     pageOf: "Pagina {{current}} di {{total}}",
     // Source labels (additional)
     unknown: "Sconosciuto",
+    // Errore di classificazione e nuovo tentativo
+    classificationFailed: "Classificazione non riuscita",
+    retryClassification: "Riprova classificazione",
+    failedTransactionsBanner: "{{count}} transazione/i con classificazione non riuscita",
+    retrySuccess: "Nuovo tentativo avviato",
+    retryError: "Impossibile avviare il nuovo tentativo",
+    errorTimedOut: "La classificazione AI è scaduta — riprova o classifica manualmente",
+    errorRateLimited: "Limite di richieste del provider AI raggiunto — riprova tra poco",
+    errorGeneric: "La classificazione AI non è riuscita — riprova o classifica manualmente",
   },
 
   // Currency rates page

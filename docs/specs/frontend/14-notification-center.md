@@ -54,8 +54,11 @@ Each signal type maps to a specific icon and severity color:
 |-------------|------|---------------------|
 | `PENDING_REVIEW` | `ClipboardCheck` | `warning` |
 | `PLAID_ACTION_REQUIRED` | `AlertTriangle` | `warning` |
+| `PLAID_CLASSIFICATION_FAILED` | `AlertTriangle` | `warning` |
 | `ONBOARDING_INCOMPLETE` | `ListChecks` | `brand-primary` |
 | `NEW_INSIGHTS` | `Sparkles` | `positive` |
+
+`PLAID_CLASSIFICATION_FAILED` fires when one or more `PlaidTransaction` rows are `promotionStatus === 'FAILED'` (all classification tiers exhausted, including one silent worker-side retry — see `docs/specs/backend/08-plaid-integration.md`). Deliberately kept as its own signal rather than folded into `PENDING_REVIEW`'s count, since a classification failure is a data-completeness risk, not routine pending work. Links to `/agents/review?source=plaid`.
 
 All icons are from `lucide-react`. Colors follow the design system tokens defined in `src/index.css`.
 
@@ -107,7 +110,7 @@ The notification center and the dashboard action registry (`specs/16-dashboard-a
 | `ONBOARDING_INCOMPLETE` | `!onboardingComplete` |
 | `NEW_INSIGHTS` | `insightCount > 0` |
 
-**Architecture decision**: The notification center stays server-side (7 parallel DB queries via `/api/notifications/summary`; includes accountCount, hasTransaction, and tenant onboardingCompletedAt lookups) because it's always visible in the header and needs to be lightweight. The dashboard's `useUserSignals()` hook evaluates the same signals client-side from data already being fetched for dashboard rendering. React Query deduplicates the underlying HTTP calls.
+**Architecture decision**: The notification center stays server-side (8 parallel DB queries via `/api/notifications/summary`; includes accountCount, hasTransaction, tenant onboardingCompletedAt, and the FAILED-count lookups) because it's always visible in the header and needs to be lightweight. The dashboard's `useUserSignals()` hook evaluates the same signals client-side from data already being fetched for dashboard rendering. React Query deduplicates the underlying HTTP calls.
 
 **Future unification**: If needed, the notification center could adopt `useUserSignals()` for client-side rendering while keeping the server-side endpoint for badge count polling.
 

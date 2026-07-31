@@ -34,7 +34,7 @@ This module provides the API layer for reviewing, categorising, and promoting AI
 - **Default filter**: `promotionStatus: 'CLASSIFIED'` (only transactions that have been classified but not yet actioned).
 - **Query params**:
   - `?plaidItemId` — filter by specific Plaid connection
-  - `?promotionStatus` — `CLASSIFIED`, `PENDING`, `PROMOTED`, `SKIPPED`, or `ALL`
+  - `?promotionStatus` — `CLASSIFIED`, `PENDING`, `PROMOTED`, `SKIPPED`, `FAILED`, or `ALL`
   - `?minConfidence`, `?maxConfidence` — filter by AI confidence range
   - `?categoryId` — optional integer. Filters rows to a single `suggestedCategoryId`. Used by the grouped-view to paginate within one category group without re-fetching all rows.
   - `?uncategorized=true` — optional boolean. Filters rows to those with `suggestedCategoryId IS NULL`. Mutually exclusive with `?categoryId` (when both are sent, `?uncategorized` wins). Needed so the "Uncategorized" group in the grouped view is drillable.
@@ -44,8 +44,9 @@ This module provides the API layer for reviewing, categorising, and promoting AI
   - `pending` — `promotionStatus = 'PENDING'` AND `seedHeld = false` (still being classified)
   - `promoted` — `promotionStatus = 'PROMOTED'`
   - `skipped` — `promotionStatus = 'SKIPPED'`
+  - `failed` — `promotionStatus = 'FAILED'` (all classification tiers errored out after one silent worker retry — see `docs/specs/backend/08-plaid-integration.md#classification-failure--retry`)
   - `seedHeld` — `seedHeld = true` (held for Quick Seed interview; counted separately from `pending`)
-  - `categoryBreakdown` — **server-side groupBy across all `CLASSIFIED` transactions** (not just the current page). Array of `{ categoryId, category: { id, name, group, type }, count }`, sorted descending by count. Scoped to the same `plaidItemId` filter as the transaction query. Used by grouped-view headers to show accurate cross-page per-category totals without additional requests.
+  - `categoryBreakdown` — **server-side groupBy across all `CLASSIFIED` and `FAILED` transactions** (not just the current page). Array of `{ categoryId, category: { id, name, group, type }, count }`, sorted descending by count. Scoped to the same `plaidItemId` filter as the transaction query. Used by grouped-view headers to show accurate cross-page per-category totals without additional requests. `FAILED` is included alongside `CLASSIFIED` specifically so the Uncategorized group header appears even when a tenant has zero CLASSIFIED-uncategorized rows — otherwise a FAILED-only backlog would have no group to attach to and would silently disappear from the grouped view.
 
 ---
 
@@ -69,6 +70,7 @@ This module provides the API layer for reviewing, categorising, and promoting AI
 - Guard: only allows `SKIPPED` → `CLASSIFIED` (not from `PROMOTED`).
 
 **Promote** (`{ promotionStatus: 'PROMOTED' }`):
+- Works identically from `CLASSIFIED` or `FAILED` — the endpoint only blocks rows already `promotionStatus === 'PROMOTED'`. A `FAILED` row is just a row with no AI-suggested category yet; the user supplies one manually.
 - Requires a `suggestedCategoryId` (either existing or provided in the same request).
 - Optional fields accepted at promote time:
   - `details?: string` — overrides the default `plaidTx.name` used as the `Transaction.details` field.
@@ -81,6 +83,21 @@ This module provides the API layer for reviewing, categorising, and promoting AI
 - **Event**: Emits `TRANSACTIONS_IMPORTED` with `accountIds: [localAccount.id]` and `dateScope: { year, month }` to trigger the scoped analytics chain.
 - **Dedup**: If a `Transaction` with the same `externalId` already exists, skips creation and just marks the PlaidTransaction as promoted.
 - **Feedback**: Fires a fire-and-forget `POST /api/feedback` after the commit.
+
+---
+
+### Retry Classification
+
+**POST** `/api/plaid/transactions/:id/retry`
+
+- **Purpose**: Manually retries classification for a `FAILED` PlaidTransaction. Follows the project's "routes validate + enqueue + return, workers do the work" convention — this route never calls classification inline.
+- **Security**: Validates tenant ownership. Returns `409 Conflict` if `promotionStatus !== 'FAILED'`.
+- **Workflow**:
+  1. Resets the row: `processed: false`, `promotionStatus: 'PENDING'`, `processingError: null`, `classificationRetryCount: 1`.
+  2. Produces a `PLAID_TRANSACTION_RETRY` event (`{ tenantId, plaidItemId }`) — `eventSchedulerWorker` routes it to the `plaid-processing` queue with **no delay** (user-initiated, unlike the worker's own 60-second silent-retry re-queue).
+  3. Returns `202 Accepted` with the reset row immediately; the actual reclassification happens asynchronously when `plaidProcessorWorker` picks up the job.
+- **Why `classificationRetryCount: 1`, not `0`**: this is deliberate, not a typo. It means if the retried attempt also fails, the worker's own two-phase retry logic sends it straight back to `FAILED` rather than silently scheduling another invisible 60-second retry — a user-initiated Retry must always resolve to a new terminal state (`CLASSIFIED`/`PROMOTED` on success, `FAILED` again on repeat failure), never back to an ambiguous wait.
+- **Rate limit**: `plaidReview` limiter, same as the other single-row actions.
 
 ---
 
@@ -126,7 +143,8 @@ The staging table for raw Plaid data, extended with AI classification and invest
 | `aiConfidence` | 0.0–1.0 score from classification pipeline |
 | `classificationSource` | `'EXACT_MATCH'` / `'VECTOR_MATCH'` / `'VECTOR_MATCH_GLOBAL'` / `'LLM'` / `'LLM_UNKNOWN'` / `'USER_OVERRIDE'`. `'LLM_UNKNOWN'` is set when the LLM invokes the explicit ambiguous-fallback (`categoryId: null`) — the row is left unclassified and surfaces in the review queue. |
 | `classificationReasoning` | Free-text reasoning string returned by the configured LLM provider. `null` for `EXACT_MATCH` and `VECTOR_MATCH` results. Displayed in the Transaction Review deep-dive drawer. |
-| `promotionStatus` | `'PENDING'` / `'CLASSIFIED'` / `'PROMOTED'` / `'SKIPPED'` |
+| `promotionStatus` | `'PENDING'` / `'CLASSIFIED'` / `'PROMOTED'` / `'SKIPPED'` / `'FAILED'` |
+| `classificationRetryCount` | `Int`, default `0`. Number of silent auto-retries the worker has given this row before marking it terminally `FAILED`. Reset to `1` (not `0`) by the manual `POST .../retry` endpoint — see that endpoint's docs above. |
 | `matchedTransactionId` | FK to `Transaction` — set on promote |
 | `requiresEnrichment` | `true` for investment transactions that need ticker/quantity/price before promotion. Never auto-promoted regardless of confidence. |
 | `enrichmentType` | `'INVESTMENT'` when `requiresEnrichment` is true |

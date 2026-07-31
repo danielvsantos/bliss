@@ -108,7 +108,7 @@ jest.mock('../../../config/classificationConfig', () => ({
 
 // ─── Import ─────────────────────────────────────────────────────────────────
 
-const { normalizeDescription, buildFrequencyMap } = require('../../../workers/plaidProcessorWorker');
+const { normalizeDescription, buildFrequencyMap, handleClassificationFailure } = require('../../../workers/plaidProcessorWorker');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -246,6 +246,76 @@ describe('buildFrequencyMap()', () => {
     expect(stored).toBe(row);
     expect(stored.amount).toBe(42.50);
     expect(stored.date).toBe('2026-01-15');
+  });
+});
+
+// ─── handleClassificationFailure() — two-phase retry-then-FAILED ──────────────
+
+describe('handleClassificationFailure()', () => {
+  beforeEach(() => {
+    mockPlaidTxUpdate.mockClear();
+  });
+
+  function _makeCtx() {
+    return { counters: { totalRetryScheduled: 0, totalFailed: 0 } };
+  }
+
+  it('on first failure (classificationRetryCount 0), schedules a silent retry without setting processed/promotionStatus', async () => {
+    const row = { id: 'ptx-1', classificationRetryCount: 0 };
+    const ctx = _makeCtx();
+
+    await handleClassificationFailure(row, 'Gemini classification timed out after 5000ms', ctx);
+
+    expect(mockPlaidTxUpdate).toHaveBeenCalledWith({
+      where: { id: 'ptx-1' },
+      data: {
+        classificationRetryCount: { increment: 1 },
+        processingError: 'Gemini classification timed out after 5000ms',
+      },
+    });
+    expect(ctx.counters.totalRetryScheduled).toBe(1);
+    expect(ctx.counters.totalFailed).toBe(0);
+  });
+
+  it('treats a missing/undefined classificationRetryCount the same as 0 (first failure)', async () => {
+    const row = { id: 'ptx-2' }; // no classificationRetryCount field at all
+    const ctx = _makeCtx();
+
+    await handleClassificationFailure(row, 'boom', ctx);
+
+    expect(mockPlaidTxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ classificationRetryCount: { increment: 1 } }) }),
+    );
+    expect(ctx.counters.totalRetryScheduled).toBe(1);
+  });
+
+  it('on second failure (classificationRetryCount already 1), goes terminal: processed=true, promotionStatus=FAILED', async () => {
+    const row = { id: 'ptx-3', classificationRetryCount: 1 };
+    const ctx = _makeCtx();
+
+    await handleClassificationFailure(row, 'Gemini classification timed out after 5000ms', ctx);
+
+    expect(mockPlaidTxUpdate).toHaveBeenCalledWith({
+      where: { id: 'ptx-3' },
+      data: {
+        processed: true,
+        promotionStatus: 'FAILED',
+        processingError: 'Gemini classification timed out after 5000ms',
+      },
+    });
+    expect(ctx.counters.totalFailed).toBe(1);
+    expect(ctx.counters.totalRetryScheduled).toBe(0);
+  });
+
+  it('truncates the error message to 500 characters', async () => {
+    const row = { id: 'ptx-4', classificationRetryCount: 1 };
+    const ctx = _makeCtx();
+    const longMessage = 'x'.repeat(1000);
+
+    await handleClassificationFailure(row, longMessage, ctx);
+
+    const call = mockPlaidTxUpdate.mock.calls[0][0];
+    expect(call.data.processingError).toHaveLength(500);
   });
 });
 

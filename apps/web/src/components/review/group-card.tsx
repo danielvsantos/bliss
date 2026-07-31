@@ -22,6 +22,7 @@ interface GroupCardProps {
   pendingCount?: number;
   onApprove: (item: ReviewItem) => void;
   onSkip: (item: ReviewItem) => void;
+  onRetry?: (item: ReviewItem) => void;
   onApproveAll: () => void;
   onItemClick: (item: ReviewItem) => void;
   disabled?: boolean;
@@ -42,6 +43,7 @@ export function GroupCard({
   pendingCount,
   onApprove,
   onSkip,
+  onRetry,
   onApproveAll,
   onItemClick,
   disabled,
@@ -55,7 +57,13 @@ export function GroupCard({
   const expanded = isExpanded !== undefined ? isExpanded : internalExpanded;
 
   const fallbackPendingCount = items.filter(
-    (i) => i.promotionStatus !== 'PROMOTED' && i.promotionStatus !== 'CONFIRMED' && i.promotionStatus !== 'SKIPPED',
+    (i) =>
+      i.promotionStatus !== 'PROMOTED' &&
+      i.promotionStatus !== 'CONFIRMED' &&
+      i.promotionStatus !== 'SKIPPED' &&
+      // FAILED rows have no category yet and can't be swept into bulk approve —
+      // they're resolved individually via Retry or manual categorize.
+      i.status !== 'classification-failed',
   ).length;
   const effectivePendingCount = pendingCount ?? fallbackPendingCount;
 
@@ -136,6 +144,7 @@ export function GroupCard({
                 item={item}
                 onApprove={() => onApprove(item)}
                 onSkip={() => onSkip(item)}
+                onRetry={onRetry ? () => onRetry(item) : undefined}
                 onClick={() => onItemClick(item)}
                 disabled={disabled}
               />

@@ -471,7 +471,7 @@ export type PlaidTransaction = {
   aiConfidence?: number | null;
   classificationSource?: string | null;
   classificationReasoning?: string | null;
-  promotionStatus: 'PENDING' | 'CLASSIFIED' | 'PROMOTED' | 'SKIPPED';
+  promotionStatus: 'PENDING' | 'CLASSIFIED' | 'PROMOTED' | 'SKIPPED' | 'FAILED';
   requiresEnrichment?: boolean;
   enrichmentType?: string | null;
   createdAt: string;
@@ -493,6 +493,7 @@ export type PlaidTransactionsResponse = {
     pending: number;
     promoted: number;
     skipped: number;
+    failed: number;
     seedHeld: number;
   };
 };

@@ -259,6 +259,32 @@ describe('PUT /api/plaid/transactions/:id', () => {
     );
   }
 
+  it('promotes a FAILED transaction identically to a CLASSIFIED one (no special-casing blocks it)', async () => {
+    mockPrisma.plaidTransaction.findUnique.mockResolvedValueOnce({ ...PLAID_TX, promotionStatus: 'FAILED', processingError: 'Gemini classification timed out after 5000ms' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(CATEGORY);
+    mockPrisma.account.findFirst.mockResolvedValueOnce(LOCAL_ACCOUNT);
+    mockPrisma.transaction.findUnique.mockResolvedValueOnce(null);
+    mockPrisma.transaction.create.mockResolvedValueOnce(NEW_TRANSACTION);
+    mockPrisma.plaidTransaction.update.mockResolvedValueOnce(PROMOTED_PLAID_TX);
+    mockPrisma.$transaction.mockImplementationOnce(async (cb: any) =>
+      cb({
+        transaction: { create: mockPrisma.transaction.create },
+        plaidTransaction: { update: mockPrisma.plaidTransaction.update },
+      }),
+    );
+
+    const req = makeReq({ method: 'PUT', body: { promotionStatus: 'PROMOTED', suggestedCategoryId: 5 } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.transaction.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.plaidTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ promotionStatus: 'PROMOTED' }) }),
+    );
+  });
+
   it('promotes without tags when tags is omitted — no tag creation calls', async () => {
     setUpPromoteMocks();
 

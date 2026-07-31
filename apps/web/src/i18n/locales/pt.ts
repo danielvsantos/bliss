@@ -1295,6 +1295,15 @@ const pt = {
     pageOf: "Página {{current}} de {{total}}",
     // Labels de origem (adicional)
     unknown: "Desconhecido",
+    // Falha de classificação e nova tentativa
+    classificationFailed: "Falha na classificação",
+    retryClassification: "Repetir classificação",
+    failedTransactionsBanner: "{{count}} transação(ões) com falha na classificação",
+    retrySuccess: "Nova tentativa iniciada",
+    retryError: "Falha ao iniciar nova tentativa",
+    errorTimedOut: "A classificação por IA excedeu o tempo limite — tente novamente ou categorize manualmente",
+    errorRateLimited: "Limite de requisições do provedor de IA atingido — tente novamente em breve",
+    errorGeneric: "A classificação por IA falhou — tente novamente ou categorize manualmente",
   },
 
   // Página de taxas de câmbio

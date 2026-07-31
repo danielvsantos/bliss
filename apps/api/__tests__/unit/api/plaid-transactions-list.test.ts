@@ -80,6 +80,7 @@ describe('GET /api/plaid/transactions', () => {
       .mockResolvedValueOnce(0)   // pending count
       .mockResolvedValueOnce(0)   // promoted count
       .mockResolvedValueOnce(0)   // skipped count
+      .mockResolvedValueOnce(0)   // failed count
       .mockResolvedValueOnce(0);  // seedHeld count
     mockPrisma.plaidTransaction.groupBy.mockResolvedValue([]);
     mockPrisma.category.findMany.mockResolvedValue([{ id: 5, name: 'Food', group: 'Daily', type: 'Essentials' }]);
@@ -93,6 +94,36 @@ describe('GET /api/plaid/transactions', () => {
     expect(res._status).toBe(200);
     expect(res._body.transactions).toHaveLength(1);
     expect(res._body.summary.classified).toBe(1);
+  });
+
+  it('includes failed count in summary and supports promotionStatus=FAILED filter', async () => {
+    mockPrisma.plaidItem.findMany.mockResolvedValue([{ id: 'pi-1' }]);
+    mockPrisma.plaidTransaction.findMany.mockResolvedValue([
+      { id: 'pt-failed-1', plaidAccountId: 'pa-1', suggestedCategoryId: null, promotionStatus: 'FAILED', plaidItem: { institutionName: 'Chase' } },
+    ]);
+    mockPrisma.plaidTransaction.count
+      .mockResolvedValueOnce(1)   // total count (scoped to promotionStatus=FAILED)
+      .mockResolvedValueOnce(0)   // classified count
+      .mockResolvedValueOnce(0)   // pending count
+      .mockResolvedValueOnce(0)   // promoted count
+      .mockResolvedValueOnce(0)   // skipped count
+      .mockResolvedValueOnce(3)   // failed count
+      .mockResolvedValueOnce(0);  // seedHeld count
+    mockPrisma.plaidTransaction.groupBy.mockResolvedValue([]);
+    mockPrisma.category.findMany.mockResolvedValue([]);
+    mockPrisma.account.findMany.mockResolvedValue([]);
+
+    const req = makeReq({ query: { promotionStatus: 'FAILED' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.summary.failed).toBe(3);
+    // promotionStatus=FAILED passes through the generic filter branch, scoping the main query
+    expect(mockPrisma.plaidTransaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ promotionStatus: 'FAILED' }) }),
+    );
   });
 
   it('supports promotionStatus filter', async () => {

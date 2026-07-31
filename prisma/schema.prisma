@@ -216,7 +216,8 @@ model PlaidTransaction {
   aiConfidence           Float?     // 0.0 - 1.0
   classificationSource   String?    // 'PLAID_MAPPED', 'EXACT_MATCH', 'VECTOR_SEARCH', 'LLM'
   classificationReasoning String?   // LLM reasoning text (Sprint 12)
-  promotionStatus        String     @default("PENDING")  // PENDING, CLASSIFIED, PROMOTED, SKIPPED
+  promotionStatus        String     @default("PENDING")  // PENDING, CLASSIFIED, PROMOTED, SKIPPED, FAILED
+  classificationRetryCount Int      @default(0) // silent auto-retries attempted before reaching FAILED
 
   // Investment Enrichment (Sprint 12)
   requiresEnrichment     Boolean    @default(false)
