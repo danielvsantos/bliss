@@ -75,8 +75,9 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
       if (!totals[catName]) {
         totals[catName] = { name: catName, defaultCategoryCode: tx.category?.defaultCategoryCode, byCurrency: {}, count: 0, totalRaw: 0 };
       }
-      totals[catName].byCurrency[cur] = (totals[catName].byCurrency[cur] || 0) + (tx.debit || 0);
-      totals[catName].totalRaw += tx.debit || 0;
+      const net = (tx.debit || 0) - (tx.credit || 0);
+      totals[catName].byCurrency[cur] = (totals[catName].byCurrency[cur] || 0) + net;
+      totals[catName].totalRaw += net;
       totals[catName].count += 1;
     }
 
@@ -230,8 +231,8 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                         {transaction.category ? translateCategoryName(t, transaction.category) : '—'}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right text-negative font-semibold tabular-nums">
-                      {formatCurrency(transaction.debit || 0, transaction.currency)}
+                    <TableCell className={`text-right font-semibold tabular-nums ${(transaction.credit || 0) > 0 ? 'text-positive' : 'text-negative'}`}>
+                      {formatCurrency((transaction.debit || 0) - (transaction.credit || 0), transaction.currency)}
                     </TableCell>
                   </TableRow>
                 ))}
