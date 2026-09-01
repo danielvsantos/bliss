@@ -1627,6 +1627,9 @@ const pt = {
     allManualAssetsTitle: "Todos os ativos com preço manual",
     allManualAssetsDesc: "Todos os ativos que você precifica manualmente. Abra o histórico para revisar, editar ou remover entradas anteriores.",
     noManualAssets: "Nenhum ativo com preço manual ainda.",
+    pagination: "Mostrando {{from}}–{{to}} de {{total}}",
+    prev: "Anterior",
+    next: "Próximo",
   },
 
   // Combobox de categoria

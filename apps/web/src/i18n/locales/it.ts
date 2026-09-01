@@ -1627,6 +1627,9 @@ const it = {
     allManualAssetsTitle: "Tutte le attività a prezzo manuale",
     allManualAssetsDesc: "Ogni attività che valuti manualmente. Apri la cronologia per rivedere, modificare o rimuovere le voci passate.",
     noManualAssets: "Nessuna attività a prezzo manuale ancora.",
+    pagination: "Visualizzazione {{from}}–{{to}} di {{total}}",
+    prev: "Precedente",
+    next: "Successivo",
   },
 
   // Category combobox

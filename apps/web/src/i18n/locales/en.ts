@@ -1627,6 +1627,9 @@ const en = {
     allManualAssetsTitle: "All manually-priced assets",
     allManualAssetsDesc: "Every asset you price by hand. Open its history to review, edit, or remove past entries.",
     noManualAssets: "No manually-priced assets yet.",
+    pagination: "Showing {{from}}–{{to}} of {{total}}",
+    prev: "Previous",
+    next: "Next",
   },
 
   // Category combobox

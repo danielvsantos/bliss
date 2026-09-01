@@ -1586,6 +1586,9 @@ const es = {
     allManualAssetsTitle: "Todos los activos con precio manual",
     allManualAssetsDesc: "Todos los activos que valoras manualmente. Abre su historial para revisar, editar o eliminar entradas anteriores.",
     noManualAssets: "Aún no hay activos con precio manual.",
+    pagination: "Mostrando {{from}}–{{to}} de {{total}}",
+    prev: "Anterior",
+    next: "Siguiente",
   },
 
   categoryCombobox: {

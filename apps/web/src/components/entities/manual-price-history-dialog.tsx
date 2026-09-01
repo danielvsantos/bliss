@@ -45,6 +45,9 @@ import { ManualPriceForm } from './manual-price-form';
 
 type View = 'list' | 'add' | 'edit';
 
+/** Rows per page in the history list — keeps tall histories from becoming an endless scroll. */
+const PAGE_SIZE = 12;
+
 interface ManualPriceHistoryDialogProps {
   asset: PortfolioItem | null;
   open: boolean;
@@ -85,9 +88,15 @@ export function ManualPriceHistoryDialog({
   const [editingValue, setEditingValue] = useState<ManualAssetValue | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManualAssetValue | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [page, setPage] = useState(1);
 
   const { data, isLoading, isError, refetch } = useManualAssetValues(asset?.id);
   const rows = data ?? [];
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
 
   // Reset the internal view whenever the dialog is (re)opened for an asset.
   useEffect(() => {
@@ -95,6 +104,7 @@ export function ManualPriceHistoryDialog({
       setView('list');
       setEditingValue(null);
       setDeleteTarget(null);
+      setPage(1);
     }
   }, [open, asset?.id]);
 
@@ -143,7 +153,7 @@ export function ManualPriceHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{t('manualPriceHistory.dialogDescription')}</DialogDescription>
@@ -198,87 +208,124 @@ export function ManualPriceHistoryDialog({
                 {t('manualPriceHistory.recordPrice')}
               </Button>
             </div>
-            <div className="overflow-x-auto rounded-md border">
-              <div className="max-h-[60vh] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-accent/40">
-                      <TableHead>{t('manualPriceHistory.effectiveDate')}</TableHead>
-                      <TableHead className="text-right">{t('manualPriceHistory.price')}</TableHead>
-                      <TableHead>{t('manualPriceHistory.currency')}</TableHead>
-                      <TableHead className="hidden sm:table-cell">
-                        {t('manualPriceHistory.notes')}
-                      </TableHead>
-                      <TableHead className="hidden sm:table-cell">
-                        {t('manualPriceHistory.recordedOn')}
-                      </TableHead>
-                      <TableHead className="text-right">
-                        {t('manualPriceHistory.actions')}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const mixedCurrency =
-                        asset?.currency != null && row.currency !== asset.currency;
-                      return (
-                        <TableRow key={row.id} className="hover:bg-accent/30">
-                          <TableCell className="tabular-nums">
-                            {formatDateSafe(row.date)}
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">
-                            {formatManualPrice(row.value, row.currency)}
-                          </TableCell>
-                          <TableCell>
-                            {mixedCurrency ? (
-                              <Badge
-                                className="bg-warning/10 text-warning border-warning/20"
-                                title={t('manualPriceHistory.differentCurrency')}
-                              >
-                                {row.currency}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">{row.currency}</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell text-muted-foreground">
-                            {row.notes ? row.notes : '—'}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell tabular-nums text-muted-foreground">
-                            {formatDateSafe(row.createdAt)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                aria-label={t('manualPriceHistory.edit')}
-                                onClick={() => {
-                                  setEditingValue(row);
-                                  setView('edit');
-                                }}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive"
-                                aria-label={t('manualPriceHistory.delete')}
-                                onClick={() => setDeleteTarget(row)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+            <div className="min-w-0 overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-accent/40">
+                    <TableHead className="whitespace-nowrap">
+                      {t('manualPriceHistory.effectiveDate')}
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap text-right">
+                      {t('manualPriceHistory.price')}
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      {t('manualPriceHistory.currency')}
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      {t('manualPriceHistory.notes')}
+                    </TableHead>
+                    <TableHead className="hidden whitespace-nowrap md:table-cell">
+                      {t('manualPriceHistory.recordedOn')}
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap text-right">
+                      {t('manualPriceHistory.actions')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pageRows.map((row) => {
+                    const mixedCurrency =
+                      asset?.currency != null && row.currency !== asset.currency;
+                    return (
+                      <TableRow key={row.id} className="hover:bg-accent/30">
+                        <TableCell className="whitespace-nowrap tabular-nums">
+                          {formatDateSafe(row.date)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
+                          {formatManualPrice(row.value, row.currency)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {mixedCurrency ? (
+                            <Badge
+                              className="bg-warning/10 text-warning border-warning/20"
+                              title={t('manualPriceHistory.differentCurrency')}
+                            >
+                              {row.currency}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">{row.currency}</span>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className="hidden max-w-[16rem] truncate text-muted-foreground lg:table-cell"
+                          title={row.notes || undefined}
+                        >
+                          {row.notes ? row.notes : '—'}
+                        </TableCell>
+                        <TableCell className="hidden whitespace-nowrap tabular-nums text-muted-foreground md:table-cell">
+                          {formatDateSafe(row.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={t('manualPriceHistory.edit')}
+                              onClick={() => {
+                                setEditingValue(row);
+                                setView('edit');
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              aria-label={t('manualPriceHistory.delete')}
+                              onClick={() => setDeleteTarget(row)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
+
+            {rows.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between gap-3 pt-1 text-sm text-muted-foreground">
+                <span className="tabular-nums">
+                  {t('manualPriceHistory.pagination', {
+                    from: pageStart + 1,
+                    to: pageStart + pageRows.length,
+                    total: rows.length,
+                  })}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    {t('manualPriceHistory.prev')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= pageCount}
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  >
+                    {t('manualPriceHistory.next')}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
