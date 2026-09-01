@@ -410,6 +410,50 @@ paths:
           description: Filter history to a single brokerage account.
           schema:
             type: integer
+      responses:
+        '200':
+          description: A time-series of aggregated daily portfolio values with currency metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolioCurrency:
+                    type: string
+                    description: The tenant's configured portfolio display currency.
+                    example: 'EUR'
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                        totalUSD:
+                          type: number
+                          description: Total portfolio value in USD.
+                        totalPortfolioCurrency:
+                          type: number
+                          description: Total portfolio value in the tenant's portfolioCurrency.
+                        Investments:
+                          type: object
+                          properties:
+                            total:
+                              type: number
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: number
+                        Debt:
+                          type: object
+                          properties:
+                            total:
+                              type: number
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: number
 
   /api/portfolio/equity-analysis:
     get:
@@ -498,47 +542,3 @@ paths:
                               week52Low:
                                 type: number
                                 nullable: true
-      responses:
-        '200':
-          description: A time-series of aggregated daily portfolio values with currency metadata.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  portfolioCurrency:
-                    type: string
-                    description: The tenant's configured portfolio display currency.
-                    example: 'EUR'
-                  history:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        date:
-                          type: string
-                          format: date
-                        totalUSD:
-                          type: number
-                          description: Total portfolio value in USD.
-                        totalPortfolioCurrency:
-                          type: number
-                          description: Total portfolio value in the tenant's portfolioCurrency.
-                        Investments:
-                          type: object
-                          properties:
-                            total:
-                              type: number
-                            groups:
-                              type: object
-                              additionalProperties:
-                                type: number
-                        Debt:
-                          type: object
-                          properties:
-                            total:
-                              type: number
-                            groups:
-                              type: object
-                              additionalProperties:
-                                type: number
