@@ -11,9 +11,11 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import type { PortfolioItem } from '@/types/api';
+import type { PortfolioItem, ManualAssetValue } from '@/types/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { PORTFOLIO_ITEMS_QUERY_KEY } from '@/hooks/use-portfolio-items';
+import { MANUAL_ASSET_VALUES_QUERY_KEY } from '@/hooks/use-manual-asset-values';
+import { parseDecimal } from '@/lib/portfolio-utils';
 
 const priceSchema = z.object({
   date: z.date({ required_error: "A date is required." }),
@@ -27,37 +29,53 @@ type PriceFormValues = z.infer<typeof priceSchema>;
 interface ManualPriceFormProps {
   asset: PortfolioItem | null;
   onClose: (refetch?: boolean) => void;
+  /**
+   * When provided, the form edits this existing history row instead of creating
+   * a new one. The currency default is taken from the row itself (not the
+   * asset) so a save round-trips the original code unchanged.
+   */
+  existingValue?: ManualAssetValue | null;
 }
 
-export function ManualPriceForm({ asset, onClose }: ManualPriceFormProps) {
+export function ManualPriceForm({ asset, onClose, existingValue }: ManualPriceFormProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isEdit = existingValue != null;
   const { control, handleSubmit, formState: { errors, isSubmitting }, setValue } = useForm<PriceFormValues>({
     resolver: zodResolver(priceSchema),
     defaultValues: {
-      date: new Date(),
-      currency: asset?.currency || 'USD',
-      value: undefined,
-      notes: '',
+      date: existingValue ? new Date(existingValue.date) : new Date(),
+      currency: existingValue?.currency ?? asset?.currency ?? 'USD',
+      value: existingValue ? parseDecimal(existingValue.value) : undefined,
+      notes: existingValue?.notes ?? '',
     },
   });
 
   const onSubmit = async (data: PriceFormValues) => {
     if (!asset) return;
 
+    const payload = {
+      date: data.date.toISOString().split('T')[0], // Format as YYYY-MM-DD
+      value: data.value,
+      currency: data.currency,
+      notes: data.notes,
+    };
+
     try {
-      await api.createManualAssetValue(asset.id, {
-        date: data.date.toISOString().split('T')[0], // Format as YYYY-MM-DD
-        value: data.value,
-        currency: data.currency,
-        notes: data.notes,
-      });
+      if (isEdit && existingValue) {
+        await api.updateManualAssetValue(asset.id, existingValue.id, payload);
+      } else {
+        await api.createManualAssetValue(asset.id, payload);
+      }
       toast({
         title: t('manualPriceForm.success'),
         description: t('manualPriceForm.savedDetail', { name: asset.symbol }),
       });
-      await queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] }),
+        queryClient.invalidateQueries({ queryKey: [MANUAL_ASSET_VALUES_QUERY_KEY] }),
+      ]);
       onClose(true);
     } catch (error) {
       toast({

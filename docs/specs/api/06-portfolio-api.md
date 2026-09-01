@@ -176,18 +176,19 @@ The endpoint returns a wrapped object: `{ portfolioCurrency: string, resolution:
 ## 6.5. Manual Value Management
 
 ### `GET /api/portfolio/items/{assetId}/manual-values`
-- **Responsibility**: Returns all `ManualAssetValue` records for a specific asset, ordered by date descending.
+- **Responsibility**: Returns **all** `ManualAssetValue` records for a specific asset, ordered by `date` descending (newest first).
+- **Response shape**: Each row is the full model — `id` (cuid string), `date`, `value` (serialized Decimal → string), `currency` (ISO 4217, stored per row), `notes` (nullable), `createdAt`, `updatedAt`. `createdAt` reflects when the row was keyed in and can differ from the backdated `date`. The frontend "Price history" modal consumes this endpoint directly.
 
 ### `POST /api/portfolio/items/{assetId}/manual-values`
-- **Responsibility**: Adds a new manual price point for a specific asset.
+- **Responsibility**: Adds a new manual price point for a specific asset. Accepts `date`, `value`, `currency`, and optional `notes`.
 - **Event Emission**: After successfully creating the `ManualAssetValue` record, it dispatches a `MANUAL_PORTFOLIO_PRICE_UPDATED` event to the backend. This event contains the `portfolioItemId`, which allows the `portfolioWorker` to efficiently target and recalculate only the affected item.
 
 ### `PUT /api/portfolio/items/{assetId}/manual-values/{valueId}`
-- **Responsibility**: Updates an existing manual price point (date and/or value).
+- **Responsibility**: Updates an existing manual price point. `{valueId}` is the row's **cuid string** (not an integer). Any subset of `date`, `value`, `currency`, `notes` may be supplied.
 - **Event Emission**: Dispatches `MANUAL_PORTFOLIO_PRICE_UPDATED` after update.
 
 ### `DELETE /api/portfolio/items/{assetId}/manual-values/{valueId}`
-- **Responsibility**: Removes a manual price point.
+- **Responsibility**: Removes a manual price point. `{valueId}` is the row's **cuid string**. Returns `204 No Content` on success.
 - **Event Emission**: Dispatches `MANUAL_PORTFOLIO_PRICE_UPDATED` after deletion.
 
 ---

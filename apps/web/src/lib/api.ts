@@ -625,12 +625,15 @@ class APIClient {
     valueId: string,
     data: Partial<{ date: string; value: number; currency: string; notes?: string; }>
   ): Promise<ManualAssetValue> {
-    const response = await this.client.put(`/api/portfolio/items/${itemId}/manual-values`, data, { params: { valueId } });
+    const response = await this.client.put(
+      `/api/portfolio/items/${itemId}/manual-values/${valueId}`,
+      data
+    );
     return response.data;
   }
 
   async deleteManualAssetValue(itemId: number, valueId: string): Promise<void> {
-    await this.client.delete(`/api/portfolio/items/${itemId}/manual-values`, { params: { valueId } });
+    await this.client.delete(`/api/portfolio/items/${itemId}/manual-values/${valueId}`);
   }
 
   async createOrUpdateDebtTerms(itemId: number, data: DebtTermsRequest): Promise<DebtTerms> {

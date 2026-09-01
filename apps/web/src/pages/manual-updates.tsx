@@ -22,9 +22,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { differenceInDays } from "date-fns";
-import { AlertCircle, Pencil, FileText } from "lucide-react";
+import { AlertCircle, Pencil, FileText, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ManualPriceForm } from "@/components/entities/manual-price-form";
+import { ManualPriceHistoryDialog } from "@/components/entities/manual-price-history-dialog";
 import { DebtTermsForm } from "@/components/entities/debt-terms-form";
 import { parseDecimal, getDisplayData } from "@/lib/portfolio-utils";
 import { formatCurrency } from "@/lib/utils";
@@ -80,6 +81,7 @@ export default function ManualUpdatesPage() {
 
   const [selectedAsset, setSelectedAsset] = useState<PortfolioItem | null>(null);
   const [dialogType, setDialogType] = useState<"price" | "debt" | null>(null);
+  const [historyAsset, setHistoryAsset] = useState<PortfolioItem | null>(null);
 
   // Sort state for stale assets
   const [staleSortKey, setStaleSortKey] = useState<StaleSortKey>("days");
@@ -127,6 +129,18 @@ export default function ManualUpdatesPage() {
       return staleSortDir === "asc" ? cmp : -cmp;
     });
   }, [assetsToUpdate, staleSortKey, staleSortDir, portfolioCurrency]);
+
+  // Every manually-priced asset with a real position — the history modal must be
+  // reachable for these even when they are not stale.
+  const manuallyPricedAssets = useMemo(() => {
+    return assets
+      .filter(
+        (asset) =>
+          asset.category?.processingHint === "MANUAL" &&
+          parseDecimal(asset.quantity) > 0
+      )
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+  }, [assets]);
 
   const handleStaleSort = (key: StaleSortKey) => {
     if (staleSortKey === key) {
@@ -282,14 +296,25 @@ export default function ManualUpdatesPage() {
 
                           {/* Action */}
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              className="h-8 gap-1.5 text-xs"
-                              onClick={() => handleOpenDialog(asset, "price")}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              <span className="hidden sm:inline">{t("manualUpdates.updatePrice")}</span>
-                            </Button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs"
+                                onClick={() => setHistoryAsset(asset)}
+                              >
+                                <History className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">{t("manualPriceHistory.viewHistory")}</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs"
+                                onClick={() => handleOpenDialog(asset, "price")}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">{t("manualUpdates.updatePrice")}</span>
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -300,6 +325,79 @@ export default function ManualUpdatesPage() {
             ) : (
               <p className="text-sm text-muted-foreground py-6 text-center">
                 {t("manualUpdates.allUpToDate")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── All Manually-Priced Assets Card ── */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{t("manualPriceHistory.allManualAssetsTitle")}</CardTitle>
+            <CardDescription>
+              {t("manualPriceHistory.allManualAssetsDesc")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {manuallyPricedAssets.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-accent/40">
+                      <TableHead>{t("manualUpdates.asset")}</TableHead>
+                      <TableHead className="text-right">{t("manualUpdates.value")}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t("manualPriceHistory.lastUpdated")}</TableHead>
+                      <TableHead className="text-right">{t("common.actions")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {manuallyPricedAssets.map((asset) => {
+                      const marketValue = parseDecimal(getDisplayData(asset, portfolioCurrency).marketValue);
+                      const lastManualUpdate = asset.manualValues?.[0]?.date;
+                      const lastUpdateStr = lastManualUpdate
+                        ? new Date(lastManualUpdate).toLocaleDateString()
+                        : t("manualUpdates.never");
+
+                      return (
+                        <TableRow key={asset.id} className="hover:bg-accent/30">
+                          <TableCell>
+                            <div className="font-medium">{asset.symbol}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
+                              <span>{asset.category?.name}</span>
+                              {asset.account?.name && (
+                                <>
+                                  <span className="text-border-color">·</span>
+                                  <span>{asset.account.name}</span>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {formatCurrency(marketValue, portfolioCurrency)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm hidden sm:table-cell tabular-nums">
+                            {lastUpdateStr}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5 text-xs"
+                              onClick={() => setHistoryAsset(asset)}
+                            >
+                              <History className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">{t("manualPriceHistory.viewHistory")}</span>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                {t("manualPriceHistory.noManualAssets")}
               </p>
             )}
           </CardContent>
@@ -421,6 +519,18 @@ export default function ManualUpdatesPage() {
           {dialogType === "debt" && <DebtTermsForm asset={selectedAsset} onClose={closeDialog} />}
         </DialogContent>
       </Dialog>
+
+      {/* ── Price History Modal ── */}
+      <ManualPriceHistoryDialog
+        asset={historyAsset}
+        open={historyAsset !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setHistoryAsset(null);
+            refetch();
+          }
+        }}
+      />
     </>
   );
 }
