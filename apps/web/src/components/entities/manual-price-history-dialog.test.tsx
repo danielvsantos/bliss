@@ -122,6 +122,69 @@ describe('ManualPriceHistoryDialog', () => {
     expect(screen.getByText('$1,300.00')).toBeInTheDocument();
   });
 
+  it('keeps the row-actions column and makes the table horizontally scrollable', () => {
+    // Regression: the actions (edit/delete) column was clipped off the right
+    // edge of the dialog with no way to scroll to it, because the table wrapper
+    // (a grid child) could not shrink so `overflow-x-auto` never engaged.
+    vi.mocked(useManualAssetValues).mockReturnValue(mockQueryResult([makeRow()]));
+
+    renderDialog();
+
+    // The actions column header must be present (it was the one being clipped).
+    const actionsHeader = screen.getByRole('columnheader', {
+      name: 'manualPriceHistory.actions',
+    });
+    expect(actionsHeader).toBeInTheDocument();
+
+    // Its edit/delete buttons must be reachable in the DOM.
+    expect(screen.getByRole('button', { name: 'manualPriceHistory.edit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'manualPriceHistory.delete' })).toBeInTheDocument();
+
+    // The table must sit inside a wrapper that can shrink below its content
+    // width (`min-w-0`) — without it the grid child never shrinks and the
+    // horizontal scroll never engages, which is what clipped the column.
+    expect(
+      actionsHeader.closest('.min-w-0'),
+      'table must sit inside a shrinkable (min-w-0) wrapper',
+    ).not.toBeNull();
+    // …and a horizontal-scroll container is present so hidden columns stay reachable.
+    expect(actionsHeader.closest('.overflow-x-auto')).not.toBeNull();
+
+    // The dialog is widened and height-capped rather than growing unbounded.
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.className).toContain('sm:max-w-3xl');
+    expect(dialog?.className).toContain('max-h-[90vh]');
+  });
+
+  it('hides the lower-priority columns on narrow viewports (responsive classes)', () => {
+    vi.mocked(useManualAssetValues).mockReturnValue(mockQueryResult([makeRow()]));
+
+    renderDialog();
+
+    const notes = screen.getByRole('columnheader', { name: 'manualPriceHistory.notes' });
+    expect(notes.className).toContain('hidden');
+    expect(notes.className).toContain('lg:table-cell');
+
+    const recordedOn = screen.getByRole('columnheader', {
+      name: 'manualPriceHistory.recordedOn',
+    });
+    expect(recordedOn.className).toContain('hidden');
+    expect(recordedOn.className).toContain('md:table-cell');
+  });
+
+  it('does not render the pager when there are 12 or fewer entries', () => {
+    vi.mocked(useManualAssetValues).mockReturnValue(
+      mockQueryResult(Array.from({ length: 12 }, (_, i) => makeRow({ id: `r${i}` }))),
+    );
+
+    renderDialog();
+
+    expect(screen.queryByText('manualPriceHistory.pagination')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'manualPriceHistory.next' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders a loading skeleton', () => {
     vi.mocked(useManualAssetValues).mockReturnValue(mockQueryLoading());
     renderDialog();
