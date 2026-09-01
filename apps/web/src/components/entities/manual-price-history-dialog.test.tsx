@@ -89,6 +89,39 @@ describe('ManualPriceHistoryDialog', () => {
     expect(within(rows[1]).getByText('$1,000.00')).toBeInTheDocument();
   });
 
+  it('paginates a long history and pages forward/back', () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      makeRow({ id: `r${i}`, value: (i + 1) * 100, date: `2026-01-${String(i + 1).padStart(2, '0')}` }),
+    );
+    vi.mocked(useManualAssetValues).mockReturnValue(mockQueryResult(many));
+
+    renderDialog();
+
+    // 12 rows per page → header + 12
+    expect(screen.getAllByRole('row')).toHaveLength(13);
+    expect(screen.getByText('manualPriceHistory.pagination')).toBeInTheDocument();
+    expect(screen.getByText('$100.00')).toBeInTheDocument();
+    expect(screen.queryByText('$1,300.00')).not.toBeInTheDocument();
+
+    const prev = screen.getByRole('button', { name: 'manualPriceHistory.prev' });
+    const next = screen.getByRole('button', { name: 'manualPriceHistory.next' });
+    expect(prev).toBeDisabled();
+    expect(next).toBeEnabled();
+
+    fireEvent.click(next);
+    expect(screen.getByText('$1,300.00')).toBeInTheDocument();
+    expect(screen.queryByText('$100.00')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'manualPriceHistory.prev' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'manualPriceHistory.next' }));
+    // page 3 = rows 25..30 → 6 rows, Next now disabled
+    expect(screen.getAllByRole('row')).toHaveLength(7);
+    expect(screen.getByRole('button', { name: 'manualPriceHistory.next' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'manualPriceHistory.prev' }));
+    expect(screen.getByText('$1,300.00')).toBeInTheDocument();
+  });
+
   it('renders a loading skeleton', () => {
     vi.mocked(useManualAssetValues).mockReturnValue(mockQueryLoading());
     renderDialog();

@@ -1592,6 +1592,9 @@ const fr = {
     allManualAssetsTitle: "Tous les actifs à prix manuel",
     allManualAssetsDesc: "Tous les actifs que vous valorisez à la main. Ouvrez leur historique pour consulter, modifier ou supprimer les entrées passées.",
     noManualAssets: "Aucun actif à prix manuel pour l'instant.",
+    pagination: "Affichage de {{from}}–{{to}} sur {{total}}",
+    prev: "Précédent",
+    next: "Suivant",
   },
 
   categoryCombobox: {
