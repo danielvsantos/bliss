@@ -157,6 +157,36 @@ components:
           type: string
           format: date
 
+    ManualAssetValue:
+      type: object
+      description: A single hand-entered price point for a manually-tracked asset.
+      properties:
+        id:
+          type: string
+          description: cuid identifier.
+        date:
+          type: string
+          format: date
+          description: The effective date the price applies to (may be backdated).
+        value:
+          type: number
+          description: The price, serialized from a Prisma Decimal (string in JSON).
+        currency:
+          type: string
+          description: >-
+            ISO 4217 code stored per row. New rows are pinned to the asset
+            currency; historical or imported rows may differ.
+        notes:
+          type: string
+          description: Optional free-text note (e.g. valuation source).
+        createdAt:
+          type: string
+          format: date-time
+          description: When the row was keyed in (distinguishes a backdated entry).
+        updatedAt:
+          type: string
+          format: date-time
+
 security:
   - cookieAuth: []
 
@@ -205,23 +235,15 @@ paths:
             type: integer
       responses:
         '200':
-          description: An array of manual value entries.
+          description: >-
+            An array of manual value entries, ordered by effective date
+            descending (newest first).
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                    date:
-                      type: string
-                      format: date
-                    value:
-                      type: number
-                    currency:
-                      type: string
+                  $ref: '#/components/schemas/ManualAssetValue'
         '404':
           description: Portfolio item not found.
     post:
@@ -251,30 +273,26 @@ paths:
                   type: number
                 currency:
                   type: string
+                notes:
+                  type: string
+                  description: Optional free-text note (e.g. valuation source).
       responses:
         '201':
           description: The newly created manual value.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  date:
-                    type: string
-                    format: date
-                  value:
-                    type: number
-                  currency:
-                    type: string
+                $ref: '#/components/schemas/ManualAssetValue'
         '404':
           description: Portfolio item not found.
 
   /api/portfolio/items/{assetId}/manual-values/{valueId}:
-    delete:
-      summary: Delete a manual value entry
-      description: Removes a specific manual price entry from a portfolio item.
+    put:
+      summary: Update a manual value entry
+      description: >-
+        Updates a specific manual price entry. Any subset of fields may be
+        supplied. On success the backend emits `MANUAL_PORTFOLIO_PRICE_UPDATED`
+        so the portfolio is revalued.
       parameters:
         - name: assetId
           in: path
@@ -284,10 +302,54 @@ paths:
         - name: valueId
           in: path
           required: true
+          description: The manual value's id (cuid string).
           schema:
-            type: integer
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date:
+                  type: string
+                  format: date
+                value:
+                  type: number
+                currency:
+                  type: string
+                notes:
+                  type: string
       responses:
         '200':
+          description: The updated manual value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualAssetValue'
+        '404':
+          description: Portfolio item or manual value not found.
+    delete:
+      summary: Delete a manual value entry
+      description: >-
+        Removes a specific manual price entry from a portfolio item. On success
+        the backend emits `MANUAL_PORTFOLIO_PRICE_UPDATED` so the portfolio is
+        revalued.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: valueId
+          in: path
+          required: true
+          description: The manual value's id (cuid string).
+          schema:
+            type: string
+      responses:
+        '204':
           description: Manual value deleted successfully.
         '404':
           description: Portfolio item or manual value not found.

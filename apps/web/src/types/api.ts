@@ -136,6 +136,9 @@ export type ManualAssetValue = {
   value: number;
   currency: string;
   notes?: string;
+  /** When the row was keyed in — distinguishes a backdated entry from its creation time. */
+  createdAt: string;
+  updatedAt: string;
 };
 
 type FinancialSummary = {

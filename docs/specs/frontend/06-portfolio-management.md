@@ -70,8 +70,20 @@ This page provides a centralized location for users to manage assets and liabili
 
 ### 6.3.1. Manual Price Updates
 
-- **Asset Identification**: The page automatically identifies all manually-tracked assets (`processingHint: 'MANUAL'`) that have not had a price update in over 30 days.
-- **Update Mechanism**: For each outdated asset, the user is prompted to enter a new price. This is done through the `<ManualPriceForm />` component, which opens in a dialog.
+- **Asset Identification**: The page automatically identifies all manually-tracked assets (`processingHint: 'MANUAL'`) that have not had a price update in over 30 days. These are listed in the "Action Required: Stale Prices" card.
+- **All manually-priced assets**: A second card ("All manually-priced assets") lists **every** `MANUAL` asset with a positive quantity — stale or not — sorted by symbol, so the price history is always reachable.
+- **Update Mechanism**: For each asset, the user is prompted to enter a new price through the `<ManualPriceForm />` component, which opens in a dialog.
+
+### 6.3.1.1. Price History Modal
+
+- **Component**: `src/components/entities/manual-price-history-dialog.tsx` (`<ManualPriceHistoryDialog />`).
+- **Entry points**: A "View history" button on every stale-card row (beside "Update Price") and on every "All manually-priced assets" row. Reachable in ≤2 clicks, including for non-stale assets.
+- **Data**: `useManualAssetValues(itemId)` (`src/hooks/use-manual-asset-values.ts`) wraps `GET /api/portfolio/items/{assetId}/manual-values` — returns every `ManualAssetValue` for the asset, newest first. Query key: `['manual-asset-values', itemId]`; disabled until `itemId` is set.
+- **List columns**: Effective date, Price (currency-formatted per row), Currency, Notes, Recorded on (`createdAt`).
+- **Mixed currency**: Rows whose `currency` differs from the asset's base currency are flagged with a `warning`-token badge. **No FX conversion** is performed — each row is shown in its own stored currency. Price formatting goes through a guarded helper that falls back to `"<amount> <CODE>"` if the ISO code is malformed (legacy/imported rows).
+- **States**: skeleton rows while loading; inline `Alert` + "Retry" on error; empty state with a "Record first price" button that opens `<ManualPriceForm />`.
+- **Edit / delete**: The dialog uses an internal `list | add | edit` view switch (no nested `Dialog`s). Editing reuses `<ManualPriceForm existingValue={row} />` — in edit mode the currency default comes from the row (not the asset) so a save round-trips the original code; the form submits via `api.updateManualAssetValue(itemId, valueId, ...)`. Delete uses a shadcn `AlertDialog` confirmation, then `api.deleteManualAssetValue(itemId, valueId)`.
+- **After any mutation**: invalidates `['portfolio-items']` and `['manual-asset-values']`, shows a toast. The backend already emits `MANUAL_PORTFOLIO_PRICE_UPDATED` on create/update/delete, so portfolio revaluation is automatic.
 
 ### 6.3.2. Debt Terms Management
 
