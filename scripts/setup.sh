@@ -72,6 +72,7 @@ GOOGLE_CLIENT_ID=""; GOOGLE_CLIENT_SECRET=""
 PLAID_CLIENT_ID=""; PLAID_SECRET=""; PLAID_ENV="sandbox"; PLAID_WEBHOOK_URL=""
 TWELVE_DATA_API_KEY=""
 CURRENCYLAYER_API_KEY=""
+CURRENCY_PROVIDER=""
 SENTRY_DSN=""; SENTRY_ORG=""; SENTRY_PROJECT=""
 
 # Track which services have been configured
@@ -102,13 +103,23 @@ configure_service() {
       ;;
     3)
       echo "── Twelve Data ──────────────────────────────────────────────────"
+      echo "   Powers live stock/crypto prices, security fundamentals, AND"
+      echo "   (by default) historical & current FX rates for multi-currency."
       read -r -p "  TWELVE_DATA_API_KEY: " TWELVE_DATA_API_KEY
       echo ""
       CONFIGURED="$CONFIGURED 3"
       ;;
     4)
-      echo "── CurrencyLayer ────────────────────────────────────────────────"
+      echo "── CurrencyLayer (legacy FX rates — optional) ───────────────────"
+      echo "   Not needed if you configured Twelve Data above: it already"
+      echo "   covers FX. Only set this to keep using the legacy CurrencyLayer"
+      echo "   provider (CURRENCY_PROVIDER=CURRENCYLAYER)."
       read -r -p "  CURRENCYLAYER_API_KEY: " CURRENCYLAYER_API_KEY
+      # If the operator supplies a CurrencyLayer key but no Twelve Data key,
+      # pin the provider to CURRENCYLAYER so FX auto-fetch keeps working.
+      if [ -n "$CURRENCYLAYER_API_KEY" ] && [ -z "$TWELVE_DATA_API_KEY" ]; then
+        CURRENCY_PROVIDER="CURRENCYLAYER"
+      fi
       echo ""
       CONFIGURED="$CONFIGURED 4"
       ;;
@@ -130,8 +141,8 @@ print_services_menu() {
   echo ""
   [[ "$CONFIGURED" != *" 1"* ]] && echo "  1) Google OAuth    — enables Sign in with Google"
   [[ "$CONFIGURED" != *" 2"* ]] && echo "  2) Plaid           — bank connection & real-time transaction sync"
-  [[ "$CONFIGURED" != *" 3"* ]] && echo "  3) Twelve Data     — live stock prices & security fundamentals"
-  [[ "$CONFIGURED" != *" 4"* ]] && echo "  4) CurrencyLayer   — historical FX rates for multi-currency portfolios"
+  [[ "$CONFIGURED" != *" 3"* ]] && echo "  3) Twelve Data     — live stock prices, security fundamentals & FX rates"
+  [[ "$CONFIGURED" != *" 4"* ]] && echo "  4) CurrencyLayer   — legacy FX rates (optional; Twelve Data covers FX by default)"
   [[ "$CONFIGURED" != *" 5"* ]] && echo "  5) Sentry          — error monitoring & alerting"
   echo ""
 }
@@ -194,6 +205,7 @@ sed -i.bak -e "s|^PLAID_ENV=.*|PLAID_ENV=$PLAID_ENV|" "$ENV_FILE"
 [ -n "$PLAID_WEBHOOK_URL" ]    && sed -i.bak -e "s|^PLAID_WEBHOOK_URL=.*|PLAID_WEBHOOK_URL=$PLAID_WEBHOOK_URL|" "$ENV_FILE"
 [ -n "$TWELVE_DATA_API_KEY" ]  && sed -i.bak -e "s|^TWELVE_DATA_API_KEY=.*|TWELVE_DATA_API_KEY=$TWELVE_DATA_API_KEY|" "$ENV_FILE"
 [ -n "$CURRENCYLAYER_API_KEY" ] && sed -i.bak -e "s|^CURRENCYLAYER_API_KEY=.*|CURRENCYLAYER_API_KEY=$CURRENCYLAYER_API_KEY|" "$ENV_FILE"
+[ -n "$CURRENCY_PROVIDER" ]    && sed -i.bak -e "s|^CURRENCY_PROVIDER=.*|CURRENCY_PROVIDER=$CURRENCY_PROVIDER|" "$ENV_FILE"
 [ -n "$SENTRY_DSN" ]           && sed -i.bak -e "s|^SENTRY_DSN=.*|SENTRY_DSN=$SENTRY_DSN|" "$ENV_FILE"
 [ -n "$SENTRY_ORG" ]           && sed -i.bak -e "s|^SENTRY_ORG=.*|SENTRY_ORG=$SENTRY_ORG|" "$ENV_FILE"
 [ -n "$SENTRY_PROJECT" ]       && sed -i.bak -e "s|^SENTRY_PROJECT=.*|SENTRY_PROJECT=$SENTRY_PROJECT|" "$ENV_FILE"

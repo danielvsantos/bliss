@@ -424,6 +424,119 @@ async function getDividends(symbol, { micCode } = {}) {
     }
 }
 
+/**
+ * Resolves a single Twelve Data forex symbol (e.g. 'EUR/USD') to a numeric
+ * rate. Tries the dedicated `/exchange_rate` endpoint first (real-time, or
+ * historical via the `date` param), then falls back to a `/time_series`
+ * backtrack window for weekends / market holidays.
+ *
+ * @param {string} symbol Twelve Data forex symbol, `FROM/TO` (e.g. 'EUR/USD').
+ * @param {string} dateStr Target date, `YYYY-MM-DD`.
+ * @param {boolean} isToday When true, request the real-time rate (no `date` param).
+ * @returns {Promise<number|null>} The rate for `symbol`, or null if unresolved.
+ */
+async function resolveFxSymbol(symbol, dateStr, isToday) {
+    // 1. /exchange_rate — direct analogue of CurrencyLayer's `historical` call.
+    await acquireValuationSlot();
+    try {
+        const params = { symbol, apikey: TWELVE_DATA_API_KEY };
+        if (!isToday) params.date = dateStr;
+        logger.info(`[TwelveData] Fetching FX rate for ${symbol}`, { date: isToday ? 'latest' : dateStr });
+
+        const response = await axios.get(`${BASE_URL}/exchange_rate`, { timeout: 10000, params });
+
+        if (response.data && response.data.status === 'error') {
+            logger.warn(`[TwelveData] exchange_rate error for ${symbol}: ${response.data.message}`);
+        } else if (response.data) {
+            const rate = safeParseFloat(response.data.rate);
+            if (rate != null && rate > 0) {
+                logger.info(`[TwelveData] FX rate for ${symbol}: ${rate}`);
+                return rate;
+            }
+        }
+    } catch (error) {
+        logger.warn(`[TwelveData] exchange_rate request failed for ${symbol}: ${error.message}`);
+    }
+
+    // 2. /time_series — weekend / holiday backtrack (up to 3 prior days).
+    const startDateObj = new Date(`${dateStr}T00:00:00.000Z`);
+    startDateObj.setUTCDate(startDateObj.getUTCDate() - 3);
+    const startStr = startDateObj.toISOString().split('T')[0];
+
+    await acquireValuationSlot();
+    try {
+        logger.info(`[TwelveData] Falling back to time_series for ${symbol}`, { startDate: startStr, endDate: dateStr });
+
+        const response = await axios.get(`${BASE_URL}/time_series`, {
+            timeout: 10000,
+            params: { symbol, interval: '1day', start_date: startStr, end_date: dateStr, apikey: TWELVE_DATA_API_KEY },
+        });
+
+        if (response.data && response.data.status === 'error') {
+            logger.warn(`[TwelveData] time_series error for ${symbol}: ${response.data.message}`);
+            return null;
+        }
+
+        const values = response.data && response.data.values;
+        if (values && values.length > 0) {
+            const close = safeParseFloat(values[0].close);
+            if (close != null && close > 0) {
+                logger.info(`[TwelveData] FX rate for ${symbol} on ${values[0].datetime}: ${close}`);
+                return close;
+            }
+        }
+        logger.warn(`[TwelveData] No time_series data for ${symbol} around ${dateStr}.`);
+        return null;
+    } catch (error) {
+        logger.warn(`[TwelveData] time_series request failed for ${symbol}: ${error.message}`);
+        return null;
+    }
+}
+
+/**
+ * Fetches an FX rate for a currency pair from Twelve Data.
+ *
+ * Direction semantics match the existing CurrencyLayer contract: the returned
+ * number `X` satisfies `1 currencyFrom = X currencyTo`.
+ *
+ * Resolution order (all within Twelve Data — there is no cross-provider
+ * fallback here):
+ *   1. `${from}/${to}` via `/exchange_rate` (historical when `date` is set).
+ *   2. `${from}/${to}` via `/time_series` (weekend / holiday backtrack).
+ *   3. The inverse symbol `${to}/${from}` through the same two steps, returning
+ *      `1 / value`.
+ *
+ * Rate-limited through the shared valuation slot so a burst of FX lookups
+ * during a portfolio revaluation cannot starve equity pricing or exceed the
+ * Twelve Data credit budget.
+ *
+ * @param {string} currencyFrom Source currency code (e.g. 'EUR').
+ * @param {string} currencyTo Target currency code (e.g. 'USD').
+ * @param {Date} [date] Target date. Omitted or today → real-time rate.
+ * @returns {Promise<number|null>} The exchange rate, or null if every path fails.
+ */
+async function getFxRate(currencyFrom, currencyTo, date) {
+    if (!TWELVE_DATA_API_KEY) {
+        logger.warn('[TwelveData] TWELVE_DATA_API_KEY is not set. Skipping FX rate call.');
+        return null;
+    }
+
+    if (currencyFrom === currencyTo) return 1;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dateStr = date ? new Date(date).toISOString().split('T')[0] : todayStr;
+    const isToday = dateStr >= todayStr;
+
+    const direct = await resolveFxSymbol(`${currencyFrom}/${currencyTo}`, dateStr, isToday);
+    if (direct != null) return direct;
+
+    const inverse = await resolveFxSymbol(`${currencyTo}/${currencyFrom}`, dateStr, isToday);
+    if (inverse != null && inverse > 0) return 1 / inverse;
+
+    logger.warn(`[TwelveData] Could not resolve FX rate for ${currencyFrom}/${currencyTo} on ${dateStr}.`);
+    return null;
+}
+
 module.exports = {
     getHistoricalPrice,
     getLatestPrice,
@@ -431,4 +544,5 @@ module.exports = {
     getSymbolProfile,
     getEarnings,
     getDividends,
+    getFxRate,
 };

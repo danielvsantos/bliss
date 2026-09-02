@@ -565,8 +565,9 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 | EMBEDDING_MODEL             | *(per-provider default)* | Override embedding model          |
 | CLASSIFICATION_MODEL        | *(per-provider default)* | Override classification model     |
 | INSIGHT_MODEL               | *(per-provider default)* | Override insights model           |
-| TWELVE_DATA_API_KEY         | --                    | Stock prices and fundamentals        |
-| CURRENCYLAYER_API_KEY       | --                    | Historical FX rates                  |
+| TWELVE_DATA_API_KEY         | --                    | Stock prices, fundamentals, and FX rates (default) |
+| CURRENCY_PROVIDER           | TWELVE_DATA           | FX-rate source: TWELVE_DATA \| CURRENCYLAYER (legacy) |
+| CURRENCYLAYER_API_KEY       | --                    | Legacy FX rates (only when CURRENCY_PROVIDER=CURRENCYLAYER) |
 | SENTRY_DSN                  | --                    | Sentry error tracking                |
 
 ### Optional — Infrastructure

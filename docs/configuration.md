@@ -6,7 +6,7 @@ Bliss uses a **single root `.env` file** as the source of truth for all services
 
 - **Docker Compose** reads the root `.env` automatically -- no `env_file` directive needed.
 - **`scripts/setup.sh`** generates cryptographic secrets (`ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`) so you never have to create them by hand. Run it once after copying `.env.example` to `.env`.
-- **Optional integrations** (Plaid, Twelve Data, CurrencyLayer, Sentry) are activated simply by adding the relevant API keys. The application degrades gracefully when they are absent. The **LLM provider** (Gemini, OpenAI, or Anthropic) is the one required integration — without it AI classification and insights are unavailable.
+- **Optional integrations** (Plaid, Twelve Data, Sentry) are activated simply by adding the relevant API keys. The application degrades gracefully when they are absent. Twelve Data also provides FX (exchange) rates by default; CurrencyLayer remains available as a legacy FX source via `CURRENCY_PROVIDER`. The **LLM provider** (Gemini, OpenAI, or Anthropic) is the one required integration — without it AI classification and insights are unavailable.
 - **Test-specific overrides**: each service may have a `.env.test` file that overrides `DATABASE_URL` to point at an isolated test database. These files are loaded automatically by the test runners and should never be committed.
 
 ---
@@ -21,8 +21,8 @@ The one required integration is an **LLM provider** for AI classification and in
 |---|---|---|---|
 | LLM (Gemini / OpenAI / Anthropic) | **Yes** | `LLM_PROVIDER`, `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | AI classification + insights |
 | Plaid | No | `PLAID_CLIENT_ID`, `PLAID_SECRET` | Bank account linking |
-| Market data | No | `TWELVE_DATA_API_KEY` | Stock price fetching |
-| Currency rates | No | `CURRENCYLAYER_API_KEY` | Automatic FX rate fetching |
+| Market data | No | `TWELVE_DATA_API_KEY` | Stock price fetching + FX rates (default) |
+| Currency / FX rates | No | `CURRENCY_PROVIDER` (`TWELVE_DATA` default \| `CURRENCYLAYER`), `CURRENCYLAYER_API_KEY` (legacy only) | Automatic FX rate fetching |
 | Observability | No | `SENTRY_DSN` | Error tracking |
 
 See [Choosing Your External Services](/docs/guides/external-services) for picking and configuring an LLM. Optional integrations can be added any time.
@@ -140,16 +140,17 @@ Stock price fetching is provided by [Twelve Data](https://twelvedata.com) by def
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `STOCK_PROVIDER` | No | `TWELVE_DATA` | Stock data provider. Supported values: `TWELVE_DATA` (recommended), `FINNHUB`. |
-| `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Enables real-time and historical pricing for stocks, ETFs, and funds (10,000+ symbols across 27+ markets). |
+| `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Enables real-time and historical pricing for stocks, ETFs, and funds (10,000+ symbols across 27+ markets). **Also powers FX (exchange) rates by default** — see *Currency / FX Rates* below. |
 | `FINNHUB_API_KEY` | No | -- | API key for Finnhub. Alternative stock data provider. |
 
-## Currency Rates (optional)
+## Currency / FX Rates (optional)
 
-Automatic historical exchange rate fetching is disabled when the API key is not set. Rates can still be entered manually via the UI.
+Portfolio processing and analytics normalise multi-currency data using historical and current exchange rates. Bliss fetches these from **Twelve Data by default** (reusing `TWELVE_DATA_API_KEY` — no separate subscription). [CurrencyLayer](https://currencylayer.com/) remains available as a **legacy** FX source. Automatic fetching is disabled when the active provider has no key; rates can still be entered manually via the UI.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `CURRENCYLAYER_API_KEY` | No | -- | API key for [CurrencyLayer](https://currencylayer.com/). Used by portfolio processing and analytics to fetch historical FX rates. |
+| `CURRENCY_PROVIDER` | No | `TWELVE_DATA` | FX-rate source. Supported values: `TWELVE_DATA` (default; reuses `TWELVE_DATA_API_KEY`) and `CURRENCYLAYER` (legacy). When unset, Twelve Data is used if `TWELVE_DATA_API_KEY` is set, otherwise CurrencyLayer if `CURRENCYLAYER_API_KEY` is set, otherwise Twelve Data (auto-fetch disabled until a key is added). |
+| `CURRENCYLAYER_API_KEY` | No (legacy) | -- | API key for CurrencyLayer. Only used when `CURRENCY_PROVIDER=CURRENCYLAYER`. Not needed on new installs — Twelve Data covers FX. |
 
 ## Observability (optional)
 

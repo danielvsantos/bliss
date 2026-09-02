@@ -134,6 +134,6 @@ pnpm dev                    # starts all services
 
 - [Choosing Your External Services](/docs/guides/external-services) -- required for AI classification and insights (Gemini, OpenAI, or Anthropic)
 - [Initial Account Setup](/docs/guides/tenant-seed-setup) -- set up accounts, banks, and categories
-- [Choosing Your External Services](/docs/guides/external-services) -- configure Twelve Data, Plaid, CurrencyLayer
+- [Choosing Your External Services](/docs/guides/external-services) -- configure Twelve Data (stock prices + FX rates, via `CURRENCY_PROVIDER`) and Plaid
 - [Import transactions](/docs/guides/importing-transactions) -- bring in your CSV/XLSX data
 - [Connect a bank](/docs/guides/plaid-bank-sync) -- automatic sync with Plaid

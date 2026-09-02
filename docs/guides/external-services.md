@@ -31,15 +31,16 @@ Bliss uses a large language model in two ways: to categorize new, unseen transac
 
 ---
 
-## Twelve Data (Market Prices)
+## Twelve Data (Market Prices + FX Rates)
 
-**What it powers:** Real-time and historical pricing for stocks, ETFs, mutual funds, and cryptocurrencies.
+**What it powers:** Real-time and historical pricing for stocks, ETFs, mutual funds, and cryptocurrencies — **and, by default, historical & current foreign-exchange (FX) rates** for multi-currency portfolios.
 
 Bliss uses Twelve Data to:
 - Fetch current prices for portfolio valuation
 - Look up historical prices for cost basis and P&L calculations
 - Search for ticker symbols when adding investment transactions
 - Retrieve company fundamentals (earnings, dividends, P/E ratio) for equity analysis
+- Resolve currency-pair exchange rates (e.g. `EUR/USD`) for portfolio, analytics, and transaction-display conversion — the same key covers both equities and FX
 
 Twelve Data covers 10,000+ symbols across 27+ global markets (NYSE, NASDAQ, XETRA, Euronext, LSE, Borsa Italiana, and more).
 
@@ -49,9 +50,9 @@ Twelve Data covers 10,000+ symbols across 27+ global markets (NYSE, NASDAQ, XETR
 - **Basic** -- Sufficient if you only track US-listed stocks and don't need real-time quotes. Covers NYSE and NASDAQ.
 - **Pro (recommended)** -- Unlocks international exchanges (European, Asian, Australian markets), real-time pricing, and higher rate limits. Best fit for users with a global portfolio.
 
-**Without Twelve Data:** Portfolio items still track quantities and lots, but prices show as stale or unavailable. Manual valuations can be entered as a fallback.
+**Without Twelve Data:** Portfolio items still track quantities and lots, but prices show as stale or unavailable. Manual valuations can be entered as a fallback. FX rates fall back to manual entry too (or to CurrencyLayer if you set `CURRENCY_PROVIDER=CURRENCYLAYER`).
 
-**Env var:** `TWELVE_DATA_API_KEY`
+**Env vars:** `TWELVE_DATA_API_KEY`, plus `CURRENCY_PROVIDER` (default `TWELVE_DATA`) for FX. See *Currency / FX Rates* below.
 
 ---
 
@@ -73,20 +74,31 @@ See the [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) guide for setup det
 
 ---
 
-## CurrencyLayer (Exchange Rates)
+## Currency / FX Rates
 
-**What it powers:** Automatic historical exchange rate fetching for multi-currency P&L and portfolio valuation.
+**What it powers:** Automatic historical and current exchange-rate fetching for multi-currency P&L and portfolio valuation.
 
-When your accounts span multiple currencies, Bliss needs exchange rates to normalize everything to your display currency. CurrencyLayer provides historical rates used by:
+When your accounts span multiple currencies, Bliss needs exchange rates to normalize everything to your display currency. These rates are used by:
 - Portfolio processing (converting foreign-currency investments to your portfolio currency)
 - Analytics (aggregating spending across currencies into a single P&L)
 - Transaction display (showing amounts in your preferred currency)
 
-**Cost optimization:** Like market prices, exchange rates are cached in the database after the first fetch. A rate for USD/EUR on 2024-03-15 is stored permanently and never re-fetched.
+**Provider:** Controlled by `CURRENCY_PROVIDER`:
 
-**Without CurrencyLayer:** You can enter exchange rates manually through the UI. This works fine if you have a single currency or only need a handful of rates, but becomes tedious for active multi-currency use.
+| Value | Source | Notes |
+|---|---|---|
+| `TWELVE_DATA` (default) | Twelve Data forex endpoints | Reuses `TWELVE_DATA_API_KEY` — **no separate subscription**. Recommended for all new installs. |
+| `CURRENCYLAYER` | [CurrencyLayer](https://currencylayer.com/) | Legacy. Requires `CURRENCYLAYER_API_KEY`. Kept for reversibility and existing instances. |
 
-**Env var:** `CURRENCYLAYER_API_KEY`
+When `CURRENCY_PROVIDER` is unset, Bliss picks Twelve Data if `TWELVE_DATA_API_KEY` is set, otherwise CurrencyLayer if `CURRENCYLAYER_API_KEY` is set, otherwise Twelve Data with auto-fetch disabled until a key is added.
+
+**Cost optimization:** Like market prices, exchange rates are cached in the database after the first fetch. A rate for USD/EUR on 2024-03-15 is stored permanently and never re-fetched — switching providers does not re-fetch or rewrite existing rows.
+
+**Pair coverage:** Twelve Data covers all mainstream currency pairs as forex symbols (`FROM/TO`), and Bliss automatically retries the inverse pair when needed. A pair Twelve Data does not list as a forex symbol (rare — some exotic or pegged currencies) falls back to manual entry through the UI.
+
+**Without an FX provider key:** You can enter exchange rates manually through the UI. This works fine for a single currency or a handful of rates, but becomes tedious for active multi-currency use.
+
+**Env vars:** `CURRENCY_PROVIDER` (default `TWELVE_DATA`), `TWELVE_DATA_API_KEY` (for the default path), `CURRENCYLAYER_API_KEY` (legacy path only).
 
 ---
 
@@ -95,9 +107,9 @@ When your accounts span multiple currencies, Bliss needs exchange rates to norma
 | Service | Feature | Required? | Cost impact |
 |---------|---------|-----------|-------------|
 | LLM provider (Gemini / OpenAI / Anthropic) | AI classification + insights | **Yes** | Free tiers available from all three |
-| Twelve Data | Stock/ETF/crypto prices | No | Free tier for basics; Pro for international |
+| Twelve Data | Stock/ETF/crypto prices **+ FX rates (default)** | No | Free tier for basics; Pro for international |
 | Plaid | Bank account sync | No | Free sandbox for testing |
-| CurrencyLayer | Exchange rates | No | Free tier available |
+| CurrencyLayer | Exchange rates (legacy — only when `CURRENCY_PROVIDER=CURRENCYLAYER`) | No | Not needed if Twelve Data is configured |
 
 The optional services degrade gracefully. The LLM provider is the one hard requirement — without it, AI classification and insights are unavailable.
 

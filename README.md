@@ -153,7 +153,7 @@ Three services. Ten asynchronous workers. Sixty endpoints. One configuration fil
                 ├─► AI: LLM provider abstraction (Gemini / OpenAI / Anthropic)
                 ├─► Banks: Plaid (Sync + Tokens)
                 ├─► Prices: TwelveData (Real-time Stocks)
-                ├─► FX: CurrencyLayer (Historical Rates)
+                ├─► FX: TwelveData (Historical Rates; CurrencyLayer optional/legacy)
                 └─► Ops: Sentry (Observability)
 ```
 
@@ -241,8 +241,8 @@ Enable additional features by adding API keys. All degrade gracefully if missing
 | Feature | Provider | Env Var | What it unlocks |
 |---------|----------|---------|----------------|
 | Bank sync | [Plaid](https://plaid.com) | `PLAID_CLIENT_ID` | One-click bank account linking and automatic transaction sync |
-| Stock prices | [Twelve Data](https://twelvedata.com) | `TWELVE_DATA_API_KEY` | Real-time and historical pricing for 10,000+ symbols |
-| Currency rates | [CurrencyLayer](https://currencylayer.com) | `CURRENCYLAYER_API_KEY` | Live and historical FX rates for multi-currency conversion |
+| Stock prices & FX | [Twelve Data](https://twelvedata.com) | `TWELVE_DATA_API_KEY` | Real-time and historical pricing for 10,000+ symbols, plus historical & current FX rates for multi-currency conversion (default FX source) |
+| Currency rates (legacy) | [CurrencyLayer](https://currencylayer.com) | `CURRENCYLAYER_API_KEY` | Optional legacy FX source. Only used when `CURRENCY_PROVIDER=CURRENCYLAYER`; Twelve Data covers FX by default |
 | Error tracking | [Sentry](https://sentry.io) | `SENTRY_DSN` | Production error monitoring and performance tracing |
 
 Without the optional keys, Bliss still provides full manual transaction management, CSV import, and portfolio management with manual valuations.

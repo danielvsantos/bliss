@@ -338,6 +338,40 @@ describe('validateEnv()', () => {
       const warnCalls = logger.warn.mock.calls.map(args => args[0]);
       expect(warnCalls.some(m => m.includes('Plaid credentials not set'))).toBe(false);
     });
+
+    it('does not warn about FX auto-fetch when TWELVE_DATA_API_KEY is set (default provider)', () => {
+      delete process.env.CURRENCY_PROVIDER;
+      delete process.env.CURRENCYLAYER_API_KEY;
+      validateEnv();
+      const warnCalls = logger.warn.mock.calls.map(args => args[0]);
+      expect(warnCalls.some(m => m.includes('automatic FX rate fetching will be unavailable'))).toBe(false);
+    });
+
+    it('warns that FX auto-fetch is unavailable when the resolved provider (TWELVE_DATA) has no key', () => {
+      delete process.env.CURRENCY_PROVIDER;
+      delete process.env.CURRENCYLAYER_API_KEY;
+      delete process.env.TWELVE_DATA_API_KEY;
+      validateEnv();
+      const warnCalls = logger.warn.mock.calls.map(args => args[0]);
+      expect(warnCalls.some(m => m.includes('CURRENCY_PROVIDER=TWELVE_DATA but TWELVE_DATA_API_KEY is not set'))).toBe(true);
+    });
+
+    it('warns that FX auto-fetch is unavailable when CURRENCY_PROVIDER=CURRENCYLAYER but its key is missing', () => {
+      process.env.CURRENCY_PROVIDER = 'CURRENCYLAYER';
+      delete process.env.CURRENCYLAYER_API_KEY;
+      validateEnv();
+      const warnCalls = logger.warn.mock.calls.map(args => args[0]);
+      expect(warnCalls.some(m => m.includes('CURRENCY_PROVIDER=CURRENCYLAYER but CURRENCYLAYER_API_KEY is not set'))).toBe(true);
+      delete process.env.CURRENCY_PROVIDER;
+    });
+
+    it('warns when CURRENCY_PROVIDER is set to an unrecognised value', () => {
+      process.env.CURRENCY_PROVIDER = 'yahoo';
+      validateEnv();
+      const warnCalls = logger.warn.mock.calls.map(args => args[0]);
+      expect(warnCalls.some(m => m.includes('CURRENCY_PROVIDER="yahoo" is not recognised'))).toBe(true);
+      delete process.env.CURRENCY_PROVIDER;
+    });
   });
 
   describe('NODE_ENV not set (defaults to non-production)', () => {

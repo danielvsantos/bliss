@@ -117,14 +117,14 @@ All monetary values are converted to the tenant's portfolio currency before bein
 
 ### 15.4.1. Currency Rate Access — Read-Only Policy
 
-The insights engine is a **pure read consumer** of the `CurrencyRate` table. It must never populate it. This invariant was introduced in the insights-v2 refactor after a regression where the daily insights cron was calling `getOrCreateCurrencyRate()` (a write-through cache in `currencyService.js`) and triggering CurrencyLayer billing alerts every morning — the script was inserting fresh rate rows on every run instead of consuming rates that had already been populated by the valuation pipeline.
+The insights engine is a **pure read consumer** of the `CurrencyRate` table. It must never populate it. This invariant was introduced in the insights-v2 refactor after a regression where the daily insights cron was calling `getOrCreateCurrencyRate()` (a write-through cache in `currencyService.js`) and triggering FX-provider billing alerts (historically CurrencyLayer) every morning — the script was inserting fresh rate rows on every run instead of consuming rates that had already been populated by the valuation pipeline.
 
 **Who is allowed to write to `CurrencyRate`:**
 
 - `portfolioWorker` (valuation, cash processing, liability processing)
 - `priceService` / `priceFetcher` (portfolio asset valuation strategies)
 
-Both call `getOrCreateCurrencyRate()` from `currencyService.js`, which checks the cache, then the DB, then CurrencyLayer, and `INSERT`s a row on a miss. That helper carries a prominent `⚠️ WRITE-THROUGH CACHE` JSDoc banner listing its authorized callers.
+Both call `getOrCreateCurrencyRate()` from `currencyService.js`, which checks the cache, then the DB, then the configured FX provider (Twelve Data by default; CurrencyLayer legacy), and `INSERT`s a row on a miss. That helper carries a prominent `⚠️ WRITE-THROUGH CACHE` JSDoc banner listing its authorized callers.
 
 **Who must only read from `CurrencyRate`:**
 
@@ -207,7 +207,7 @@ expect(src).not.toMatch(/require\(['"]axios['"]\)/);          // axios imports
 
 Comment mentions are stripped before the static check so the warning banner at the top of `insightService.js` (which legitimately names the forbidden symbol to explain the policy) doesn't false-positive.
 
-If a future refactor reintroduces the write-through path — directly, transitively via a new service import, or via `axios` — CI fails immediately instead of letting the regression land silently and get discovered by CurrencyLayer billing alerts.
+If a future refactor reintroduces the write-through path — directly, transitively via a new service import, or via `axios` — CI fails immediately instead of letting the regression land silently and get discovered by FX-provider billing alerts (historically CurrencyLayer).
 
 ## 15.5. Prompt Architecture
 

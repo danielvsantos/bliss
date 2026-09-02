@@ -6,9 +6,10 @@ const { buildSystemBlocks, buildUserMessage } = require('./insightPrompts/builde
 const { insightArraySchema } = require('./insightPrompts/schema');
 // IMPORTANT: the insights engine is a pure read consumer. It must NEVER
 // import getOrCreateCurrencyRate — that helper is a write-through cache that
-// hits CurrencyLayer and inserts rows into CurrencyRate on a miss. Only the
-// valuation pipeline (portfolioWorker, price-fetcher) is authorized to
-// populate CurrencyRate. Reads from this service must use getRatesForDateRange
+// hits the configured FX provider (Twelve Data by default; CurrencyLayer
+// legacy) and inserts rows into CurrencyRate on a miss. Only the valuation
+// pipeline (portfolioWorker, price-fetcher) is authorized to populate
+// CurrencyRate. Reads from this service must use getRatesForDateRange
 // + the in-memory lookupCurrencyRate() fallback defined below.
 // See insights-v2 refactor: docs/specs/backend/15-insights-engine.md
 const { getRatesForDateRange } = require('./currencyService');

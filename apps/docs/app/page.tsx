@@ -248,7 +248,7 @@ export default function HomePage() {
                 ├─► AI: LLM provider abstraction (Gemini / OpenAI / Anthropic)
                 ├─► Banks: Plaid (Sync + Tokens)
                 ├─► Prices: TwelveData (Real-time Stocks)
-                ├─► FX: CurrencyLayer (Historical Rates)
+                ├─► FX: TwelveData (Historical Rates; CurrencyLayer optional/legacy)
                 └─► Ops: Sentry (Observability)`}
                 </pre>
               </div>
