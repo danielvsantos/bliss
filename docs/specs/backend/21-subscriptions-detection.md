@@ -108,6 +108,34 @@ detected, active, lapsed, pruned, durationMs }`.
 `normalizeMerchant()` (backend) and its ESM mirror
 `apps/api/utils/merchantNormalize.js` **must stay byte-identical** — the API's
 "confirm from a transaction" path hashes with the mirror and must land on the
-same `descriptionHash` the worker computes. Normalization: lowercase, strip
-accents, card masks (`xxxx1234`), dates, ref/store numbers, punctuation, and a
-small stop-word list (`purchase`, `pos`, `card`, …).
+same `descriptionHash` the worker computes. A parallel unit test in each package
+(`recurringDetectionService.test.js`, `merchantNormalize.test.ts`) runs the same
+case set so drift fails a build.
+
+Pipeline (order matters), lower-casing then:
+
+1. Strip accents (NFKD + combining marks).
+2. Strip a **payment-aggregator prefix** — allow-list only (`sq`, `sqc`, `tst`,
+   `pp`, `pyp`, `ppl`, `dd`, `cke`, `clv`, `sp`, `py`, `paypal`, `pos`) followed
+   by `*`. Deliberately not "any short token + `*`" — that would eat a merchant's
+   own short name (`ADOBE *CREATIVE CLD`).
+3. Strip the `www.` URL prefix, then common **TLDs** (`.com`, `.net`, `.io`,
+   `.co`, `.app`, …) — `NETFLIX.COM` → `netflix`.
+4. Strip masked card numbers (`xxxx1234`), dates (`04/12`, `2026-01-03`), and
+   ref/store numbers (`#00421`, 3+ digit runs).
+5. Collapse remaining punctuation to spaces.
+6. Drop stop-words: `purchase`, `payment`, `pos`, `debit`, `card`, `recurring`,
+   `autopay`, `ppd`, `id`, `ref`, `trace`, `www`, `http`, `https`.
+7. Drop a trailing **corporate suffix** (`inc`, `llc`, `ltd`, `corp`, `gmbh`,
+   `plc`, `lp`, `llp`) — `Adobe Systems Inc` → `adobe systems`.
+8. Drop a trailing run of **1–2 digit sequence tokens** (`NETFLIX 4`,
+   `SODEXO 07` → the merchant) — but keep the original key if this would empty
+   it.
+
+So `Netflix`, `NETFLIX.COM`, `SQ *NETFLIX`, `NETFLIX 08/15 POS DEBIT`,
+`Netflix Inc`, `Netflix 4`, `NÉTFLIX` all → `netflix`.
+
+**Known limits (left to Confirm/Dismiss and, later, manual merge):** it never
+merges on a shared first word (`Netflix` ≠ `Netflix Games`), and it does not
+resolve word-order changes, non-allow-listed aggregator prefixes
+(`GOOGLE *YouTube`), abbreviations, or brand renames.

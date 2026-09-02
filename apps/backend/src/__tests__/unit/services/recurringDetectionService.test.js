@@ -59,8 +59,8 @@ function mockTxns({ tierA = [], tierB = [], tierBCount = null, prior = [] }) {
 beforeEach(() => jest.clearAllMocks());
 
 describe('normalizeMerchant / hashMerchant', () => {
-  it('strips card masks, dates, ref numbers and punctuation', () => {
-    expect(normalizeMerchant('NETFLIX.COM  xxxx1234  04/12  #00421')).toBe('netflix com');
+  it('strips TLDs, card masks, dates, ref numbers and punctuation', () => {
+    expect(normalizeMerchant('NETFLIX.COM  xxxx1234  04/12  #00421')).toBe('netflix');
   });
 
   it('produces a stable hash for the same merchant across noisy variants', () => {
@@ -68,6 +68,34 @@ describe('normalizeMerchant / hashMerchant', () => {
     const b = hashMerchant('SPOTIFY P0987  11/22 CARD PURCHASE');
     expect(a).toBe(b);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('collapses real-world descriptor variants of one merchant to a single key', () => {
+    const variants = [
+      'Netflix',
+      'NETFLIX.COM',
+      'NETFLIX.COM #04821',
+      'SQ *NETFLIX',
+      'PAYPAL *NETFLIX',
+      'TST* NETFLIX',
+      'NETFLIX 08/15 POS DEBIT',
+      'Netflix Inc',
+      'Netflix 4',
+      'NÉTFLIX',
+    ];
+    const keys = new Set(variants.map(normalizeMerchant));
+    expect(keys).toEqual(new Set(['netflix']));
+  });
+
+  it('keeps genuinely different merchants distinct (no first-word merge)', () => {
+    expect(normalizeMerchant('Netflix')).not.toBe(normalizeMerchant('Netflix Games'));
+    // the aggregator-prefix strip is an allow-list — a merchant's own short name
+    // (e.g. "ADOBE *…") must not be treated as a processor code
+    expect(normalizeMerchant('ADOBE *CREATIVE CLD')).toBe('adobe creative cld');
+  });
+
+  it('never returns an empty key for a URL-only descriptor', () => {
+    expect(normalizeMerchant('www.audible.com/manage')).toBe('audible manage');
   });
 });
 
