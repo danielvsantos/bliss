@@ -368,4 +368,114 @@ describe('twelveDataService', () => {
       expect(result.earnings[0].epsActual).toBe(2.0);
     });
   });
+
+  // ─── getFxRate ───────────────────────────────────────────────────────────
+  // Twelve Data forex path used by currencyService when CURRENCY_PROVIDER is
+  // TWELVE_DATA. Resolution order: /exchange_rate → /time_series backtrack →
+  // inverse symbol. Direction: returns X where 1 FROM = X TO.
+
+  describe('getFxRate()', () => {
+    const PAST = new Date('2026-03-10T00:00:00.000Z'); // a Tuesday, safely historical
+
+    it('returns the rate from /exchange_rate on success', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValueOnce({ data: { symbol: 'EUR/USD', rate: '1.0842' } });
+
+      const result = await twelveDataService.getFxRate('EUR', 'USD', PAST);
+
+      expect(result).toBe(1.0842);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://api.twelvedata.com/exchange_rate',
+        expect.objectContaining({
+          params: expect.objectContaining({ symbol: 'EUR/USD', apikey: 'test-api-key', date: '2026-03-10' }),
+          timeout: 10000,
+        })
+      );
+    });
+
+    it('falls back to /time_series when /exchange_rate returns an error', async () => {
+      const axios = require('axios');
+      axios.get
+        .mockResolvedValueOnce({ data: { status: 'error', message: 'No data' } })
+        .mockResolvedValueOnce({ data: { values: [{ datetime: '2026-03-10', close: '1.0900' }] } });
+
+      const result = await twelveDataService.getFxRate('EUR', 'USD', PAST);
+
+      expect(result).toBe(1.09);
+      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenLastCalledWith(
+        'https://api.twelvedata.com/time_series',
+        expect.objectContaining({
+          params: expect.objectContaining({ symbol: 'EUR/USD', interval: '1day' }),
+        })
+      );
+    });
+
+    it('uses the weekend/holiday backtrack — picks values[0].close (Friday candle)', async () => {
+      const axios = require('axios');
+      // Saturday request: /exchange_rate has nothing, time_series returns only Friday
+      axios.get
+        .mockResolvedValueOnce({ data: {} })
+        .mockResolvedValueOnce({ data: { values: [{ datetime: '2026-03-06', close: '1.0855' }] } });
+
+      const result = await twelveDataService.getFxRate('EUR', 'USD', new Date('2026-03-07T00:00:00.000Z'));
+
+      expect(result).toBe(1.0855);
+    });
+
+    it('resolves the inverse pair and inverts when the direct pair has no data', async () => {
+      const axios = require('axios');
+      axios.get
+        .mockResolvedValueOnce({ data: {} })                                   // EUR/USD exchange_rate
+        .mockResolvedValueOnce({ data: { values: [] } })                       // EUR/USD time_series
+        .mockResolvedValueOnce({ data: { symbol: 'USD/EUR', rate: '1.08' } }); // USD/EUR exchange_rate
+
+      const result = await twelveDataService.getFxRate('EUR', 'USD', PAST);
+
+      expect(result).toBeCloseTo(1 / 1.08, 10);
+      expect(axios.get).toHaveBeenCalledTimes(3);
+    });
+
+    it('returns null (and makes no HTTP calls) when TWELVE_DATA_API_KEY is not set', async () => {
+      jest.resetModules();
+      delete process.env.TWELVE_DATA_API_KEY;
+      jest.mock('axios');
+      jest.mock('../../../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
+      const service = require('../../../services/twelveDataService');
+
+      const result = await service.getFxRate('EUR', 'USD', PAST);
+
+      expect(result).toBeNull();
+      expect(require('axios').get).not.toHaveBeenCalled();
+    });
+
+    it('returns null when every path fails', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: {} });
+
+      const result = await twelveDataService.getFxRate('EUR', 'USD', PAST);
+
+      expect(result).toBeNull();
+      expect(axios.get).toHaveBeenCalledTimes(4); // direct exchange_rate + time_series, inverse exchange_rate + time_series
+    });
+
+    it('requests the real-time rate (no date param) when date is today', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValueOnce({ data: { symbol: 'GBP/USD', rate: '1.27' } });
+
+      const result = await twelveDataService.getFxRate('GBP', 'USD', new Date());
+
+      expect(result).toBe(1.27);
+      const params = axios.get.mock.calls[0][1].params;
+      expect(params).not.toHaveProperty('date');
+    });
+
+    it('short-circuits to 1 when both currencies are identical', async () => {
+      const axios = require('axios');
+      const result = await twelveDataService.getFxRate('USD', 'USD', PAST);
+      expect(result).toBe(1);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+  });
 });

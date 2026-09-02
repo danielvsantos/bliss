@@ -127,7 +127,10 @@ services:
       STOCK_PROVIDER: ${STOCK_PROVIDER:-TWELVE_DATA}
       TWELVE_DATA_API_KEY: ${TWELVE_DATA_API_KEY:-}
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
-      # Optional: Currency rates
+      # Optional: Currency / FX rates. Twelve Data covers FX by default (reuses
+      # TWELVE_DATA_API_KEY above). Set CURRENCY_PROVIDER=CURRENCYLAYER to use the
+      # legacy CurrencyLayer path instead.
+      CURRENCY_PROVIDER: ${CURRENCY_PROVIDER:-TWELVE_DATA}
       CURRENCYLAYER_API_KEY: ${CURRENCYLAYER_API_KEY:-}
     volumes:
       - uploads_data:/app/data/uploads

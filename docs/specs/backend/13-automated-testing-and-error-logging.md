@@ -92,10 +92,10 @@ Pure utilities (encryption, hash functions, calculator logic) are tested without
 | `unit/services/geminiService.test.js` | 12 | `generateEmbedding()` retry logic, `classifyTransaction()` parsing + clamping | `@google/generative-ai`, logger |
 | `unit/services/priceService.test.js` | 8 | `getLatestPrice()` routing by asset type, DB fallback | stockService, cryptoService, Prisma, logger |
 | `unit/services/cryptoService.test.js` | 11 | `searchCrypto()`, `getHistoricalCryptoPrice()`, `getLatestCryptoPrice()` — TwelveData delegation, pair construction, dedup | twelveDataService, logger |
-| `unit/services/currencyService.test.js` | 10 | `fetchHistoricalRate()`, `getOrCreateCurrencyRate()` cache/DB/API flow | axios, `@prisma/client`, logger |
+| `unit/services/currencyService.test.js` | 21 | `fetchHistoricalRate()`, `getOrCreateCurrencyRate()` cache/DB/API flow, `resolveCurrencyProvider()` precedence, Twelve Data vs CurrencyLayer dispatch + `provider` string on writes | axios, `@prisma/client`, twelveDataService, logger |
 | `unit/services/debounceService.test.js` | 6 | Redis key aggregation, job replacement, TTL, error handling | redis, queue mock |
 | `unit/services/stockService.test.js` | 8 | Provider delegation (TWELVE_DATA vs ALPHA_VANTAGE) | twelveDataService, axios |
-| `unit/services/twelveDataService.test.js` | 12 | Historical/latest price, symbol search, weekend backtrack | axios |
+| `unit/services/twelveDataService.test.js` | 20 | Historical/latest price, symbol search, weekend backtrack, `getFxRate()` (exchange_rate → time_series backtrack → inverse-pair) | axios |
 | `unit/middleware/apiKeyAuth.test.js` | 6 | X-API-KEY validation, env-based key lookup | none (pure middleware) |
 | `unit/strategies/API_FUND.test.js` | 8 | 3-stage pricing: cache → API → 7-day lookback, manual fallback | stockService, Prisma, logger |
 | `unit/strategies/API_STOCK.test.js` | 6 | 3-stage pricing: cache → API → 7-day lookback | stockService, Prisma, logger |

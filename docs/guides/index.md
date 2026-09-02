@@ -6,7 +6,7 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 |-------|-------------------|
 | [Docker Quick Start](/docs/guides/docker-quickstart) | Run Bliss with one command and create your first account |
 | [Initial Account Setup](/docs/guides/tenant-seed-setup) | Set up accounts, banks, and categories to match your financial reality |
-| [Choosing Your External Services](/docs/guides/external-services) | What Gemini, Twelve Data, Plaid, and CurrencyLayer do and why you'd want them |
+| [Choosing Your External Services](/docs/guides/external-services) | What Gemini, Twelve Data (prices + FX rates), and Plaid do and why you'd want them |
 | [Importing Transactions](/docs/guides/importing-transactions) | CSV/XLSX import, custom adapters, and the Bliss Native CSV format |
 | [Investment Portfolios](/docs/guides/investment-portfolios) | Track stocks, ETFs, and real estate with FIFO lot calculation |
 | [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) | Connect bank accounts for automatic transaction sync |

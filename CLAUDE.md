@@ -259,8 +259,8 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — enables Google Sign-In; email/password auth works without it
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, `PLAID_WEBHOOK_URL`, `PLAID_HISTORY_DAYS`
 - AI (required): `LLM_PROVIDER` (gemini|openai|anthropic), `EMBEDDING_PROVIDER` (required when `LLM_PROVIDER=anthropic`), `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (matching your provider), optional overrides `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL`
-- Market data: `TWELVE_DATA_API_KEY`
-- Currency rates: `CURRENCYLAYER_API_KEY`
+- Market data: `TWELVE_DATA_API_KEY` (also the default FX-rate source — see below)
+- Currency / FX rates: `CURRENCY_PROVIDER` (`TWELVE_DATA` default | `CURRENCYLAYER`). Twelve Data reuses `TWELVE_DATA_API_KEY`; `CURRENCYLAYER_API_KEY` is optional/legacy, only needed when `CURRENCY_PROVIDER=CURRENCYLAYER`
 - Storage: `STORAGE_BACKEND`, `LOCAL_STORAGE_DIR`, `GCS_BUCKET_NAME`, `GCS_SERVICE_ACCOUNT_JSON`
 - Key rotation: `ENCRYPTION_SECRET_PREVIOUS`, `JWT_SECRET_PREVIOUS`
 - Observability: `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`

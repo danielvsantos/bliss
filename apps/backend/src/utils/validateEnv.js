@@ -5,6 +5,25 @@ const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 const SUPPORTED_LLM_PROVIDERS = ['gemini', 'openai', 'anthropic'];
 const EMBEDDING_CAPABLE_PROVIDERS = ['gemini', 'openai'];
 
+// FX-rate provider abstraction (mirrors STOCK_PROVIDER). Twelve Data is the
+// default and also powers equity/crypto pricing; CurrencyLayer is legacy.
+const SUPPORTED_CURRENCY_PROVIDERS = ['TWELVE_DATA', 'CURRENCYLAYER'];
+
+/**
+ * Resolve the active FX-rate provider using the same precedence as
+ * currencyService.resolveCurrencyProvider(): explicit CURRENCY_PROVIDER wins,
+ * else prefer Twelve Data when its key is present, else CurrencyLayer when its
+ * key is present, else default to Twelve Data.
+ * @returns {'TWELVE_DATA'|'CURRENCYLAYER'}
+ */
+function resolveCurrencyProvider() {
+  const explicit = (process.env.CURRENCY_PROVIDER || '').trim().toUpperCase();
+  if (explicit && SUPPORTED_CURRENCY_PROVIDERS.includes(explicit)) return explicit;
+  if (process.env.TWELVE_DATA_API_KEY) return 'TWELVE_DATA';
+  if (process.env.CURRENCYLAYER_API_KEY) return 'CURRENCYLAYER';
+  return 'TWELVE_DATA';
+}
+
 const PROVIDER_KEY_VAR = {
   gemini: 'GEMINI_API_KEY',
   openai: 'OPENAI_API_KEY',
@@ -127,6 +146,31 @@ function validateEnv() {
   if (!process.env.TWELVE_DATA_API_KEY) {
     warnings.push('TWELVE_DATA_API_KEY not set — stock price fetching will be unavailable');
   }
+
+  // FX-rate provider: validate CURRENCY_PROVIDER and warn (do not error — this
+  // matches STOCK_PROVIDER's leniency) when the resolved provider has no key,
+  // in which case automatic FX rate fetching is disabled but manual currency
+  // rate entry via /api/currency-rates still works.
+  const rawCurrencyProvider = (process.env.CURRENCY_PROVIDER || '').trim().toUpperCase();
+  if (rawCurrencyProvider && !SUPPORTED_CURRENCY_PROVIDERS.includes(rawCurrencyProvider)) {
+    warnings.push(
+      `CURRENCY_PROVIDER="${process.env.CURRENCY_PROVIDER}" is not recognised. ` +
+        `Supported: ${SUPPORTED_CURRENCY_PROVIDERS.join(', ')} (default TWELVE_DATA). ` +
+        'Falling back to auto-detection.'
+    );
+  }
+  const activeCurrencyProvider = resolveCurrencyProvider();
+  if (activeCurrencyProvider === 'TWELVE_DATA' && !process.env.TWELVE_DATA_API_KEY) {
+    warnings.push(
+      'CURRENCY_PROVIDER=TWELVE_DATA but TWELVE_DATA_API_KEY is not set — ' +
+        'automatic FX rate fetching will be unavailable (manual entry still works).'
+    );
+  } else if (activeCurrencyProvider === 'CURRENCYLAYER' && !process.env.CURRENCYLAYER_API_KEY) {
+    warnings.push(
+      'CURRENCY_PROVIDER=CURRENCYLAYER but CURRENCYLAYER_API_KEY is not set — ' +
+        'automatic FX rate fetching will be unavailable (manual entry still works).'
+    );
+  }
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
     warnings.push('Plaid credentials not set — Plaid integration will be unavailable');
   }
@@ -152,7 +196,9 @@ module.exports = {
   validateEnv,
   // Exported for test isolation
   validateLlmConfig,
+  resolveCurrencyProvider,
   SUPPORTED_LLM_PROVIDERS,
   EMBEDDING_CAPABLE_PROVIDERS,
+  SUPPORTED_CURRENCY_PROVIDERS,
   PROVIDER_KEY_VAR,
 };

@@ -7,6 +7,7 @@ jest.mock('../../../utils/logger', () => ({
   warn: jest.fn(),
   error: jest.fn(),
 }));
+jest.mock('../../../services/twelveDataService');
 
 const mockCurrencyRate = {
   findUnique: jest.fn(),
@@ -24,11 +25,18 @@ jest.mock('@prisma/client', () => ({
 // Without this, CI (which has no .env.test) would hit the guard clause and
 // fetchHistoricalRate() would return null before reaching the mocked axios.
 process.env.CURRENCYLAYER_API_KEY = 'test-key-for-unit-tests';
+// Pin the provider so this file's expectations (CurrencyLayer axios path,
+// provider: 'currencylayer' on writes) are deterministic regardless of whether
+// a real .env with TWELVE_DATA_API_KEY is present. The Twelve Data dispatch
+// path is covered in its own describe block below via module re-require.
+process.env.CURRENCY_PROVIDER = 'CURRENCYLAYER';
+delete process.env.TWELVE_DATA_API_KEY;
 
 const {
   fetchHistoricalRate,
   getOrCreateCurrencyRate,
   getRatesForDateRange,
+  resolveCurrencyProvider,
 } = require('../../../services/currencyService');
 
 jest.useFakeTimers();
@@ -223,5 +231,166 @@ describe('getRatesForDateRange()', () => {
 
     expect(result).toBeInstanceOf(Map);
     expect(result.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveCurrencyProvider() — precedence rules (reads process.env live)
+// ---------------------------------------------------------------------------
+describe('resolveCurrencyProvider()', () => {
+  const saved = {};
+  beforeEach(() => {
+    saved.provider = process.env.CURRENCY_PROVIDER;
+    saved.td = process.env.TWELVE_DATA_API_KEY;
+    saved.cl = process.env.CURRENCYLAYER_API_KEY;
+  });
+  afterEach(() => {
+    process.env.CURRENCY_PROVIDER = saved.provider;
+    if (saved.td === undefined) delete process.env.TWELVE_DATA_API_KEY;
+    else process.env.TWELVE_DATA_API_KEY = saved.td;
+    if (saved.cl === undefined) delete process.env.CURRENCYLAYER_API_KEY;
+    else process.env.CURRENCYLAYER_API_KEY = saved.cl;
+  });
+
+  test('explicit CURRENCY_PROVIDER=TWELVE_DATA wins even with only a CurrencyLayer key', () => {
+    process.env.CURRENCY_PROVIDER = 'TWELVE_DATA';
+    delete process.env.TWELVE_DATA_API_KEY;
+    process.env.CURRENCYLAYER_API_KEY = 'cl';
+    expect(resolveCurrencyProvider()).toBe('TWELVE_DATA');
+  });
+
+  test('explicit CURRENCY_PROVIDER=CURRENCYLAYER wins even with a Twelve Data key', () => {
+    process.env.CURRENCY_PROVIDER = 'currencylayer'; // case-insensitive
+    process.env.TWELVE_DATA_API_KEY = 'td';
+    expect(resolveCurrencyProvider()).toBe('CURRENCYLAYER');
+  });
+
+  test('no explicit provider: Twelve Data key present → TWELVE_DATA (even alongside CurrencyLayer key)', () => {
+    delete process.env.CURRENCY_PROVIDER;
+    process.env.TWELVE_DATA_API_KEY = 'td';
+    process.env.CURRENCYLAYER_API_KEY = 'cl';
+    expect(resolveCurrencyProvider()).toBe('TWELVE_DATA');
+  });
+
+  test('no explicit provider: only CurrencyLayer key present → CURRENCYLAYER (no silent FX loss on upgrade)', () => {
+    delete process.env.CURRENCY_PROVIDER;
+    delete process.env.TWELVE_DATA_API_KEY;
+    process.env.CURRENCYLAYER_API_KEY = 'cl';
+    expect(resolveCurrencyProvider()).toBe('CURRENCYLAYER');
+  });
+
+  test('no explicit provider, no keys → TWELVE_DATA default', () => {
+    delete process.env.CURRENCY_PROVIDER;
+    delete process.env.TWELVE_DATA_API_KEY;
+    delete process.env.CURRENCYLAYER_API_KEY;
+    expect(resolveCurrencyProvider()).toBe('TWELVE_DATA');
+  });
+
+  test('unrecognised CURRENCY_PROVIDER falls back to auto-detection', () => {
+    process.env.CURRENCY_PROVIDER = 'bogus';
+    process.env.TWELVE_DATA_API_KEY = 'td';
+    expect(resolveCurrencyProvider()).toBe('TWELVE_DATA');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider dispatch — CURRENCY_PROVIDER=TWELVE_DATA
+// (re-requires the module so the load-time ACTIVE_CURRENCY_PROVIDER capture
+//  picks up the Twelve Data selection)
+// ---------------------------------------------------------------------------
+describe('fetchHistoricalRate() / getOrCreateCurrencyRate() — TWELVE_DATA provider', () => {
+  let td;            // mocked twelveDataService
+  let currencySvc;   // freshly required currencyService bound to TWELVE_DATA
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    process.env.CURRENCY_PROVIDER = 'TWELVE_DATA';
+    process.env.TWELVE_DATA_API_KEY = 'td-test-key';
+
+    jest.mock('axios');
+    jest.mock('../../../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
+    jest.mock('../../../services/twelveDataService');
+    jest.mock('@prisma/client', () => ({
+      PrismaClient: jest.fn().mockImplementation(() => ({ currencyRate: mockCurrencyRate })),
+    }));
+
+    td = require('../../../services/twelveDataService');
+    currencySvc = require('../../../services/currencyService');
+  });
+
+  afterEach(() => {
+    process.env.CURRENCY_PROVIDER = 'CURRENCYLAYER';
+    delete process.env.TWELVE_DATA_API_KEY;
+    jest.resetModules();
+  });
+
+  test('ACTIVE_CURRENCY_PROVIDER resolves to TWELVE_DATA', () => {
+    expect(currencySvc.ACTIVE_CURRENCY_PROVIDER).toBe('TWELVE_DATA');
+  });
+
+  test('fetchHistoricalRate delegates to twelveDataService.getFxRate and makes no axios call', async () => {
+    td.getFxRate.mockResolvedValue(1.0842);
+
+    const result = await currencySvc.fetchHistoricalRate('2025-01-15', 'EUR', 'USD');
+
+    expect(result).toBe(1.0842);
+    expect(td.getFxRate).toHaveBeenCalledWith('EUR', 'USD', expect.any(Date));
+    expect(require('axios').get).not.toHaveBeenCalled();
+  });
+
+  test('getOrCreateCurrencyRate miss persists the row with provider: "twelvedata"', async () => {
+    jest.useRealTimers();
+
+    mockCurrencyRate.findUnique.mockResolvedValue(null);
+    mockCurrencyRate.create.mockResolvedValue({});
+    td.getFxRate.mockResolvedValue(1.0842);
+    const rateCache = {};
+
+    const result = await currencySvc.getOrCreateCurrencyRate(
+      new Date('2025-01-15T00:00:00.000Z'), 'EUR', 'USD', rateCache,
+    );
+
+    expect(result.toString()).toBe('1.0842');
+    expect(mockCurrencyRate.create).toHaveBeenCalledTimes(1);
+    const createArg = mockCurrencyRate.create.mock.calls[0][0].data;
+    expect(createArg).toMatchObject({
+      year: 2025,
+      month: 1,
+      day: 15,
+      currencyFrom: 'EUR',
+      currencyTo: 'USD',
+      provider: 'twelvedata',
+    });
+    expect(createArg.value.toString()).toBe('1.0842');
+
+    jest.useFakeTimers();
+  });
+
+  test('AC4: an existing DB row is returned without any Twelve Data call', async () => {
+    const dbValue = new Decimal(1.10);
+    mockCurrencyRate.findUnique.mockResolvedValue({ value: dbValue });
+
+    const result = await currencySvc.getOrCreateCurrencyRate(
+      new Date('2025-01-15T00:00:00.000Z'), 'EUR', 'USD', {},
+    );
+
+    expect(result).toEqual(dbValue);
+    expect(td.getFxRate).not.toHaveBeenCalled();
+    expect(require('axios').get).not.toHaveBeenCalled();
+  });
+
+  test('getOrCreateCurrencyRate caches null when Twelve Data returns null', async () => {
+    mockCurrencyRate.findUnique.mockResolvedValue(null);
+    td.getFxRate.mockResolvedValue(null);
+    const rateCache = {};
+
+    const result = await currencySvc.getOrCreateCurrencyRate(
+      new Date('2025-01-15T00:00:00.000Z'), 'EUR', 'USD', rateCache,
+    );
+
+    expect(result).toBeNull();
+    expect(rateCache['2025-01-15_EUR_USD']).toBeNull();
+    expect(mockCurrencyRate.create).not.toHaveBeenCalled();
   });
 });

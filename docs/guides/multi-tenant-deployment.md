@@ -124,4 +124,4 @@ Tenant data is fully isolated. A user in Tenant A cannot see or modify data belo
 ## Next steps
 
 - [Docker Quick Start](/docs/guides/docker-quickstart) -- try Bliss locally before deploying
-- [Choosing Your External Services](/docs/guides/external-services) -- configure Gemini, Twelve Data, Plaid, and CurrencyLayer
+- [Choosing Your External Services](/docs/guides/external-services) -- configure Gemini, Twelve Data (prices + FX), and Plaid

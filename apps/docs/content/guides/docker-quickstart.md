@@ -49,6 +49,18 @@ Adminer is included at [http://localhost:8888](http://localhost:8888). Log in wi
 
 ---
 
+## Google OAuth
+
+Google Sign-In is optional. Email/password sign-in works in all configurations. To enable Google OAuth:
+
+1. Create OAuth 2.0 credentials in [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+2. Add `<NEXTAUTH_URL>/api/auth/callback/google` as an Authorized Redirect URI.
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
+
+**HTTPS is required.** Google's OAuth policy does not allow plain-HTTP redirect URIs (the only exception is `http://localhost` for development). For a self-hosted deployment to support Google Sign-In, it must run behind HTTPS. Email/password sign-in is not affected and works over HTTP.
+
+---
+
 ## Local Development (Without Docker)
 
 If you prefer running services directly for development:
@@ -122,6 +134,6 @@ pnpm dev                    # starts all services
 
 - [Choosing Your External Services](/docs/guides/external-services) -- required for AI classification and insights (Gemini, OpenAI, or Anthropic)
 - [Initial Account Setup](/docs/guides/tenant-seed-setup) -- set up accounts, banks, and categories
-- [Choosing Your External Services](/docs/guides/external-services) -- configure Twelve Data, Plaid, CurrencyLayer
+- [Choosing Your External Services](/docs/guides/external-services) -- configure Twelve Data (stock prices + FX rates, via `CURRENCY_PROVIDER`) and Plaid
 - [Import transactions](/docs/guides/importing-transactions) -- bring in your CSV/XLSX data
 - [Connect a bank](/docs/guides/plaid-bank-sync) -- automatic sync with Plaid
