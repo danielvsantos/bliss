@@ -130,4 +130,10 @@ export const encryptedFields = {
   PlaidItem: {
     accessToken: { searchable: false },
   },
+  RecurringCharge: {
+    // Human-readable merchant name for a detected subscription. Grouping/lookup
+    // is done on the non-encrypted descriptionHash, so this never needs to be
+    // searchable.
+    merchantLabel: { searchable: false },
+  },
 };

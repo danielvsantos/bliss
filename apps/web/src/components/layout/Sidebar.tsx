@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { usePlaidTransactions } from "@/hooks/use-plaid-review";
 import { usePendingImports } from "@/hooks/use-imports";
 import { usePageVisible } from "@/hooks/use-page-visible";
-import { FileUp, Lightbulb, BarChart3, Tags, TrendingUp, LineChart, Briefcase, Hash, PieChart } from "lucide-react";
+import { FileUp, Lightbulb, BarChart3, Tags, TrendingUp, LineChart, Briefcase, Hash, PieChart, Repeat } from "lucide-react";
 
 /* ── Nav Icons ──────────────────────────────────────── */
 function DashboardIcon({ active }: { active?: boolean }) {
@@ -94,6 +94,7 @@ const ImportAgentIcon = createIcon(FileUp);
 const InsightAgentIcon = createIcon(Lightbulb);
 const TagAnalyticsIcon = createIcon(Hash);
 const EquityAnalysisIcon = createIcon(PieChart);
+const SubscriptionsIcon = createIcon(Repeat);
 
 /* ── Tooltip (for collapsed state) ─────────────────── */
 function NavTooltip({ label, visible }: { label: string; visible: boolean }) {
@@ -218,6 +219,7 @@ export function Sidebar({
     { type: 'link', id: "portfolio", href: "/reports/portfolio", label: t('nav.portfolioHoldings'), icon: PortfolioIcon, badge: 0, exact: false },
     { type: 'link', id: "tag-analytics", href: "/reports/tags", label: 'Tag Analytics', icon: TagAnalyticsIcon, badge: 0, exact: false },
     { type: 'link', id: "equity-analysis", href: "/reports/equity-analysis", label: 'Equity Analysis', icon: EquityAnalysisIcon, badge: 0, exact: false },
+    { type: 'link', id: "subscriptions", href: "/subscriptions", label: t('nav.subscriptions'), icon: SubscriptionsIcon, badge: 0, exact: false },
     // ── Tools
     { type: 'section', label: 'TOOLS' },
     { type: 'link', id: "import-agent", href: "/agents/import", label: t('nav.importAgent'), icon: ImportAgentIcon, badge: 0, exact: false },

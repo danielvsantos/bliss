@@ -81,6 +81,57 @@ const TOP_N_SEEDS = 10;
  *  5 concurrent × ~3s/call ≈ 100 RPM — safe headroom on paid, paced on free. */
 const PHASE2_CONCURRENCY = 5;
 
+// ── Subscriptions & recurring-charge detection ───────────────────────────────
+// Consumed by services/recurringDetectionService.js + subscriptionDetectionWorker.js.
+// Deterministic heuristic — no LLM. Tier A = category signal (isRecurring),
+// Tier B = bounded interval heuristic over non-recurring spending categories.
+
+/** Lookback window (months) for a nightly/on-demand "incremental" detection run.
+ *  Also the hard cap on the Tier-B interval heuristic in every mode. */
+const SUBSCRIPTION_INCREMENTAL_MONTHS = 6;
+
+/** Lookback window (months) for an admin-triggered "full history scan".
+ *  Only widens Tier A (category-pre-filtered, cheap) so ANNUAL / historical
+ *  subscriptions surface. Tier B stays at SUBSCRIPTION_INCREMENTAL_MONTHS. */
+const SUBSCRIPTION_FULL_SCAN_MONTHS = 48;
+
+/** If a tenant has more than this many non-recurring spending-type transactions
+ *  in the Tier-B window, Tier B is skipped (logged) — the category signal still
+ *  runs and "confirm from a transaction" is still available. */
+const SUBSCRIPTION_TIER_B_ROW_CAP = 8000;
+
+/** Minimum occurrences for a merchant to qualify via the Tier-B interval heuristic. */
+const SUBSCRIPTION_MIN_OCCURRENCES = 3;
+
+/** Amount-drift tolerance for "same amount" — relative (5%) OR absolute (2 units),
+ *  whichever is larger. Absorbs FX rounding and small fee drift. */
+const SUBSCRIPTION_AMOUNT_DRIFT_PCT = 0.05;
+const SUBSCRIPTION_AMOUNT_DRIFT_ABS = 2;
+
+/** Max coefficient of variation (stddev / mean) of the inter-charge gaps for a
+ *  merchant to count as "regular" in Tier B. */
+const SUBSCRIPTION_GAP_CV_MAX = 0.25;
+
+/** A charge is LAPSED once no new charge has landed within this multiple of its
+ *  cadence (e.g. MONTHLY with no charge in ~45 days). */
+const SUBSCRIPTION_LAPSE_MULTIPLIER = 1.5;
+
+/** Cooldown (minutes) between user-initiated "Scan now" runs per tenant. */
+const SUBSCRIPTION_REFRESH_COOLDOWN_MIN = 30;
+
+/** How many recent contributing Transaction ids to store per RecurringCharge row
+ *  (powers the "expand row → underlying charges" view). */
+const SUBSCRIPTION_MAX_CONTRIBUTING_IDS = 24;
+
+/** Median inter-charge gap (in days) → cadence bucket. A gap outside every bucket
+ *  disqualifies a Tier-B candidate; Tier A falls back to MONTHLY. */
+const SUBSCRIPTION_CADENCE_BUCKETS = {
+    WEEKLY:    [5, 10],
+    MONTHLY:   [24, 38],
+    QUARTERLY: [78, 102],
+    ANNUAL:    [330, 400],
+};
+
 module.exports = {
     EXACT_MATCH_CONFIDENCE,
     GLOBAL_VECTOR_DISCOUNT,
@@ -90,4 +141,15 @@ module.exports = {
     DEFAULT_REVIEW_THRESHOLD,
     TOP_N_SEEDS,
     PHASE2_CONCURRENCY,
+    SUBSCRIPTION_INCREMENTAL_MONTHS,
+    SUBSCRIPTION_FULL_SCAN_MONTHS,
+    SUBSCRIPTION_TIER_B_ROW_CAP,
+    SUBSCRIPTION_MIN_OCCURRENCES,
+    SUBSCRIPTION_AMOUNT_DRIFT_PCT,
+    SUBSCRIPTION_AMOUNT_DRIFT_ABS,
+    SUBSCRIPTION_GAP_CV_MAX,
+    SUBSCRIPTION_LAPSE_MULTIPLIER,
+    SUBSCRIPTION_REFRESH_COOLDOWN_MIN,
+    SUBSCRIPTION_MAX_CONTRIBUTING_IDS,
+    SUBSCRIPTION_CADENCE_BUCKETS,
 };

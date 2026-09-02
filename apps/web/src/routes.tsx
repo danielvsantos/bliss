@@ -17,6 +17,7 @@ import TransactionReviewPage from "./pages/transaction-review";
 import InsightsPage from "./pages/insights";
 import TagAnalyticsPage from "./pages/reports/tags";
 import EquityAnalysisPage from "./pages/reports/equity-analysis";
+import SubscriptionsPage from "./pages/subscriptions";
 
 export const routes = [
   { path: "/auth", element: <AuthPage />, protected: false },
@@ -31,6 +32,7 @@ export const routes = [
   { path: "/reports/portfolio", component: PortfolioPage, protected: true },
   { path: "/reports/tags", component: TagAnalyticsPage, protected: true },
   { path: "/reports/equity-analysis", component: EquityAnalysisPage, protected: true },
+  { path: "/subscriptions", component: SubscriptionsPage, protected: true },
   { path: "/onboarding", component: OnboardingPage, protected: true },
   { path: "/", component: DashboardPage, protected: true },
   { path: "/settings", component: SettingsPage, protected: true },

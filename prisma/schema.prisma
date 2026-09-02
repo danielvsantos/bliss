@@ -68,6 +68,11 @@ model Tenant {
   stagedImports       StagedImport[]
   importAdapters      ImportAdapter[]
   insights            Insight[]
+  recurringCharges    RecurringCharge[]
+
+  // Subscriptions & recurring charges: timestamp of the last admin-triggered
+  // "full history scan" (48-month Tier-A lookback). null = never run.
+  subscriptionsFullScanAt DateTime?
 
   // Onboarding state
   onboardingProgress    Json?       // { checklist: {...}, setupFlow: {...} }
@@ -255,6 +260,7 @@ model Category {
   icon            String?
   description     String?  // Human-friendly explanation shown in UI tooltips. For default categories, descriptions are sourced from i18n; this column primarily holds user-entered descriptions on custom categories.
   processingHint  String? // Can be 'API_STOCK', 'AMORTIZING_LOAN', 'RECURRING', etc.
+  isRecurring     Boolean          @default(false) // Subscriptions: recurring-by-default flag (Tier A). User-toggleable; composes with processingHint.
   portfolioItemKeyStrategy PortfolioItemKeyStrategy @default(IGNORE)
   defaultCategoryCode String?                      // Sprint B: stable code for default categories (null for custom)
   createdAt       DateTime         @default(now())
@@ -265,6 +271,7 @@ model Category {
   embeddings     TransactionEmbedding[]
   descriptionMappings DescriptionMapping[]
   tagAnalyticsCache TagAnalyticsCacheMonthly[]
+  recurringCharges RecurringCharge[]
 
   @@unique([name, tenantId])
   @@index([group])
@@ -843,3 +850,70 @@ model DescriptionMapping {
   @@index([tenantId])
 }
 
+
+// ─── Subscriptions & recurring charges ───────────────────────────────────────
+// One row per detected merchant per tenant, produced by the
+// subscriptionDetectionWorker (nightly incremental + on-demand). The detector
+// decrypts Transaction.description in memory and groups by a hash of the
+// normalized merchant string, so the Subscriptions page is already grouped by
+// merchant with no SQL GROUP BY on an encrypted column.
+enum RecurringChargeState {
+  DETECTED   // surfaced by the detector, not yet reviewed
+  CONFIRMED  // user affirmed it is a subscription — always re-surfaced
+  DISMISSED  // user rejected it — never re-surfaced (tombstone)
+}
+
+enum RecurringChargeCadence {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum RecurringChargeStatus {
+  ACTIVE  // charged within 1.5 × cadence of now
+  LAPSED  // no charge within 1.5 × cadence — excluded from totals, retained forever
+}
+
+enum RecurringDetectionReason {
+  CATEGORY_SIGNAL     // Tier A — category.isRecurring = true (one occurrence qualifies)
+  INTERVAL_HEURISTIC  // Tier B — ≥3 regular occurrences at a stable amount
+  USER_CONFIRMED      // forced in by an explicit user "confirm" action
+}
+
+model RecurringCharge {
+  id              Int      @id @default(autoincrement())
+  tenantId        String
+  descriptionHash String   // SHA-256 hex of normalizeMerchant(description)
+  merchantLabel   String   // encrypted (AES-256-GCM) — human-readable merchant name
+
+  categoryId      Int
+
+  state             RecurringChargeState      @default(DETECTED)
+  cadence           RecurringChargeCadence?
+  userCadenceLocked Boolean                   @default(false) // true once the user edits the cadence
+  status            RecurringChargeStatus     @default(ACTIVE)
+  detectionReason   RecurringDetectionReason?
+
+  amount          Decimal? @db.Decimal(18, 8) // median native-currency amount across occurrences
+  currency        String?                     // dominant currency across occurrences
+  occurrenceCount Int      @default(0)
+
+  firstChargedAt  DateTime?
+  lastChargedAt   DateTime?
+  nextExpectedAt  DateTime? // lastChargedAt + one nominal cadence period (never from a provider)
+  lastDetectedAt  DateTime?
+
+  contributingTransactionIds Int[] // up to 24 most-recent Transaction ids for the "expand row" view
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, descriptionHash])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, categoryId])
+}

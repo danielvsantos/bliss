@@ -79,6 +79,7 @@ export default async function handler(req, res) {
         type: cat.type,
         icon: cat.icon ?? null,
         processingHint: cat.processingHint ?? null,
+        isRecurring: cat.isRecurring ?? false,
         portfolioItemKeyStrategy: cat.portfolioItemKeyStrategy ?? 'IGNORE',
         tenantCount: categoryCountMap[cat.code] ?? 0,
         globalEmbeddingCount: embeddingCountMap[cat.code] ?? 0,
@@ -98,7 +99,7 @@ export default async function handler(req, res) {
   // ── POST — provision a new default category to all existing tenants ───────
 
   if (req.method === 'POST') {
-    const { code, name, group, type, icon, processingHint, portfolioItemKeyStrategy } = req.body ?? {};
+    const { code, name, group, type, icon, processingHint, portfolioItemKeyStrategy, isRecurring } = req.body ?? {};
 
     // Validate required fields
     if (!code || !name || !group || !type) {
@@ -118,6 +119,10 @@ export default async function handler(req, res) {
       return res.status(StatusCodes.BAD_REQUEST).json({
         error: `portfolioItemKeyStrategy must be one of: ${ALLOWED_PORTFOLIO_STRATEGIES.join(', ')}`,
       });
+    }
+
+    if (isRecurring !== undefined && typeof isRecurring !== 'boolean') {
+      return res.status(StatusCodes.BAD_REQUEST).json({ error: 'isRecurring must be a boolean' });
     }
 
     // Guard: code must not already be in use
@@ -141,6 +146,7 @@ export default async function handler(req, res) {
           type,
           icon: icon ?? null,
           processingHint: processingHint ?? null,
+          isRecurring: isRecurring ?? false,
           portfolioItemKeyStrategy: portfolioItemKeyStrategy ?? 'IGNORE',
           tenantId: t.id,
         })),

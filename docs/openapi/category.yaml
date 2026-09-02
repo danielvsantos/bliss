@@ -46,6 +46,15 @@ components:
             System-managed field directing backend workers. Never user-editable.
             Values: API_STOCK, API_CRYPTO, AMORTIZING_LOAN, SIMPLE_LIABILITY,
             CASH, MANUAL, TAX_DEDUCTIBLE.
+        isRecurring:
+          type: boolean
+          default: false
+          description: >
+            When true, transactions in this category are treated as
+            recurring-by-default by the subscription detection engine
+            (Tier A — one occurrence qualifies). User-editable on POST and PUT
+            (unlike processingHint). Defaulted true for the Subscriptions group,
+            insurances, internet and data-plan categories.
         portfolioItemKeyStrategy:
           type: string
           nullable: true

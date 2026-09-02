@@ -55,6 +55,7 @@ async function handleGet(req, res) {
   const tenantId = req.user.tenantId;
   const {
     id,
+    ids, // comma-separated Transaction ids — used by the Subscriptions "expand row" view
     year,
     month,
     quarter,
@@ -125,9 +126,18 @@ async function handleGet(req, res) {
     return;
   }
 
+  // Parse comma-separated ids filter (Subscriptions expandable-row view)
+  const idList = ids
+    ? String(ids)
+        .split(',')
+        .map((n) => parseInt(n, 10))
+        .filter((n) => Number.isFinite(n))
+    : null;
+
   // Build filter conditions
   const filters = {
     tenantId,
+    ...(idList && idList.length > 0 && { id: { in: idList } }),
     ...(year && { year: parseInt(year, 10) }),
     ...(month && { month: parseInt(month, 10) }),
     ...(quarter && { quarter }),

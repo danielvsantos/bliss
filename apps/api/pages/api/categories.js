@@ -150,7 +150,7 @@ async function handleGet(req, res, tenantId) {
 }
 
 async function handlePost(req, res, session, tenantId) {
-  const { name, group, type, icon, description } = req.body;
+  const { name, group, type, icon, description, isRecurring } = req.body;
 
   if (!name || !group || !type) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Missing required fields: name, group, type' });
@@ -165,9 +165,14 @@ async function handlePost(req, res, session, tenantId) {
     });
   }
 
+  if (isRecurring !== undefined && typeof isRecurring !== 'boolean') {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'isRecurring must be a boolean' });
+  }
+
   // System-managed fields are never accepted from users.
   // processingHint, portfolioItemKeyStrategy, and defaultCategoryCode are set
   // only at tenant seeding (signup) and must not be user-editable.
+  // isRecurring is the exception — it IS user-toggleable (Subscriptions view).
 
   try {
     // Create category and audit log in a transaction
@@ -180,6 +185,7 @@ async function handlePost(req, res, session, tenantId) {
           tenantId,
           icon,
           description: description ?? null,
+          ...(typeof isRecurring === 'boolean' && { isRecurring }),
         },
       });
 
@@ -203,7 +209,7 @@ async function handlePost(req, res, session, tenantId) {
 
 async function handlePut(req, res, session, tenantId) {
   const { id } = req.query;
-  const { name, group, type, icon, description } = req.body;
+  const { name, group, type, icon, description, isRecurring } = req.body;
   const categoryId = parseInt(id, 10);
 
   if (isNaN(categoryId)) {
@@ -217,6 +223,10 @@ async function handlePut(req, res, session, tenantId) {
       error: 'Invalid category type',
       details: `The provided type '${type}' is not one of the allowed types.`,
     });
+  }
+
+  if (isRecurring !== undefined && typeof isRecurring !== 'boolean') {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'isRecurring must be a boolean' });
   }
 
   // System-managed fields are never accepted from users.
@@ -239,7 +249,7 @@ async function handlePut(req, res, session, tenantId) {
     const result = await prisma.$transaction(async (prisma) => {
       const updatedCategory = await prisma.category.update({
         where: { id: categoryId },
-        data: { name, group, type, icon, description }
+        data: { name, group, type, icon, description, ...(typeof isRecurring === 'boolean' && { isRecurring }) }
       });
 
       return updatedCategory;

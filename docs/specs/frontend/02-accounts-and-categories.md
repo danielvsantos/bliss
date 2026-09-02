@@ -223,14 +223,19 @@ Each accordion section has a `+ Add [Type] Category` ghost button at the bottom.
 The form has two modes, selected automatically by the parent:
 
 **Rename mode** — for default categories:
-- Fields: `name`, `icon` (emoji text input).
+- Fields: `name`, `icon` (emoji text input), **Recurring charge** `<Switch>`.
 - The type and group cannot be changed.
 - A description note explains this restriction.
 
 **Full mode** — for creating or editing custom categories:
-- Fields: `name`, `type` (hardcoded `ALLOWED_CATEGORY_TYPES` select), `group` (filtered by selected type + "Create new group…" option), `icon` (optional).
+- Fields: `name`, `type` (hardcoded `ALLOWED_CATEGORY_TYPES` select), `group` (filtered by selected type + "Create new group…" option), `icon` (optional), **Recurring charge** `<Switch>`.
 - The group dropdown is disabled until a type is selected, and resets when the type changes.
 - Uses two separate Zod schemas: `renameSchema` and `fullSchema`.
+
+**Recurring charge toggle** — `isRecurring` boolean. When on, this category's
+transactions surface in the **Subscriptions** view (`/subscriptions`) on a single
+occurrence. Saved through the normal `updateCategory` / `createCategory` calls;
+the update is in place (same `id`, transactions keep their `categoryId`).
 
 ### "Merge Into" on Delete
 
@@ -240,5 +245,5 @@ When deleting a category that has associated transactions, the delete dialog tra
 
 - `api.getCategories()` — fetches all categories. The response now includes `_count.transactions` (number of transactions tagged to each category) and `defaultCategoryCode`.
 - `api.createCategory(payload)` — creates a custom category. Accepts `name`, `group`, `type`, `icon`.
-- `api.updateCategory(id, payload)` — updates a category. Accepts `name`, `group`, `type`, `icon`. The `processingHint` and `portfolioItemKeyStrategy` fields are system-managed and cannot be set by users.
+- `api.updateCategory(id, payload)` — updates a category. Accepts `name`, `group`, `type`, `icon`, `isRecurring`. The `processingHint` and `portfolioItemKeyStrategy` fields are system-managed and cannot be set by users.
 - `api.deleteCategory(id, mergeTargetId?)` — deletes a custom category. If the category has transactions, the API returns `requiresMerge: true` and the UI prompts the user to select a merge target. On retry with a `mergeTargetId`, all dependent records are reassigned before deletion. The API enforces deletion protection for system-critical groups.

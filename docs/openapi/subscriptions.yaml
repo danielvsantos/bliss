@@ -1,0 +1,144 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Subscriptions
+  version: 1.0.0
+  description: >
+    Detected recurring charges (subscriptions), one row per merchant per tenant.
+    Detection runs in the backend subscriptionDetectionWorker; this API only
+    reads the results and records user corrections. All endpoints require JWT
+    authentication and are scoped to the caller's tenant.
+
+servers:
+  - url: /
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+  schemas:
+    SubscriptionItem:
+      type: object
+      properties:
+        id: { type: integer, readOnly: true }
+        descriptionHash: { type: string, description: SHA-256 of the normalized merchant key }
+        merchantLabel: { type: string }
+        categoryId: { type: integer }
+        category:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            icon: { type: string, nullable: true }
+        state: { type: string, enum: [DETECTED, CONFIRMED, DISMISSED] }
+        cadence: { type: string, nullable: true, enum: [WEEKLY, MONTHLY, QUARTERLY, ANNUAL] }
+        userCadenceLocked: { type: boolean }
+        status: { type: string, enum: [ACTIVE, LAPSED] }
+        detectionReason:
+          type: string
+          nullable: true
+          enum: [CATEGORY_SIGNAL, INTERVAL_HEURISTIC, USER_CONFIRMED]
+        amount: { type: number, nullable: true, description: Median native amount }
+        currency: { type: string, nullable: true }
+        amountInDisplayCurrency: { type: number, nullable: true }
+        monthlyAmount: { type: number, nullable: true, description: amountInDisplayCurrency × cadence factor }
+        fxUnavailable: { type: boolean }
+        occurrenceCount: { type: integer }
+        firstChargedAt: { type: string, format: date-time, nullable: true }
+        lastChargedAt: { type: string, format: date-time, nullable: true }
+        nextExpectedAt: { type: string, format: date-time, nullable: true }
+        lastDetectedAt: { type: string, format: date-time, nullable: true }
+        contributingTransactionIds:
+          type: array
+          items: { type: integer }
+    SubscriptionsResponse:
+      type: object
+      properties:
+        displayCurrency: { type: string }
+        lastDetectedAt: { type: string, format: date-time, nullable: true }
+        fullScanAt: { type: string, format: date-time, nullable: true }
+        refreshCooldownSeconds: { type: integer }
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              icon: { type: string, nullable: true }
+              count: { type: integer }
+        summary:
+          type: object
+          properties:
+            monthlyTotal: { type: number }
+            annualTotal: { type: number }
+            activeCount: { type: integer }
+            lapsedCount: { type: integer }
+            fxUnavailableCount: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SubscriptionItem' }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        details: { type: string }
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/subscriptions:
+    get:
+      summary: List detected recurring charges + spend summary
+      parameters:
+        - in: query
+          name: view
+          schema: { type: string, enum: [active, lapsed, all], default: active }
+        - in: query
+          name: categoryId
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionsResponse' }
+        '401': { description: Unauthenticated }
+    post:
+      summary: Record a user correction or trigger detection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [confirm, dismiss, restore, setCadence, refresh, fullScan]
+                descriptionHash: { type: string }
+                transactionId: { type: integer }
+                cadence: { type: string, enum: [WEEKLY, MONTHLY, QUARTERLY, ANNUAL] }
+      responses:
+        '200': { description: Applied (confirm/dismiss/restore/setCadence) }
+        '201': { description: Provisional row created (confirm by transactionId) }
+        '202': { description: Detection scan enqueued (refresh/fullScan) }
+        '400':
+          description: Invalid action or payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { description: No matching recurring charge }
+        '429':
+          description: Scan cooldown active (refresh only)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  retryAfter: { type: integer, description: seconds }

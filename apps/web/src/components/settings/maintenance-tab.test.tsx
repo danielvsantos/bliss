@@ -46,9 +46,21 @@ const emptyStatus: RebuildStatusResponse = {
   ],
 };
 
+const emptySubscriptions = {
+  displayCurrency: 'USD',
+  lastDetectedAt: null,
+  fullScanAt: null,
+  refreshCooldownSeconds: 0,
+  categories: [],
+  summary: { monthlyTotal: 0, annualTotal: 0, activeCount: 0, lapsedCount: 0, fxUnavailableCount: 0 },
+  items: [],
+};
+
 describe('MaintenanceTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The new "Subscriptions — full history scan" card fetches this on mount.
+    vi.mocked(api.getSubscriptions).mockResolvedValue(emptySubscriptions);
   });
 
   it('renders all maintenance panels (by heading)', async () => {
@@ -85,6 +97,32 @@ describe('MaintenanceTab', () => {
 
     await waitFor(() => {
       expect(api.refreshStockFundamentals).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('calls fullHistoryScan when the subscriptions "Run full scan" button is clicked', async () => {
+    vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
+    vi.mocked(api.getSubscriptions).mockResolvedValue({
+      displayCurrency: 'USD',
+      lastDetectedAt: null,
+      fullScanAt: null,
+      refreshCooldownSeconds: 0,
+      categories: [],
+      summary: { monthlyTotal: 0, annualTotal: 0, activeCount: 0, lapsedCount: 0, fxUnavailableCount: 0 },
+      items: [],
+    });
+    vi.mocked(api.fullHistoryScan).mockResolvedValue({ status: 'accepted', mode: 'full' });
+
+    renderTab();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Subscriptions — full history scan' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Run full scan/i }));
+
+    await waitFor(() => {
+      expect(api.fullHistoryScan).toHaveBeenCalledTimes(1);
     });
   });
 

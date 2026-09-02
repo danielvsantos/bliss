@@ -73,6 +73,9 @@ export type Category = {
   icon?: string;
   description?: string | null;
   processingHint?: string;
+  /** When true, this category's transactions are treated as recurring-by-default
+   *  in the Subscriptions view (Tier A — one occurrence qualifies). User-toggleable. */
+  isRecurring?: boolean;
   /** Stable SNAKE_UPPER_CASE code from defaultCategories.js. null for tenant-created custom categories. */
   defaultCategoryCode?: string | null;
   /** Number of transactions tagged to this category — returned by GET /api/categories */
@@ -85,6 +88,7 @@ export type CategoryRequest = {
   type: string;
   icon?: string;
   description?: string | null;
+  isRecurring?: boolean;
 };
 
 export type CategoryResponse = {
@@ -627,4 +631,50 @@ export type MerchantHistoryTransaction = {
   source: string;
   category?: { id: number; name: string; group: string } | null;
   account?: { id: number; name: string } | null;
+};
+// ─── Subscriptions / Recurring Charges ────────────────────────────────────────
+
+export type RecurringCadence = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+export type RecurringState = 'DETECTED' | 'CONFIRMED' | 'DISMISSED';
+export type RecurringStatus = 'ACTIVE' | 'LAPSED';
+export type SubscriptionsView = 'active' | 'lapsed' | 'all';
+
+export type SubscriptionItem = {
+  id: number;
+  descriptionHash: string;
+  merchantLabel: string;
+  categoryId: number;
+  category: { id: number; name: string; icon?: string | null } | null;
+  state: RecurringState;
+  cadence: RecurringCadence | null;
+  userCadenceLocked: boolean;
+  status: RecurringStatus;
+  detectionReason: 'CATEGORY_SIGNAL' | 'INTERVAL_HEURISTIC' | 'USER_CONFIRMED' | null;
+  amount: number | null;
+  currency: string | null;
+  amountInDisplayCurrency: number | null;
+  monthlyAmount: number | null;
+  fxUnavailable: boolean;
+  occurrenceCount: number;
+  firstChargedAt: string | null;
+  lastChargedAt: string | null;
+  nextExpectedAt: string | null;
+  lastDetectedAt: string | null;
+  contributingTransactionIds: number[];
+};
+
+export type SubscriptionsResponse = {
+  displayCurrency: string;
+  lastDetectedAt: string | null;
+  fullScanAt: string | null;
+  refreshCooldownSeconds: number;
+  categories: Array<{ id: number; name: string; icon?: string | null; count: number }>;
+  summary: {
+    monthlyTotal: number;
+    annualTotal: number;
+    activeCount: number;
+    lapsedCount: number;
+    fxUnavailableCount: number;
+  };
+  items: SubscriptionItem[];
 };

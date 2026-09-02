@@ -223,6 +223,30 @@ The daily 6 AM UTC cron is retained purely as a scheduling heartbeat for the cal
 - Metadata enrichment: `actionTypes`, `relatedLenses`, `suggestedAction` for future goal integration
 - User can manually trigger any tier via POST `/api/insights` with `{ tier, year, month, quarter, force }`
 
+### Subscriptions & recurring charges
+
+Dedicated **Subscriptions** page (`/subscriptions`) listing detected recurring
+charges, one row per merchant, with cadence, native + display-currency amount,
+next-expected-charge date, active/lapsed status, and a monthly + annual
+recurring-spend total. Detection is deterministic (no LLM) and runs in
+`subscriptionDetectionWorker` over committed `Transaction` rows (so CSV imports
+are covered exactly like Plaid):
+
+- **Tier A — category signal.** Transactions in a category with the new
+  `Category.isRecurring = true` boolean. One occurrence qualifies. Chosen over
+  reusing `processingHint = 'RECURRING'` (a scalar that can't compose with
+  `API_STOCK` etc.); `isRecurring` is user-toggleable on the Categories page.
+- **Tier B — bounded interval heuristic.** Non-recurring spending categories,
+  6-month window, row-cap guarded: ≥3 regular occurrences at a stable amount →
+  WEEKLY/MONTHLY only.
+- **Learning loop.** Per-merchant `CONFIRMED` / `DISMISSED` `RecurringCharge`
+  rows (keyed by a hash of the normalized merchant) are honoured every run.
+
+Nightly incremental scan (5 AM UTC, 6-month window). "Scan now" on the page
+(30-min cooldown). "Full history scan" in Settings → Maintenance widens Tier A
+to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
+[`docs/specs/backend/21-subscriptions-detection.md`](docs/specs/backend/21-subscriptions-detection.md).
+
 ### Security master
 
 Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
@@ -244,8 +268,9 @@ Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
 | `insightGeneratorWorker` | insights | 1 | Tiered AI insights: 6 AM UTC scheduling heartbeat that auto-triggers monthly/quarterly/annual on their calendar windows, portfolio intel (Mon 5 AM) |
 | `securityMasterWorker` | security-master | 1 | Nightly stock fundamentals refresh (cron 3 AM UTC) |
+| `subscriptionDetectionWorker` | subscription-detection | 1 | Recurring-charge detection: nightly `detect-all-tenants` (cron 5 AM UTC) fans out one incremental `detect-tenant` per tenant; on-demand `detect-tenant` (incremental/full) from the Subscriptions page + Settings → Maintenance |
 
-**Schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> portfolioIntel (Mon 5 AM, equity insights) -> insightGenerator (6 AM, auto-triggers monthly/quarterly/annual when their calendar window is open).
+**Schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> portfolioIntel (Mon 5 AM, equity insights) + subscriptionDetection (5 AM, recurring charges — read-only over `Transaction`, no cascade) -> insightGenerator (6 AM, auto-triggers monthly/quarterly/annual when their calendar window is open).
 
 All workers route their `worker.on('failed', ...)` handler through `reportWorkerFailure` in `apps/backend/src/utils/workerFailureReporter.js`. The helper only calls `Sentry.captureException` on the **final** exhausted retry attempt — intermediate retries are logged at `warn` level. This prevents false alarms when BullMQ recovers from transient errors (Prisma Accelerate cold starts, Redis blips, Plaid race conditions). Never call `Sentry.captureException` directly from `worker.on('failed')`. Graceful shutdown: close workers before Redis disconnect.
 
