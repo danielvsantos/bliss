@@ -10,10 +10,16 @@
  *            loaded and decrypted.
  *
  *   Tier B — bounded interval heuristic (fallback). Spending-type transactions
- *            in NON-recurring categories, 6-month window, row-cap guarded.
- *            Needs >= SUBSCRIPTION_MIN_OCCURRENCES regular occurrences at a
- *            stable amount, and a median inter-charge gap in the WEEKLY or
- *            MONTHLY bucket.
+ *            (Essentials / Lifestyle / Growth / Ventures) in NON-recurring
+ *            categories, 6-month window, row-cap guarded. Needs
+ *            >= SUBSCRIPTION_MIN_OCCURRENCES regular occurrences at a stable
+ *            amount, and a median inter-charge gap in the WEEKLY or MONTHLY
+ *            bucket.
+ *
+ *   Amount clustering — aggregator merchants (Apple App Store, Amazon, PayPal)
+ *            whose charges span clearly separated amount bands are split into
+ *            one row per band, so a meaningful per-price subscription surfaces
+ *            instead of one row with a median amount and a dense weekly series.
  *
  * Learning loop: per-merchant CONFIRMED / DISMISSED rows (keyed by
  * hashMerchant(description)) are honoured on every run — DISMISSED merchants
@@ -40,10 +46,16 @@ const {
   SUBSCRIPTION_LAPSE_MULTIPLIER,
   SUBSCRIPTION_MAX_CONTRIBUTING_IDS,
   SUBSCRIPTION_CADENCE_BUCKETS,
+  SUBSCRIPTION_CLUSTER_MIN_GROUP,
 } = require('../config/classificationConfig');
 
 const BATCH_SIZE = 1000;
-const SPENDING_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
+// Category types the Tier-B interval heuristic scans. Includes `Ventures` so
+// business subscriptions (Cloud & Hosting, SaaS & Tools, Data & API Services,
+// domains, recurring ad spend) are caught even before the user flags those
+// categories as recurring. `Income` / `Investments` / `Debt` / `Transfers` /
+// `Asset` are excluded — recurrence there is not "a subscription".
+const SPENDING_TYPES = ['Essentials', 'Lifestyle', 'Growth', 'Ventures'];
 
 /** Nominal length of one cadence period, in days. Used for next-expected-charge
  *  and lapse computation (never for detection — that uses the bucket ranges). */
@@ -89,9 +101,52 @@ function normalizeMerchant(description) {
   return deSuffixed || cleaned;
 }
 
-/** SHA-256 hex of the normalized merchant key. */
+function sha256Hex(str) {
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
+
+/** SHA-256 hex of the normalized merchant key (from a raw description). */
 function hashMerchant(description) {
-  return crypto.createHash('sha256').update(normalizeMerchant(description)).digest('hex');
+  return sha256Hex(normalizeMerchant(description));
+}
+
+/**
+ * Stable per-amount-band suffix for a split merchant's key. Rounds to a whole
+ * currency unit so sub-unit drift (9.99 → 10.49) keeps the same key.
+ */
+function clusterKey(medianAmount) {
+  return String(Math.max(1, Math.round(medianAmount)));
+}
+
+/**
+ * Split a merchant's occurrences into amount bands.
+ *
+ * Aggregator merchants (Apple App Store, Amazon, PayPal) bill many unrelated
+ * things under one descriptor; grouping only by merchant then produces a single
+ * row with a meaningless median amount and a dense (→ weekly) date series. This
+ * separates the charges into bands so each real recurring price becomes its own
+ * row.
+ *
+ * Returns `[occurrences]` unchanged when the merchant is small
+ * (< SUBSCRIPTION_CLUSTER_MIN_GROUP occurrences) or when every charge lands in
+ * one band — so normal single-price merchants are completely unaffected.
+ *
+ * @param {Array<{ debit: * }>} occurrences  same-currency occurrences
+ * @returns {Array<Array>}  one array of occurrences per band
+ */
+function clusterByAmount(occurrences) {
+  if (occurrences.length < SUBSCRIPTION_CLUSTER_MIN_GROUP) return [occurrences];
+
+  const sorted = [...occurrences].sort((a, b) => toNumber(a.debit) - toNumber(b.debit));
+  const clusters = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = toNumber(sorted[i - 1].debit);
+    const curr = toNumber(sorted[i].debit);
+    const tol = Math.max(Math.abs(prev) * SUBSCRIPTION_AMOUNT_DRIFT_PCT, SUBSCRIPTION_AMOUNT_DRIFT_ABS);
+    if (curr - prev > tol) clusters.push([sorted[i]]);
+    else clusters[clusters.length - 1].push(sorted[i]);
+  }
+  return clusters.length > 1 ? clusters : [occurrences];
 }
 
 function toNumber(v) {
@@ -274,90 +329,117 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     tierBTxns = await loadTransactionsBatched(tierBWhere);
   }
 
-  // 4. Group by merchant hash --------------------------------------------
+  // 4. Group by merchant key (normalized string) ------------------------
   const groups = new Map();
   for (const txn of [...tierATxns, ...tierBTxns]) {
-    const hash = hashMerchant(txn.description);
-    if (!groups.has(hash)) groups.set(hash, []);
-    groups.get(hash).push(txn);
+    const key = normalizeMerchant(txn.description);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(txn);
   }
 
-  // 5. Qualify + build rows --------------------------------------------
+  // 5. Qualify + build rows (per merchant, then per amount band) --------
   const rows = [];
-  for (const [hash, occ] of groups.entries()) {
-    if (dismissed.has(hash)) continue; // tombstoned — never re-surface
+  const legacyRetireHashes = []; // bare merchant hashes whose single row is now split
+  for (const [merchantKey, merchantOcc] of groups.entries()) {
+    const merchantHash = sha256Hex(merchantKey);
 
-    occ.sort((a, b) => a.transaction_date - b.transaction_date);
-    const dates = occ.map((t) => t.transaction_date);
-    const isConfirmed = confirmed.has(hash);
-    const tierA = occ.some((t) => isCategoryRecurring(t.category));
+    // Dominant currency is picked per merchant; amount bands are computed within
+    // that currency's charges only.
+    const currency = dominantValue(merchantOcc.map((t) => t.currency));
+    const domOcc = merchantOcc.filter((t) => t.currency === currency);
 
-    const currency = dominantValue(occ.map((t) => t.currency));
-    const nativeAmounts = occ.filter((t) => t.currency === currency).map((t) => toNumber(t.debit));
-    const inferred = inferCadence(dates);
+    const bands = clusterByAmount(domOcc);
+    const isSplit = bands.length > 1;
+    if (isSplit) legacyRetireHashes.push(merchantHash);
 
-    // Cadence resolution
-    let cadence = lockedCadence.get(hash) || null;
-    if (!cadence) {
-      if (tierA) {
-        cadence = occ.length >= 2 ? (inferred.cadence || 'MONTHLY') : 'MONTHLY';
-      } else {
-        cadence = inferred.cadence; // Tier B — must be a real bucket (below gate)
+    for (const band of bands) {
+      const occ = [...band].sort((a, b) => a.transaction_date - b.transaction_date);
+      const dates = occ.map((t) => t.transaction_date);
+      const nativeAmounts = occ.map((t) => toNumber(t.debit));
+      const med = median(nativeAmounts) || toNumber(occ[occ.length - 1].debit);
+
+      const hash = isSplit ? sha256Hex(`${merchantKey}#${clusterKey(med)}`) : merchantHash;
+      if (dismissed.has(hash)) continue; // tombstoned — never re-surface
+
+      const isConfirmed = confirmed.has(hash);
+      const tierA = occ.some((t) => isCategoryRecurring(t.category));
+      const inferred = inferCadence(dates);
+
+      // Cadence resolution
+      let cadence = lockedCadence.get(hash) || null;
+      if (!cadence) {
+        if (tierA) {
+          cadence = occ.length >= 2 ? (inferred.cadence || 'MONTHLY') : 'MONTHLY';
+        } else {
+          cadence = inferred.cadence; // Tier B — must be a real bucket (below gate)
+        }
       }
+
+      let detectionReason;
+      if (isConfirmed) {
+        detectionReason = 'USER_CONFIRMED';
+      } else if (tierA) {
+        // A split band needs >= 2 occurrences to be a real recurring price — a
+        // lone large App Store purchase must not become a subscription.
+        if (isSplit && occ.length < 2) continue;
+        detectionReason = 'CATEGORY_SIGNAL';
+      } else {
+        // Tier B gate — applied per band
+        const regular =
+          occ.length >= SUBSCRIPTION_MIN_OCCURRENCES &&
+          inferred.gapCv <= SUBSCRIPTION_GAP_CV_MAX &&
+          (inferred.cadence === 'WEEKLY' || inferred.cadence === 'MONTHLY') &&
+          isAmountStable(nativeAmounts);
+        if (!regular) continue;
+        detectionReason = 'INTERVAL_HEURISTIC';
+      }
+
+      if (!cadence) cadence = 'MONTHLY'; // safety net for a confirmed single-occurrence merchant
+
+      const lastChargedAt = dates[dates.length - 1];
+      const recentIds = occ
+        .slice()
+        .sort((a, b) => b.transaction_date - a.transaction_date)
+        .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
+        .map((t) => t.id);
+      const mostRecent = occ[occ.length - 1];
+
+      rows.push({
+        descriptionHash: hash,
+        merchantLabel: (mostRecent.description || '').slice(0, 140),
+        categoryId: mostRecent.categoryId,
+        cadence,
+        amount: new Decimal(med),
+        currency,
+        occurrenceCount: occ.length,
+        firstChargedAt: dates[0],
+        lastChargedAt,
+        nextExpectedAt: computeNextExpected(lastChargedAt, cadence),
+        status: computeStatus(lastChargedAt, cadence, now),
+        detectionReason,
+        contributingTransactionIds: recentIds,
+        lastDetectedAt: now,
+        _isConfirmed: isConfirmed,
+      });
     }
-
-    let detectionReason;
-    if (isConfirmed) {
-      detectionReason = 'USER_CONFIRMED';
-    } else if (tierA) {
-      detectionReason = 'CATEGORY_SIGNAL';
-    } else {
-      // Tier B gate
-      const regular =
-        occ.length >= SUBSCRIPTION_MIN_OCCURRENCES &&
-        inferred.gapCv <= SUBSCRIPTION_GAP_CV_MAX &&
-        (inferred.cadence === 'WEEKLY' || inferred.cadence === 'MONTHLY') &&
-        isAmountStable(nativeAmounts);
-      if (!regular) continue;
-      detectionReason = 'INTERVAL_HEURISTIC';
-    }
-
-    if (!cadence) cadence = 'MONTHLY'; // safety net for a confirmed single-occurrence merchant
-
-    const lastChargedAt = dates[dates.length - 1];
-    const recentIds = occ
-      .slice()
-      .sort((a, b) => b.transaction_date - a.transaction_date)
-      .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
-      .map((t) => t.id);
-    const mostRecent = occ[occ.length - 1];
-
-    rows.push({
-      descriptionHash: hash,
-      merchantLabel: (mostRecent.description || '').slice(0, 140),
-      categoryId: mostRecent.categoryId,
-      cadence,
-      amount: new Decimal(median(nativeAmounts) || toNumber(mostRecent.debit)),
-      currency,
-      occurrenceCount: occ.length,
-      firstChargedAt: dates[0],
-      lastChargedAt,
-      nextExpectedAt: computeNextExpected(lastChargedAt, cadence),
-      status: computeStatus(lastChargedAt, cadence, now),
-      detectionReason,
-      contributingTransactionIds: recentIds,
-      lastDetectedAt: now,
-      _isConfirmed: isConfirmed,
-    });
   }
 
-  return { rows, tierACount: tierATxns.length, tierBCount: tierBTxns.length, tierBSkipped };
+  return {
+    rows,
+    legacyRetireHashes,
+    tierACount: tierATxns.length,
+    tierBCount: tierBTxns.length,
+    tierBSkipped,
+  };
 }
 
 module.exports = {
   detectForTenant,
   normalizeMerchant,
   hashMerchant,
+  sha256Hex,
+  clusterByAmount,
+  clusterKey,
   median,
   isAmountStable,
   inferCadence,

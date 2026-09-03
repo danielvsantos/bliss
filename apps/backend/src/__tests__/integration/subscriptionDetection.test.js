@@ -12,7 +12,7 @@ const prisma = require('../../../prisma/prisma');
 const { createIsolatedTenant, teardownTenant } = require('../helpers/tenant');
 const { ensureReferenceData } = require('../helpers/referenceData');
 const { handleDetectTenant } = require('../../workers/subscriptionDetectionWorker');
-const { hashMerchant } = require('../../services/recurringDetectionService');
+const { hashMerchant, sha256Hex, normalizeMerchant } = require('../../services/recurringDetectionService');
 
 // Populated in beforeAll — CI's bliss_test has no seeded Country/Currency/Bank.
 let ref;
@@ -190,5 +190,69 @@ describe('subscription detection (integration)', () => {
       await prisma.recurringCharge.deleteMany({ where: { tenantId: otherTenant } });
       await teardownTenant(otherTenant);
     }
+  });
+});
+
+describe('subscription detection — aggregator merchant splitting (integration)', () => {
+  let tenantId;
+  let account;
+  let mediaCat;
+
+  beforeAll(async () => {
+    ref = await ensureReferenceData();
+    ({ tenantId } = await createIsolatedTenant({ suffix: 'subsdetect-split' }));
+    account = await seedAccount(tenantId, 'USD');
+    mediaCat = await seedCategory(tenantId, 'App Store', true);
+
+    // €2.99 ×4 monthly, €9.99 ×4 monthly, one $39.99 purchase — all "APPLE.COM/BILL".
+    for (const [amt, count] of [[2.99, 4], [9.99, 4]]) {
+      for (let i = 0; i < count; i++) {
+        await seedTxn(tenantId, {
+          accountId: account.id, categoryId: mediaCat.id,
+          description: 'APPLE.COM/BILL', debit: amt, date: daysAgo(15 + i * 30),
+        });
+      }
+    }
+    await seedTxn(tenantId, {
+      accountId: account.id, categoryId: mediaCat.id,
+      description: 'APPLE.COM/BILL', debit: 39.99, date: daysAgo(20),
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.recurringCharge.deleteMany({ where: { tenantId } });
+    await teardownTenant(tenantId);
+  });
+
+  it('splits one busy merchant into per-price rows and retires the legacy combined row', async () => {
+    const key = normalizeMerchant('APPLE.COM/BILL');
+
+    // Simulate the pre-clustering world: a single combined row the user confirmed.
+    await prisma.recurringCharge.create({
+      data: {
+        tenantId, descriptionHash: sha256Hex(key), merchantLabel: 'APPLE.COM/BILL',
+        categoryId: mediaCat.id, state: 'CONFIRMED', cadence: 'WEEKLY', status: 'ACTIVE',
+        amount: 9.99, currency: 'USD', occurrenceCount: 9, lastChargedAt: daysAgo(15),
+        contributingTransactionIds: [],
+      },
+    });
+
+    await handleDetectTenant({ tenantId, mode: 'full' });
+
+    const rows = await prisma.recurringCharge.findMany({ where: { tenantId }, orderBy: { amount: 'asc' } });
+    // Two price bands (€2.99, €9.99); the lone €39.99 forms no band.
+    expect(rows.map((r) => Number(r.amount))).toEqual([2.99, 9.99]);
+    expect(rows.every((r) => r.state === 'DETECTED')).toBe(true);
+
+    // The legacy combined row (bare merchant hash) is gone.
+    const legacy = await prisma.recurringCharge.findUnique({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: sha256Hex(key) } },
+    });
+    expect(legacy).toBeNull();
+
+    // A second run is stable (still two rows, still no legacy row).
+    await handleDetectTenant({ tenantId, mode: 'full' });
+    const again = await prisma.recurringCharge.count({ where: { tenantId } });
+    expect(again).toBe(2);
   });
 });

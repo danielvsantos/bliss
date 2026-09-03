@@ -17,6 +17,9 @@ const {
   detectForTenant,
   normalizeMerchant,
   hashMerchant,
+  sha256Hex,
+  clusterByAmount,
+  clusterKey,
   inferCadence,
   isAmountStable,
   computeNextExpected,
@@ -252,5 +255,122 @@ describe('detectForTenant', () => {
     const gte = call[0].where.transaction_date.gte;
     // full-scan lookback is 48 months → well over a year ago
     expect(Date.now() - gte.getTime()).toBeGreaterThan(365 * 86_400_000);
+  });
+
+  it('scans Ventures categories via Tier B (business subscriptions)', async () => {
+    const cloud = { id: 30, name: 'Cloud & Hosting', isRecurring: false, type: 'Ventures' };
+    mockTxns({
+      tierB: [
+        txn(1, 'AWS', 42.0, daysAgo(90), cloud),
+        txn(2, 'AWS', 42.0, daysAgo(60), cloud),
+        txn(3, 'AWS', 43.5, daysAgo(30), cloud),
+      ],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].detectionReason).toBe('INTERVAL_HEURISTIC');
+    expect(rows[0].cadence).toBe('MONTHLY');
+  });
+});
+
+describe('clusterByAmount', () => {
+  const occ = (debit) => ({ debit, transaction_date: new Date(), currency: 'EUR' });
+
+  it('does not split a merchant with fewer than the min-group occurrences', () => {
+    expect(clusterByAmount([occ(3), occ(3), occ(10), occ(10), occ(22)])).toHaveLength(1);
+  });
+
+  it('splits a busy merchant into distinct amount bands', () => {
+    const input = [
+      occ(2.99), occ(2.99), occ(2.99), occ(2.99),
+      occ(9.99), occ(9.99), occ(9.99), occ(9.99),
+      occ(22), occ(22), occ(22),
+    ];
+    const bands = clusterByAmount(input).map((b) => b.length).sort();
+    expect(bands).toEqual([3, 4, 4]);
+  });
+
+  it('keeps sub-unit drift in one band', () => {
+    const input = [occ(9.99), occ(10.49), occ(9.99), occ(10.99), occ(9.99), occ(10.49)];
+    expect(clusterByAmount(input)).toHaveLength(1);
+  });
+
+  it('isolates a lone large charge into its own band', () => {
+    const input = [
+      occ(9.99), occ(9.99), occ(9.99), occ(9.99), occ(9.99), occ(9.99),
+      occ(39.99),
+    ];
+    const bands = clusterByAmount(input).map((b) => b.length).sort();
+    expect(bands).toEqual([1, 6]);
+  });
+
+  it('clusterKey rounds a band median to a whole currency unit', () => {
+    expect(clusterKey(9.99)).toBe('10');
+    expect(clusterKey(2.49)).toBe('2');
+    expect(clusterKey(0.4)).toBe('1'); // floor of 1
+  });
+});
+
+describe('detectForTenant — aggregator merchant splitting', () => {
+  const MEDIA = { id: 40, name: 'App Store', icon: '📺', isRecurring: true, type: 'Lifestyle' };
+
+  function appleFixture() {
+    const rows = [];
+    let id = 1;
+    // €2.99 ×4 monthly, €9.99 ×4 monthly, €22 ×3 monthly, one €39.99 purchase
+    for (const [amt, count] of [[2.99, 4], [9.99, 4], [22, 3]]) {
+      for (let i = 0; i < count; i++) {
+        rows.push({
+          id: id++, description: 'APPLE.COM/BILL', debit: amt, currency: 'EUR',
+          transaction_date: daysAgo(15 + i * 30), categoryId: MEDIA.id, category: MEDIA,
+        });
+      }
+    }
+    rows.push({
+      id: id++, description: 'APPLE.COM/BILL', debit: 39.99, currency: 'EUR',
+      transaction_date: daysAgo(20), categoryId: MEDIA.id, category: MEDIA,
+    });
+    return rows;
+  }
+
+  it('produces one row per recurring price band and drops the lone purchase', async () => {
+    mockTxns({ tierA: appleFixture() });
+    const { rows, legacyRetireHashes } = await detectForTenant(TENANT, { mode: 'full' });
+
+    const amounts = rows.map((r) => Number(r.amount)).sort((a, b) => a - b);
+    expect(amounts).toEqual([2.99, 9.99, 22]); // stored amount = the real band median; no €39.99 row
+    expect(rows.every((r) => r.currency === 'EUR')).toBe(true);
+
+    // each band row is keyed as "<merchant>#<rounded median>"
+    const key = normalizeMerchant('APPLE.COM/BILL');
+    expect(new Set(rows.map((r) => r.descriptionHash))).toEqual(
+      new Set([sha256Hex(`${key}#3`), sha256Hex(`${key}#10`), sha256Hex(`${key}#22`)]),
+    );
+    // the pre-clustering bare "apple" row is scheduled for retirement
+    expect(legacyRetireHashes).toEqual([sha256Hex(key)]);
+  });
+
+  it('a single-price merchant is unchanged (bare hash, nothing retired)', async () => {
+    mockTxns({
+      tierA: Array.from({ length: 8 }, (_, i) => ({
+        id: i + 1, description: 'Netflix', debit: 15.99, currency: 'USD',
+        transaction_date: daysAgo(10 + i * 30), categoryId: MEDIA.id, category: MEDIA,
+      })),
+    });
+    const { rows, legacyRetireHashes } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(hashMerchant('Netflix'));
+    expect(legacyRetireHashes).toEqual([]);
+  });
+
+  it('honours a DISMISSED tombstone on a specific band', async () => {
+    const key = normalizeMerchant('APPLE.COM/BILL');
+    mockTxns({
+      tierA: appleFixture(),
+      prior: [{ descriptionHash: sha256Hex(`${key}#10`), state: 'DISMISSED', cadence: null, userCadenceLocked: false }],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'full' });
+    const amounts = rows.map((r) => Number(r.amount)).sort((a, b) => a - b);
+    expect(amounts).toEqual([2.99, 22]); // the €9.99 band is suppressed
   });
 });

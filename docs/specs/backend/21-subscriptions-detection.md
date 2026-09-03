@@ -49,12 +49,14 @@ Utilities/rent stay `false` (usage-variable) and rely on Tier B or a manual togg
 ### Tier B — bounded interval heuristic (fallback)
 
 `Transaction` where `debit != null`, in the **6-month** window, in a
-**non-recurring** category of type `Essentials | Lifestyle | Growth`.
-Row-cap guarded: above `SUBSCRIPTION_TIER_B_ROW_CAP` (8000) Tier B is skipped
-(logged) — the category signal still runs and "confirm from a transaction" is
-still available.
+**non-recurring** category of type `Essentials | Lifestyle | Growth | Ventures`.
+`Ventures` is included so business subscriptions (Cloud & Hosting, SaaS & Tools,
+Data & API Services, domains, recurring ad spend) are caught even before the
+user flags those categories as recurring. Row-cap guarded: above
+`SUBSCRIPTION_TIER_B_ROW_CAP` (8000) Tier B is skipped (logged) — the category
+signal still runs and "confirm from a transaction" is still available.
 
-A merchant qualifies when **all** hold:
+A band qualifies when **all** hold:
 * `occurrenceCount >= SUBSCRIPTION_MIN_OCCURRENCES` (3)
 * gap coefficient-of-variation `<= SUBSCRIPTION_GAP_CV_MAX` (0.25)
 * median inter-charge gap falls in the **WEEKLY or MONTHLY** bucket
@@ -62,6 +64,32 @@ A merchant qualifies when **all** hold:
 
 `detectionReason = INTERVAL_HEURISTIC`. Tier B never yields QUARTERLY/ANNUAL —
 those only come from Tier A (which widens to 48 months on a full scan).
+
+### Amount clustering (aggregator merchants)
+
+Aggregator merchants — Apple App Store, Amazon, PayPal — bill many unrelated
+things under one descriptor. Grouping by merchant alone then produces a single
+row with a meaningless median amount and a dense (→ WEEKLY) date series.
+
+So when a merchant has `>= SUBSCRIPTION_CLUSTER_MIN_GROUP` (6) occurrences whose
+amounts fall into clearly separated bands (a break whenever the gap to the next
+sorted amount exceeds `max(5%, 2 units)`), it is **split into one
+`RecurringCharge` per band**:
+
+* `descriptionHash` becomes `sha256("<merchantKey>#<rounded band median>")` —
+  the median is rounded to a whole currency unit so sub-unit drift
+  (`9.99 → 10.49`) keeps the same key.
+* Each band still has to qualify on its own: **≥ 2 occurrences** for Tier A,
+  the full gate for Tier B. A lone large App Store purchase in the mix forms no
+  band → never becomes a subscription.
+* A merchant with < 6 occurrences, or whose charges all land in one band, is
+  **untouched** — its row keeps the bare `sha256("<merchantKey>")` hash.
+
+The worker additionally **retires** (deletes, any state) the pre-clustering
+bare-merchant row for merchants that split this run — including a `CONFIRMED` /
+`DISMISSED` decision the user had applied to the old combined row. The merchant
+re-appears as fresh `DETECTED` per-band rows for review. Non-aggregator
+merchants and their decisions are never affected.
 
 ### Learning loop
 
@@ -83,16 +111,26 @@ Queue: `subscription-detection` (concurrency 1, `lockDuration` 300s). Worker
 ### Persistence (`detect-tenant`)
 
 In one `prisma.$transaction`:
-1. `upsert` per `(tenantId, descriptionHash)` — **create** with `state:
+1. `deleteMany` `state = 'DETECTED'` rows whose hash is no longer detected
+   (`CONFIRMED` / `DISMISSED` rows are retained).
+2. `deleteMany` the `legacyRetireHashes` (bare-merchant hashes of merchants that
+   split this run) — **any state**.
+3. `upsert` per `(tenantId, descriptionHash)` — **create** with `state:
    'DETECTED'`; **update** merges detector fields only, never `state` /
    `userCadenceLocked`, and skips `cadence` when `userCadenceLocked`.
-2. `deleteMany` `state = 'DETECTED'` rows whose hash is no longer detected.
-   `CONFIRMED` / `DISMISSED` rows are retained forever.
 
 Then, for `mode: 'full'`, `tenant.update({ subscriptionsFullScanAt: now })`.
 
 Structured log line per run: `{ tenantId, mode, tierACount, tierBCount|skipped,
-detected, active, lapsed, pruned, durationMs }`.
+detected, active, lapsed, pruned, retired, durationMs }`.
+
+## API status recompute on cadence edit
+
+`POST /api/subscriptions { action: 'setCadence' }` recomputes `status`
+(`ACTIVE` / `LAPSED`) against the new cadence and `lastChargedAt` synchronously,
+so correcting a wrongly-`MONTHLY` annual subscription un-lapses it immediately
+instead of leaving it stuck in the Lapsed tab until the next detection run. The
+formula mirrors the backend `computeStatus` (grace = `1.5 × cadence`).
 
 ## Config (`config/classificationConfig.js`)
 
@@ -101,7 +139,8 @@ detected, active, lapsed, pruned, durationMs }`.
 `SUBSCRIPTION_AMOUNT_DRIFT_PCT=0.05`, `SUBSCRIPTION_AMOUNT_DRIFT_ABS=2`,
 `SUBSCRIPTION_GAP_CV_MAX=0.25`, `SUBSCRIPTION_LAPSE_MULTIPLIER=1.5`,
 `SUBSCRIPTION_REFRESH_COOLDOWN_MIN=30`, `SUBSCRIPTION_MAX_CONTRIBUTING_IDS=24`,
-`SUBSCRIPTION_CADENCE_BUCKETS` (day ranges per cadence).
+`SUBSCRIPTION_CLUSTER_MIN_GROUP=6`, `SUBSCRIPTION_CADENCE_BUCKETS` (day ranges
+per cadence).
 
 ## Merchant normalization
 
