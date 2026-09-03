@@ -79,17 +79,34 @@ tuning (all in `apps/web`, no API/backend change — see `src/lib/query-config.t
   `refetchOnWindowFocus` / `refetchOnReconnect` stay at their defaults (on), so
   a mount or tab refocus *after* the window still revalidates. Nothing polls —
   no `refetchInterval` is set anywhere.
+- **One shared cache entry for the item list.** `usePortfolioItems` canonicalizes
+  its key params so `usePortfolioItems()` (dashboard net worth, via
+  `useDashboardMetrics`) and `usePortfolioItems({})` (Portfolio page) resolve to
+  the **same** entry — `["portfolio-items", {}]`. Without this they hashed to
+  `["portfolio-items", null]` vs `["portfolio-items", {}]` and, once each was
+  cached/persisted independently, could display different net-worth numbers on
+  the two pages until a revalidation trigger fired. `accountId: null` (manual-only
+  assets) is still a distinct key; only `undefined` / absent params are dropped.
 - **Persistence to `localStorage`.** `persistQueryClient` in `lib/providers.tsx`
   dehydrates the four portfolio query roots (`portfolio-items`,
   `portfolio-holdings`, `portfolio-history`, `equity-analysis`) alongside
   `metadata` and `accounts`. After the user has loaded portfolio data once in a
   browser, a hard reload paints the last-known net-worth / holdings values with
   no loading skeleton, then background-revalidates. `shouldPersistPortfolioQuery`
-  gates this on `status === 'success'` and a serialized-payload size cap
-  (`PORTFOLIO_PERSIST_MAX_BYTES = 1_000_000`, ~1 MB); a query over the cap is
-  simply not persisted and falls back to fetch-on-load. Cached values can be up
+  gates this on `status === 'success'`, **non-empty content** (a transient empty
+  response during app boot is not pinned — it would otherwise paint "net worth 0"
+  on every reload until `staleTime` elapsed), and a serialized-payload size cap
+  (`PORTFOLIO_PERSIST_MAX_BYTES = 1_000_000`, ~1 MB); a query that fails any gate
+  is not persisted and falls back to fetch-on-load. Cached values can be up
   to `gcTime` (24 h) old on cold paint — this is accepted; the value is always
   shown with the refresh indicator + a background refetch, with no age cutoff.
+- **Cold-load revalidation.** Once the persister finishes rehydrating on a page
+  load, `markPortfolioQueriesStale(queryClient)` marks the four roots stale with
+  `refetchType: 'none'` (no request fired then). The cached values paint
+  instantly and the first mount does exactly one background refresh — so the
+  "cold reload → background refresh" contract holds regardless of how recently
+  the value was persisted. In-app navigation afterwards is governed normally by
+  `staleTime` (this runs once per page load, not per route change).
 - **Refresh indicator.** Where a persisted value is on screen while its query is
   refetching with data already present (`isFetching && !isLoading`), an inline
   `Loader2` spinner (`h-4 w-4 animate-spin text-muted-foreground`) is rendered

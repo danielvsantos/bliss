@@ -26,14 +26,30 @@ export function usePortfolioItems(options?: {
   accountId?: number | null;
   countryId?: string;
 }) {
-  const queryKey = [PORTFOLIO_ITEMS_QUERY_KEY, options];
+  // Canonicalize the key params so callers that pass nothing, `{}`, or
+  // `{ includeManualValues: false }` all resolve to the SAME cache entry.
+  // Without this, `usePortfolioItems()` (dashboard) and `usePortfolioItems({})`
+  // (portfolio page) hash to different entries — `["portfolio-items", null]` vs
+  // `["portfolio-items", {}]` — and drift apart once each is cached/persisted.
+  // `accountId: null` is meaningful (manual-only assets) so it is kept; only
+  // `undefined` / absent is dropped.
+  const keyParams: {
+    includeManualValues?: true;
+    accountId?: number | null;
+    countryId?: string;
+  } = {};
+  if (options?.includeManualValues) keyParams.includeManualValues = true;
+  if (options?.accountId !== undefined) keyParams.accountId = options.accountId;
+  if (options?.countryId) keyParams.countryId = options.countryId;
+
+  const queryKey = [PORTFOLIO_ITEMS_QUERY_KEY, keyParams];
 
   return useQuery<PortfolioItemsResponse>({
     queryKey,
     queryFn: () => api.getPortfolioItems({
-      include_manual_values: options?.includeManualValues,
-      ...(options?.accountId !== undefined && { accountId: options.accountId }),
-      ...(options?.countryId && { countryId: options.countryId }),
+      include_manual_values: keyParams.includeManualValues,
+      ...(keyParams.accountId !== undefined && { accountId: keyParams.accountId }),
+      ...(keyParams.countryId && { countryId: keyParams.countryId }),
     }),
     staleTime: PORTFOLIO_STALE_TIME_MS,
   });

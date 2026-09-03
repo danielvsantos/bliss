@@ -6,6 +6,7 @@ import {
   PORTFOLIO_QUERY_KEY_ROOTS,
   shouldPersistPortfolioQuery,
   invalidatePortfolioQueries,
+  markPortfolioQueriesStale,
 } from './query-config';
 
 type PersistCandidate = Parameters<typeof shouldPersistPortfolioQuery>[0];
@@ -60,6 +61,23 @@ describe('shouldPersistPortfolioQuery', () => {
     );
   });
 
+  it.each([
+    ['portfolio-items', { portfolioCurrency: 'USD', items: [] }],
+    ['portfolio-history', { history: [] }],
+    ['portfolio-holdings', []],
+    ['equity-analysis', { summary: {}, groups: [] }],
+  ] as const)('does not persist an empty "%s" payload', (root, data) => {
+    expect(shouldPersistPortfolioQuery(makeQuery(root, 'success', data))).toBe(false);
+  });
+
+  it('persists a payload whose rows are present even if other arrays are empty', () => {
+    expect(
+      shouldPersistPortfolioQuery(
+        makeQuery('portfolio-items', 'success', { items: [{ id: 1 }] }),
+      ),
+    ).toBe(true);
+  });
+
   it('does not persist a payload over the size cap', () => {
     const huge = { blob: 'x'.repeat(PORTFOLIO_PERSIST_MAX_BYTES + 1) };
     expect(shouldPersistPortfolioQuery(makeQuery('portfolio-history', 'success', huge))).toBe(false);
@@ -89,5 +107,33 @@ describe('invalidatePortfolioQueries', () => {
     for (const root of PORTFOLIO_QUERY_KEY_ROOTS) {
       expect(spy).toHaveBeenCalledWith({ queryKey: [root] });
     }
+  });
+});
+
+describe('markPortfolioQueriesStale', () => {
+  it('marks every portfolio root stale without triggering a refetch', () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, 'invalidateQueries');
+
+    markPortfolioQueriesStale(client);
+
+    expect(spy).toHaveBeenCalledTimes(PORTFOLIO_QUERY_KEY_ROOTS.length);
+    for (const root of PORTFOLIO_QUERY_KEY_ROOTS) {
+      expect(spy).toHaveBeenCalledWith({ queryKey: [root], refetchType: 'none' });
+    }
+  });
+
+  it('makes a hydrated portfolio query report as stale (refetches on next mount)', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: PORTFOLIO_STALE_TIME_MS } },
+    });
+    client.setQueryData(['portfolio-items', {}], { items: [{ id: 1 }] });
+
+    // Fresh right after set — would NOT refetch on mount.
+    expect(client.getQueryState(['portfolio-items', {}])?.isInvalidated).toBe(false);
+
+    markPortfolioQueriesStale(client);
+
+    expect(client.getQueryState(['portfolio-items', {}])?.isInvalidated).toBe(true);
   });
 });

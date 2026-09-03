@@ -34,10 +34,10 @@ describe('portfolio query persistence (dehydrate → hydrate round-trip)', () =>
 
   it('persists all four portfolio roots plus metadata / accounts', () => {
     const source = new QueryClient();
-    seedQuery(source, ['portfolio-items', {}], { items: [] });
-    seedQuery(source, ['portfolio-holdings', {}], []);
-    seedQuery(source, ['portfolio-history', {}], { history: [] });
-    seedQuery(source, ['equity-analysis'], { groups: [] });
+    seedQuery(source, ['portfolio-items', {}], { items: [{ id: 1 }] });
+    seedQuery(source, ['portfolio-holdings', {}], [{ ticker: 'AAPL' }]);
+    seedQuery(source, ['portfolio-history', {}], { history: [{ date: '2026-01-01' }] });
+    seedQuery(source, ['equity-analysis'], { groups: [{ name: 'Tech' }] });
     seedQuery(source, ['metadata'], { ok: true });
     seedQuery(source, ['accounts'], []);
     seedQuery(source, ['transactions', { page: 1 }], { rows: [] });
@@ -75,5 +75,17 @@ describe('portfolio query persistence (dehydrate → hydrate round-trip)', () =>
     expect(() => hydrate(restored, dehydrated)).not.toThrow();
     expect(restored.getQueryData(['portfolio-items', {}])).toEqual({ items: [{ id: 7 }] });
     expect(restored.getQueryData(['portfolio-holdings', {}])).toBeUndefined();
+  });
+
+  it('does not persist a transient empty portfolio payload', () => {
+    const source = new QueryClient();
+    seedQuery(source, ['portfolio-items', {}], { portfolioCurrency: 'USD', items: [] });
+    seedQuery(source, ['portfolio-history', {}], { history: [] });
+    seedQuery(source, ['portfolio-holdings', {}], []);
+    seedQuery(source, ['equity-analysis'], { summary: {}, groups: [] });
+
+    const dehydrated = dehydrate(source, { shouldDehydrateQuery });
+
+    expect(dehydrated.queries).toHaveLength(0);
   });
 });
