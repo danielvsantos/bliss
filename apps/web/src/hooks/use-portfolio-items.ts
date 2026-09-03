@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { PortfolioItem } from '@/types/api';
+import { PORTFOLIO_STALE_TIME_MS } from '@/lib/query-config';
 
 export const PORTFOLIO_ITEMS_QUERY_KEY = 'portfolio-items';
 
@@ -34,5 +35,6 @@ export function usePortfolioItems(options?: {
       ...(options?.accountId !== undefined && { accountId: options.accountId }),
       ...(options?.countryId && { countryId: options.countryId }),
     }),
+    staleTime: PORTFOLIO_STALE_TIME_MS,
   });
 }

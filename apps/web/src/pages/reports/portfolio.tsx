@@ -14,6 +14,7 @@ import {
   ChevronRight,
   HelpCircle,
   EditIcon,
+  Loader2,
 } from "lucide-react";
 import {
   Table,
@@ -303,9 +304,11 @@ export default function PortfolioHoldingsPage() {
     ...(selectedCountryId !== "all" && { countryId: selectedCountryId }),
   }), [selectedAccountId, selectedCountryId]);
 
-  const { data: portfolioData, isLoading: itemsLoading, error: itemsError } = usePortfolioItems(portfolioFilters);
+  const { data: portfolioData, isLoading: itemsLoading, isFetching: itemsFetching, error: itemsError } = usePortfolioItems(portfolioFilters);
   const portfolioItems = useMemo(() => portfolioData?.items ?? [], [portfolioData?.items]);
   const portfolioCurrency = portfolioData?.portfolioCurrency ?? "USD";
+  // Cached values are on screen and a background refetch is running.
+  const isRefreshing = itemsFetching && !itemsLoading;
 
   const historyDateFilter = useMemo(() => {
     const now = new Date();
@@ -667,8 +670,14 @@ export default function PortfolioHoldingsPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             {/* KPI Row */}
             <div className="flex items-baseline gap-3">
-              <span className="text-3xl font-bold tabular-nums tracking-tight">
+              <span className="flex items-center gap-2 text-3xl font-bold tabular-nums tracking-tight">
                 {formatCurrency(netWorth, portfolioCurrency)}
+                {isRefreshing && (
+                  <Loader2
+                    className="h-4 w-4 animate-spin text-muted-foreground"
+                    aria-label={t("common.refreshing", "Refreshing")}
+                  />
+                )}
               </span>
               <span
                 className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold tabular-nums ${

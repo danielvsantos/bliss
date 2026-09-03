@@ -37,7 +37,7 @@ import {
   MANUAL_ASSET_VALUES_QUERY_KEY,
   useManualAssetValues,
 } from '@/hooks/use-manual-asset-values';
-import { PORTFOLIO_ITEMS_QUERY_KEY } from '@/hooks/use-portfolio-items';
+import { invalidatePortfolioQueries } from '@/lib/query-config';
 import { parseDecimal } from '@/lib/portfolio-utils';
 import { formatCurrency } from '@/lib/utils';
 import type { ManualAssetValue, PortfolioItem } from '@/types/api';
@@ -127,10 +127,8 @@ export function ManualPriceHistoryDialog({
     setIsDeleting(true);
     try {
       await api.deleteManualAssetValue(asset.id, deleteTarget.id);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [MANUAL_ASSET_VALUES_QUERY_KEY] }),
-        queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: [MANUAL_ASSET_VALUES_QUERY_KEY] });
+      invalidatePortfolioQueries(queryClient);
       toast({ title: t('manualPriceHistory.deleted') });
       setDeleteTarget(null);
     } catch {

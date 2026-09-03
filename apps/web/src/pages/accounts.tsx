@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAccountList, accountListKeys } from '@/hooks/use-account-list';
+import { invalidatePortfolioQueries } from '@/lib/query-config';
 import { AccountListPanel } from '@/components/accounts/account-list-panel';
 import { AccountDetailPanel } from '@/components/accounts/account-detail-panel';
 import { AddAccountModal } from '@/components/accounts/add-account-modal';
@@ -80,6 +81,8 @@ export default function AccountsPage() {
       setShowDeleteConfirm(false);
       setSelectedAccountId(null);
       refetch();
+      // Deleting an account changes portfolio composition.
+      invalidatePortfolioQueries(queryClient);
     } catch {
       toast({ title: t('accountsPage.deleteFailed'), variant: 'destructive' });
     } finally {

@@ -49,7 +49,7 @@ export default function Dashboard() {
   const [selectedYear, setSelectedYear] = useState<string>(availableYears[0]);
 
   // ── User signals + dashboard actions ──
-  const { signals, accounts, metrics, portfolioCurrency, metricsLoading, accountsLoading } = useUserSignals(selectedYear);
+  const { signals, accounts, metrics, portfolioCurrency, metricsLoading, metricsRefreshing, accountsLoading } = useUserSignals(selectedYear);
   const { quickActions, onboardingActions } = useDashboardActions(signals);
 
   // ── Year-awareness ──
@@ -182,6 +182,7 @@ export default function Dashboard() {
               lastSyncDate={mostRecentSync}
               sparklineData={sparklineData}
               isLoading={metricsLoading}
+              isRefreshing={metricsRefreshing}
             />
           </motion.div>
 

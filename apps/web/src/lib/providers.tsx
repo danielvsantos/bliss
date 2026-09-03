@@ -4,6 +4,7 @@ import { AuthProvider } from "../contexts/AuthContext";
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { OnboardingProvider } from "./onboarding-context";
+import { shouldPersistPortfolioQuery } from "./query-config";
 
 // Create storage persister
 const storagePersister = createSyncStoragePersister({
@@ -23,10 +24,14 @@ const queryClient = new QueryClient({
 persistQueryClient({
   queryClient,
   persister: storagePersister,
-  // Only persist metadata and accounts queries
+  // Persist metadata, accounts, and the portfolio queries so cached values
+  // survive a hard reload and paint before revalidation. Portfolio queries are
+  // gated on success status + a payload-size cap (see query-config.ts).
   dehydrateOptions: {
     shouldDehydrateQuery: query =>
-      query.queryKey[0] === 'metadata' || query.queryKey[0] === 'accounts',
+      query.queryKey[0] === 'metadata' ||
+      query.queryKey[0] === 'accounts' ||
+      shouldPersistPortfolioQuery(query),
   },
 });
 

@@ -15,6 +15,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 import type { TenantUpdateRequest, SeedItem, Category } from "@/types/api";
+import { invalidatePortfolioQueries } from "@/lib/query-config";
 
 interface AccountSelectionModalProps {
     isOpen: boolean;
@@ -93,6 +94,8 @@ export function AccountSelectionModal({ isOpen, onClose, plaidItemId, onSuccess 
         queryClient.invalidateQueries({ queryKey: ['plaid-items'] });
         queryClient.invalidateQueries({ queryKey: ['metadata'] });
         queryClient.invalidateQueries({ queryKey: ['metadata', 'accounts'] });
+        // Linking a Plaid account (and its transactions) changes portfolio composition.
+        invalidatePortfolioQueries(queryClient);
     }, [queryClient]);
 
     useEffect(() => {

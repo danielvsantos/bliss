@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
 import type { PortfolioItem } from '@/types/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { PORTFOLIO_ITEMS_QUERY_KEY } from '@/hooks/use-portfolio-items';
+import { invalidatePortfolioQueries } from '@/lib/query-config';
 
 const debtTermsSchema = z.object({
   initialBalance: z.coerce.number().positive({ message: "Initial balance must be a positive number." }),
@@ -58,8 +58,8 @@ export function DebtTermsForm({ asset, onClose }: DebtTermsFormProps) {
         title: t('debtTermsForm.success'),
         description: t('debtTermsForm.savedDetail', { name: asset.symbol }),
       });
-      // Invalidate queries to refetch asset data with the new debt terms
-      await queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] });
+      // Invalidate portfolio queries to refetch asset data with the new debt terms
+      invalidatePortfolioQueries(queryClient);
       onClose(true);
     } catch (error) {
       toast({

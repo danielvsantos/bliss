@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from '@/lib/api';
 import React from 'react';
-import { usePortfolioHoldings } from './use-portfolio-holdings';
+import { usePortfolioHoldings, HOLDINGS_QUERY_KEY } from './use-portfolio-holdings';
 
 vi.mock('@/lib/api');
 
@@ -12,6 +12,7 @@ const createWrapper = () => {
     defaultOptions: { queries: { retry: false } },
   });
   return {
+    queryClient,
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     ),
@@ -55,5 +56,37 @@ describe('usePortfolioHoldings', () => {
 
     expect(api.getPortfolioHoldings).toHaveBeenCalledWith(filters);
     expect(result.current.data).toEqual(mockHoldings);
+  });
+
+  it('does not refetch on a second mount within the freshness window', async () => {
+    vi.mocked(api.getPortfolioHoldings).mockResolvedValue(
+      [] as unknown as Awaited<ReturnType<typeof api.getPortfolioHoldings>>,
+    );
+
+    const { wrapper } = createWrapper();
+    const { result, unmount } = renderHook(() => usePortfolioHoldings(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getPortfolioHoldings).toHaveBeenCalledTimes(1);
+
+    unmount();
+    const { result: result2 } = renderHook(() => usePortfolioHoldings(), { wrapper });
+    await waitFor(() => expect(result2.current.isSuccess).toBe(true));
+
+    expect(api.getPortfolioHoldings).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches immediately when the portfolio-holdings key is invalidated', async () => {
+    vi.mocked(api.getPortfolioHoldings).mockResolvedValue(
+      [] as unknown as Awaited<ReturnType<typeof api.getPortfolioHoldings>>,
+    );
+
+    const { wrapper, queryClient } = createWrapper();
+    const { result } = renderHook(() => usePortfolioHoldings(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getPortfolioHoldings).toHaveBeenCalledTimes(1);
+
+    await queryClient.invalidateQueries({ queryKey: [HOLDINGS_QUERY_KEY] });
+
+    await waitFor(() => expect(api.getPortfolioHoldings).toHaveBeenCalledTimes(2));
   });
 });

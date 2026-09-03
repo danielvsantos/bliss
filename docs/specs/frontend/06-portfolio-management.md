@@ -60,7 +60,48 @@ The dashboard uses the following hooks:
 - `usePortfolioHistory`: Fetches historical data for the performance chart from `/api/portfolio/history`. Accepts optional `accountId` to scope history to a single brokerage account.
 - `usePortfolioHoldings`: Fetches historical daily `PortfolioHolding` records from `/api/portfolio/holdings`. Accepts optional filters: `account`, `countryId`, `category`, `categoryGroup`, `ticker`.
 - `usePortfolioLots`: Fetches FIFO lot data for an individual asset. Accepts an `assetId` parameter and is only enabled when an asset is selected.
+- `useEquityAnalysis`: Fetches equity risk metrics from `/api/portfolio/equity-analysis`, grouped by sector server-side and re-grouped client-side.
 - `useMetadata`: Retrieves category definitions and other metadata.
+
+#### Client-side caching (freshness window + persistence)
+
+The `/api/portfolio/*` and `/api/portfolio/equity-analysis` endpoints recompute
+live valuations on every request, fanning out to the metered Twelve Data API.
+Without a freshness window each mount / navigation triggered a full recompute
+for data that only changes on the nightly 3 AM UTC price refresh. Client-side
+tuning (all in `apps/web`, no API/backend change — see `src/lib/query-config.ts`):
+
+- **`PORTFOLIO_STALE_TIME_MS = 180_000`** (3 minutes) is set as `staleTime` on
+  `usePortfolioItems`, `usePortfolioHoldings`, `usePortfolioHistory`, and
+  `useEquityAnalysis` (and therefore on the `usePortfolioItems` call inside
+  `useDashboardMetrics`). Within the window, remounting or navigating back to a
+  portfolio view issues **zero** requests. `refetchOnMount` /
+  `refetchOnWindowFocus` / `refetchOnReconnect` stay at their defaults (on), so
+  a mount or tab refocus *after* the window still revalidates. Nothing polls —
+  no `refetchInterval` is set anywhere.
+- **Persistence to `localStorage`.** `persistQueryClient` in `lib/providers.tsx`
+  dehydrates the four portfolio query roots (`portfolio-items`,
+  `portfolio-holdings`, `portfolio-history`, `equity-analysis`) alongside
+  `metadata` and `accounts`. After the user has loaded portfolio data once in a
+  browser, a hard reload paints the last-known net-worth / holdings values with
+  no loading skeleton, then background-revalidates. `shouldPersistPortfolioQuery`
+  gates this on `status === 'success'` and a serialized-payload size cap
+  (`PORTFOLIO_PERSIST_MAX_BYTES = 1_000_000`, ~1 MB); a query over the cap is
+  simply not persisted and falls back to fetch-on-load. Cached values can be up
+  to `gcTime` (24 h) old on cold paint — this is accepted; the value is always
+  shown with the refresh indicator + a background refetch, with no age cutoff.
+- **Refresh indicator.** Where a persisted value is on screen while its query is
+  refetching with data already present (`isFetching && !isLoading`), an inline
+  `Loader2` spinner (`h-4 w-4 animate-spin text-muted-foreground`) is rendered
+  next to the value — the dashboard net-worth figure (`HeroNetWorth`, via
+  `useDashboardMetrics` → `useUserSignals` → `dashboard.tsx`), the Portfolio page
+  KPI total, and the Equity Analysis total. A first-ever load with no cached data
+  keeps the existing `Skeleton` treatment (`isLoading`).
+- **Mutation-driven invalidation.** `invalidatePortfolioQueries(queryClient)`
+  invalidates all four roots so a change reflects immediately rather than waiting
+  out the window. It is called after: manual value create/update/delete, debt
+  terms edit, transaction add/edit, account create/delete, Plaid account link,
+  and a portfolio-currency change.
 
 ## 6.3. Manual Updates & Debt Management Page
 
@@ -84,7 +125,7 @@ This page provides a centralized location for users to manage assets and liabili
 - **Mixed currency**: Rows whose `currency` differs from the asset's base currency are flagged with a `warning`-token badge. **No FX conversion** is performed — each row is shown in its own stored currency. Price formatting goes through a guarded helper that falls back to `"<amount> <CODE>"` if the ISO code is malformed (legacy/imported rows).
 - **States**: skeleton rows while loading; inline `Alert` + "Retry" on error; empty state with a "Record first price" button that opens `<ManualPriceForm />`.
 - **Edit / delete**: The dialog uses an internal `list | add | edit` view switch (no nested `Dialog`s). Editing reuses `<ManualPriceForm existingValue={row} />` — in edit mode the currency default comes from the row (not the asset) so a save round-trips the original code; the form submits via `api.updateManualAssetValue(itemId, valueId, ...)`. Delete uses a shadcn `AlertDialog` confirmation, then `api.deleteManualAssetValue(itemId, valueId)`.
-- **After any mutation**: invalidates `['portfolio-items']` and `['manual-asset-values']`, shows a toast. The backend already emits `MANUAL_PORTFOLIO_PRICE_UPDATED` on create/update/delete, so portfolio revaluation is automatic.
+- **After any mutation**: invalidates `['manual-asset-values']` and calls `invalidatePortfolioQueries(queryClient)` (all four portfolio roots), shows a toast. The backend already emits `MANUAL_PORTFOLIO_PRICE_UPDATED` on create/update/delete, so portfolio revaluation is automatic.
 
 ### 6.3.2. Debt Terms Management
 

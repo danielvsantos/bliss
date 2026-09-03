@@ -53,4 +53,23 @@ describe('HeroNetWorth', () => {
     render(<HeroNetWorth {...defaultProps} lastSyncDate={null} />);
     expect(screen.getByText(/100,000|100\.000/)).toBeInTheDocument();
   });
+
+  it('shows an inline refresh spinner beside the value when isRefreshing and not loading', () => {
+    const { container } = render(<HeroNetWorth {...defaultProps} isRefreshing />);
+    // The cached value is still on screen…
+    expect(screen.getByText(/100,000|100\.000/)).toBeInTheDocument();
+    // …with a spinner next to it.
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('does not show the refresh spinner during an initial load (skeleton only)', () => {
+    const { container } = render(<HeroNetWorth {...defaultProps} isLoading isRefreshing />);
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
+    expect(container.querySelector('.animate-spin')).toBeNull();
+  });
+
+  it('does not show the refresh spinner when neither loading nor refreshing', () => {
+    const { container } = render(<HeroNetWorth {...defaultProps} />);
+    expect(container.querySelector('.animate-spin')).toBeNull();
+  });
 });
