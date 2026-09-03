@@ -307,7 +307,9 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     if (r.userCadenceLocked && r.cadence) lockedCadence.set(r.descriptionHash, r.cadence);
   }
 
-  // 1b. Manual merges — sourceMerchantHash → targetMerchantHash, chains resolved.
+  // 1b. Manual merges — source row's descriptionHash → target row's
+  //     descriptionHash, chains resolved. (Both are plain row hashes, so a
+  //     renamed target still resolves — rename never touches descriptionHash.)
   const aliasRows = await prisma.recurringCharge.findMany({
     where: { tenantId, mergedIntoHash: { not: null } },
     select: { descriptionHash: true, mergedIntoHash: true },
@@ -368,7 +370,7 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
   }
 
   // 4b. Fold merged-away merchants into their target -------------------
-  const inboundByTargetHash = new Map(); // targetMerchantHash → occ[]
+  const inboundByTargetHash = new Map(); // target row descriptionHash → occ[]
   for (const [key, occ] of [...groups.entries()]) {
     const target = aliasMap.get(sha256Hex(key));
     if (!target) continue;

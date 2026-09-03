@@ -284,7 +284,7 @@ describe('subscription detection — manual merge + rename (integration)', () =>
     await teardownTenant(tenantId);
   });
 
-  it('folds a merged merchant into its target, keeps the tombstone, and honours a rename', async () => {
+  it('folds a merged merchant into its target — even when the target was renamed first', async () => {
     const srcHash = hashMerchant(SRC);
     const tgtHash = hashMerchant(TGT);
 
@@ -296,7 +296,14 @@ describe('subscription detection — manual merge + rename (integration)', () =>
     expect(tgt).toBeTruthy();
     expect(tgt.occurrenceCount).toBe(2);
 
-    // 2. User merges src → tgt (what POST /api/subscriptions?action=merge does).
+    // 2. User renames the target FIRST (the case that broke merge before) …
+    await prisma.recurringCharge.update({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } },
+      data: { merchantLabel: 'Orange Spain (home)', userLabelLocked: true },
+    });
+
+    // 3. … then merges src → tgt. POST /api/subscriptions?action=merge stores the
+    //    target ROW's descriptionHash — unaffected by the rename.
     await prisma.recurringCharge.update({
       where: { tenantId_descriptionHash: { tenantId, descriptionHash: srcHash } },
       data: { mergedIntoHash: tgtHash, nextExpectedAt: null, contributingTransactionIds: [] },
@@ -308,18 +315,12 @@ describe('subscription detection — manual merge + rename (integration)', () =>
     tgt = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } } });
     expect(src).toBeTruthy();                    // tombstone NOT pruned
     expect(src.mergedIntoHash).toBe(tgtHash);
-    expect(tgt.occurrenceCount).toBe(4);         // 2 Orange + 2 folded-in
-    expect(tgt.merchantLabel).toBe(TGT);
+    expect(tgt.occurrenceCount).toBe(4);         // 2 renamed-target + 2 folded-in — no phantom row
+    expect(tgt.merchantLabel).toBe('Orange Spain (home)'); // custom name kept across the run
 
-    // 3. User renames the target — detector must stop overwriting the label.
-    await prisma.recurringCharge.update({
-      where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } },
-      data: { merchantLabel: 'Orange Spain (home)', userLabelLocked: true },
-    });
-    await handleDetectTenant({ tenantId, mode: 'incremental' });
-    tgt = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } } });
-    expect(tgt.merchantLabel).toBe('Orange Spain (home)'); // preserved across the run
-    expect(tgt.occurrenceCount).toBe(4);
+    // No phantom lapsed row spun up under the source descriptor.
+    const all = await prisma.recurringCharge.findMany({ where: { tenantId } });
+    expect(all).toHaveLength(2); // just the target + the source tombstone
 
     // 4. Unmerge — the source is detected standalone again.
     await prisma.recurringCharge.updateMany({

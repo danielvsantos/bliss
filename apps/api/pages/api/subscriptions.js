@@ -442,9 +442,9 @@ async function handleRename(req, res, tenantId) {
  * this lets the user stitch them together persistently.
  *
  * The source row becomes a merge tombstone: `mergedIntoHash` is set to the
- * SHA-256 of the target's normalized merchant, and every subsequent detection
- * run folds the source merchant's transactions into the target's row. Hidden
- * from Active/Lapsed, shown under "All" with an Unmerge action.
+ * target row's own `descriptionHash`, and every subsequent detection run folds
+ * the source merchant's transactions into the target's row. Hidden from
+ * Active/Lapsed, shown under "All" with an Unmerge action.
  */
 async function handleMerge(req, res, tenantId) {
   const { sourceDescriptionHash, targetDescriptionHash } = req.body || {};
@@ -480,20 +480,14 @@ async function handleMerge(req, res, tenantId) {
     });
   }
 
-  // The detector folds by `sha256(normalizeMerchant(targetMerchant))` — the
-  // bare-merchant hash of the target, which for a regular (non-clustered) row
-  // equals its own descriptionHash.
-  const targetMerchantHash = hashMerchant(target.merchantLabel || '');
-  if (targetMerchantHash === sourceDescriptionHash) {
-    return res.status(StatusCodes.BAD_REQUEST).json({
-      error: 'Those two rows already resolve to the same merchant',
-    });
-  }
-
+  // Point the alias straight at the target row's descriptionHash. Using the
+  // target's *label* here breaks the moment the user renames the target (the
+  // label no longer normalizes back to the row's hash) — the detector then
+  // can't find the row to fold into and spins up a phantom lapsed row instead.
   await prisma.recurringCharge.update({
     where: { tenantId_descriptionHash: { tenantId, descriptionHash: sourceDescriptionHash } },
     data: {
-      mergedIntoHash: targetMerchantHash,
+      mergedIntoHash: targetDescriptionHash,
       status: 'ACTIVE',
       nextExpectedAt: null,
       contributingTransactionIds: [],
@@ -509,7 +503,7 @@ async function handleMerge(req, res, tenantId) {
     source: 'merge',
   });
 
-  return res.status(StatusCodes.OK).json({ merged: 1, mergedIntoHash: targetMerchantHash });
+  return res.status(StatusCodes.OK).json({ merged: 1, mergedIntoHash: targetDescriptionHash });
 }
 
 /** Undo a merge — the source row goes back to being detected on its own. */

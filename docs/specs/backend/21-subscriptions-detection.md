@@ -18,7 +18,7 @@ Plaid), decrypts descriptions in memory, groups by merchant, and persists one
 | `cadence` | `WEEKLY` \| `MONTHLY` \| `QUARTERLY` \| `ANNUAL` \| null. |
 | `userCadenceLocked` | `true` once the user edits the cadence — the detector then stops touching `cadence`. |
 | `userLabelLocked` | `true` once the user renames the charge — the detector then stops touching `merchantLabel`. |
-| `mergedIntoHash` | `String?`. When set, this row is a **merge tombstone**: its merchant is an alias for the target merchant (`sha256(normalizeMerchant(target))`). Every run folds this merchant's transactions into the target's row; the tombstone itself produces nothing and is hidden from Active/Lapsed. |
+| `mergedIntoHash` | `String?`. When set, this row is a **merge tombstone**: the value is the target row's own `descriptionHash` (a plain row hash — not derived from the label, so renaming the target does not break the link). Every run folds this merchant's transactions into the target's row; the tombstone itself produces nothing and is hidden from Active/Lapsed. |
 | `status` | `ACTIVE` \| `LAPSED` (`LAPSED` once no charge within `1.5 × cadence`). |
 | `detectionReason` | `CATEGORY_SIGNAL` (Tier A) \| `INTERVAL_HEURISTIC` (Tier B) \| `USER_CONFIRMED`. |
 | `amount` / `currency` | Median native amount + dominant currency across occurrences. |
@@ -104,12 +104,13 @@ USER_CONFIRMED`) even if the heuristic wouldn't pick them up.
 The normalizer is deliberately conservative and never merges on a shared first
 word, so genuinely-same services with divergent descriptors ("Orange" vs "To
 Orange Espagne S.a.") stay separate. The user can stitch them together from the
-Subscriptions page (expand a row → "Merge into another subscription"):
+Subscriptions page (the merge icon in a row's action buttons):
 
 * `POST /api/subscriptions { action: 'merge', sourceDescriptionHash,
-  targetDescriptionHash }` sets `sourceRow.mergedIntoHash =
-  sha256(normalizeMerchant(target.merchantLabel))` and enqueues an incremental
-  rescan (no cooldown). The source row becomes a tombstone.
+  targetDescriptionHash }` sets `sourceRow.mergedIntoHash = targetDescriptionHash`
+  — the target row's **own** hash, never a hash derived from its label, so a
+  renamed target keeps resolving — and enqueues an incremental rescan (no
+  cooldown). The source row becomes a tombstone.
 * Every detection run loads the alias map (`descriptionHash → mergedIntoHash`,
   **chains resolved** so A→B→C folds straight to C, cycles broken). A merged
   merchant's occurrences are removed from its own group and appended to the

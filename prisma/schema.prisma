@@ -907,12 +907,12 @@ model RecurringCharge {
 
   contributingTransactionIds Int[] // up to 24 most-recent Transaction ids for the "expand row" view
 
-  // Manual merge: when set, this row is a merge tombstone. Its merchant is an
-  // alias for the target merchant — SHA-256 hex of normalizeMerchant(target
-  // merchant). Every detection run folds this merchant's transactions into the
-  // target's row; this row itself produces nothing and is hidden from the
-  // Active/Lapsed views (visible under "All" with an Unmerge action). null =
-  // not merged.
+  // Manual merge: when set, this row is a merge tombstone. Value is the target
+  // row's own `descriptionHash` (not a label hash — that would break when the
+  // target is renamed). Every detection run folds this merchant's transactions
+  // into the target's row; this row itself produces nothing and is hidden from
+  // the Active/Lapsed views (visible under "All" with an Unmerge action).
+  // null = not merged.
   mergedIntoHash  String?
 
   createdAt       DateTime @default(now())

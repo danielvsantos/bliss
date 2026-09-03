@@ -424,6 +424,32 @@ describe('detectForTenant — manual merchant merge', () => {
     expect(rows[0].contributingTransactionIds).toContain(4);
   });
 
+  it('folds into a RENAMED target — the alias is the row hash, not a label hash', async () => {
+    const sourceHash = hashMerchant('To Orange Espagne S.a.');
+    // Target row was detected from "Orange" charges, then renamed by the user.
+    // Its descriptionHash is still hashMerchant('Orange'); its label is custom.
+    const targetHash = hashMerchant('Orange');
+    mockTxns({
+      tierA: [
+        txn(1, 'Orange', 30, daysAgo(90), ORANGE),
+        txn(2, 'Orange', 30, daysAgo(60), ORANGE),
+        txn(3, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
+        txn(4, 'To Orange Espagne S.a.', 30, daysAgo(2), ORANGE),
+      ],
+      merges: [{
+        descriptionHash: sourceHash,
+        mergedIntoHash: targetHash,
+        target: { descriptionHash: targetHash, merchantLabel: 'My Phone Plan', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
+      }],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].occurrenceCount).toBe(4); // folded, not a phantom standalone row
+    expect(rows[0].merchantLabel).toBe('My Phone Plan'); // custom name kept
+    expect(rows[0].status).toBe('ACTIVE');
+  });
+
   it('resolves a merge chain (A→B→C) to the final target', async () => {
     const aHash = hashMerchant('Orange ES old');
     const bHash = hashMerchant('To Orange Espagne S.a.');

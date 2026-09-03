@@ -396,10 +396,11 @@ describe('POST /api/subscriptions actions', () => {
     expect(res._status).toBe(404);
   });
 
-  it('merge folds the source row into the target and rescans', async () => {
+  it('merge points the alias at the target row descriptionHash (not a label hash) and rescans', async () => {
     mockPrisma.recurringCharge.findUnique
       .mockResolvedValueOnce({ id: 1, descriptionHash: 'src', merchantLabel: 'To Orange Espagne S.a.', mergedIntoHash: null })
-      .mockResolvedValueOnce({ id: 2, descriptionHash: 'tgt', merchantLabel: 'Orange', mergedIntoHash: null });
+      // target has been renamed — its label no longer normalizes back to 'tgt'
+      .mockResolvedValueOnce({ id: 2, descriptionHash: 'tgt', merchantLabel: 'My Phone Plan', mergedIntoHash: null });
     mockPrisma.recurringCharge.update.mockResolvedValue({ id: 1 });
     const req = makeReq({
       method: 'POST',
@@ -409,9 +410,10 @@ describe('POST /api/subscriptions actions', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
     expect(res._status).toBe(200);
     const data = mockPrisma.recurringCharge.update.mock.calls[0][0].data;
-    expect(data.mergedIntoHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.mergedIntoHash).toBe('tgt'); // the target row's own hash, unaffected by the rename
     expect(data.nextExpectedAt).toBeNull();
     expect(data.contributingTransactionIds).toEqual([]);
+    expect(res._body.mergedIntoHash).toBe('tgt');
     expect(produceEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'SUBSCRIPTION_DETECTION_REQUESTED', source: 'merge', mode: 'incremental' }),
     );
