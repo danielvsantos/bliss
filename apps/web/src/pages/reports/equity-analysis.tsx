@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
+import { TrendingUp, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -79,7 +79,9 @@ export default function EquityAnalysisPage() {
   const [sortField, setSortField] = useState<SortField>('currentValue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  const { data, isLoading, error } = useEquityAnalysis(groupBy);
+  const { data, isLoading, isFetching, error } = useEquityAnalysis(groupBy);
+  // Cached equity values are on screen and a background refetch is running.
+  const isRefreshing = isFetching && !isLoading;
 
   const portfolioCurrency = data?.portfolioCurrency ?? 'USD';
   const summary = data?.summary;
@@ -175,8 +177,14 @@ export default function EquityAnalysisPage() {
               {isLoading ? (
                 <Skeleton className="h-7 w-32 mt-1" />
               ) : (
-                <p className="text-xl font-bold text-brand-deep mt-1">
+                <p className="flex items-center gap-2 text-xl font-bold text-brand-deep mt-1">
                   {formatCurrency(summary?.totalEquityValue ?? 0, portfolioCurrency)}
+                  {isRefreshing && (
+                    <Loader2
+                      className="h-4 w-4 animate-spin text-muted-foreground"
+                      aria-label={t('common.refreshing', 'Refreshing')}
+                    />
+                  )}
                 </p>
               )}
             </CardContent>

@@ -44,6 +44,8 @@ export interface UseUserSignalsResult {
   metrics: { netWorth: number; netIncome: number; discretionaryIncome: number; netSavings: number } | undefined;
   portfolioCurrency: string;
   metricsLoading: boolean;
+  /** A background portfolio refetch is running while cached metrics are on screen. */
+  metricsRefreshing: boolean;
   accountsLoading: boolean;
 }
 
@@ -51,7 +53,7 @@ export interface UseUserSignalsResult {
 
 export function useUserSignals(year?: string, currency?: string): UseUserSignalsResult {
   const { accounts, isLoading: accountsLoading } = useAccountList();
-  const { data: metrics, portfolioCurrency, isLoading: metricsLoading } = useDashboardMetrics(year ?? new Date().getFullYear().toString(), currency);
+  const { data: metrics, portfolioCurrency, isLoading: metricsLoading, isPortfolioRefreshing: metricsRefreshing } = useDashboardMetrics(year ?? new Date().getFullYear().toString(), currency);
   const { data: plaidData } = usePlaidTransactions({ limit: 1 });
   const { data: pendingImportData } = usePendingImports();
   const { data: onboardingData, isLoading: onboardingLoading } = useOnboardingProgress();
@@ -131,6 +133,7 @@ export function useUserSignals(year?: string, currency?: string): UseUserSignals
     metrics: metrics ?? undefined,
     portfolioCurrency,
     metricsLoading,
+    metricsRefreshing,
     accountsLoading,
   };
 }

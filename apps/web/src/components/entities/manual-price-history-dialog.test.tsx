@@ -257,7 +257,14 @@ describe('ManualPriceHistoryDialog', () => {
 
     const invalidatedKeys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
     expect(invalidatedKeys).toContain('manual-asset-values');
-    expect(invalidatedKeys).toContain('portfolio-items');
+    expect(invalidatedKeys).toEqual(
+      expect.arrayContaining([
+        'portfolio-items',
+        'portfolio-holdings',
+        'portfolio-history',
+        'equity-analysis',
+      ]),
+    );
     expect(toastMock).toHaveBeenCalled();
   });
 
@@ -279,7 +286,14 @@ describe('ManualPriceHistoryDialog', () => {
 
     const invalidatedKeys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
     expect(invalidatedKeys).toContain('manual-asset-values');
-    expect(invalidatedKeys).toContain('portfolio-items');
+    expect(invalidatedKeys).toEqual(
+      expect.arrayContaining([
+        'portfolio-items',
+        'portfolio-holdings',
+        'portfolio-history',
+        'equity-analysis',
+      ]),
+    );
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'manualPriceHistory.deleted' }));
   });
 });

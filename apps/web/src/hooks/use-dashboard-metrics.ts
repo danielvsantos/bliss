@@ -8,7 +8,11 @@ import { getDisplayData, parseDecimal } from '@/lib/portfolio-utils';
 export const DASHBOARD_METRICS_QUERY_KEY = 'dashboard-metrics';
 
 export function useDashboardMetrics(year: string, currency?: string) {
-  const { data: portfolioData, isLoading: areItemsLoading } = usePortfolioItems();
+  const {
+    data: portfolioData,
+    isLoading: areItemsLoading,
+    isFetching: isPortfolioFetching,
+  } = usePortfolioItems();
   const portfolioItems = useMemo(() => portfolioData?.items ?? [], [portfolioData?.items]);
   const portfolioCurrency = portfolioData?.portfolioCurrency ?? 'USD';
 
@@ -64,5 +68,8 @@ export function useDashboardMetrics(year: string, currency?: string) {
     data: metrics,
     portfolioCurrency,
     isLoading: areItemsLoading || isPnlLoading,
+    // True when a background portfolio refetch is running while cached values
+    // are already on screen — drives the inline "refreshing" indicator.
+    isPortfolioRefreshing: isPortfolioFetching && !areItemsLoading,
   };
 } 

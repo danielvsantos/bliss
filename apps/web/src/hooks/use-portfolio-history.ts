@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { AggregatedPortfolioHistory } from '@/lib/api';
+import { PORTFOLIO_STALE_TIME_MS } from '@/lib/query-config';
 
 export const HISTORY_QUERY_KEY = 'portfolio-history';
 
@@ -32,6 +33,7 @@ export function usePortfolioHistory(filters: PortfolioHistoryFilters = {}) {
   const query = useQuery<PortfolioHistoryResponse, Error>({
     queryKey: [HISTORY_QUERY_KEY, filters],
     queryFn: () => api.getPortfolioHistory(filters),
+    staleTime: PORTFOLIO_STALE_TIME_MS,
   });
 
   return query;

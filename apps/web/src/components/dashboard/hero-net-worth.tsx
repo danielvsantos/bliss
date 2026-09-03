@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NetWorthSparkline } from './net-worth-sparkline';
@@ -13,6 +14,12 @@ interface HeroNetWorthProps {
   lastSyncDate: string | null;
   sparklineData: number[];
   isLoading: boolean;
+  /**
+   * A background portfolio refetch is running while cached values are already
+   * on screen. Shows an inline spinner next to the net-worth figure without
+   * hiding the (stale) value.
+   */
+  isRefreshing?: boolean;
 }
 
 function TrendIcon({ positive }: { positive: boolean }) {
@@ -43,6 +50,7 @@ export function HeroNetWorth({
   lastSyncDate,
   sparklineData,
   isLoading,
+  isRefreshing = false,
 }: HeroNetWorthProps) {
   const { t } = useTranslation();
 
@@ -72,8 +80,14 @@ export function HeroNetWorth({
         </span>
 
         {/* Value */}
-        <span className="text-[clamp(2rem,3.5vw,2.5rem)] font-semibold text-brand-deep tracking-tighter leading-none">
+        <span className="flex items-center gap-2 text-[clamp(2rem,3.5vw,2.5rem)] font-semibold text-brand-deep tracking-tighter leading-none">
           {formatCurrency(netWorth, currency)}
+          {isRefreshing && (
+            <Loader2
+              className="h-4 w-4 animate-spin text-muted-foreground"
+              aria-label={t('common.refreshing', 'Refreshing')}
+            />
+          )}
         </span>
 
         {/* Delta row */}

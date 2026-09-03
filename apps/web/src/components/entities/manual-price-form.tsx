@@ -13,8 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
 import type { PortfolioItem, ManualAssetValue } from '@/types/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { PORTFOLIO_ITEMS_QUERY_KEY } from '@/hooks/use-portfolio-items';
 import { MANUAL_ASSET_VALUES_QUERY_KEY } from '@/hooks/use-manual-asset-values';
+import { invalidatePortfolioQueries } from '@/lib/query-config';
 import { parseDecimal } from '@/lib/portfolio-utils';
 
 const priceSchema = z.object({
@@ -72,10 +72,8 @@ export function ManualPriceForm({ asset, onClose, existingValue }: ManualPriceFo
         title: t('manualPriceForm.success'),
         description: t('manualPriceForm.savedDetail', { name: asset.symbol }),
       });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] }),
-        queryClient.invalidateQueries({ queryKey: [MANUAL_ASSET_VALUES_QUERY_KEY] }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: [MANUAL_ASSET_VALUES_QUERY_KEY] });
+      invalidatePortfolioQueries(queryClient);
       onClose(true);
     } catch (error) {
       toast({

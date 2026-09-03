@@ -12,6 +12,7 @@ const createWrapper = () => {
     defaultOptions: { queries: { retry: false } },
   });
   return {
+    queryClient,
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     )
@@ -68,5 +69,40 @@ describe('usePortfolioItems', () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => usePortfolioItems(), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it('does not refetch on a second mount within the freshness window', async () => {
+    vi.mocked(api.getPortfolioItems).mockResolvedValue({
+      portfolioCurrency: 'USD',
+      items: [],
+    } as unknown as Awaited<ReturnType<typeof api.getPortfolioItems>>);
+
+    const { wrapper } = createWrapper();
+    const { result, unmount } = renderHook(() => usePortfolioItems(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getPortfolioItems).toHaveBeenCalledTimes(1);
+
+    unmount();
+    const { result: result2 } = renderHook(() => usePortfolioItems(), { wrapper });
+    await waitFor(() => expect(result2.current.isSuccess).toBe(true));
+
+    // staleTime keeps the cached value fresh — no second network call.
+    expect(api.getPortfolioItems).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches immediately when the portfolio-items key is invalidated', async () => {
+    vi.mocked(api.getPortfolioItems).mockResolvedValue({
+      portfolioCurrency: 'USD',
+      items: [],
+    } as unknown as Awaited<ReturnType<typeof api.getPortfolioItems>>);
+
+    const { wrapper, queryClient } = createWrapper();
+    const { result } = renderHook(() => usePortfolioItems(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getPortfolioItems).toHaveBeenCalledTimes(1);
+
+    await queryClient.invalidateQueries({ queryKey: [PORTFOLIO_ITEMS_QUERY_KEY] });
+
+    await waitFor(() => expect(api.getPortfolioItems).toHaveBeenCalledTimes(2));
   });
 });

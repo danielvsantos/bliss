@@ -12,6 +12,7 @@ import api from '@/lib/api';
 import { getTenantMeta } from '@/utils/tenantMetaStorage';
 import type { Account, Bank, Country, Currency, User } from '@/types/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidatePortfolioQueries } from '@/lib/query-config';
 import { useAuth } from '@/hooks/use-auth';
 import { Checkbox } from '../ui/checkbox';
 
@@ -95,6 +96,8 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
         queryClient.invalidateQueries({ queryKey: ['metadata'] }),
         queryClient.invalidateQueries({ queryKey: ['metadata', 'accounts'] }),
       ]);
+      // Adding/removing an account changes portfolio composition.
+      invalidatePortfolioQueries(queryClient);
       onClose(true);
     } catch (error) {
       toast({

@@ -599,3 +599,25 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 | Rate limiting         | Per-route rate limiting middleware                   |
 | File uploads          | formidable with size limits; temp file cleanup       |
 | CSRF                  | httpOnly + sameSite cookie policy                    |
+| Browser cache         | TanStack Query persister writes selected responses to `localStorage` in plaintext (see note below) |
+
+### Client-side query persistence (`localStorage`)
+
+The web SPA's TanStack Query client persists a whitelist of query responses to
+the browser's `localStorage` via `persistQueryClient` (`apps/web/src/lib/providers.tsx`)
+so the app repaints instantly on a hard reload before revalidating. The
+whitelist is `metadata`, `accounts`, and the four portfolio query roots
+(`portfolio-items`, `portfolio-holdings`, `portfolio-history`,
+`equity-analysis`). This data is stored **unencrypted** on the user's device.
+
+- It contains nothing beyond what the API already returns to the authenticated
+  SPA — account names, category metadata, and computed portfolio valuations.
+  Encrypted-at-rest fields (transaction descriptions, account numbers, Plaid
+  tokens) are never in these payloads.
+- Entries are evicted on cache GC (`gcTime` = 24 h) and are per-browser — never
+  synced across devices or shared between tabs.
+- Portfolio entries are additionally gated on a ~1 MB serialized-size cap
+  (`PORTFOLIO_PERSIST_MAX_BYTES`); an oversized payload is not persisted.
+- Self-hosters on shared machines should be aware that a portfolio net-worth
+  figure may persist in `localStorage` after the tab is closed until GC or an
+  explicit browser storage clear.

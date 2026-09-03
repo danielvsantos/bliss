@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api } from '@/lib/api';
 import type { EquityAnalysisResponse, EquityGroup } from '@/types/equity-analysis';
+import { PORTFOLIO_STALE_TIME_MS } from '@/lib/query-config';
 
 export const EQUITY_ANALYSIS_QUERY_KEY = 'equity-analysis';
 
@@ -14,6 +15,7 @@ export function useEquityAnalysis(groupBy: string = 'sector') {
   const query = useQuery<EquityAnalysisResponse>({
     queryKey: [EQUITY_ANALYSIS_QUERY_KEY],
     queryFn: () => api.getEquityAnalysis({ groupBy: 'sector' }),
+    staleTime: PORTFOLIO_STALE_TIME_MS,
   });
 
   // Re-group client-side when groupBy changes (no refetch needed)

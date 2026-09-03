@@ -25,6 +25,7 @@ import { useTickerSearch, type TickerResult } from '@/hooks/use-ticker-search';
 import { CategoryCombobox } from './category-combobox';
 import { TagInput } from './tag-input';
 import { usePortfolioItems } from '@/hooks/use-normalized-portfolio-items';
+import { invalidatePortfolioQueries } from '@/lib/query-config';
 
 // Form schema
 const transactionSchema = z.object({
@@ -246,6 +247,11 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
         toast({ title: t('common.success'), description: t('transactionFormPage.createdSuccess') });
       }
       await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      // A transaction may change portfolio composition or value (investment
+      // buys/sells, cash movements). Refetch portfolio views immediately rather
+      // than waiting out the freshness window. v1: unconditional — cheap given
+      // the 3-min staleTime; a category-type gate is a possible follow-up.
+      invalidatePortfolioQueries(queryClient);
       onClose(true);
     } catch (error) {
       console.error('Failed to save transaction:', error);
