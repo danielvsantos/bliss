@@ -34,6 +34,16 @@ Each row shows the merchant, its category, native amount (plus an approximate co
 
 Expand a row to see the underlying transactions. Click the cadence label to correct it — your choice sticks and future scans won't overwrite it. Correcting the cadence also re-checks the Active/Lapsed status right away, so an annual subscription that was mistakenly read as monthly (and parked in Lapsed) moves back to Active the moment you set it to *Annual*.
 
+### Rename a subscription
+
+Hover a row's name and click the pencil to give it a name of your choosing — handy when the bank descriptor is cryptic (`SP * EIGHTEEN B`) or you want a friendlier label. The custom name is kept on every future scan even as new bank descriptors arrive; a small *custom name* note appears under the row.
+
+### Merge two subscriptions
+
+The merchant matcher is deliberately cautious and won't join names that only share a first word, so the same service can occasionally show up twice — for example an active, confirmed **Orange** and a lapsed **To Orange Espagne S.a.** On the row you want to fold away, click the **merge** icon in its action buttons and pick the row to keep — the picker lists every subscription regardless of the current Active / Lapsed / category filter, so you can merge a lapsed row into an active one that isn't currently on screen. From then on both merchants' charges feed the one subscription — the kept row's name, category, and totals win.
+
+The folded-away row still exists, just hidden: switch the filter to **All** (or click the *"N merged — manage"* shortcut next to the filters) to see it, dimmed, with an **Unmerge** action that returns it to a standalone subscription. Merges survive re-imports and re-scans.
+
 ### Confirm / dismiss
 
 - **Confirm** pins a subscription: it stays on the list on every future scan even if it later stops matching the heuristic.

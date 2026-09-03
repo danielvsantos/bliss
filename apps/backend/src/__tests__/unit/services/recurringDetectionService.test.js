@@ -49,9 +49,29 @@ function txn(id, description, debit, date, category) {
   };
 }
 
-/** Wire prisma mocks: tierA rows returned for isRecurring=true, tierB for isRecurring=false. */
-function mockTxns({ tierA = [], tierB = [], tierBCount = null, prior = [] }) {
-  prisma.recurringCharge.findMany.mockResolvedValue(prior);
+/**
+ * Wire prisma mocks: tierA rows returned for isRecurring=true, tierB for
+ * isRecurring=false. `prior` feeds the CONFIRMED/DISMISSED/locked-cadence query.
+ * `merges` feeds the manual-merge alias query — each entry is
+ * `{ descriptionHash, mergedIntoHash, target? }` where `target` (optional) is the
+ * merge-target metadata row `{ descriptionHash, merchantLabel, categoryId,
+ * cadence, currency }`.
+ */
+function mockTxns({ tierA = [], tierB = [], tierBCount = null, prior = [], merges = [] }) {
+  prisma.recurringCharge.findMany.mockImplementation(({ where }) => {
+    // aliasRows — where: { mergedIntoHash: { not: null } }
+    if (where?.mergedIntoHash && typeof where.mergedIntoHash === 'object') {
+      return Promise.resolve(
+        merges.map((m) => ({ descriptionHash: m.descriptionHash, mergedIntoHash: m.mergedIntoHash })),
+      );
+    }
+    // aliasTargets — where: { descriptionHash: { in: [...] } }
+    if (where?.descriptionHash?.in) {
+      return Promise.resolve(merges.filter((m) => m.target).map((m) => m.target));
+    }
+    // priorRows — where: { mergedIntoHash: null, OR: [...] }
+    return Promise.resolve(prior);
+  });
   prisma.transaction.count.mockResolvedValue(tierBCount == null ? tierB.length : tierBCount);
   prisma.transaction.findMany.mockImplementation(({ where }) => {
     const isRecurring = where?.category?.is?.isRecurring;
@@ -372,5 +392,140 @@ describe('detectForTenant — aggregator merchant splitting', () => {
     const { rows } = await detectForTenant(TENANT, { mode: 'full' });
     const amounts = rows.map((r) => Number(r.amount)).sort((a, b) => a - b);
     expect(amounts).toEqual([2.99, 22]); // the €9.99 band is suppressed
+  });
+});
+
+describe('detectForTenant — manual merchant merge', () => {
+  const ORANGE = { id: 50, name: 'Telecom', icon: '📱', isRecurring: true, type: 'Essentials' };
+
+  it('folds the source merchant\'s charges into the target row and emits no standalone source row', async () => {
+    const sourceHash = hashMerchant('To Orange Espagne S.a.');
+    const targetHash = hashMerchant('Orange');
+    mockTxns({
+      tierA: [
+        txn(1, 'Orange', 30, daysAgo(90), ORANGE),
+        txn(2, 'Orange', 30, daysAgo(60), ORANGE),
+        txn(3, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
+        txn(4, 'To Orange Espagne S.a.', 30, daysAgo(2), ORANGE),
+      ],
+      merges: [{
+        descriptionHash: sourceHash,
+        mergedIntoHash: targetHash,
+        target: { descriptionHash: targetHash, merchantLabel: 'Orange', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
+      }],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].occurrenceCount).toBe(4); // 2 Orange + 2 folded-in
+    // the target's own label survives even though the folded-in charges are newer
+    expect(rows[0].merchantLabel).toBe('Orange');
+    // most-recent contributing charge is one of the folded-in transactions
+    expect(rows[0].contributingTransactionIds).toContain(4);
+  });
+
+  it('folds into a RENAMED target — the alias is the row hash, not a label hash', async () => {
+    const sourceHash = hashMerchant('To Orange Espagne S.a.');
+    // Target row was detected from "Orange" charges, then renamed by the user.
+    // Its descriptionHash is still hashMerchant('Orange'); its label is custom.
+    const targetHash = hashMerchant('Orange');
+    mockTxns({
+      tierA: [
+        txn(1, 'Orange', 30, daysAgo(90), ORANGE),
+        txn(2, 'Orange', 30, daysAgo(60), ORANGE),
+        txn(3, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
+        txn(4, 'To Orange Espagne S.a.', 30, daysAgo(2), ORANGE),
+      ],
+      merges: [{
+        descriptionHash: sourceHash,
+        mergedIntoHash: targetHash,
+        target: { descriptionHash: targetHash, merchantLabel: 'My Phone Plan', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
+      }],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].occurrenceCount).toBe(4); // folded, not a phantom standalone row
+    expect(rows[0].merchantLabel).toBe('My Phone Plan'); // custom name kept
+    expect(rows[0].status).toBe('ACTIVE');
+  });
+
+  it('resolves a merge chain (A→B→C) to the final target', async () => {
+    const aHash = hashMerchant('Orange ES old');
+    const bHash = hashMerchant('To Orange Espagne S.a.');
+    const cHash = hashMerchant('Orange');
+    mockTxns({
+      tierA: [
+        txn(1, 'Orange', 30, daysAgo(60), ORANGE),
+        txn(2, 'Orange ES old', 30, daysAgo(30), ORANGE),
+        txn(3, 'To Orange Espagne S.a.', 30, daysAgo(3), ORANGE),
+      ],
+      merges: [
+        { descriptionHash: aHash, mergedIntoHash: bHash },
+        { descriptionHash: bHash, mergedIntoHash: cHash },
+      ],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(cHash);
+    expect(rows[0].occurrenceCount).toBe(3);
+  });
+
+  it('does not re-split a merged group by amount even when the bands diverge', async () => {
+    const sourceHash = hashMerchant('APPLE ES');
+    const targetHash = hashMerchant('APPLE.COM/BILL');
+    const tierA = [];
+    let id = 1;
+    for (let i = 0; i < 6; i++) {
+      tierA.push(txn(id++, 'APPLE.COM/BILL', 2.99, daysAgo(20 + i * 30), ORANGE));
+    }
+    for (let i = 0; i < 4; i++) {
+      tierA.push(txn(id++, 'APPLE ES', 49.99, daysAgo(15 + i * 30), ORANGE));
+    }
+    mockTxns({ tierA, merges: [{ descriptionHash: sourceHash, mergedIntoHash: targetHash }] });
+    const { rows, legacyRetireHashes } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1); // one combined row, NOT one per band
+    expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].occurrenceCount).toBe(10);
+    expect(legacyRetireHashes).toEqual([]); // a merged row is never a "split"
+  });
+
+  it('synthesizes a target row from folded-in charges when the target has no charges this window', async () => {
+    const sourceHash = hashMerchant('To Orange Espagne S.a.');
+    const targetHash = hashMerchant('Orange');
+    mockTxns({
+      tierA: [
+        txn(1, 'To Orange Espagne S.a.', 30, daysAgo(60), ORANGE),
+        txn(2, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
+        txn(3, 'To Orange Espagne S.a.', 30, daysAgo(3), ORANGE),
+      ],
+      merges: [{
+        descriptionHash: sourceHash,
+        mergedIntoHash: targetHash,
+        target: { descriptionHash: targetHash, merchantLabel: 'Orange', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
+      }],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].merchantLabel).toBe('Orange'); // from target metadata, not the source descriptor
+    expect(rows[0].occurrenceCount).toBe(3);
+    expect(rows[0].cadence).toBe('MONTHLY');
+  });
+
+  it('a DISMISSED target still suppresses the synthesized row', async () => {
+    const sourceHash = hashMerchant('To Orange Espagne S.a.');
+    const targetHash = hashMerchant('Orange');
+    mockTxns({
+      tierA: [
+        txn(1, 'To Orange Espagne S.a.', 30, daysAgo(60), ORANGE),
+        txn(2, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
+        txn(3, 'To Orange Espagne S.a.', 30, daysAgo(3), ORANGE),
+      ],
+      prior: [{ descriptionHash: targetHash, state: 'DISMISSED', cadence: null, userCadenceLocked: false }],
+      merges: [{ descriptionHash: sourceHash, mergedIntoHash: targetHash }],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(0);
   });
 });

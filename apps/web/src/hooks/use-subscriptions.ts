@@ -57,6 +57,34 @@ export function useSetSubscriptionCadence() {
   });
 }
 
+export function useRenameSubscription() {
+  const invalidate = useInvalidateSubscriptions();
+  return useMutation({
+    mutationFn: ({ descriptionHash, merchantLabel }: { descriptionHash: string; merchantLabel: string }) =>
+      api.renameSubscription(descriptionHash, merchantLabel),
+    onSuccess: invalidate,
+  });
+}
+
+export function useMergeSubscription() {
+  const invalidate = useInvalidateSubscriptions();
+  return useMutation({
+    mutationFn: ({ sourceDescriptionHash, targetDescriptionHash }: {
+      sourceDescriptionHash: string;
+      targetDescriptionHash: string;
+    }) => api.mergeSubscription(sourceDescriptionHash, targetDescriptionHash),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUnmergeSubscription() {
+  const invalidate = useInvalidateSubscriptions();
+  return useMutation({
+    mutationFn: (descriptionHash: string) => api.unmergeSubscription(descriptionHash),
+    onSuccess: invalidate,
+  });
+}
+
 export function useRefreshSubscriptions() {
   const invalidate = useInvalidateSubscriptions();
   return useMutation({

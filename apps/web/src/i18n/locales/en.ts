@@ -2167,6 +2167,22 @@ const en = {
       inDays: "due in {{count}}d",
       agoDays: "{{count}}d overdue",
     },
+    rename: {
+      label: "Rename subscription",
+      renamed: "Subscription renamed",
+      custom: "custom name",
+    },
+    merge: {
+      mergeInto: "Merge into another subscription",
+      pickTarget: "Choose a subscription…",
+      merged: "Subscriptions merged",
+      unmerge: "Unmerge",
+      unmerged: "Merge undone",
+      tombstoneHint: "Folded into another subscription — its charges count toward that one.",
+      unknownTarget: "another subscription",
+      mergedCountHint_one: "{{count}} merged into another — manage",
+      mergedCountHint_other: "{{count}} merged into others — manage",
+    },
   },
 };
 

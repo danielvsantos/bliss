@@ -2121,6 +2121,22 @@ const es = {
       inDays: "vence en {{count}} d",
       agoDays: "vencido hace {{count}} d",
     },
+    rename: {
+      label: "Renombrar suscripción",
+      renamed: "Suscripción renombrada",
+      custom: "nombre personalizado",
+    },
+    merge: {
+      mergeInto: "Combinar con otra suscripción",
+      pickTarget: "Elige una suscripción…",
+      merged: "Suscripciones combinadas",
+      unmerge: "Deshacer combinación",
+      unmerged: "Combinación deshecha",
+      tombstoneHint: "Integrada en otra suscripción: sus cargos cuentan para esa.",
+      unknownTarget: "otra suscripción",
+      mergedCountHint_one: "{{count}} combinada con otra — gestionar",
+      mergedCountHint_other: "{{count}} combinadas con otras — gestionar",
+    },
   },
 };
 

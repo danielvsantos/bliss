@@ -91,10 +91,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 2,209 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 663 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,010 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 536 tests |
+| All | `pnpm test` | -- | 2,235 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 676 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,017 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 542 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -241,6 +241,11 @@ are covered exactly like Plaid):
   WEEKLY/MONTHLY only.
 - **Learning loop.** Per-merchant `CONFIRMED` / `DISMISSED` `RecurringCharge`
   rows (keyed by a hash of the normalized merchant) are honoured every run.
+- **Manual merge & rename.** `RecurringCharge.mergedIntoHash` folds one merchant's
+  charges into another's row persistently (chains resolved; the merged group is
+  never re-split; `unmerge` reverses it). `RecurringCharge.userLabelLocked` (set
+  by the `rename` action) stops the detector overwriting a user-chosen
+  `merchantLabel`. Both mirror `userCadenceLocked`.
 
 Nightly incremental scan (5 AM UTC, 6-month window). "Scan now" on the page
 (30-min cooldown). "Full history scan" in Settings → Maintenance widens Tier A

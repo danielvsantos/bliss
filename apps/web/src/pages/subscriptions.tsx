@@ -13,6 +13,9 @@ import {
   X,
   Trash2,
   Info,
+  GitMerge,
+  Undo2,
+  Pencil,
 } from 'lucide-react';
 
 import { api } from '@/lib/api';
@@ -22,6 +25,9 @@ import {
   useDismissSubscription,
   useRestoreSubscription,
   useSetSubscriptionCadence,
+  useRenameSubscription,
+  useMergeSubscription,
+  useUnmergeSubscription,
   useRefreshSubscriptions,
 } from '@/hooks/use-subscriptions';
 import { useToast } from '@/hooks/use-toast';
@@ -30,6 +36,7 @@ import { formatCurrency } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
@@ -40,10 +47,13 @@ import {
 } from '@/components/ui/select';
 import type {
   SubscriptionItem,
+  SubscriptionsResponse,
   SubscriptionsView,
   RecurringCadence,
   Transaction,
 } from '@/types/api';
+
+type MergeCandidate = SubscriptionsResponse['mergeCandidates'][number];
 
 const CADENCES: RecurringCadence[] = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUAL'];
 
@@ -103,19 +113,34 @@ function ExpandedCharges({ ids }: { ids: number[] }) {
   );
 }
 
-function SubscriptionRow({ item, displayCurrency }: { item: SubscriptionItem; displayCurrency: string }) {
+function SubscriptionRow({
+  item,
+  displayCurrency,
+  mergeCandidates,
+}: {
+  item: SubscriptionItem;
+  displayCurrency: string;
+  mergeCandidates: MergeCandidate[];
+}) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [editingCadence, setEditingCadence] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState(item.merchantLabel);
 
   const confirm = useConfirmSubscription();
   const dismiss = useDismissSubscription();
   const restore = useRestoreSubscription();
   const setCadence = useSetSubscriptionCadence();
+  const rename = useRenameSubscription();
+  const merge = useMergeSubscription();
+  const unmerge = useUnmergeSubscription();
 
   const locale = i18n.language || 'en';
-  const isTombstone = item.state === 'DISMISSED';
+  const isMerged = item.mergedIntoHash != null;
+  const isTombstone = item.state === 'DISMISSED' || isMerged;
 
   const handleErr = (err: unknown) => {
     const ax = err as AxiosError<{ error?: string }>;
@@ -125,6 +150,75 @@ function SubscriptionRow({ item, displayCurrency }: { item: SubscriptionItem; di
       variant: 'destructive',
     });
   };
+
+  const mergeOptions = mergeCandidates.filter((c) => c.descriptionHash !== item.descriptionHash);
+
+  const runMerge = (targetDescriptionHash: string) => {
+    merge.mutate(
+      { sourceDescriptionHash: item.descriptionHash, targetDescriptionHash },
+      {
+        onSuccess: () => {
+          setMerging(false);
+          toast({ title: t('subscriptions.merge.merged') });
+        },
+        onError: handleErr,
+      },
+    );
+  };
+
+  const submitRename = () => {
+    if (rename.isPending) return; // guard the Enter-then-blur double fire
+    const next = labelDraft.trim();
+    if (!next || next === item.merchantLabel) {
+      setEditingLabel(false);
+      setLabelDraft(item.merchantLabel);
+      return;
+    }
+    rename.mutate(
+      { descriptionHash: item.descriptionHash, merchantLabel: next },
+      {
+        onSuccess: () => {
+          setEditingLabel(false);
+          toast({ title: t('subscriptions.rename.renamed') });
+        },
+        onError: handleErr,
+      },
+    );
+  };
+
+  // A manual-merge tombstone renders as a compact, dimmed "→ target" row with an
+  // Unmerge action. Only ever reached in the "All" view.
+  if (isMerged) {
+    return (
+      <div className="flex items-center gap-3 py-3 border-b border-border/60 last:border-0 text-muted-foreground">
+        <GitMerge className="h-4 w-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate">
+            <span className="line-through">{item.merchantLabel}</span>
+            <span className="mx-1.5">→</span>
+            <span className="font-medium text-foreground">
+              {item.mergedIntoLabel || t('subscriptions.merge.unknownTarget')}
+            </span>
+          </div>
+          <div className="text-xs truncate">{t('subscriptions.merge.tombstoneHint')}</div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={unmerge.isPending}
+          onClick={() =>
+            unmerge.mutate(item.descriptionHash, {
+              onSuccess: () => toast({ title: t('subscriptions.merge.unmerged') }),
+              onError: handleErr,
+            })
+          }
+        >
+          <Undo2 className="h-4 w-4 mr-1" />
+          {t('subscriptions.merge.unmerge')}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="border-b border-border/60 last:border-0">
@@ -143,11 +237,45 @@ function SubscriptionRow({ item, displayCurrency }: { item: SubscriptionItem; di
         </span>
 
         <div className="min-w-0 flex-1">
-          <div className="font-medium truncate">{item.merchantLabel}</div>
+          {editingLabel ? (
+            <Input
+              autoFocus
+              value={labelDraft}
+              maxLength={140}
+              disabled={rename.isPending}
+              onChange={(e) => setLabelDraft(e.target.value)}
+              onBlur={submitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitRename();
+                if (e.key === 'Escape') {
+                  setEditingLabel(false);
+                  setLabelDraft(item.merchantLabel);
+                }
+              }}
+              className="h-7 text-sm font-medium"
+              aria-label={t('subscriptions.rename.label')}
+            />
+          ) : (
+            <div className="font-medium truncate flex items-center gap-1.5 group">
+              <span className="truncate">{item.merchantLabel}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLabelDraft(item.merchantLabel);
+                  setEditingLabel(true);
+                }}
+                className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                aria-label={t('subscriptions.rename.label')}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <div className="text-xs text-muted-foreground truncate">
             {item.category?.name || t('subscriptions.uncategorized')}
             {' · '}
             {t('subscriptions.occurrences', { count: item.occurrenceCount })}
+            {item.userLabelLocked ? ` · ${t('subscriptions.rename.custom')}` : ''}
           </div>
         </div>
 
@@ -212,7 +340,32 @@ function SubscriptionRow({ item, displayCurrency }: { item: SubscriptionItem; di
 
         {/* Actions */}
         <div className="shrink-0 flex items-center gap-1">
-          {isTombstone ? (
+          {merging ? (
+            <>
+              <Select onValueChange={runMerge}>
+                <SelectTrigger className="h-8 text-xs w-52">
+                  <SelectValue placeholder={t('subscriptions.merge.pickTarget')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {mergeOptions.map((c) => (
+                    <SelectItem key={c.descriptionHash} value={c.descriptionHash} className="text-xs">
+                      {(c.categoryIcon ? `${c.categoryIcon} ` : '') + c.merchantLabel}
+                      {c.status === 'LAPSED' ? ` · ${t('subscriptions.status.lapsed')}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                disabled={merge.isPending}
+                onClick={() => setMerging(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+            </>
+          ) : isTombstone ? (
             <Button
               size="sm"
               variant="outline"
@@ -226,52 +379,67 @@ function SubscriptionRow({ item, displayCurrency }: { item: SubscriptionItem; di
             >
               {t('subscriptions.restore')}
             </Button>
-          ) : item.state === 'CONFIRMED' ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              disabled={dismiss.isPending}
-              onClick={() =>
-                dismiss.mutate(item.descriptionHash, {
-                  onSuccess: () => toast({ title: t('subscriptions.removed') }),
-                  onError: handleErr,
-                })
-              }
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              {t('subscriptions.remove')}
-            </Button>
           ) : (
             <>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={confirm.isPending}
-                onClick={() =>
-                  confirm.mutate(
-                    { descriptionHash: item.descriptionHash },
-                    { onSuccess: () => toast({ title: t('subscriptions.confirmed') }), onError: handleErr },
-                  )
-                }
-              >
-                <Check className="h-4 w-4 mr-1" />
-                {t('subscriptions.confirm')}
-              </Button>
+              {item.state === 'CONFIRMED' ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  disabled={dismiss.isPending}
+                  onClick={() =>
+                    dismiss.mutate(item.descriptionHash, {
+                      onSuccess: () => toast({ title: t('subscriptions.removed') }),
+                      onError: handleErr,
+                    })
+                  }
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  {t('subscriptions.remove')}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={confirm.isPending}
+                    onClick={() =>
+                      confirm.mutate(
+                        { descriptionHash: item.descriptionHash },
+                        { onSuccess: () => toast({ title: t('subscriptions.confirmed') }), onError: handleErr },
+                      )
+                    }
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    {t('subscriptions.confirm')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    disabled={dismiss.isPending}
+                    onClick={() =>
+                      dismiss.mutate(item.descriptionHash, {
+                        onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
+                        onError: handleErr,
+                      })
+                    }
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    {t('subscriptions.notASubscription')}
+                  </Button>
+                </>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-muted-foreground"
-                disabled={dismiss.isPending}
-                onClick={() =>
-                  dismiss.mutate(item.descriptionHash, {
-                    onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
-                    onError: handleErr,
-                  })
-                }
+                className="text-muted-foreground px-2"
+                disabled={merge.isPending || mergeOptions.length === 0}
+                onClick={() => setMerging(true)}
+                aria-label={t('subscriptions.merge.mergeInto')}
+                title={t('subscriptions.merge.mergeInto')}
               >
-                <X className="h-4 w-4 mr-1" />
-                {t('subscriptions.notASubscription')}
+                <GitMerge className="h-4 w-4" />
               </Button>
             </>
           )}
@@ -303,6 +471,10 @@ export default function SubscriptionsPage() {
   const cooldownActive = (data?.refreshCooldownSeconds ?? 0) > 0;
 
   const categoryOptions = useMemo(() => data?.categories ?? [], [data]);
+
+  // Merge picker targets come from the API (view-independent) so a Lapsed row can
+  // still be folded into an Active/Confirmed one that the current filter hides.
+  const mergeCandidates = useMemo(() => data?.mergeCandidates ?? [], [data]);
 
   const handleScanNow = () => {
     refresh.mutate(undefined, {
@@ -434,6 +606,16 @@ export default function SubscriptionsPage() {
             ))}
           </SelectContent>
         </Select>
+
+        {view !== 'all' && (data?.summary.mergedCount ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => setView('all')}
+            className="text-xs text-muted-foreground underline decoration-dotted hover:text-foreground"
+          >
+            {t('subscriptions.merge.mergedCountHint', { count: data?.summary.mergedCount ?? 0 })}
+          </button>
+        )}
       </div>
 
       {/* List */}
@@ -455,7 +637,12 @@ export default function SubscriptionsPage() {
         ) : (
           <div>
             {data?.items.map((item) => (
-              <SubscriptionRow key={item.descriptionHash} item={item} displayCurrency={displayCurrency} />
+              <SubscriptionRow
+                key={item.descriptionHash}
+                item={item}
+                displayCurrency={displayCurrency}
+                mergeCandidates={mergeCandidates}
+              />
             ))}
           </div>
         )}

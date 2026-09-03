@@ -2167,6 +2167,22 @@ const it = {
       inDays: "scade tra {{count}} g",
       agoDays: "in ritardo di {{count}} g",
     },
+    rename: {
+      label: "Rinomina abbonamento",
+      renamed: "Abbonamento rinominato",
+      custom: "nome personalizzato",
+    },
+    merge: {
+      mergeInto: "Unisci a un altro abbonamento",
+      pickTarget: "Scegli un abbonamento…",
+      merged: "Abbonamenti uniti",
+      unmerge: "Annulla unione",
+      unmerged: "Unione annullata",
+      tombstoneHint: "Integrato in un altro abbonamento — i suoi addebiti contano per quello.",
+      unknownTarget: "un altro abbonamento",
+      mergedCountHint_one: "{{count}} unito a un altro — gestisci",
+      mergedCountHint_other: "{{count}} uniti ad altri — gestisci",
+    },
   },
 };
 

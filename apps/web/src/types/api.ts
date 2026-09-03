@@ -648,6 +648,8 @@ export type SubscriptionItem = {
   state: RecurringState;
   cadence: RecurringCadence | null;
   userCadenceLocked: boolean;
+  /** True once the user has given this charge a custom name — detector stops renaming it. */
+  userLabelLocked: boolean;
   status: RecurringStatus;
   detectionReason: 'CATEGORY_SIGNAL' | 'INTERVAL_HEURISTIC' | 'USER_CONFIRMED' | null;
   amount: number | null;
@@ -661,6 +663,10 @@ export type SubscriptionItem = {
   nextExpectedAt: string | null;
   lastDetectedAt: string | null;
   contributingTransactionIds: number[];
+  /** Set when this row is a manual-merge tombstone — folded into another merchant. */
+  mergedIntoHash: string | null;
+  /** Human label of the merge target (the row this one folds into). */
+  mergedIntoLabel: string | null;
 };
 
 export type SubscriptionsResponse = {
@@ -669,12 +675,23 @@ export type SubscriptionsResponse = {
   fullScanAt: string | null;
   refreshCooldownSeconds: number;
   categories: Array<{ id: number; name: string; icon?: string | null; count: number }>;
+  /** All non-dismissed, non-merged rows for the tenant — merge picker targets, view-independent. */
+  mergeCandidates: Array<{
+    descriptionHash: string;
+    merchantLabel: string;
+    status: RecurringStatus;
+    state: RecurringState;
+    categoryIcon: string | null;
+    categoryName: string | null;
+  }>;
   summary: {
     monthlyTotal: number;
     annualTotal: number;
     activeCount: number;
     lapsedCount: number;
     fxUnavailableCount: number;
+    /** Rows folded into another subscription — where the Unmerge action lives (All view). */
+    mergedCount: number;
   };
   items: SubscriptionItem[];
 };

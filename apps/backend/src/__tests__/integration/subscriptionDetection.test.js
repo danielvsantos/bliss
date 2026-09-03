@@ -256,3 +256,82 @@ describe('subscription detection — aggregator merchant splitting (integration)
     expect(again).toBe(2);
   });
 });
+
+describe('subscription detection — manual merge + rename (integration)', () => {
+  let tenantId;
+  let account;
+  let telecomCat;
+  const SRC = 'To Orange Espagne S.a.';
+  const TGT = 'Orange';
+
+  beforeAll(async () => {
+    ref = await ensureReferenceData();
+    ({ tenantId } = await createIsolatedTenant({ suffix: 'subsdetect-merge' }));
+    account = await seedAccount(tenantId, 'USD');
+    telecomCat = await seedCategory(tenantId, 'Telecom', true, 'Essentials');
+
+    // "Orange" ×2 older, "To Orange Espagne S.a." ×2 recent — same real service.
+    for (const n of [120, 90]) {
+      await seedTxn(tenantId, { accountId: account.id, categoryId: telecomCat.id, description: TGT, debit: 30, date: daysAgo(n) });
+    }
+    for (const n of [30, 2]) {
+      await seedTxn(tenantId, { accountId: account.id, categoryId: telecomCat.id, description: SRC, debit: 30, date: daysAgo(n) });
+    }
+  });
+
+  afterAll(async () => {
+    await prisma.recurringCharge.deleteMany({ where: { tenantId } });
+    await teardownTenant(tenantId);
+  });
+
+  it('folds a merged merchant into its target — even when the target was renamed first', async () => {
+    const srcHash = hashMerchant(SRC);
+    const tgtHash = hashMerchant(TGT);
+
+    // 1. First run — two independent rows.
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+    let src = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: srcHash } } });
+    let tgt = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } } });
+    expect(src).toBeTruthy();
+    expect(tgt).toBeTruthy();
+    expect(tgt.occurrenceCount).toBe(2);
+
+    // 2. User renames the target FIRST (the case that broke merge before) …
+    await prisma.recurringCharge.update({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } },
+      data: { merchantLabel: 'Orange Spain (home)', userLabelLocked: true },
+    });
+
+    // 3. … then merges src → tgt. POST /api/subscriptions?action=merge stores the
+    //    target ROW's descriptionHash — unaffected by the rename.
+    await prisma.recurringCharge.update({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: srcHash } },
+      data: { mergedIntoHash: tgtHash, nextExpectedAt: null, contributingTransactionIds: [] },
+    });
+
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+
+    src = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: srcHash } } });
+    tgt = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } } });
+    expect(src).toBeTruthy();                    // tombstone NOT pruned
+    expect(src.mergedIntoHash).toBe(tgtHash);
+    expect(tgt.occurrenceCount).toBe(4);         // 2 renamed-target + 2 folded-in — no phantom row
+    expect(tgt.merchantLabel).toBe('Orange Spain (home)'); // custom name kept across the run
+
+    // No phantom lapsed row spun up under the source descriptor.
+    const all = await prisma.recurringCharge.findMany({ where: { tenantId } });
+    expect(all).toHaveLength(2); // just the target + the source tombstone
+
+    // 4. Unmerge — the source is detected standalone again.
+    await prisma.recurringCharge.updateMany({
+      where: { tenantId, descriptionHash: srcHash, mergedIntoHash: { not: null } },
+      data: { mergedIntoHash: null },
+    });
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+    src = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: srcHash } } });
+    tgt = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: tgtHash } } });
+    expect(src.mergedIntoHash).toBeNull();
+    expect(src.occurrenceCount).toBe(2);
+    expect(tgt.occurrenceCount).toBe(2); // folded-in charges released
+  });
+});

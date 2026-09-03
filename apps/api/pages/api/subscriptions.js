@@ -12,6 +12,9 @@
  *       dismiss    { descriptionHash }
  *       restore    { descriptionHash }
  *       setCadence { descriptionHash, cadence }
+ *       rename     { descriptionHash, merchantLabel }                → user label, kept across scans
+ *       merge      { sourceDescriptionHash, targetDescriptionHash }  → folds source merchant into target
+ *       unmerge    { descriptionHash }                               → undoes a merge
  *       refresh                              → 202 (enqueues an incremental scan; 30-min cooldown → 429)
  *       fullScan                             → 202 (enqueues a 48-month full scan; called from Settings → Maintenance)
  *
@@ -111,11 +114,11 @@ async function handleGet(req, res, tenantId) {
   });
   const displayCurrency = tenant?.portfolioCurrency || 'USD';
 
-  // `all` surfaces DISMISSED tombstones too, so the UI can offer "Restore".
-  // `active` / `lapsed` never show tombstones.
+  // `all` surfaces DISMISSED + merge tombstones too, so the UI can offer
+  // "Restore" / "Unmerge". `active` / `lapsed` never show tombstones.
   const where = {
     tenantId,
-    ...(view !== 'all' && { state: { not: 'DISMISSED' } }),
+    ...(view !== 'all' && { state: { not: 'DISMISSED' }, mergedIntoHash: null }),
     ...(view === 'active' && { status: 'ACTIVE' }),
     ...(view === 'lapsed' && { status: 'LAPSED' }),
     ...(categoryId && { categoryId }),
@@ -127,11 +130,21 @@ async function handleGet(req, res, tenantId) {
     include: { category: { select: { id: true, name: true, icon: true, isRecurring: true } } },
   });
 
+  // Resolve merge-target labels for any merged tombstones in the result.
+  const mergeTargetHashes = [...new Set(rows.filter((r) => r.mergedIntoHash).map((r) => r.mergedIntoHash))];
+  const mergeTargets = mergeTargetHashes.length
+    ? await prisma.recurringCharge.findMany({
+        where: { tenantId, descriptionHash: { in: mergeTargetHashes } },
+        select: { descriptionHash: true, merchantLabel: true },
+      })
+    : [];
+  const mergeLabelByHash = Object.fromEntries(mergeTargets.map((r) => [r.descriptionHash, r.merchantLabel]));
+
   // Category facet for the filter dropdown — spans every non-dismissed row
   // regardless of the current view/category filter.
   const facetGroups = await prisma.recurringCharge.groupBy({
     by: ['categoryId'],
-    where: { tenantId, state: { not: 'DISMISSED' } },
+    where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
     _count: { _all: true },
   });
   const facetCategories = await prisma.category.findMany({
@@ -143,6 +156,29 @@ async function handleGet(req, res, tenantId) {
     .map((c) => ({ id: c.id, name: c.name, icon: c.icon, count: facetCountById[c.id] ?? 0 }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Merge picker candidates — every non-dismissed, non-merged row for the tenant,
+  // independent of the current view/category filter, so a Lapsed row can still be
+  // merged into an Active/Confirmed one.
+  const mergeCandidateRows = await prisma.recurringCharge.findMany({
+    where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
+    orderBy: [{ status: 'asc' }, { merchantLabel: 'asc' }],
+    include: { category: { select: { icon: true, name: true } } },
+  });
+  const mergeCandidates = mergeCandidateRows.map((r) => ({
+    descriptionHash: r.descriptionHash,
+    merchantLabel: r.merchantLabel,
+    status: r.status,
+    state: r.state,
+    categoryIcon: r.category?.icon ?? null,
+    categoryName: r.category?.name ?? null,
+  }));
+
+  // How many rows are folded away — so a non-"all" view can point the user to
+  // where the Unmerge action lives.
+  const mergedCount = await prisma.recurringCharge.count({
+    where: { tenantId, mergedIntoHash: { not: null } },
+  });
+
   let monthlyTotal = new Decimal(0);
   let activeCount = 0;
   let lapsedCount = 0;
@@ -151,8 +187,9 @@ async function handleGet(req, res, tenantId) {
 
   const items = [];
   for (const row of rows) {
-    if (row.state !== 'DISMISSED' && row.status === 'ACTIVE') activeCount += 1;
-    if (row.state !== 'DISMISSED' && row.status === 'LAPSED') lapsedCount += 1;
+    const isTombstone = row.state === 'DISMISSED' || row.mergedIntoHash != null;
+    if (!isTombstone && row.status === 'ACTIVE') activeCount += 1;
+    if (!isTombstone && row.status === 'LAPSED') lapsedCount += 1;
     if (row.lastDetectedAt && (!lastDetectedAt || row.lastDetectedAt > lastDetectedAt)) {
       lastDetectedAt = row.lastDetectedAt;
     }
@@ -169,12 +206,12 @@ async function handleGet(req, res, tenantId) {
       );
       if (converted == null) {
         fxUnavailable = true;
-        fxUnavailableCount += 1;
+        if (!isTombstone) fxUnavailableCount += 1;
       } else {
         amountInDisplayCurrency = new Decimal(converted);
         monthlyAmount = amountInDisplayCurrency.times(monthlyFactor(row.cadence));
-        // Totals count ACTIVE, non-dismissed rows only.
-        if (row.status === 'ACTIVE' && row.state !== 'DISMISSED') {
+        // Totals count ACTIVE, non-tombstone rows only.
+        if (row.status === 'ACTIVE' && !isTombstone) {
           monthlyTotal = monthlyTotal.plus(monthlyAmount);
         }
       }
@@ -191,6 +228,7 @@ async function handleGet(req, res, tenantId) {
       state: row.state,
       cadence: row.cadence,
       userCadenceLocked: row.userCadenceLocked,
+      userLabelLocked: row.userLabelLocked,
       status: row.status,
       detectionReason: row.detectionReason,
       amount: row.amount != null ? Number(row.amount) : null,
@@ -204,6 +242,8 @@ async function handleGet(req, res, tenantId) {
       nextExpectedAt: row.nextExpectedAt,
       lastDetectedAt: row.lastDetectedAt,
       contributingTransactionIds: row.contributingTransactionIds,
+      mergedIntoHash: row.mergedIntoHash ?? null,
+      mergedIntoLabel: row.mergedIntoHash ? (mergeLabelByHash[row.mergedIntoHash] ?? null) : null,
     });
   }
 
@@ -215,12 +255,14 @@ async function handleGet(req, res, tenantId) {
     fullScanAt: tenant?.subscriptionsFullScanAt ?? null,
     refreshCooldownSeconds: cooldownRemaining,
     categories,
+    mergeCandidates,
     summary: {
       monthlyTotal: Number(monthlyTotal),
       annualTotal: Number(monthlyTotal.times(12)),
       activeCount,
       lapsedCount,
       fxUnavailableCount,
+      mergedCount,
     },
     items,
   });
@@ -238,13 +280,19 @@ async function handlePost(req, res, tenantId) {
       return await handleRestore(req, res, tenantId);
     case 'setCadence':
       return await handleSetCadence(req, res, tenantId);
+    case 'rename':
+      return await handleRename(req, res, tenantId);
+    case 'merge':
+      return await handleMerge(req, res, tenantId);
+    case 'unmerge':
+      return await handleUnmerge(req, res, tenantId);
     case 'refresh':
       return await handleScan(req, res, tenantId, 'incremental');
     case 'fullScan':
       return await handleScan(req, res, tenantId, 'full');
     default:
       return res.status(StatusCodes.BAD_REQUEST).json({
-        error: 'action must be one of: confirm, dismiss, restore, setCadence, refresh, fullScan',
+        error: 'action must be one of: confirm, dismiss, restore, setCadence, rename, merge, unmerge, refresh, fullScan',
       });
   }
 }
@@ -364,6 +412,129 @@ async function handleSetCadence(req, res, tenantId) {
     },
   });
   return res.status(StatusCodes.OK).json(serialize(updated));
+}
+
+/**
+ * Give a recurring charge a custom display name. Sets `userLabelLocked` so the
+ * detector stops overwriting `merchantLabel` from the latest bank descriptor on
+ * every subsequent run.
+ */
+async function handleRename(req, res, tenantId) {
+  const { descriptionHash } = req.body || {};
+  const merchantLabel = typeof req.body?.merchantLabel === 'string' ? req.body.merchantLabel.trim() : '';
+  if (!descriptionHash || !merchantLabel) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'rename requires descriptionHash and a non-empty merchantLabel' });
+  }
+  if (merchantLabel.length > 140) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'merchantLabel must be 140 characters or fewer' });
+  }
+  const row = await prisma.recurringCharge.findUnique({
+    where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
+    select: { id: true },
+  });
+  if (!row) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that descriptionHash' });
+  }
+  const updated = await prisma.recurringCharge.update({
+    where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
+    data: { merchantLabel, userLabelLocked: true },
+  });
+  return res.status(StatusCodes.OK).json(serialize(updated));
+}
+
+/**
+ * Fold one merchant's row into another so both feed a single subscription.
+ * The automatic normalizer keeps genuinely-same services apart when the bank
+ * descriptors diverge too much (e.g. "Orange" vs "To Orange Espagne S.a.");
+ * this lets the user stitch them together persistently.
+ *
+ * The source row becomes a merge tombstone: `mergedIntoHash` is set to the
+ * target row's own `descriptionHash`, and every subsequent detection run folds
+ * the source merchant's transactions into the target's row. Hidden from
+ * Active/Lapsed, shown under "All" with an Unmerge action.
+ */
+async function handleMerge(req, res, tenantId) {
+  const { sourceDescriptionHash, targetDescriptionHash } = req.body || {};
+  if (!sourceDescriptionHash || !targetDescriptionHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      error: 'merge requires sourceDescriptionHash and targetDescriptionHash',
+    });
+  }
+  if (sourceDescriptionHash === targetDescriptionHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Cannot merge a subscription into itself' });
+  }
+
+  const [source, target] = await Promise.all([
+    prisma.recurringCharge.findUnique({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: sourceDescriptionHash } },
+    }),
+    prisma.recurringCharge.findUnique({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: targetDescriptionHash } },
+    }),
+  ]);
+  if (!source) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that sourceDescriptionHash' });
+  }
+  if (!target) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that targetDescriptionHash' });
+  }
+  if (source.mergedIntoHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'That subscription is already merged into another' });
+  }
+  if (target.mergedIntoHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      error: 'Cannot merge into a subscription that is itself merged — pick its target instead',
+    });
+  }
+
+  // Point the alias straight at the target row's descriptionHash. Using the
+  // target's *label* here breaks the moment the user renames the target (the
+  // label no longer normalizes back to the row's hash) — the detector then
+  // can't find the row to fold into and spins up a phantom lapsed row instead.
+  await prisma.recurringCharge.update({
+    where: { tenantId_descriptionHash: { tenantId, descriptionHash: sourceDescriptionHash } },
+    data: {
+      mergedIntoHash: targetDescriptionHash,
+      status: 'ACTIVE',
+      nextExpectedAt: null,
+      contributingTransactionIds: [],
+    },
+  });
+
+  // Rescan so the target row absorbs the source merchant's charges now — not on
+  // the next nightly run. No cooldown: this is a targeted, cheap re-fold.
+  await produceEvent({
+    type: 'SUBSCRIPTION_DETECTION_REQUESTED',
+    tenantId,
+    mode: 'incremental',
+    source: 'merge',
+  });
+
+  return res.status(StatusCodes.OK).json({ merged: 1, mergedIntoHash: targetDescriptionHash });
+}
+
+/** Undo a merge — the source row goes back to being detected on its own. */
+async function handleUnmerge(req, res, tenantId) {
+  const { descriptionHash } = req.body || {};
+  if (!descriptionHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'unmerge requires descriptionHash' });
+  }
+  const result = await prisma.recurringCharge.updateMany({
+    where: { tenantId, descriptionHash, mergedIntoHash: { not: null } },
+    data: { mergedIntoHash: null },
+  });
+  if (result.count === 0) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No merged recurring charge with that descriptionHash' });
+  }
+
+  await produceEvent({
+    type: 'SUBSCRIPTION_DETECTION_REQUESTED',
+    tenantId,
+    mode: 'incremental',
+    source: 'unmerge',
+  });
+
+  return res.status(StatusCodes.OK).json({ unmerged: result.count });
 }
 
 async function handleScan(req, res, tenantId, mode) {
