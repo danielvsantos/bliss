@@ -690,6 +690,8 @@ export type SubscriptionsResponse = {
     activeCount: number;
     lapsedCount: number;
     fxUnavailableCount: number;
+    /** Rows folded into another subscription — where the Unmerge action lives (All view). */
+    mergedCount: number;
   };
   items: SubscriptionItem[];
 };

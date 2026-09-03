@@ -2140,6 +2140,8 @@ const fr = {
       unmerged: "Fusion annulée",
       tombstoneHint: "Intégré à un autre abonnement — ses frais sont comptés pour celui-ci.",
       unknownTarget: "un autre abonnement",
+      mergedCountHint_one: "{{count}} fusionné avec un autre — gérer",
+      mergedCountHint_other: "{{count}} fusionnés avec d'autres — gérer",
     },
   },
 };

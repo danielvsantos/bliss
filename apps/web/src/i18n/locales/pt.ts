@@ -2180,6 +2180,8 @@ const pt = {
       unmerged: "União desfeita",
       tombstoneHint: "Integrada a outra assinatura — suas cobranças contam para ela.",
       unknownTarget: "outra assinatura",
+      mergedCountHint_one: "{{count}} unida a outra — gerenciar",
+      mergedCountHint_other: "{{count}} unidas a outras — gerenciar",
     },
   },
 };

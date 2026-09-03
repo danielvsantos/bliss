@@ -102,6 +102,7 @@ components:
             activeCount: { type: integer }
             lapsedCount: { type: integer }
             fxUnavailableCount: { type: integer }
+            mergedCount: { type: integer, description: rows folded into another subscription — Unmerge lives under view=all }
         items:
           type: array
           items: { $ref: '#/components/schemas/SubscriptionItem' }

@@ -43,6 +43,7 @@ function baseResponse(
       activeCount: items.length,
       lapsedCount: 0,
       fxUnavailableCount: 0,
+      mergedCount: 0,
     },
     items,
   };
@@ -210,6 +211,18 @@ describe('SubscriptionsPage', () => {
     );
     renderPage();
     expect(screen.getByRole('button', { name: 'subscriptions.merge.mergeInto' })).toBeDisabled();
+  });
+
+  it('shows a "N merged — manage" shortcut on non-all views and it jumps to All', () => {
+    const resp = baseResponse([makeItem()]);
+    resp.summary.mergedCount = 2;
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(resp));
+    renderPage();
+    const hint = screen.getByRole('button', { name: /subscriptions\.merge\.mergedCountHint/ });
+    expect(hint).toBeInTheDocument();
+    fireEvent.click(hint);
+    // view is now "all" → the shortcut hides itself
+    expect(screen.queryByRole('button', { name: /subscriptions\.merge\.mergedCountHint/ })).not.toBeInTheDocument();
   });
 
   it('shows the Unmerge action for a merged tombstone under the All view', () => {

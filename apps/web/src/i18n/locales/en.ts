@@ -2180,6 +2180,8 @@ const en = {
       unmerged: "Merge undone",
       tombstoneHint: "Folded into another subscription — its charges count toward that one.",
       unknownTarget: "another subscription",
+      mergedCountHint_one: "{{count}} merged into another — manage",
+      mergedCountHint_other: "{{count}} merged into others — manage",
     },
   },
 };

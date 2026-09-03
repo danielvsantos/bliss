@@ -2180,6 +2180,8 @@ const it = {
       unmerged: "Unione annullata",
       tombstoneHint: "Integrato in un altro abbonamento — i suoi addebiti contano per quello.",
       unknownTarget: "un altro abbonamento",
+      mergedCountHint_one: "{{count}} unito a un altro — gestisci",
+      mergedCountHint_other: "{{count}} uniti ad altri — gestisci",
     },
   },
 };

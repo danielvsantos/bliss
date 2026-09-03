@@ -40,7 +40,9 @@ Hover a row's name and click the pencil to give it a name of your choosing — h
 
 ### Merge two subscriptions
 
-The merchant matcher is deliberately cautious and won't join names that only share a first word, so the same service can occasionally show up twice — for example an active, confirmed **Orange** and a lapsed **To Orange Espagne S.a.** On the row you want to fold away, click the **merge** icon in its action buttons and pick the row to keep — the picker lists every subscription regardless of the current Active / Lapsed / category filter, so you can merge a lapsed row into an active one that isn't currently on screen. From then on both merchants' charges feed the one subscription — the kept row's name, category, and totals win; the folded-away row moves to the **All** view with an **Unmerge** action. Merges survive re-imports and re-scans.
+The merchant matcher is deliberately cautious and won't join names that only share a first word, so the same service can occasionally show up twice — for example an active, confirmed **Orange** and a lapsed **To Orange Espagne S.a.** On the row you want to fold away, click the **merge** icon in its action buttons and pick the row to keep — the picker lists every subscription regardless of the current Active / Lapsed / category filter, so you can merge a lapsed row into an active one that isn't currently on screen. From then on both merchants' charges feed the one subscription — the kept row's name, category, and totals win.
+
+The folded-away row still exists, just hidden: switch the filter to **All** (or click the *"N merged — manage"* shortcut next to the filters) to see it, dimmed, with an **Unmerge** action that returns it to a standalone subscription. Merges survive re-imports and re-scans.
 
 ### Confirm / dismiss
 

@@ -58,6 +58,7 @@ const { mockPrisma } = vi.hoisted(() => ({
     recurringCharge: {
       findMany: vi.fn(),
       groupBy: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -102,6 +103,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.tenant.findUnique.mockResolvedValue({ portfolioCurrency: 'USD', subscriptionsFullScanAt: null });
   mockPrisma.recurringCharge.groupBy.mockResolvedValue([]);
+  mockPrisma.recurringCharge.count.mockResolvedValue(0);
   mockPrisma.category.findMany.mockResolvedValue([]);
   getRefreshCooldownRemaining.mockResolvedValue(0);
 });
@@ -184,6 +186,19 @@ describe('GET /api/subscriptions', () => {
     const where = mockPrisma.recurringCharge.findMany.mock.calls[0][0].where;
     expect(where.mergedIntoHash).toBeNull();
     expect(where.state).toEqual({ not: 'DISMISSED' });
+  });
+
+  it('reports summary.mergedCount so a non-all view can point to the Unmerge action', async () => {
+    mockPrisma.recurringCharge.findMany.mockResolvedValue([]);
+    mockPrisma.recurringCharge.count.mockResolvedValue(3);
+    const req = makeReq({ query: { view: 'active' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(200);
+    expect(mockPrisma.recurringCharge.count).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-A', mergedIntoHash: { not: null } },
+    });
+    expect(res._body.summary.mergedCount).toBe(3);
   });
 
   it('returns view-independent mergeCandidates (all non-dismissed, non-merged rows)', async () => {

@@ -606,6 +606,16 @@ export default function SubscriptionsPage() {
             ))}
           </SelectContent>
         </Select>
+
+        {view !== 'all' && (data?.summary.mergedCount ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => setView('all')}
+            className="text-xs text-muted-foreground underline decoration-dotted hover:text-foreground"
+          >
+            {t('subscriptions.merge.mergedCountHint', { count: data?.summary.mergedCount ?? 0 })}
+          </button>
+        )}
       </div>
 
       {/* List */}

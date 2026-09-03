@@ -173,6 +173,12 @@ async function handleGet(req, res, tenantId) {
     categoryName: r.category?.name ?? null,
   }));
 
+  // How many rows are folded away — so a non-"all" view can point the user to
+  // where the Unmerge action lives.
+  const mergedCount = await prisma.recurringCharge.count({
+    where: { tenantId, mergedIntoHash: { not: null } },
+  });
+
   let monthlyTotal = new Decimal(0);
   let activeCount = 0;
   let lapsedCount = 0;
@@ -256,6 +262,7 @@ async function handleGet(req, res, tenantId) {
       activeCount,
       lapsedCount,
       fxUnavailableCount,
+      mergedCount,
     },
     items,
   });

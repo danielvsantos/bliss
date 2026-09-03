@@ -2134,6 +2134,8 @@ const es = {
       unmerged: "Combinación deshecha",
       tombstoneHint: "Integrada en otra suscripción: sus cargos cuentan para esa.",
       unknownTarget: "otra suscripción",
+      mergedCountHint_one: "{{count}} combinada con otra — gestionar",
+      mergedCountHint_other: "{{count}} combinadas con otras — gestionar",
     },
   },
 };

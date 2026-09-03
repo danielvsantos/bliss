@@ -17,7 +17,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/tests-2233%20passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-2235%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/Claude%20Code-ready-6D657A?logo=anthropic&logoColor=white" alt="Claude Code Ready" />
 </p>
@@ -273,10 +273,10 @@ bliss/
 ## Testing
 
 ```bash
-pnpm test              # run all 2,233 tests across all apps
-pnpm test:api          # 675 tests (Vitest) — unit + integration
+pnpm test              # run all 2,235 tests across all apps
+pnpm test:api          # 676 tests (Vitest) — unit + integration
 pnpm test:backend      # 1,017 tests (Jest) — unit + integration
-pnpm test:web          # 541 tests (Vitest + MSW) — hooks, pages, components, contexts
+pnpm test:web          # 542 tests (Vitest + MSW) — hooks, pages, components, contexts
 ```
 
 ---

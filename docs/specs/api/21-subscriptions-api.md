@@ -31,7 +31,8 @@ Response:
     "annualTotal": 515.64,             // monthlyTotal × 12
     "activeCount": 6,
     "lapsedCount": 1,
-    "fxUnavailableCount": 1
+    "fxUnavailableCount": 1,
+    "mergedCount": 0                    // rows folded into another subscription (Unmerge lives under view=all)
   },
   "items": [ {
     "id": 1, "descriptionHash": "…", "merchantLabel": "Netflix",
