@@ -247,6 +247,31 @@ describe('POST /api/subscriptions actions', () => {
     expect(data.nextExpectedAt).toBeInstanceOf(Date);
   });
 
+  it('setCadence un-lapses a row when the new cadence makes it current again', async () => {
+    // Last charge ~7 months ago: LAPSED as MONTHLY (grace 45d), ACTIVE as ANNUAL (grace 547d).
+    const lastChargedAt = new Date(Date.now() - 210 * 86_400_000);
+    mockPrisma.recurringCharge.findUnique.mockResolvedValue({ lastChargedAt, status: 'LAPSED' });
+    mockPrisma.recurringCharge.update.mockResolvedValue({ id: 1, cadence: 'ANNUAL', status: 'ACTIVE', amount: 99 });
+    const req = makeReq({ method: 'POST', body: { action: 'setCadence', descriptionHash: 'h1', cadence: 'ANNUAL' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(200);
+    expect(mockPrisma.recurringCharge.update.mock.calls[0][0].data.status).toBe('ACTIVE');
+  });
+
+  it('setCadence lapses a row when the new cadence makes it overdue', async () => {
+    // Last charge ~50 days ago: ACTIVE as MONTHLY (grace 45d? no — 50>45 → LAPSED)… use 40d.
+    const lastChargedAt = new Date(Date.now() - 40 * 86_400_000);
+    mockPrisma.recurringCharge.findUnique.mockResolvedValue({ lastChargedAt, status: 'ACTIVE' });
+    mockPrisma.recurringCharge.update.mockResolvedValue({ id: 1, cadence: 'WEEKLY', status: 'LAPSED', amount: 5 });
+    const req = makeReq({ method: 'POST', body: { action: 'setCadence', descriptionHash: 'h1', cadence: 'WEEKLY' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(200);
+    // 40 days > 7 × 1.5 = 10.5 days → LAPSED
+    expect(mockPrisma.recurringCharge.update.mock.calls[0][0].data.status).toBe('LAPSED');
+  });
+
   it('refresh enqueues an incremental scan and arms the cooldown', async () => {
     const req = makeReq({ method: 'POST', body: { action: 'refresh' } });
     const res = makeRes();
