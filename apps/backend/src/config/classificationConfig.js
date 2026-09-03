@@ -132,6 +132,15 @@ const SUBSCRIPTION_CADENCE_BUCKETS = {
     ANNUAL:    [330, 400],
 };
 
+/** Minimum occurrences before a single merchant is split into per-amount rows.
+ *  Below this a merchant is always one row (its amount = median). At/above it,
+ *  aggregator merchants (Apple App Store, Amazon, PayPal) whose charges fall
+ *  into clearly separated amount bands become one RecurringCharge per band, so
+ *  "Apple €2.99 / €9.99 / €22.00" stop collapsing into one misleading row.
+ *  A band still needs >= 2 occurrences (Tier A) / MIN_OCCURRENCES (Tier B) to
+ *  qualify, so a lone large purchase in the mix never becomes a subscription. */
+const SUBSCRIPTION_CLUSTER_MIN_GROUP = 6;
+
 module.exports = {
     EXACT_MATCH_CONFIDENCE,
     GLOBAL_VECTOR_DISCOUNT,
@@ -152,4 +161,5 @@ module.exports = {
     SUBSCRIPTION_REFRESH_COOLDOWN_MIN,
     SUBSCRIPTION_MAX_CONTRIBUTING_IDS,
     SUBSCRIPTION_CADENCE_BUCKETS,
+    SUBSCRIPTION_CLUSTER_MIN_GROUP,
 };

@@ -56,7 +56,8 @@ async function handleDetectTenant(data) {
   const { tenantId, mode = 'incremental' } = data;
   if (!tenantId) throw new Error('detect-tenant job missing tenantId');
 
-  const { rows, tierACount, tierBCount, tierBSkipped } = await detectForTenant(tenantId, { mode });
+  const { rows, legacyRetireHashes = [], tierACount, tierBCount, tierBSkipped } =
+    await detectForTenant(tenantId, { mode });
 
   // Existing rows for this tenant — so we know which cadences are user-locked
   // and which state to preserve on update.
@@ -97,7 +98,18 @@ async function handleDetectTenant(data) {
     },
   });
 
-  const [pruneResult] = await prisma.$transaction([prune, ...writes]);
+  // Retire the pre-clustering single row (any state) for merchants that this run
+  // split into per-amount bands — e.g. the old combined "Apple" row and any
+  // Confirm/Dismiss the user applied to it. The band rows carry `#`-suffixed
+  // hashes so they can never collide with the retire list.
+  const retire = prisma.recurringCharge.deleteMany({
+    where: {
+      tenantId,
+      descriptionHash: { in: legacyRetireHashes.length ? legacyRetireHashes : ['__none__'] },
+    },
+  });
+
+  const [pruneResult, retireResult] = await prisma.$transaction([prune, retire, ...writes]);
 
   if (mode === 'full') {
     await prisma.tenant.update({
@@ -117,6 +129,7 @@ async function handleDetectTenant(data) {
     active,
     lapsed,
     pruned: pruneResult?.count ?? 0,
+    retired: retireResult?.count ?? 0,
     durationMs: Date.now() - startedAt,
   });
 

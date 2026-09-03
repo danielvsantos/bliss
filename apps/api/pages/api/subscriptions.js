@@ -35,6 +35,20 @@ import { getRefreshCooldownRemaining, armRefreshCooldown } from '../../utils/sub
 const CADENCES = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUAL'];
 const VIEWS = ['active', 'lapsed', 'all'];
 const CADENCE_DAYS = { WEEKLY: 7, MONTHLY: 30, QUARTERLY: 91, ANNUAL: 365 };
+// Mirrors SUBSCRIPTION_LAPSE_MULTIPLIER in the backend classificationConfig.js.
+const LAPSE_MULTIPLIER = 1.5;
+
+/**
+ * ACTIVE while a charge landed within 1.5 × cadence of now; else LAPSED.
+ * Mirrors computeStatus() in the backend recurringDetectionService — kept here
+ * so a user cadence edit can un-lapse (or lapse) a row immediately instead of
+ * waiting for the next detection run.
+ */
+function statusFrom(lastChargedAt, cadence) {
+  if (!lastChargedAt || !CADENCE_DAYS[cadence]) return 'ACTIVE';
+  const graceMs = CADENCE_DAYS[cadence] * LAPSE_MULTIPLIER * 86_400_000;
+  return Date.now() - new Date(lastChargedAt).getTime() > graceMs ? 'LAPSED' : 'ACTIVE';
+}
 
 /** Factor to normalize one charge to a per-month figure. */
 function monthlyFactor(cadence) {
@@ -343,6 +357,10 @@ async function handleSetCadence(req, res, tenantId) {
       cadence,
       userCadenceLocked: true,
       nextExpectedAt: nextExpectedFrom(row.lastChargedAt, cadence),
+      // Recompute lapsed/active against the new cadence right away — otherwise a
+      // wrongly-monthly annual subscription stays stuck in the Lapsed tab until
+      // the next detection run.
+      status: statusFrom(row.lastChargedAt, cadence),
     },
   });
   return res.status(StatusCodes.OK).json(serialize(updated));

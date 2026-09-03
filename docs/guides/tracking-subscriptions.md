@@ -12,11 +12,13 @@ Any transaction in a category marked **Recurring charge** counts. **A single occ
 
 ### Tier B — interval heuristic
 
-For spending categories that *aren't* marked recurring, Bliss looks for a pattern: **3 or more charges from the same merchant, at a stable amount, on a regular weekly or monthly interval**, within the last 6 months. This catches gym memberships, storage lockers, and the like without you having to flag the category. Quarterly and annual cadences are only detected via Tier A.
+For spending categories that *aren't* marked recurring, Bliss looks for a pattern: **3 or more charges from the same merchant, at a stable amount, on a regular weekly or monthly interval**, within the last 6 months. This catches gym memberships, storage lockers, and — because business expense categories (Cloud & Hosting, SaaS & Tools, Data & API Services, domains, ad spend) are also scanned — SaaS and infrastructure subscriptions, all without flagging the category. Quarterly and annual cadences are only detected via Tier A.
 
 ### Merchant grouping
 
 Charges are grouped by a normalized merchant key, so `NETFLIX.COM`, `SQ *NETFLIX`, `NETFLIX 08/15 POS DEBIT`, and `Netflix Inc` all collapse into one subscription. `Netflix` and `Netflix Games` stay separate.
+
+**Aggregator merchants** — the Apple App Store, Amazon, PayPal — bill many unrelated things under one name. When a merchant has a handful of charges that fall into clearly different price bands, Bliss splits it into **one row per recurring price** (e.g. `Apple` at €2.99, at €9.99, and at €22.00), so each real subscription shows a meaningful amount. A one-off large purchase mixed in doesn't become a subscription.
 
 Only **debits** (money out) are considered — a recurring credit is income, not a subscription.
 
@@ -30,7 +32,7 @@ Only **debits** (money out) are considered — a recurring credit is income, not
 
 Each row shows the merchant, its category, native amount (plus an approximate conversion to your display currency), cadence, last-charged date, next expected charge, and an **Active** / **Lapsed** status. A charge goes **Lapsed** when nothing new has landed within 1.5× its cadence; lapsed rows are hidden by default (use the **Active / Lapsed / All** filter) and don't count toward the totals.
 
-Expand a row to see the underlying transactions. Click the cadence label to correct it — your choice sticks and future scans won't overwrite it.
+Expand a row to see the underlying transactions. Click the cadence label to correct it — your choice sticks and future scans won't overwrite it. Correcting the cadence also re-checks the Active/Lapsed status right away, so an annual subscription that was mistakenly read as monthly (and parked in Lapsed) moves back to Active the moment you set it to *Annual*.
 
 ### Confirm / dismiss
 
