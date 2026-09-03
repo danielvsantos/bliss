@@ -156,6 +156,23 @@ async function handleGet(req, res, tenantId) {
     .map((c) => ({ id: c.id, name: c.name, icon: c.icon, count: facetCountById[c.id] ?? 0 }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Merge picker candidates — every non-dismissed, non-merged row for the tenant,
+  // independent of the current view/category filter, so a Lapsed row can still be
+  // merged into an Active/Confirmed one.
+  const mergeCandidateRows = await prisma.recurringCharge.findMany({
+    where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
+    orderBy: [{ status: 'asc' }, { merchantLabel: 'asc' }],
+    include: { category: { select: { icon: true, name: true } } },
+  });
+  const mergeCandidates = mergeCandidateRows.map((r) => ({
+    descriptionHash: r.descriptionHash,
+    merchantLabel: r.merchantLabel,
+    status: r.status,
+    state: r.state,
+    categoryIcon: r.category?.icon ?? null,
+    categoryName: r.category?.name ?? null,
+  }));
+
   let monthlyTotal = new Decimal(0);
   let activeCount = 0;
   let lapsedCount = 0;
@@ -232,6 +249,7 @@ async function handleGet(req, res, tenantId) {
     fullScanAt: tenant?.subscriptionsFullScanAt ?? null,
     refreshCooldownSeconds: cooldownRemaining,
     categories,
+    mergeCandidates,
     summary: {
       monthlyTotal: Number(monthlyTotal),
       annualTotal: Number(monthlyTotal.times(12)),

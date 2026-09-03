@@ -47,10 +47,13 @@ import {
 } from '@/components/ui/select';
 import type {
   SubscriptionItem,
+  SubscriptionsResponse,
   SubscriptionsView,
   RecurringCadence,
   Transaction,
 } from '@/types/api';
+
+type MergeCandidate = SubscriptionsResponse['mergeCandidates'][number];
 
 const CADENCES: RecurringCadence[] = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUAL'];
 
@@ -113,11 +116,11 @@ function ExpandedCharges({ ids }: { ids: number[] }) {
 function SubscriptionRow({
   item,
   displayCurrency,
-  mergeTargets,
+  mergeCandidates,
 }: {
   item: SubscriptionItem;
   displayCurrency: string;
-  mergeTargets: SubscriptionItem[];
+  mergeCandidates: MergeCandidate[];
 }) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
@@ -146,6 +149,21 @@ function SubscriptionRow({
       description: ax?.response?.data?.error || ax?.message || '',
       variant: 'destructive',
     });
+  };
+
+  const mergeOptions = mergeCandidates.filter((c) => c.descriptionHash !== item.descriptionHash);
+
+  const runMerge = (targetDescriptionHash: string) => {
+    merge.mutate(
+      { sourceDescriptionHash: item.descriptionHash, targetDescriptionHash },
+      {
+        onSuccess: () => {
+          setMerging(false);
+          toast({ title: t('subscriptions.merge.merged') });
+        },
+        onError: handleErr,
+      },
+    );
   };
 
   const submitRename = () => {
@@ -322,7 +340,32 @@ function SubscriptionRow({
 
         {/* Actions */}
         <div className="shrink-0 flex items-center gap-1">
-          {isTombstone ? (
+          {merging ? (
+            <>
+              <Select onValueChange={runMerge}>
+                <SelectTrigger className="h-8 text-xs w-52">
+                  <SelectValue placeholder={t('subscriptions.merge.pickTarget')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {mergeOptions.map((c) => (
+                    <SelectItem key={c.descriptionHash} value={c.descriptionHash} className="text-xs">
+                      {(c.categoryIcon ? `${c.categoryIcon} ` : '') + c.merchantLabel}
+                      {c.status === 'LAPSED' ? ` · ${t('subscriptions.status.lapsed')}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                disabled={merge.isPending}
+                onClick={() => setMerging(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+            </>
+          ) : isTombstone ? (
             <Button
               size="sm"
               variant="outline"
@@ -336,52 +379,67 @@ function SubscriptionRow({
             >
               {t('subscriptions.restore')}
             </Button>
-          ) : item.state === 'CONFIRMED' ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              disabled={dismiss.isPending}
-              onClick={() =>
-                dismiss.mutate(item.descriptionHash, {
-                  onSuccess: () => toast({ title: t('subscriptions.removed') }),
-                  onError: handleErr,
-                })
-              }
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              {t('subscriptions.remove')}
-            </Button>
           ) : (
             <>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={confirm.isPending}
-                onClick={() =>
-                  confirm.mutate(
-                    { descriptionHash: item.descriptionHash },
-                    { onSuccess: () => toast({ title: t('subscriptions.confirmed') }), onError: handleErr },
-                  )
-                }
-              >
-                <Check className="h-4 w-4 mr-1" />
-                {t('subscriptions.confirm')}
-              </Button>
+              {item.state === 'CONFIRMED' ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  disabled={dismiss.isPending}
+                  onClick={() =>
+                    dismiss.mutate(item.descriptionHash, {
+                      onSuccess: () => toast({ title: t('subscriptions.removed') }),
+                      onError: handleErr,
+                    })
+                  }
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  {t('subscriptions.remove')}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={confirm.isPending}
+                    onClick={() =>
+                      confirm.mutate(
+                        { descriptionHash: item.descriptionHash },
+                        { onSuccess: () => toast({ title: t('subscriptions.confirmed') }), onError: handleErr },
+                      )
+                    }
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    {t('subscriptions.confirm')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    disabled={dismiss.isPending}
+                    onClick={() =>
+                      dismiss.mutate(item.descriptionHash, {
+                        onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
+                        onError: handleErr,
+                      })
+                    }
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    {t('subscriptions.notASubscription')}
+                  </Button>
+                </>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-muted-foreground"
-                disabled={dismiss.isPending}
-                onClick={() =>
-                  dismiss.mutate(item.descriptionHash, {
-                    onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
-                    onError: handleErr,
-                  })
-                }
+                className="text-muted-foreground px-2"
+                disabled={merge.isPending || mergeOptions.length === 0}
+                onClick={() => setMerging(true)}
+                aria-label={t('subscriptions.merge.mergeInto')}
+                title={t('subscriptions.merge.mergeInto')}
               >
-                <X className="h-4 w-4 mr-1" />
-                {t('subscriptions.notASubscription')}
+                <GitMerge className="h-4 w-4" />
               </Button>
             </>
           )}
@@ -389,64 +447,8 @@ function SubscriptionRow({
       </div>
 
       {expanded && (
-        <div className="pl-10 pr-2 pb-3 space-y-3">
+        <div className="pl-10 pr-2 pb-3">
           <ExpandedCharges ids={item.contributingTransactionIds} />
-
-          {/* Manual merge — fold this merchant into another subscription */}
-          {!isTombstone && (
-            <div className="flex items-center gap-2 pt-1">
-              {merging ? (
-                <>
-                  <Select
-                    onValueChange={(v) => {
-                      merge.mutate(
-                        { sourceDescriptionHash: item.descriptionHash, targetDescriptionHash: v },
-                        {
-                          onSuccess: () => {
-                            setMerging(false);
-                            toast({ title: t('subscriptions.merge.merged') });
-                          },
-                          onError: handleErr,
-                        },
-                      );
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs w-64">
-                      <SelectValue placeholder={t('subscriptions.merge.pickTarget')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mergeTargets
-                        .filter((tgt) => tgt.descriptionHash !== item.descriptionHash)
-                        .map((tgt) => (
-                          <SelectItem key={tgt.descriptionHash} value={tgt.descriptionHash} className="text-xs">
-                            {(tgt.category?.icon ? `${tgt.category.icon} ` : '') + tgt.merchantLabel}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-muted-foreground"
-                    onClick={() => setMerging(false)}
-                  >
-                    {t('common.cancel')}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground"
-                  disabled={merge.isPending || mergeTargets.length <= 1}
-                  onClick={() => setMerging(true)}
-                >
-                  <GitMerge className="h-4 w-4 mr-1" />
-                  {t('subscriptions.merge.mergeInto')}
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -470,12 +472,9 @@ export default function SubscriptionsPage() {
 
   const categoryOptions = useMemo(() => data?.categories ?? [], [data]);
 
-  // Rows a merge can fold another row into: never a dismissed row, never one that
-  // is itself already merged away.
-  const mergeTargets = useMemo(
-    () => (data?.items ?? []).filter((i) => i.mergedIntoHash == null && i.state !== 'DISMISSED'),
-    [data],
-  );
+  // Merge picker targets come from the API (view-independent) so a Lapsed row can
+  // still be folded into an Active/Confirmed one that the current filter hides.
+  const mergeCandidates = useMemo(() => data?.mergeCandidates ?? [], [data]);
 
   const handleScanNow = () => {
     refresh.mutate(undefined, {
@@ -632,7 +631,7 @@ export default function SubscriptionsPage() {
                 key={item.descriptionHash}
                 item={item}
                 displayCurrency={displayCurrency}
-                mergeTargets={mergeTargets}
+                mergeCandidates={mergeCandidates}
               />
             ))}
           </div>

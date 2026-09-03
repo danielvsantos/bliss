@@ -26,13 +26,17 @@ window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.hasPointerCapture = vi.fn();
 window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 
-function baseResponse(items: SubscriptionItem[]): SubscriptionsResponse {
+function baseResponse(
+  items: SubscriptionItem[],
+  mergeCandidates: SubscriptionsResponse['mergeCandidates'] = [],
+): SubscriptionsResponse {
   return {
     displayCurrency: 'USD',
     lastDetectedAt: null,
     fullScanAt: '2026-01-01T00:00:00.000Z',
     refreshCooldownSeconds: 0,
     categories: [{ id: 10, name: 'Media', icon: '📺', count: items.length }],
+    mergeCandidates,
     summary: {
       monthlyTotal: 21,
       annualTotal: 252,
@@ -169,20 +173,22 @@ describe('SubscriptionsPage', () => {
     expect(screen.getByText(/subscriptions\.rename\.custom/)).toBeInTheDocument();
   });
 
-  it('merge picker (in the expanded row) fires the merge mutation with source + target hashes', async () => {
+  it('merge button fires the merge mutation with source + target hashes (target from a hidden view)', async () => {
     vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
       mockQueryResult(
-        baseResponse([
-          makeItem({ descriptionHash: 'hash-1', merchantLabel: 'Orange' }),
-          makeItem({ id: 2, descriptionHash: 'hash-2', merchantLabel: 'To Orange Espagne S.a.' }),
-        ]),
+        baseResponse(
+          [makeItem({ id: 2, descriptionHash: 'hash-2', merchantLabel: 'To Orange Espagne S.a.', status: 'LAPSED' })],
+          // "Orange" is an Active/Confirmed row the Lapsed view doesn't list — still a candidate
+          [
+            { descriptionHash: 'hash-1', merchantLabel: 'Orange', status: 'ACTIVE', state: 'CONFIRMED', categoryIcon: '📺', categoryName: 'Media' },
+            { descriptionHash: 'hash-2', merchantLabel: 'To Orange Espagne S.a.', status: 'LAPSED', state: 'DETECTED', categoryIcon: null, categoryName: null },
+          ],
+        ),
       ),
     );
     renderPage();
-    // expand the second row, open its merge picker
-    const expandButtons = screen.getAllByRole('button', { name: 'subscriptions.toggleCharges' });
-    fireEvent.click(expandButtons[1]);
-    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.merge\.mergeInto/i }));
+    // merge action lives in the row's button cluster — no need to expand
+    fireEvent.click(screen.getByRole('button', { name: 'subscriptions.merge.mergeInto' }));
     const combos = screen.getAllByRole('combobox');
     fireEvent.click(combos[combos.length - 1]); // the merge picker is the last Select on the page
     fireEvent.click(screen.getByRole('option', { name: /Orange/ }));
@@ -192,6 +198,18 @@ describe('SubscriptionsPage', () => {
         expect.any(Object),
       );
     });
+  });
+
+  it('disables the merge button when there is no other candidate', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(
+        baseResponse([makeItem({ descriptionHash: 'hash-1' })], [
+          { descriptionHash: 'hash-1', merchantLabel: 'Netflix', status: 'ACTIVE', state: 'DETECTED', categoryIcon: null, categoryName: null },
+        ]),
+      ),
+    );
+    renderPage();
+    expect(screen.getByRole('button', { name: 'subscriptions.merge.mergeInto' })).toBeDisabled();
   });
 
   it('shows the Unmerge action for a merged tombstone under the All view', () => {

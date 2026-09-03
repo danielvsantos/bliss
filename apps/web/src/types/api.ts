@@ -675,6 +675,15 @@ export type SubscriptionsResponse = {
   fullScanAt: string | null;
   refreshCooldownSeconds: number;
   categories: Array<{ id: number; name: string; icon?: string | null; count: number }>;
+  /** All non-dismissed, non-merged rows for the tenant — merge picker targets, view-independent. */
+  mergeCandidates: Array<{
+    descriptionHash: string;
+    merchantLabel: string;
+    status: RecurringStatus;
+    state: RecurringState;
+    categoryIcon: string | null;
+    categoryName: string | null;
+  }>;
   summary: {
     monthlyTotal: number;
     annualTotal: number;

@@ -80,6 +80,20 @@ components:
               name: { type: string }
               icon: { type: string, nullable: true }
               count: { type: integer }
+        mergeCandidates:
+          type: array
+          description: >
+            Every non-dismissed, non-merged row for the tenant, independent of the
+            view/category filter — the merge picker's target list.
+          items:
+            type: object
+            properties:
+              descriptionHash: { type: string }
+              merchantLabel: { type: string }
+              status: { type: string, enum: [ACTIVE, LAPSED] }
+              state: { type: string, enum: [DETECTED, CONFIRMED, DISMISSED] }
+              categoryIcon: { type: string, nullable: true }
+              categoryName: { type: string, nullable: true }
         summary:
           type: object
           properties:

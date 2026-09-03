@@ -23,6 +23,9 @@ Response:
   "fullScanAt": null,                    // Tenant.subscriptionsFullScanAt — null → page shows the Maintenance hint
   "refreshCooldownSeconds": 0,           // >0 → "Scan now" is on cooldown
   "categories": [ { "id": 10, "name": "Content & Media", "icon": "📺", "count": 4 } ],
+  "mergeCandidates": [   // every non-dismissed, non-merged row for the tenant — view/filter-independent, so a Lapsed row can merge into a hidden Active one
+    { "descriptionHash": "…", "merchantLabel": "Orange", "status": "ACTIVE", "state": "CONFIRMED", "categoryIcon": "📱", "categoryName": "Telecom" }
+  ],
   "summary": {
     "monthlyTotal": 42.97,              // Σ monthly-normalized amount, ACTIVE + non-dismissed + fx-available only
     "annualTotal": 515.64,             // monthlyTotal × 12

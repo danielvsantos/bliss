@@ -186,6 +186,26 @@ describe('GET /api/subscriptions', () => {
     expect(where.state).toEqual({ not: 'DISMISSED' });
   });
 
+  it('returns view-independent mergeCandidates (all non-dismissed, non-merged rows)', async () => {
+    mockPrisma.recurringCharge.findMany
+      .mockResolvedValueOnce([]) // rows for the current (active) view
+      .mockResolvedValueOnce([   // mergeCandidates query — includes a LAPSED row the active view hides
+        { descriptionHash: 'a', merchantLabel: 'Orange', status: 'ACTIVE', state: 'CONFIRMED', category: { icon: '📱', name: 'Telecom' } },
+        { descriptionHash: 'b', merchantLabel: 'To Orange Espagne S.a.', status: 'LAPSED', state: 'DETECTED', category: null },
+      ]);
+    const req = makeReq({ query: { view: 'active' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    // the candidates query is not scoped by status/categoryId
+    const candidatesWhere = mockPrisma.recurringCharge.findMany.mock.calls[1][0].where;
+    expect(candidatesWhere).toEqual({ tenantId: 'tenant-A', state: { not: 'DISMISSED' }, mergedIntoHash: null });
+    expect(res._body.mergeCandidates).toEqual([
+      { descriptionHash: 'a', merchantLabel: 'Orange', status: 'ACTIVE', state: 'CONFIRMED', categoryIcon: '📱', categoryName: 'Telecom' },
+      { descriptionHash: 'b', merchantLabel: 'To Orange Espagne S.a.', status: 'LAPSED', state: 'DETECTED', categoryIcon: null, categoryName: null },
+    ]);
+  });
+
   it('surfaces merge tombstones under the "all" view with the target label, excluded from counts', async () => {
     mockPrisma.recurringCharge.findMany
       .mockResolvedValueOnce([
@@ -198,7 +218,8 @@ describe('GET /api/subscriptions', () => {
           lastDetectedAt: new Date(), contributingTransactionIds: [], mergedIntoHash: 'tgt',
         },
       ])
-      .mockResolvedValueOnce([{ descriptionHash: 'tgt', merchantLabel: 'Orange' }]);
+      .mockResolvedValueOnce([{ descriptionHash: 'tgt', merchantLabel: 'Orange' }])
+      .mockResolvedValueOnce([]); // mergeCandidates query
     convertCurrency.mockResolvedValue({ value: 30 });
 
     const req = makeReq({ query: { view: 'all' } });
