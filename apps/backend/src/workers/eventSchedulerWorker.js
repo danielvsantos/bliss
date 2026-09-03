@@ -7,6 +7,7 @@ const { getAnalyticsQueue } = require('../queues/analyticsQueue');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
+const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetectionQueue');
 const { scheduleDebouncedJob } = require('../services/debounceService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
@@ -419,6 +420,25 @@ const processEventJob = async (job) => {
                     DEBOUNCE_DELAY_SECONDS * 2
                 );
 
+                break;
+            }
+
+            case 'SUBSCRIPTION_DETECTION_REQUESTED': {
+                // User-initiated recurring-charge detection: "Scan now" on the
+                // Subscriptions page (mode: 'incremental') or "Full history scan"
+                // in Settings → Maintenance (mode: 'full'). Cooldown is enforced
+                // in the API route, not here.
+                const { tenantId: subTenantId, mode: subMode = 'incremental' } = data;
+                if (!subTenantId) {
+                    logger.warn('SUBSCRIPTION_DETECTION_REQUESTED event is missing tenantId.');
+                    return;
+                }
+                logger.info(`[Event] Scheduling subscription detection for tenant ${subTenantId} (mode: ${subMode}).`);
+                await getSubscriptionDetectionQueue().add(
+                    'detect-tenant',
+                    { tenantId: subTenantId, mode: subMode, source: 'api' },
+                    { jobId: `subs-ondemand-${subTenantId}-${Date.now()}` },
+                );
                 break;
             }
 

@@ -10,6 +10,7 @@ const { startPlaidProcessorWorker } = require('./workers/plaidProcessorWorker');
 const { startSmartImportWorker } = require('./workers/smartImportWorker');
 const { startInsightGeneratorWorker } = require('./workers/insightGeneratorWorker');
 const { startSecurityMasterWorker } = require('./workers/securityMasterWorker');
+const { startSubscriptionDetectionWorker } = require('./workers/subscriptionDetectionWorker');
 const { initializeRedis, disconnectRedis } = require('./utils/redis');
 const logger = require('./utils/logger');
 const { waitForSchemaAndRefresh } = require('./utils/categoryCache');
@@ -53,6 +54,7 @@ const startServer = async () => {
             workers.push(startSmartImportWorker());
             workers.push(startInsightGeneratorWorker());
             workers.push(startSecurityMasterWorker());
+            workers.push(startSubscriptionDetectionWorker());
             logger.info('All workers have been started.');
         } else {
             logger.info('Skipping worker initialization (START_MODE is not "worker" or "all").');

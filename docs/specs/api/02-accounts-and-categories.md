@@ -63,6 +63,7 @@ The Categories API, at `pages/api/categories.js`, provides full CRUD functionali
 | `type` | String | High-level financial type. Must be one of `ALLOWED_CATEGORY_TYPES`. |
 | `icon` | String? | Optional emoji icon (e.g. `🛒`). User-editable. |
 | `processingHint` | String? | System-managed field that directs backend workers. **Never user-editable.** |
+| `isRecurring` | Boolean | Default `false`. When `true`, the subscription-detection engine treats this category's transactions as recurring-by-default (Tier A — one occurrence qualifies). **User-editable** on POST and PUT (the one exception to the system-managed rule). Must be a boolean or the request is rejected `400`. Defaulted `true` for `SOFTWARE`, `CONTENT_AND_MEDIA`, `LOYALTY_PROGRAMS`, the four insurance categories, `INTERNET`, and `DATA_PLAN`. See `docs/specs/backend/21-subscriptions-detection.md`. |
 | `portfolioItemKeyStrategy` | Enum | Controls portfolio item aggregation. System-managed. |
 | `defaultCategoryCode` | String? | Stable `SNAKE_UPPER_CASE` identifier from `defaultCategories.js`. `null` for custom tenant categories. Set only at tenant creation; never modified at runtime. |
 | `tenantId` | String | Owner tenant. |

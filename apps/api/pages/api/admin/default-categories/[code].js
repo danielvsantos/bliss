@@ -66,7 +66,7 @@ export default async function handler(req, res) {
   }
 
   // ── Validate optional fields ──────────────────────────────────────────────
-  const { name, group, type, icon, portfolioItemKeyStrategy, newCode } = body;
+  const { name, group, type, icon, portfolioItemKeyStrategy, isRecurring, newCode } = body;
 
   if (
     portfolioItemKeyStrategy !== undefined &&
@@ -75,6 +75,10 @@ export default async function handler(req, res) {
     return res.status(StatusCodes.BAD_REQUEST).json({
       error: `portfolioItemKeyStrategy must be one of: ${ALLOWED_PORTFOLIO_STRATEGIES.join(', ')}`,
     });
+  }
+
+  if (isRecurring !== undefined && typeof isRecurring !== 'boolean') {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'isRecurring must be a boolean' });
   }
 
   if (newCode !== undefined && !/^[A-Z0-9_]+$/.test(newCode)) {
@@ -90,6 +94,7 @@ export default async function handler(req, res) {
   if (type !== undefined) metadataPatch.type = type;
   if (icon !== undefined) metadataPatch.icon = icon;
   if (portfolioItemKeyStrategy !== undefined) metadataPatch.portfolioItemKeyStrategy = portfolioItemKeyStrategy;
+  if (isRecurring !== undefined) metadataPatch.isRecurring = isRecurring;
 
   const hasMetadataChanges = Object.keys(metadataPatch).length > 0;
   const hasCodeRename = newCode !== undefined && newCode !== code;

@@ -423,9 +423,10 @@ Three workers register BullMQ repeatable jobs that run on a nightly schedule:
 | --- | ------ | ---------- | ------- |
 | `refresh-all-fundamentals` | securityMasterWorker | `0 3 * * *` (3 AM) | Refresh stock prices, profiles, earnings, dividends |
 | `revalue-all-tenants` | portfolioWorker | `0 4 * * *` (4 AM) | Enqueue per-tenant portfolio revaluation (investments, cash, debts) |
+| `detect-all-tenants` | subscriptionDetectionWorker | `0 5 * * *` (5 AM) | Enqueue per-tenant recurring-charge detection (6-month incremental window) |
 | `generate-all-insights` | insightGeneratorWorker | `0 6 * * *` (6 AM) | Generate AI financial insights for all tenants |
 
-The schedule chain is intentional: fresh prices (3 AM) feed into revaluation (4 AM), which feeds into insights (6 AM). The portfolio revaluation ensures history has no gaps even when no transactions occur for days.
+The schedule chain is intentional: fresh prices (3 AM) feed into revaluation (4 AM), which feeds into insights (6 AM). The portfolio revaluation ensures history has no gaps even when no transactions occur for days. Subscription detection (5 AM) is read-only over `Transaction` and writes only `RecurringCharge` rows, so it triggers no downstream cascade. See `docs/specs/backend/21-subscriptions-detection.md`.
 
 **On-access fallback:** The `GET /api/portfolio/history` endpoint also checks if the most recent history record is before today. If stale, it fires a `PORTFOLIO_STALE_REVALUATION` event to trigger revaluation for that tenant. This covers self-hosters where the nightly job may not be running reliably.
 

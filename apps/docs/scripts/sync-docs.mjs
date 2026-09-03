@@ -48,6 +48,7 @@ const FEATURE_MAP = {
   'tag-analytics':            { title: 'Tag Analytics',              order: 18, description: 'Multi-tag transaction analysis with dedicated cache tables' },
   'security-master':          { title: 'Security Master & Equity Analysis', order: 19, description: 'Nightly stock fundamentals refresh, equity deep-dive with earnings and dividends' },
   'llm-provider-abstraction': { title: 'LLM Provider Abstraction',   order: 20, description: 'Factory-backed adapter layer for Gemini, OpenAI, and Anthropic with a unified contract' },
+  'subscriptions':            { title: 'Subscriptions & Recurring Charges', order: 21, description: 'Deterministic recurring-charge detection (category signal + bounded interval heuristic), the Subscriptions page, and the per-merchant Confirm/Dismiss learning loop' },
 };
 
 // Maps feature slugs to actual filenames per layer (from docs/specs/)
@@ -72,6 +73,7 @@ const LAYER_FILES = {
   'tag-analytics':            { api: '18-tag-analytics.md', backend: '18-tag-analytics.md', frontend: '18-tag-analytics.md' },
   'security-master':          { api: '19-security-master-api.md', backend: '19-security-master.md', frontend: '19-security-master.md' },
   'llm-provider-abstraction': { backend: '20-llm-provider-abstraction.md' },
+  'subscriptions':            { api: '21-subscriptions-api.md', backend: '21-subscriptions-detection.md', frontend: '21-subscriptions.md' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────

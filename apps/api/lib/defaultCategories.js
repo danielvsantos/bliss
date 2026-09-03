@@ -4,6 +4,12 @@
  *
  * Rules:
  *  - `processingHint` drives backend worker behaviour. Immutable after creation.
+ *  - `isRecurring: true` flags a category as recurring-by-default for the
+ *    subscription detection engine (Tier A — one occurrence qualifies). Unlike
+ *    `processingHint` it is user-toggleable on the Categories page. Omitted =
+ *    false. Kept deliberately narrow: the Subscriptions group + insurances +
+ *    fixed-line telecom. Utilities/rent are usage-variable, so they stay off
+ *    and rely on the interval heuristic (Tier B) or a manual toggle.
  *  - `portfolioItemKeyStrategy` controls how portfolio items are keyed/aggregated.
  *  - `code` is a stable SNAKE_UPPER_CASE identifier used by Sprint B global embeddings.
  *    It is persisted as `defaultCategoryCode` on the Category row.
@@ -59,12 +65,12 @@ export const DEFAULT_CATEGORIES = [
   { code: 'RENT',                 name: 'Rent',                 group: 'Housing',             type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🔑' },
   { code: 'HOA_COMMUNITY_FEES',   name: 'HOA / Community fees', group: 'Housing',             type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🏘️' },
   { code: 'SECURITY_DEPOSIT',     name: 'Security Deposit',     group: 'Housing',             type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🏦' },
-  { code: 'HOME_INSURANCE',       name: 'Home Insurance',       group: 'Housing',             type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🛡️' },
+  { code: 'HOME_INSURANCE',       name: 'Home Insurance',       group: 'Housing',             type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '🛡️' },
   // Utilities
   { code: 'POWER_AND_GAS',        name: 'Power & Gas',          group: 'Utilities',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '💡' },
   { code: 'WATER',                name: 'Water',                group: 'Utilities',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '💧' },
-  { code: 'DATA_PLAN',            name: 'Data Plan',            group: 'Utilities',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '📱' },
-  { code: 'INTERNET',             name: 'Internet',             group: 'Utilities',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🌐' },
+  { code: 'DATA_PLAN',            name: 'Data Plan',            group: 'Utilities',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '📱' },
+  { code: 'INTERNET',             name: 'Internet',             group: 'Utilities',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '🌐' },
   // Maintenance
   { code: 'CLEANING_SERVICE',     name: 'Cleaning service',     group: 'Home Maintenance',    type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🧹' },
   { code: 'HOME_IMPROVEMENT',     name: 'Home Improvement',     group: 'Home Maintenance',    type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🔨' },
@@ -73,14 +79,14 @@ export const DEFAULT_CATEGORIES = [
   { code: 'CONVENIENCE_STORES',   name: 'Convenience stores',   group: 'Eating In',           type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🏪' },
   // Healthcare
   { code: 'DOCTOR',               name: 'Doctor',               group: 'Healthcare',          type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🩺' },
-  { code: 'HEALTH_INSURANCE',     name: 'Health Insurance',     group: 'Healthcare',          type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '❤️‍🩹' },
+  { code: 'HEALTH_INSURANCE',     name: 'Health Insurance',     group: 'Healthcare',          type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '❤️‍🩹' },
   { code: 'PHARMACY',             name: 'Pharmacy',             group: 'Healthcare',          type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '💊' },
   // Transportation
   { code: 'BIKING',               name: 'Biking',               group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🚲' },
   { code: 'FUEL_AND_GAS',         name: 'Fuel & Gas',           group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '⛽' },
   { code: 'VEHICLE_MAINTENANCE',  name: 'Vehicle Maintenance',  group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🔧' },
   { code: 'VEHICLE_TAXES_AND_TICKETS',name: 'Vehicle Taxes & Tickets', group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🧾' },
-  { code: 'VEHICLE_INSURANCE',    name: 'Vehicle Insurance',    group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🛡️' },
+  { code: 'VEHICLE_INSURANCE',    name: 'Vehicle Insurance',    group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '🛡️' },
   { code: 'METRO',                name: 'Metro',                group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🚇' },
   { code: 'PARKING',              name: 'Parking',              group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🅿️' },
   { code: 'TAXI',                 name: 'Taxi',                 group: 'Transportation',      type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🚕' },
@@ -90,7 +96,7 @@ export const DEFAULT_CATEGORIES = [
   // Pets
   { code: 'PET_CARE',             name: 'Pet care',             group: 'Pets',                type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🐕' },
   { code: 'PET_FOOD',             name: 'Pet food',             group: 'Pets',                type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🐈' },
-  { code: 'PET_INSURANCE',        name: 'Pet insurance',        group: 'Pets',                type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🐹' },
+  { code: 'PET_INSURANCE',        name: 'Pet insurance',        group: 'Pets',                type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '🐹' },
   // Finance
   { code: 'BANKING_FEES',         name: 'Banking fees',         group: 'Finance',             type: 'Essentials',           portfolioItemKeyStrategy: 'IGNORE',  icon: '🏦' },
   // Civil
@@ -128,9 +134,9 @@ export const DEFAULT_CATEGORIES = [
   { code: 'KITCHENWARE',          name: 'Kitchenware',          group: 'Shopping & Gifts',    type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  icon: '🍽️' },
 
   // Subscriptions
-  { code: 'SOFTWARE',             name: 'Software',             group: 'Subscriptions',       type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  icon: '💻' },
-  { code: 'CONTENT_AND_MEDIA',    name: 'Content & Media',      group: 'Subscriptions',       type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  icon: '📺' },
-  { code: 'LOYALTY_PROGRAMS',     name: 'Loyalty Programs',     group: 'Subscriptions',       type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  icon: '🛒' },
+  { code: 'SOFTWARE',             name: 'Software',             group: 'Subscriptions',       type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '💻' },
+  { code: 'CONTENT_AND_MEDIA',    name: 'Content & Media',      group: 'Subscriptions',       type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '📺' },
+  { code: 'LOYALTY_PROGRAMS',     name: 'Loyalty Programs',     group: 'Subscriptions',       type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  isRecurring: true,  icon: '🛒' },
   // Misc
   { code: 'CASH_AT_ATM',          name: 'Cash at ATM',          group: 'Misc',                type: 'Lifestyle',            portfolioItemKeyStrategy: 'IGNORE',  icon: '🏧' },
 

@@ -186,6 +186,7 @@ export default async function handler(req, res) {
           type: cat.type,
           icon: cat.icon || null,
           processingHint: cat.processingHint || null,
+          isRecurring: cat.isRecurring ?? false, // Subscriptions: recurring-by-default flag (Tier A)
           portfolioItemKeyStrategy: cat.portfolioItemKeyStrategy || 'IGNORE',
           defaultCategoryCode: cat.code ?? null, // Sprint B: stable cross-tenant identifier
           tenantId: tenant.id,

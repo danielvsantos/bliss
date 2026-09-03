@@ -50,6 +50,7 @@ export const rateLimiters = {
     signin: createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 }),       // 5 logins per 5 min
     signup: createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 }),      // 5 signups per 5 min
     tags: createRateLimiter({ max: 100, windowMs: 5 * 60 * 1000 }), // 100 tag  per 5 min
+    subscriptions: createRateLimiter({ max: 120, windowMs: 5 * 60 * 1000 }), // 120 subscriptions API calls per 5 min (reads + row actions)
     tenants: createRateLimiter({ max: 10, windowMs: 5 * 60 * 1000 }),     // 10 tenants per 5 min
     transactions: createRateLimiter({ max: 300, windowMs: 5 * 60 * 1000 }), // 300 transactions fetches
     users: createRateLimiter({ max: 20, windowMs: 5 * 60 * 1000 }),     // 20 user per 5 min

@@ -41,6 +41,9 @@ import type {
   RebuildStatusResponse,
   RebuildTriggerRequest,
   RebuildTriggerResponse,
+  SubscriptionsResponse,
+  SubscriptionsView,
+  RecurringCadence,
 } from '../types/api';
 
 export interface AggregatedPortfolioHistory {
@@ -361,6 +364,8 @@ class APIClient {
     sortOrder?: 'asc' | 'desc';
     accountId?: number;
     categoryId?: number;
+    /** Comma-separated Transaction ids — used by the Subscriptions expand-row view. */
+    ids?: string;
     tagIds?: string;
     startDate?: string;
     endDate?: string;
@@ -1005,6 +1010,43 @@ class APIClient {
 
   async refreshStockFundamentals(): Promise<{ message: string; jobId: string }> {
     const response = await this.client.post('/api/admin/refresh-fundamentals');
+    return response.data;
+  }
+
+  // --- Subscriptions / recurring charges ---
+
+  async getSubscriptions(params?: { view?: SubscriptionsView; categoryId?: number }): Promise<SubscriptionsResponse> {
+    const response = await this.client.get('/api/subscriptions', { params });
+    return response.data;
+  }
+
+  async confirmSubscription(body: { descriptionHash?: string; transactionId?: number }): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'confirm', ...body });
+    return response.data;
+  }
+
+  async dismissSubscription(descriptionHash: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'dismiss', descriptionHash });
+    return response.data;
+  }
+
+  async restoreSubscription(descriptionHash: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'restore', descriptionHash });
+    return response.data;
+  }
+
+  async setSubscriptionCadence(descriptionHash: string, cadence: RecurringCadence): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'setCadence', descriptionHash, cadence });
+    return response.data;
+  }
+
+  async refreshSubscriptions(): Promise<{ status: string; mode: string }> {
+    const response = await this.client.post('/api/subscriptions', { action: 'refresh' });
+    return response.data;
+  }
+
+  async fullHistoryScan(): Promise<{ status: string; mode: string }> {
+    const response = await this.client.post('/api/subscriptions', { action: 'fullScan' });
     return response.data;
   }
 }

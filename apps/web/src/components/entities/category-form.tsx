@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type Control, type FieldValues, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +39,7 @@ const makeRenameSchema = (t: (key: string) => string) =>
   z.object({
     name: z.string().min(2, { message: t('categoryFormPage.nameMin') }),
     icon: z.string().optional(),
+    isRecurring: z.boolean().optional(),
   });
 
 const makeFullSchema = (t: (key: string) => string) =>
@@ -47,7 +49,39 @@ const makeFullSchema = (t: (key: string) => string) =>
     group: z.string().min(1, { message: t('categoryFormPage.groupRequired') }),
     icon: z.string().optional(),
     description: z.string().optional(),
+    isRecurring: z.boolean().optional(),
   });
+
+// Shared "Recurring charge" toggle — surfaces the category's transactions in
+// the Subscriptions view (Tier A: one occurrence qualifies). Both form schemas
+// carry an optional `isRecurring` boolean.
+function RecurringChargeField<T extends FieldValues & { isRecurring?: boolean }>({
+  control,
+  t,
+}: {
+  control: Control<T>;
+  t: (key: string) => string;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={'isRecurring' as FieldPath<T>}
+      render={({ field }) => (
+        <FormItem className="flex items-center justify-between rounded-lg border p-3">
+          <div className="space-y-0.5 pr-3">
+            <FormLabel>{t('categoryFormPage.recurringLabel')}</FormLabel>
+            <FormDescription className="text-xs">
+              {t('categoryFormPage.recurringHint')}
+            </FormDescription>
+          </div>
+          <FormControl>
+            <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+          </FormControl>
+        </FormItem>
+      )}
+    />
+  );
+}
 
 type RenameFormValues = z.infer<ReturnType<typeof makeRenameSchema>>;
 type FullFormValues = z.infer<ReturnType<typeof makeFullSchema>>;
@@ -85,6 +119,7 @@ function RenameCategoryForm({
     defaultValues: {
       name: category.name,
       icon: category.icon ?? '',
+      isRecurring: category.isRecurring ?? false,
     },
   });
 
@@ -97,6 +132,7 @@ function RenameCategoryForm({
         // Keep existing group and type unchanged for default categories
         group: category.group,
         type: category.type,
+        isRecurring: values.isRecurring ?? false,
       });
       toast({
         title: t('categoryForm.categoryUpdated'),
@@ -149,6 +185,8 @@ function RenameCategoryForm({
           )}
         />
 
+        <RecurringChargeField control={form.control} t={t} />
+
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => onClose()}>
             {t('ui.cancel')}
@@ -190,6 +228,7 @@ function FullCategoryForm({
       group: category?.group ?? '',
       icon: category?.icon ?? '',
       description: category?.description ?? '',
+      isRecurring: category?.isRecurring ?? false,
     },
   });
 
@@ -233,6 +272,7 @@ function FullCategoryForm({
           group: values.group,
           icon: values.icon,
           description: values.description?.trim() ? values.description.trim() : null,
+          isRecurring: values.isRecurring ?? false,
         });
         toast({
           title: t('categoryForm.categoryUpdated'),
@@ -245,6 +285,7 @@ function FullCategoryForm({
           group: values.group,
           icon: values.icon,
           description: values.description?.trim() ? values.description.trim() : null,
+          isRecurring: values.isRecurring ?? false,
         });
         toast({
           title: t('categoryForm.categoryCreated'),
@@ -426,6 +467,8 @@ function FullCategoryForm({
             </FormItem>
           )}
         />
+
+        <RecurringChargeField control={form.control} t={t} />
 
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => onClose()}>

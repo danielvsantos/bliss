@@ -27,6 +27,7 @@ vi.mock('../../../utils/rateLimit.js', () => ({
 import handler from '../../../pages/api/categories.js';
 import prisma from '../../../prisma/prisma.js';
 import { createIsolatedTenant, teardownTenant } from '../../helpers/tenant.js';
+import { ensureReferenceData } from '../../helpers/referenceData.js';
 
 // ---------------------------------------------------------------------------
 // req / res factories
@@ -119,5 +120,96 @@ describe('GET /api/categories', () => {
     // At least the seeded Groceries category should be present
     expect(categories!.length).toBeGreaterThanOrEqual(1);
     expect(categories!.some((c: unknown) => (c as { name: string }).name === 'Groceries')).toBe(true);
+  });
+});
+
+describe('PUT /api/categories — isRecurring', () => {
+  let tenantId: string;
+  let token: string;
+  let categoryId: number;
+
+  beforeAll(async () => {
+    ({ tenantId, token } = await createIsolatedTenant('categories-recurring'));
+    const cat = await prisma.category.create({
+      data: { name: 'Streaming', group: 'Subscriptions', type: 'Lifestyle', tenantId },
+    });
+    categoryId = cat.id;
+    // A transaction bound to the category — its count must not change on update.
+    // CI's bliss_test has no seeded Country/Currency/Bank, so ensure them.
+    const { countryId, currencyCode, bankId } = await ensureReferenceData();
+    const account = await prisma.account.create({
+      data: {
+        name: 'Acct',
+        accountNumber: `REC-${Date.now()}`,
+        bankId,
+        countryId,
+        currencyCode,
+        tenantId,
+      },
+    });
+    await prisma.transaction.create({
+      data: {
+        transaction_date: new Date(),
+        year: 2026,
+        quarter: 'Q1',
+        month: 1,
+        day: 1,
+        description: 'NETFLIX',
+        debit: 15.99,
+        currency: currencyCode,
+        accountId: account.id,
+        categoryId,
+        tenantId,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await teardownTenant(tenantId);
+  });
+
+  it('accepts isRecurring on PUT and updates in place (same id, tx count unchanged)', async () => {
+    const req = makeReq({
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}` },
+      query: { id: String(categoryId) },
+      body: { isRecurring: true },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect((res._body as { id: number }).id).toBe(categoryId);
+
+    const after = await prisma.category.findUnique({
+      where: { id: categoryId },
+      include: { _count: { select: { transactions: true } } },
+    });
+    expect(after!.isRecurring).toBe(true);
+    expect(after!._count.transactions).toBe(1);
+  });
+
+  it('still rejects processingHint on PUT with 400', async () => {
+    const req = makeReq({
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}` },
+      query: { id: String(categoryId) },
+      body: { processingHint: 'RECURRING' },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(400);
+  });
+
+  it('rejects a non-boolean isRecurring with 400', async () => {
+    const req = makeReq({
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}` },
+      query: { id: String(categoryId) },
+      body: { isRecurring: 'yes' },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(400);
   });
 });

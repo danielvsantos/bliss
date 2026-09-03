@@ -15,6 +15,7 @@ import {
 
 import { useRebuildStatus, useTriggerRebuild } from '@/hooks/use-rebuild';
 import { useRefreshFundamentals } from '@/hooks/use-refresh-fundamentals';
+import { useSubscriptions, useFullHistoryScan } from '@/hooks/use-subscriptions';
 import { useToast } from '@/hooks/use-toast';
 
 import { Card } from '@/components/ui/card';
@@ -331,6 +332,61 @@ function RebuildHistoryList({ recent }: { recent: RebuildJob[] }) {
   );
 }
 
+function SubscriptionsFullScanCard() {
+  const { toast } = useToast();
+  const { data } = useSubscriptions({ view: 'active' });
+  const mutation = useFullHistoryScan();
+
+  const lastRun = data?.fullScanAt ?? null;
+
+  const handleClick = () => {
+    mutation.mutate(undefined, {
+      onSuccess: () => {
+        toast({
+          title: 'Full history scan started',
+          description:
+            'A 48-month scan is running in the background. Annual and older subscriptions will appear on the Subscriptions page shortly.',
+        });
+      },
+      onError: (err: unknown) => {
+        const ax = err as AxiosError<{ error?: string }>;
+        toast({
+          title: 'Failed to start scan',
+          description: ax?.response?.data?.error || ax?.message || 'Unknown error',
+          variant: 'destructive',
+        });
+      },
+    });
+  };
+
+  return (
+    <Card className="p-6 space-y-4">
+      <div>
+        <h3 className="font-medium">Subscriptions — full history scan</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Re-runs recurring-charge detection with a 48-month lookback so annual and
+          long-dormant subscriptions surface on the Subscriptions page. The nightly
+          run and the page's "Scan now" button only look back 6 months.
+        </p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Last run: {lastRun ? formatRelativeTime(lastRun) : 'never'}
+        </p>
+      </div>
+      {mutation.isPending ? (
+        <Button disabled className="w-full sm:w-auto">
+          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          Starting…
+        </Button>
+      ) : (
+        <Button onClick={handleClick} className="w-full sm:w-auto">
+          <RotateCcw className="h-4 w-4 mr-2" />
+          Run full scan
+        </Button>
+      )}
+    </Card>
+  );
+}
+
 function RefreshFundamentalsButton() {
   const { toast } = useToast();
   const mutation = useRefreshFundamentals();
@@ -554,6 +610,9 @@ export function MaintenanceTab() {
         </div>
         <RefreshFundamentalsButton />
       </Card>
+
+      {/* ─── Subscriptions — full history scan ─────────────────────────── */}
+      <SubscriptionsFullScanCard />
 
       {/* ─── Single asset ──────────────────────────────────────────────── */}
       <Card className="p-6 space-y-4">
