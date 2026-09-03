@@ -2167,6 +2167,20 @@ const pt = {
       inDays: "vence em {{count}} d",
       agoDays: "atrasada {{count}} d",
     },
+    rename: {
+      label: "Renomear assinatura",
+      renamed: "Assinatura renomeada",
+      custom: "nome personalizado",
+    },
+    merge: {
+      mergeInto: "Unir a outra assinatura",
+      pickTarget: "Escolha uma assinatura…",
+      merged: "Assinaturas unidas",
+      unmerge: "Desfazer união",
+      unmerged: "União desfeita",
+      tombstoneHint: "Integrada a outra assinatura — suas cobranças contam para ela.",
+      unknownTarget: "outra assinatura",
+    },
   },
 };
 

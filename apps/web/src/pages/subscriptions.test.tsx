@@ -67,6 +67,9 @@ function makeItem(over: Partial<SubscriptionItem> = {}): SubscriptionItem {
     nextExpectedAt: '2026-09-01T00:00:00.000Z',
     lastDetectedAt: '2026-08-15T00:00:00.000Z',
     contributingTransactionIds: [1, 2, 3],
+    userLabelLocked: false,
+    mergedIntoHash: null,
+    mergedIntoLabel: null,
     ...over,
   };
 }
@@ -83,6 +86,9 @@ function renderPage() {
 }
 
 const confirmMutate = vi.fn();
+const renameMutate = vi.fn();
+const mergeMutate = vi.fn();
+const unmergeMutate = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -90,6 +96,9 @@ beforeEach(() => {
   vi.mocked(UseSubs.useDismissSubscription).mockReturnValue(mockMutationResult({ mutate: vi.fn() }));
   vi.mocked(UseSubs.useRestoreSubscription).mockReturnValue(mockMutationResult({ mutate: vi.fn() }));
   vi.mocked(UseSubs.useSetSubscriptionCadence).mockReturnValue(mockMutationResult({ mutate: vi.fn() }));
+  vi.mocked(UseSubs.useRenameSubscription).mockReturnValue(mockMutationResult({ mutate: renameMutate }));
+  vi.mocked(UseSubs.useMergeSubscription).mockReturnValue(mockMutationResult({ mutate: mergeMutate }));
+  vi.mocked(UseSubs.useUnmergeSubscription).mockReturnValue(mockMutationResult({ mutate: unmergeMutate }));
   vi.mocked(UseSubs.useRefreshSubscriptions).mockReturnValue(mockMutationResult({ mutate: vi.fn() }));
 });
 
@@ -135,5 +144,71 @@ describe('SubscriptionsPage', () => {
     renderPage();
     expect(screen.getByRole('button', { name: /subscriptions\.remove/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /subscriptions\.confirm/i })).not.toBeInTheDocument();
+  });
+
+  it('renaming a row fires the rename mutation with the new label', async () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(baseResponse([makeItem()])));
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'subscriptions.rename.label' }));
+    const input = screen.getByRole('textbox', { name: 'subscriptions.rename.label' });
+    fireEvent.change(input, { target: { value: 'Netflix Family' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => {
+      expect(renameMutate).toHaveBeenCalledWith(
+        { descriptionHash: 'hash-1', merchantLabel: 'Netflix Family' },
+        expect.any(Object),
+      );
+    });
+  });
+
+  it('marks a row with a custom name', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(baseResponse([makeItem({ userLabelLocked: true })])),
+    );
+    renderPage();
+    expect(screen.getByText(/subscriptions\.rename\.custom/)).toBeInTheDocument();
+  });
+
+  it('merge picker (in the expanded row) fires the merge mutation with source + target hashes', async () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(
+        baseResponse([
+          makeItem({ descriptionHash: 'hash-1', merchantLabel: 'Orange' }),
+          makeItem({ id: 2, descriptionHash: 'hash-2', merchantLabel: 'To Orange Espagne S.a.' }),
+        ]),
+      ),
+    );
+    renderPage();
+    // expand the second row, open its merge picker
+    const expandButtons = screen.getAllByRole('button', { name: 'subscriptions.toggleCharges' });
+    fireEvent.click(expandButtons[1]);
+    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.merge\.mergeInto/i }));
+    const combos = screen.getAllByRole('combobox');
+    fireEvent.click(combos[combos.length - 1]); // the merge picker is the last Select on the page
+    fireEvent.click(screen.getByRole('option', { name: /Orange/ }));
+    await waitFor(() => {
+      expect(mergeMutate).toHaveBeenCalledWith(
+        { sourceDescriptionHash: 'hash-2', targetDescriptionHash: 'hash-1' },
+        expect.any(Object),
+      );
+    });
+  });
+
+  it('shows the Unmerge action for a merged tombstone under the All view', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(
+        baseResponse([
+          makeItem({
+            descriptionHash: 'hash-2',
+            merchantLabel: 'To Orange Espagne S.a.',
+            mergedIntoHash: 'hash-1',
+            mergedIntoLabel: 'Orange',
+          }),
+        ]),
+      ),
+    );
+    renderPage();
+    expect(screen.getByRole('button', { name: /subscriptions\.merge\.unmerge/i })).toBeInTheDocument();
+    expect(screen.getByText('Orange')).toBeInTheDocument();
   });
 });

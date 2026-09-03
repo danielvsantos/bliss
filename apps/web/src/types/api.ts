@@ -648,6 +648,8 @@ export type SubscriptionItem = {
   state: RecurringState;
   cadence: RecurringCadence | null;
   userCadenceLocked: boolean;
+  /** True once the user has given this charge a custom name — detector stops renaming it. */
+  userLabelLocked: boolean;
   status: RecurringStatus;
   detectionReason: 'CATEGORY_SIGNAL' | 'INTERVAL_HEURISTIC' | 'USER_CONFIRMED' | null;
   amount: number | null;
@@ -661,6 +663,10 @@ export type SubscriptionItem = {
   nextExpectedAt: string | null;
   lastDetectedAt: string | null;
   contributingTransactionIds: number[];
+  /** Set when this row is a manual-merge tombstone — folded into another merchant. */
+  mergedIntoHash: string | null;
+  /** Human label of the merge target (the row this one folds into). */
+  mergedIntoLabel: string | null;
 };
 
 export type SubscriptionsResponse = {

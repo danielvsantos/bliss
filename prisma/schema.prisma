@@ -892,6 +892,7 @@ model RecurringCharge {
   state             RecurringChargeState      @default(DETECTED)
   cadence           RecurringChargeCadence?
   userCadenceLocked Boolean                   @default(false) // true once the user edits the cadence
+  userLabelLocked   Boolean                   @default(false) // true once the user renames the charge — detector stops overwriting merchantLabel
   status            RecurringChargeStatus     @default(ACTIVE)
   detectionReason   RecurringDetectionReason?
 
@@ -905,6 +906,14 @@ model RecurringCharge {
   lastDetectedAt  DateTime?
 
   contributingTransactionIds Int[] // up to 24 most-recent Transaction ids for the "expand row" view
+
+  // Manual merge: when set, this row is a merge tombstone. Its merchant is an
+  // alias for the target merchant — SHA-256 hex of normalizeMerchant(target
+  // merchant). Every detection run folds this merchant's transactions into the
+  // target's row; this row itself produces nothing and is hidden from the
+  // Active/Lapsed views (visible under "All" with an Unmerge action). null =
+  // not merged.
+  mergedIntoHash  String?
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

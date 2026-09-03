@@ -63,7 +63,7 @@ async function handleDetectTenant(data) {
   // and which state to preserve on update.
   const existing = await prisma.recurringCharge.findMany({
     where: { tenantId },
-    select: { descriptionHash: true, state: true, userCadenceLocked: true },
+    select: { descriptionHash: true, state: true, userCadenceLocked: true, userLabelLocked: true },
   });
   const existingByHash = new Map(existing.map((r) => [r.descriptionHash, r]));
 
@@ -74,6 +74,8 @@ async function handleDetectTenant(data) {
     const update = detectorFields(row);
     // Never overwrite a cadence the user has explicitly set.
     if (!prior?.userCadenceLocked) update.cadence = row.cadence;
+    // Never overwrite a merchant label the user has renamed.
+    if (prior?.userLabelLocked) delete update.merchantLabel;
 
     return prisma.recurringCharge.upsert({
       where: { tenantId_descriptionHash: { tenantId, descriptionHash: row.descriptionHash } },
@@ -89,11 +91,12 @@ async function handleDetectTenant(data) {
   });
 
   // Prune DETECTED rows that are no longer detected. CONFIRMED / DISMISSED
-  // tombstones are retained forever.
+  // tombstones — and merge tombstones (`mergedIntoHash` set) — are retained.
   const prune = prisma.recurringCharge.deleteMany({
     where: {
       tenantId,
       state: 'DETECTED',
+      mergedIntoHash: null,
       descriptionHash: { notIn: desiredHashes.length ? desiredHashes : ['__none__'] },
     },
   });

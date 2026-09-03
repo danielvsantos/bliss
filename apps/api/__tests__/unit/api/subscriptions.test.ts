@@ -175,6 +175,45 @@ describe('GET /api/subscriptions', () => {
     expect(where.categoryId).toBe(42);
     expect(where.status).toBe('LAPSED');
   });
+
+  it('hides merge tombstones from the active/lapsed views', async () => {
+    mockPrisma.recurringCharge.findMany.mockResolvedValue([]);
+    const req = makeReq({ query: { view: 'active' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    const where = mockPrisma.recurringCharge.findMany.mock.calls[0][0].where;
+    expect(where.mergedIntoHash).toBeNull();
+    expect(where.state).toEqual({ not: 'DISMISSED' });
+  });
+
+  it('surfaces merge tombstones under the "all" view with the target label, excluded from counts', async () => {
+    mockPrisma.recurringCharge.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 5, descriptionHash: 'src', merchantLabel: 'To Orange Espagne S.a.', categoryId: 10,
+          category: { id: 10, name: 'Telecom', icon: '📱' },
+          state: 'DETECTED', cadence: 'MONTHLY', userCadenceLocked: false, userLabelLocked: false, status: 'ACTIVE',
+          detectionReason: 'CATEGORY_SIGNAL', amount: 30, currency: 'USD',
+          occurrenceCount: 4, firstChargedAt: null, lastChargedAt: new Date(), nextExpectedAt: null,
+          lastDetectedAt: new Date(), contributingTransactionIds: [], mergedIntoHash: 'tgt',
+        },
+      ])
+      .mockResolvedValueOnce([{ descriptionHash: 'tgt', merchantLabel: 'Orange' }]);
+    convertCurrency.mockResolvedValue({ value: 30 });
+
+    const req = makeReq({ query: { view: 'all' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const where = mockPrisma.recurringCharge.findMany.mock.calls[0][0].where;
+    expect(where.mergedIntoHash).toBeUndefined(); // "all" does not filter tombstones out
+    expect(res._body.items[0].mergedIntoHash).toBe('tgt');
+    expect(res._body.items[0].mergedIntoLabel).toBe('Orange');
+    // a tombstone never counts toward the active total
+    expect(res._body.summary.activeCount).toBe(0);
+    expect(res._body.summary.monthlyTotal).toBe(0);
+  });
 });
 
 describe('POST /api/subscriptions actions', () => {
@@ -307,5 +346,110 @@ describe('POST /api/subscriptions actions', () => {
     const res = makeRes();
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
     expect(res._status).toBe(400);
+  });
+
+  it('rename sets a custom label and locks it against the detector', async () => {
+    mockPrisma.recurringCharge.findUnique.mockResolvedValue({ id: 1 });
+    mockPrisma.recurringCharge.update.mockResolvedValue({ id: 1, merchantLabel: 'Netflix Family', amount: 5 });
+    const req = makeReq({ method: 'POST', body: { action: 'rename', descriptionHash: 'h1', merchantLabel: '  Netflix Family  ' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(200);
+    const data = mockPrisma.recurringCharge.update.mock.calls[0][0].data;
+    expect(data.merchantLabel).toBe('Netflix Family'); // trimmed
+    expect(data.userLabelLocked).toBe(true);
+  });
+
+  it('rename rejects an empty label', async () => {
+    const req = makeReq({ method: 'POST', body: { action: 'rename', descriptionHash: 'h1', merchantLabel: '   ' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(400);
+  });
+
+  it('rename returns 404 for an unknown descriptionHash', async () => {
+    mockPrisma.recurringCharge.findUnique.mockResolvedValue(null);
+    const req = makeReq({ method: 'POST', body: { action: 'rename', descriptionHash: 'nope', merchantLabel: 'X' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(404);
+  });
+
+  it('merge folds the source row into the target and rescans', async () => {
+    mockPrisma.recurringCharge.findUnique
+      .mockResolvedValueOnce({ id: 1, descriptionHash: 'src', merchantLabel: 'To Orange Espagne S.a.', mergedIntoHash: null })
+      .mockResolvedValueOnce({ id: 2, descriptionHash: 'tgt', merchantLabel: 'Orange', mergedIntoHash: null });
+    mockPrisma.recurringCharge.update.mockResolvedValue({ id: 1 });
+    const req = makeReq({
+      method: 'POST',
+      body: { action: 'merge', sourceDescriptionHash: 'src', targetDescriptionHash: 'tgt' },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(200);
+    const data = mockPrisma.recurringCharge.update.mock.calls[0][0].data;
+    expect(data.mergedIntoHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.nextExpectedAt).toBeNull();
+    expect(data.contributingTransactionIds).toEqual([]);
+    expect(produceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'SUBSCRIPTION_DETECTION_REQUESTED', source: 'merge', mode: 'incremental' }),
+    );
+  });
+
+  it('merge rejects merging a row into itself', async () => {
+    const req = makeReq({
+      method: 'POST',
+      body: { action: 'merge', sourceDescriptionHash: 'x', targetDescriptionHash: 'x' },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(400);
+  });
+
+  it('merge rejects a source that is already merged', async () => {
+    mockPrisma.recurringCharge.findUnique
+      .mockResolvedValueOnce({ id: 1, descriptionHash: 'src', merchantLabel: 'A', mergedIntoHash: 'somewhere' })
+      .mockResolvedValueOnce({ id: 2, descriptionHash: 'tgt', merchantLabel: 'B', mergedIntoHash: null });
+    const req = makeReq({
+      method: 'POST',
+      body: { action: 'merge', sourceDescriptionHash: 'src', targetDescriptionHash: 'tgt' },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(400);
+    expect(mockPrisma.recurringCharge.update).not.toHaveBeenCalled();
+  });
+
+  it('merge returns 404 when the target row does not exist', async () => {
+    mockPrisma.recurringCharge.findUnique
+      .mockResolvedValueOnce({ id: 1, descriptionHash: 'src', merchantLabel: 'A', mergedIntoHash: null })
+      .mockResolvedValueOnce(null);
+    const req = makeReq({
+      method: 'POST',
+      body: { action: 'merge', sourceDescriptionHash: 'src', targetDescriptionHash: 'tgt' },
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(404);
+  });
+
+  it('unmerge clears mergedIntoHash and rescans', async () => {
+    mockPrisma.recurringCharge.updateMany.mockResolvedValue({ count: 1 });
+    const req = makeReq({ method: 'POST', body: { action: 'unmerge', descriptionHash: 'src' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(200);
+    const call = mockPrisma.recurringCharge.updateMany.mock.calls[0][0];
+    expect(call.where).toEqual({ tenantId: 'tenant-A', descriptionHash: 'src', mergedIntoHash: { not: null } });
+    expect(call.data).toEqual({ mergedIntoHash: null });
+    expect(produceEvent).toHaveBeenCalledWith(expect.objectContaining({ source: 'unmerge' }));
+  });
+
+  it('unmerge returns 404 when the row is not merged', async () => {
+    mockPrisma.recurringCharge.updateMany.mockResolvedValue({ count: 0 });
+    const req = makeReq({ method: 'POST', body: { action: 'unmerge', descriptionHash: 'src' } });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._status).toBe(404);
   });
 });

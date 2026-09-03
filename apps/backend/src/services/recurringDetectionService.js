@@ -288,9 +288,14 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
   const tierAStart = mode === 'full' ? monthsAgo(SUBSCRIPTION_FULL_SCAN_MONTHS) : monthsAgo(SUBSCRIPTION_INCREMENTAL_MONTHS);
   const tierBStart = monthsAgo(SUBSCRIPTION_INCREMENTAL_MONTHS);
 
-  // 1. Existing user decisions -----------------------------------------------
+  // 1. Existing user decisions (merge tombstones excluded — a merged row's
+  //    Confirm/Dismiss/locked-cadence no longer applies to a standalone row).
   const priorRows = await prisma.recurringCharge.findMany({
-    where: { tenantId, OR: [{ state: { in: ['CONFIRMED', 'DISMISSED'] } }, { userCadenceLocked: true }] },
+    where: {
+      tenantId,
+      mergedIntoHash: null,
+      OR: [{ state: { in: ['CONFIRMED', 'DISMISSED'] } }, { userCadenceLocked: true }],
+    },
     select: { descriptionHash: true, state: true, cadence: true, userCadenceLocked: true },
   });
   const dismissed = new Set();
@@ -301,6 +306,31 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     if (r.state === 'CONFIRMED') confirmed.add(r.descriptionHash);
     if (r.userCadenceLocked && r.cadence) lockedCadence.set(r.descriptionHash, r.cadence);
   }
+
+  // 1b. Manual merges — sourceMerchantHash → targetMerchantHash, chains resolved.
+  const aliasRows = await prisma.recurringCharge.findMany({
+    where: { tenantId, mergedIntoHash: { not: null } },
+    select: { descriptionHash: true, mergedIntoHash: true },
+  });
+  const aliasMap = new Map();
+  {
+    const raw = new Map(aliasRows.map((r) => [r.descriptionHash, r.mergedIntoHash]));
+    const resolve = (h, seen) => {
+      if (!raw.has(h) || seen.has(h)) return h;
+      seen.add(h);
+      return resolve(raw.get(h), seen);
+    };
+    for (const src of raw.keys()) aliasMap.set(src, resolve(src, new Set()));
+  }
+  // Target-row metadata, so a merge target with no charges this window still
+  // gets a row from the merged-in charges alone.
+  const aliasTargets = aliasMap.size
+    ? await prisma.recurringCharge.findMany({
+        where: { tenantId, descriptionHash: { in: [...new Set(aliasMap.values())] } },
+        select: { descriptionHash: true, merchantLabel: true, categoryId: true, cadence: true, currency: true },
+      })
+    : [];
+  const aliasTargetByHash = new Map(aliasTargets.map((r) => [r.descriptionHash, r]));
 
   // 2. Tier A load ----------------------------------------------------------
   const tierATxns = await loadTransactionsBatched({
@@ -337,18 +367,35 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     groups.get(key).push(txn);
   }
 
+  // 4b. Fold merged-away merchants into their target -------------------
+  const inboundByTargetHash = new Map(); // targetMerchantHash → occ[]
+  for (const [key, occ] of [...groups.entries()]) {
+    const target = aliasMap.get(sha256Hex(key));
+    if (!target) continue;
+    if (!inboundByTargetHash.has(target)) inboundByTargetHash.set(target, []);
+    inboundByTargetHash.get(target).push(...occ);
+    groups.delete(key); // never processed standalone again
+  }
+
   // 5. Qualify + build rows (per merchant, then per amount band) --------
   const rows = [];
   const legacyRetireHashes = []; // bare merchant hashes whose single row is now split
-  for (const [merchantKey, merchantOcc] of groups.entries()) {
+  const consumedInbound = new Set();
+  for (const [merchantKey, merchantOccRaw] of groups.entries()) {
     const merchantHash = sha256Hex(merchantKey);
+
+    // Absorb any charges merged into this merchant.
+    const mergedIn = inboundByTargetHash.get(merchantHash) || [];
+    if (mergedIn.length) consumedInbound.add(merchantHash);
+    const merchantOcc = mergedIn.length ? [...merchantOccRaw, ...mergedIn] : merchantOccRaw;
 
     // Dominant currency is picked per merchant; amount bands are computed within
     // that currency's charges only.
     const currency = dominantValue(merchantOcc.map((t) => t.currency));
     const domOcc = merchantOcc.filter((t) => t.currency === currency);
 
-    const bands = clusterByAmount(domOcc);
+    // A merged row is a deliberate "these are one subscription" — don't re-split it.
+    const bands = mergedIn.length ? [domOcc] : clusterByAmount(domOcc);
     const isSplit = bands.length > 1;
     if (isSplit) legacyRetireHashes.push(merchantHash);
 
@@ -362,6 +409,9 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
       if (dismissed.has(hash)) continue; // tombstoned — never re-surface
 
       const isConfirmed = confirmed.has(hash);
+      // A merged target is a deliberate "this is one subscription" — surface it
+      // even if the combined series wouldn't pass the interval gate on its own.
+      const forced = isConfirmed || mergedIn.length > 0;
       const tierA = occ.some((t) => isCategoryRecurring(t.category));
       const inferred = inferCadence(dates);
 
@@ -376,8 +426,8 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
       }
 
       let detectionReason;
-      if (isConfirmed) {
-        detectionReason = 'USER_CONFIRMED';
+      if (forced) {
+        detectionReason = isConfirmed ? 'USER_CONFIRMED' : (tierA ? 'CATEGORY_SIGNAL' : 'INTERVAL_HEURISTIC');
       } else if (tierA) {
         // A split band needs >= 2 occurrences to be a real recurring price — a
         // lone large App Store purchase must not become a subscription.
@@ -403,11 +453,16 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
         .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
         .map((t) => t.id);
       const mostRecent = occ[occ.length - 1];
+      // When charges have been merged in, the folded-in transactions are often
+      // the newest — but the user merged them into THIS row precisely because
+      // its descriptor is the good one. Keep the target row's own label.
+      const mergedMeta = mergedIn.length ? aliasTargetByHash.get(merchantHash) : null;
+      const label = (mergedMeta?.merchantLabel || mostRecent.description || '').slice(0, 140);
 
       rows.push({
         descriptionHash: hash,
-        merchantLabel: (mostRecent.description || '').slice(0, 140),
-        categoryId: mostRecent.categoryId,
+        merchantLabel: label,
+        categoryId: mergedMeta?.categoryId ?? mostRecent.categoryId,
         cadence,
         amount: new Decimal(med),
         currency,
@@ -422,6 +477,45 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
         _isConfirmed: isConfirmed,
       });
     }
+  }
+
+  // 5b. Merge targets that had no charges of their own this window still get a
+  //     row, built from the merged-in charges + the target row's metadata.
+  for (const [targetHash, mergedIn] of inboundByTargetHash.entries()) {
+    if (consumedInbound.has(targetHash) || dismissed.has(targetHash)) continue;
+    const occ = [...mergedIn].sort((a, b) => a.transaction_date - b.transaction_date);
+    if (!occ.length) continue;
+    const dates = occ.map((t) => t.transaction_date);
+    const meta = aliasTargetByHash.get(targetHash);
+    const currency = meta?.currency || dominantValue(occ.map((t) => t.currency));
+    const amounts = occ.filter((t) => t.currency === currency).map((t) => toNumber(t.debit));
+    const inferred = inferCadence(dates);
+    const cadence = lockedCadence.get(targetHash)
+      || meta?.cadence
+      || inferred.cadence
+      || 'MONTHLY';
+    const lastChargedAt = dates[dates.length - 1];
+    rows.push({
+      descriptionHash: targetHash,
+      merchantLabel: (meta?.merchantLabel || occ[occ.length - 1].description || '').slice(0, 140),
+      categoryId: meta?.categoryId ?? occ[occ.length - 1].categoryId,
+      cadence,
+      amount: new Decimal(median(amounts) || toNumber(occ[occ.length - 1].debit)),
+      currency,
+      occurrenceCount: occ.length,
+      firstChargedAt: dates[0],
+      lastChargedAt,
+      nextExpectedAt: computeNextExpected(lastChargedAt, cadence),
+      status: computeStatus(lastChargedAt, cadence, now),
+      detectionReason: confirmed.has(targetHash) ? 'USER_CONFIRMED' : 'INTERVAL_HEURISTIC',
+      contributingTransactionIds: occ
+        .slice()
+        .sort((a, b) => b.transaction_date - a.transaction_date)
+        .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
+        .map((t) => t.id),
+      lastDetectedAt: now,
+      _isConfirmed: confirmed.has(targetHash),
+    });
   }
 
   return {

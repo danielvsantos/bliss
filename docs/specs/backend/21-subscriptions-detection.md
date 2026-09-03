@@ -17,6 +17,8 @@ Plaid), decrypts descriptions in memory, groups by merchant, and persists one
 | `state` | `DETECTED` \| `CONFIRMED` \| `DISMISSED`. User decisions; the detector never overwrites this. |
 | `cadence` | `WEEKLY` \| `MONTHLY` \| `QUARTERLY` \| `ANNUAL` \| null. |
 | `userCadenceLocked` | `true` once the user edits the cadence — the detector then stops touching `cadence`. |
+| `userLabelLocked` | `true` once the user renames the charge — the detector then stops touching `merchantLabel`. |
+| `mergedIntoHash` | `String?`. When set, this row is a **merge tombstone**: its merchant is an alias for the target merchant (`sha256(normalizeMerchant(target))`). Every run folds this merchant's transactions into the target's row; the tombstone itself produces nothing and is hidden from Active/Lapsed. |
 | `status` | `ACTIVE` \| `LAPSED` (`LAPSED` once no charge within `1.5 × cadence`). |
 | `detectionReason` | `CATEGORY_SIGNAL` (Tier A) \| `INTERVAL_HEURISTIC` (Tier B) \| `USER_CONFIRMED`. |
 | `amount` / `currency` | Median native amount + dominant currency across occurrences. |
@@ -97,6 +99,42 @@ Per run: `state = DISMISSED` merchants are skipped entirely (tombstone kept);
 `state = CONFIRMED` merchants are force-included (`detectionReason =
 USER_CONFIRMED`) even if the heuristic wouldn't pick them up.
 
+### Manual merge
+
+The normalizer is deliberately conservative and never merges on a shared first
+word, so genuinely-same services with divergent descriptors ("Orange" vs "To
+Orange Espagne S.a.") stay separate. The user can stitch them together from the
+Subscriptions page (expand a row → "Merge into another subscription"):
+
+* `POST /api/subscriptions { action: 'merge', sourceDescriptionHash,
+  targetDescriptionHash }` sets `sourceRow.mergedIntoHash =
+  sha256(normalizeMerchant(target.merchantLabel))` and enqueues an incremental
+  rescan (no cooldown). The source row becomes a tombstone.
+* Every detection run loads the alias map (`descriptionHash → mergedIntoHash`,
+  **chains resolved** so A→B→C folds straight to C, cycles broken). A merged
+  merchant's occurrences are removed from its own group and appended to the
+  target merchant's group **before** qualification. The combined group is
+  **never re-split by amount** — a merge is a deliberate "these are one
+  subscription" — and is `forced` (surfaces even if the combined series wouldn't
+  pass the interval gate). The target keeps its own `merchantLabel` /
+  `categoryId` even when the folded-in charges are newer.
+* If the target merchant has no charges of its own in the window, a row is still
+  synthesized from the folded-in charges plus the target row's stored metadata.
+* `CONFIRMED` / `DISMISSED` / `userCadenceLocked` / `mergedIntoHash != null` rows
+  are excluded from the "prior decisions" query — a merged row's own decisions
+  no longer apply to a standalone row. A `DISMISSED` target still suppresses the
+  synthesized row.
+* `POST /api/subscriptions { action: 'unmerge', descriptionHash }` clears
+  `mergedIntoHash` and rescans — the merchant is detected standalone again.
+
+### Rename
+
+`POST /api/subscriptions { action: 'rename', descriptionHash, merchantLabel }`
+(≤140 chars, trimmed, non-empty) sets `merchantLabel` and `userLabelLocked =
+true`. The worker then drops `merchantLabel` from the detector-field update for
+that row on every subsequent run, so the custom name survives new bank
+descriptors. All other detector fields keep updating.
+
 ## Execution
 
 | Trigger | Job | Window |
@@ -112,12 +150,14 @@ Queue: `subscription-detection` (concurrency 1, `lockDuration` 300s). Worker
 
 In one `prisma.$transaction`:
 1. `deleteMany` `state = 'DETECTED'` rows whose hash is no longer detected
-   (`CONFIRMED` / `DISMISSED` rows are retained).
+   (`CONFIRMED` / `DISMISSED` rows — and merge tombstones, `mergedIntoHash !=
+   null` — are retained).
 2. `deleteMany` the `legacyRetireHashes` (bare-merchant hashes of merchants that
    split this run) — **any state**.
 3. `upsert` per `(tenantId, descriptionHash)` — **create** with `state:
    'DETECTED'`; **update** merges detector fields only, never `state` /
-   `userCadenceLocked`, and skips `cadence` when `userCadenceLocked`.
+   `userCadenceLocked` / `userLabelLocked`, skips `cadence` when
+   `userCadenceLocked`, and skips `merchantLabel` when `userLabelLocked`.
 
 Then, for `mode: 'full'`, `tenant.update({ subscriptionsFullScanAt: now })`.
 

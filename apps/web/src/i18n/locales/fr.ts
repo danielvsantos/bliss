@@ -2127,6 +2127,20 @@ const fr = {
       inDays: "échéance dans {{count}} j",
       agoDays: "en retard de {{count}} j",
     },
+    rename: {
+      label: "Renommer l'abonnement",
+      renamed: "Abonnement renommé",
+      custom: "nom personnalisé",
+    },
+    merge: {
+      mergeInto: "Fusionner avec un autre abonnement",
+      pickTarget: "Choisir un abonnement…",
+      merged: "Abonnements fusionnés",
+      unmerge: "Annuler la fusion",
+      unmerged: "Fusion annulée",
+      tombstoneHint: "Intégré à un autre abonnement — ses frais sont comptés pour celui-ci.",
+      unknownTarget: "un autre abonnement",
+    },
   },
 };
 

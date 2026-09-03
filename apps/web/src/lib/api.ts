@@ -1040,6 +1040,32 @@ class APIClient {
     return response.data;
   }
 
+  /** Give a recurring charge a custom display name (kept across detection runs). */
+  async renameSubscription(descriptionHash: string, merchantLabel: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', {
+      action: 'rename',
+      descriptionHash,
+      merchantLabel,
+    });
+    return response.data;
+  }
+
+  /** Fold the `source` merchant's row into the `target` merchant's subscription. */
+  async mergeSubscription(sourceDescriptionHash: string, targetDescriptionHash: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', {
+      action: 'merge',
+      sourceDescriptionHash,
+      targetDescriptionHash,
+    });
+    return response.data;
+  }
+
+  /** Undo a merge — the row goes back to being detected on its own. */
+  async unmergeSubscription(descriptionHash: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'unmerge', descriptionHash });
+    return response.data;
+  }
+
   async refreshSubscriptions(): Promise<{ status: string; mode: string }> {
     const response = await this.client.post('/api/subscriptions', { action: 'refresh' });
     return response.data;

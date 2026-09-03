@@ -35,6 +35,7 @@ components:
         state: { type: string, enum: [DETECTED, CONFIRMED, DISMISSED] }
         cadence: { type: string, nullable: true, enum: [WEEKLY, MONTHLY, QUARTERLY, ANNUAL] }
         userCadenceLocked: { type: boolean }
+        userLabelLocked: { type: boolean, description: true once the user renamed the charge; detector stops overwriting merchantLabel }
         status: { type: string, enum: [ACTIVE, LAPSED] }
         detectionReason:
           type: string
@@ -53,6 +54,16 @@ components:
         contributingTransactionIds:
           type: array
           items: { type: integer }
+        mergedIntoHash:
+          type: string
+          nullable: true
+          description: >
+            Non-null → this row is a manual-merge tombstone whose charges are
+            folded into the target merchant. Only surfaces under view=all.
+        mergedIntoLabel:
+          type: string
+          nullable: true
+          description: merchantLabel of the merge target, resolved for display
     SubscriptionsResponse:
       type: object
       properties:
@@ -119,12 +130,15 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [confirm, dismiss, restore, setCadence, refresh, fullScan]
+                  enum: [confirm, dismiss, restore, setCadence, rename, merge, unmerge, refresh, fullScan]
                 descriptionHash: { type: string }
                 transactionId: { type: integer }
                 cadence: { type: string, enum: [WEEKLY, MONTHLY, QUARTERLY, ANNUAL] }
+                merchantLabel: { type: string, maxLength: 140, description: rename action — the new display name }
+                sourceDescriptionHash: { type: string, description: merge action — the row to fold away }
+                targetDescriptionHash: { type: string, description: merge action — the row to keep }
       responses:
-        '200': { description: Applied (confirm/dismiss/restore/setCadence) }
+        '200': { description: Applied (confirm/dismiss/restore/setCadence/rename/merge/unmerge) }
         '201': { description: Provisional row created (confirm by transactionId) }
         '202': { description: Detection scan enqueued (refresh/fullScan) }
         '400':
