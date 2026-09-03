@@ -91,10 +91,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 2,035 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 621 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 942 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 472 tests |
+| All | `pnpm test` | -- | 2,197 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 661 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,000 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 536 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 

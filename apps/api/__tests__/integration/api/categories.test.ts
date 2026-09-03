@@ -27,6 +27,7 @@ vi.mock('../../../utils/rateLimit.js', () => ({
 import handler from '../../../pages/api/categories.js';
 import prisma from '../../../prisma/prisma.js';
 import { createIsolatedTenant, teardownTenant } from '../../helpers/tenant.js';
+import { ensureReferenceData } from '../../helpers/referenceData.js';
 
 // ---------------------------------------------------------------------------
 // req / res factories
@@ -134,16 +135,15 @@ describe('PUT /api/categories — isRecurring', () => {
     });
     categoryId = cat.id;
     // A transaction bound to the category — its count must not change on update.
-    const country = await prisma.country.findFirst();
-    const currency = await prisma.currency.findFirst();
-    const bank = await prisma.bank.findFirst();
+    // CI's bliss_test has no seeded Country/Currency/Bank, so ensure them.
+    const { countryId, currencyCode, bankId } = await ensureReferenceData();
     const account = await prisma.account.create({
       data: {
         name: 'Acct',
         accountNumber: `REC-${Date.now()}`,
-        bankId: bank!.id,
-        countryId: country!.id,
-        currencyCode: currency!.id,
+        bankId,
+        countryId,
+        currencyCode,
         tenantId,
       },
     });
@@ -156,7 +156,7 @@ describe('PUT /api/categories — isRecurring', () => {
         day: 1,
         description: 'NETFLIX',
         debit: 15.99,
-        currency: currency!.id,
+        currency: currencyCode,
         accountId: account.id,
         categoryId,
         tenantId,

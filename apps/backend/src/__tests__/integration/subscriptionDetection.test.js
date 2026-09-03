@@ -10,11 +10,12 @@
 
 const prisma = require('../../../prisma/prisma');
 const { createIsolatedTenant, teardownTenant } = require('../helpers/tenant');
+const { ensureReferenceData } = require('../helpers/referenceData');
 const { handleDetectTenant } = require('../../workers/subscriptionDetectionWorker');
 const { hashMerchant } = require('../../services/recurringDetectionService');
 
-const COUNTRY = 'USA';
-const BANK_ID = 1;
+// Populated in beforeAll — CI's bliss_test has no seeded Country/Currency/Bank.
+let ref;
 
 function ymd(date) {
   const d = new Date(date);
@@ -34,8 +35,8 @@ async function seedAccount(tenantId, currency = 'USD') {
     data: {
       name: `Acct ${currency}`,
       accountNumber: `TEST-${currency}-${Date.now()}${Math.floor(Math.random() * 1000)}`,
-      bankId: BANK_ID,
-      countryId: COUNTRY,
+      bankId: ref.bankId,
+      countryId: ref.countryId,
       currencyCode: currency,
       tenantId,
     },
@@ -71,6 +72,7 @@ describe('subscription detection (integration)', () => {
   let spendingCat;
 
   beforeAll(async () => {
+    ref = await ensureReferenceData();
     ({ tenantId } = await createIsolatedTenant({ suffix: 'subsdetect' }));
     accountUSD = await seedAccount(tenantId, 'USD');
     recurringCat = await seedCategory(tenantId, 'Content & Media', true);

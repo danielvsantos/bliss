@@ -8,6 +8,7 @@ export default {
   'plaid-bank-sync': 'Bank Sync with Plaid',
   'ai-classification': 'AI Classification',
   'choosing-categories': 'Choosing the Right Category',
+  'tracking-subscriptions': 'Tracking Subscriptions',
   'financial-insights': 'Financial Insights',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
   maintenance: 'Maintenance',
