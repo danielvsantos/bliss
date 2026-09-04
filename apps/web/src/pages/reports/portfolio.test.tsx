@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -26,6 +26,14 @@ global.ResizeObserver = class {
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 window.ResizeObserver = global.ResizeObserver;
+
+// Radix Select relies on these APIs that jsdom does not implement
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+window.HTMLElement.prototype.hasPointerCapture = vi.fn();
+window.HTMLElement.prototype.releasePointerCapture = vi.fn();
+if (typeof window.PointerEvent === 'undefined') {
+  window.PointerEvent = class PointerEvent extends Event {} as unknown as typeof PointerEvent;
+}
 
 vi.mock('@/hooks/use-portfolio-items');
 vi.mock('@/hooks/use-portfolio-history');
@@ -157,5 +165,48 @@ describe('PortfolioHoldingsPage', () => {
 
     // Liabilities are shown in a flat table (no group expand needed)
     expect(screen.getByText('Mortgage')).toBeInTheDocument();
+  });
+
+  it('scopes the holdings graph to the selected account', async () => {
+    vi.mocked(UseAccountList.useAccountList).mockReturnValue({
+      accounts: [
+        { id: 42, accountName: 'Brokerage A', countryId: 'US' },
+        { id: 43, accountName: 'Brokerage B', countryId: 'US' },
+      ],
+      plaidItems: [],
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof UseAccountList.useAccountList>);
+
+    vi.mocked(UseItems.usePortfolioItems).mockReturnValue(
+      mockQueryResult({
+        portfolioCurrency: 'USD',
+        items: [
+          {
+            id: 1,
+            symbol: 'AAPL',
+            quantity: '10',
+            currentPrice: '150',
+            currency: 'USD',
+            category: { type: 'Investment', group: 'Equities' },
+            costBases: { USD: '1000' },
+          },
+        ],
+      }),
+    );
+
+    const { user } = renderPage();
+
+    // Before any selection, history is fetched tenant-wide (no accountId).
+    expect(vi.mocked(UseHistory.usePortfolioHistory).mock.calls.at(-1)?.[0]).not.toHaveProperty('accountId');
+
+    // Pick a specific account from the filter dropdown.
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: 'Brokerage A' }));
+
+    // The holdings graph query must now be scoped to that account.
+    await waitFor(() => {
+      expect(vi.mocked(UseHistory.usePortfolioHistory).mock.calls.at(-1)?.[0]).toMatchObject({ accountId: 42 });
+    });
   });
 });
