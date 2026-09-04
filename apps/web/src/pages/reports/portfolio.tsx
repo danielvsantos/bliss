@@ -324,6 +324,8 @@ export default function PortfolioHoldingsPage() {
   const { data: historyResponse, isLoading: historyLoading, error: historyError } = usePortfolioHistory({
     ...historyDateFilter,
     type: showDebt ? "Investments,Debt,Asset" : "Investments,Asset",
+    // Scope the holdings graph to the selected account, matching the table filter.
+    ...(selectedAccountId !== "all" && { accountId: parseInt(selectedAccountId, 10) }),
   });
   const historyData = useMemo(() => historyResponse?.history ?? [], [historyResponse?.history]);
   const categories = metadata?.categories ?? EMPTY_ARRAY;
