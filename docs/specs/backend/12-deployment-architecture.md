@@ -57,6 +57,10 @@ The setup script generates cryptographically random secrets and creates `.env` f
 
 All secrets are generated via `openssl rand -base64` with special characters stripped. The script refuses to overwrite an existing `.env` file.
 
+To rotate any of these secrets after initial setup, see
+[`docs/guides/key-rotation.md`](/docs/guides/key-rotation) for the
+step-by-step procedure, verification, and rollback paths.
+
 ### First Boot
 
 On first startup, the API container automatically:

@@ -1,7 +1,7 @@
 // Vitest loads .env.test via Vite's env handling before modules are imported,
 // so ENCRYPTION_SECRET is available when encryption.js initializes.
 import { describe, it, expect } from 'vitest';
-import { encrypt, decrypt } from '../../../utils/encryption.js';
+import { encrypt, decrypt, keyFingerprint } from '../../../utils/encryption.js';
 
 describe('encryption (finance-api)', () => {
   describe('encrypt()', () => {
@@ -53,6 +53,24 @@ describe('encryption (finance-api)', () => {
     it('returns original value on tampered ciphertext', () => {
       const tampered = 'this-is-not-valid-encrypted-data!!!';
       expect(decrypt(tampered)).toBe(tampered);
+    });
+  });
+
+  describe('keyFingerprint()', () => {
+    it('is stable for a given secret', () => {
+      expect(keyFingerprint('secret-a')).toBe(keyFingerprint('secret-a'));
+    });
+
+    it('differs across secrets', () => {
+      expect(keyFingerprint('secret-a')).not.toBe(keyFingerprint('secret-b'));
+    });
+
+    it('is a 16-character hex prefix', () => {
+      expect(keyFingerprint('secret-a')).toMatch(/^[0-9a-f]{16}$/);
+    });
+
+    it('defaults to the active ENCRYPTION_SECRET when no argument is given', () => {
+      expect(keyFingerprint()).toHaveLength(16);
     });
   });
 });

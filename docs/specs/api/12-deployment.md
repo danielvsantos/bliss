@@ -19,6 +19,10 @@ The standalone build bundles only the files required to run the server, producin
 
 ## 12.3. Environment Variables
 
+> Rotating any of the secrets below? See
+> [`docs/guides/key-rotation.md`](/docs/guides/key-rotation) for the
+> step-by-step procedure, verification, and rollback paths.
+
 ### Required
 
 | Variable | Description |

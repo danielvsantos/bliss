@@ -6,24 +6,28 @@
  * Run this AFTER setting ENCRYPTION_SECRET to the new key and
  * ENCRYPTION_SECRET_PREVIOUS to the old key in your environment.
  *
+ * Field coverage is driven by apps/api/scripts/lib/encryptionRotationCoverage.mjs
+ * (the same manifest verify-encryption-key.mjs and the coverage-guard test use),
+ * so adding a newly-encrypted field to that manifest is enough to bring it into
+ * this script too.
+ *
+ * Full procedure: docs/guides/key-rotation.md §2.
+ *
  * Usage:
  *   ENCRYPTION_SECRET=<new> ENCRYPTION_SECRET_PREVIOUS=<old> node scripts/rotate-encryption-key.mjs
  *   ENCRYPTION_SECRET=<new> ENCRYPTION_SECRET_PREVIOUS=<old> node scripts/rotate-encryption-key.mjs --dry-run
  *
  * After successful migration (zero failures):
- *   1. Verify the app works correctly
+ *   1. Run scripts/verify-encryption-key.mjs — it must report 0 undecryptable rows
  *   2. Remove ENCRYPTION_SECRET_PREVIOUS from all environment configs
  *   3. Restart both services
  */
 
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
+import { encryptedFields } from '@bliss/shared/encryption';
+import { ROTATION_COVERAGE, assertCoverageComplete } from './lib/encryptionRotationCoverage.mjs';
 
-// ─── Configuration ────────────────────────────────────────────────────────────
-
-const NEW_SECRET = process.env.ENCRYPTION_SECRET;
-const OLD_SECRET = process.env.ENCRYPTION_SECRET_PREVIOUS;
-const DRY_RUN    = process.argv.includes('--dry-run');
 const BATCH_SIZE = 100;
 
 // Crypto constants — must stay in sync with utils/encryption.js
@@ -55,28 +59,8 @@ function tryDecrypt(encryptedText, secret) {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
 }
 
-/** Decrypt using NEW key first; fall back to OLD key. */
-function decrypt(encryptedText) {
-  try {
-    return tryDecrypt(encryptedText, NEW_SECRET);
-  } catch {
-    return tryDecrypt(encryptedText, OLD_SECRET); // throws if both fail
-  }
-}
-
-/** Returns true if the value can already be decrypted with the new key. */
-function isOnNewKey(encryptedText) {
-  if (!encryptedText) return true;
-  try {
-    tryDecrypt(encryptedText, NEW_SECRET);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Encrypt a value with the new secret. */
-function encrypt(text, isSearchable = false) {
+/** Encrypt a value with the given secret. */
+function encryptWith(text, isSearchable, secret) {
   if (!text) return text;
 
   let salt, iv;
@@ -89,24 +73,61 @@ function encrypt(text, isSearchable = false) {
     iv   = crypto.randomBytes(IV_LENGTH);
   }
 
-  const key     = deriveKey(salt, NEW_SECRET);
+  const key     = deriveKey(salt, secret);
   const cipher  = crypto.createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return Buffer.concat([salt, iv, authTag, encrypted]).toString('base64');
 }
 
+export function keyFingerprint(secret) {
+  return crypto.createHash('sha256').update(secret).digest('hex').slice(0, 16);
+}
+
+/**
+ * Builds decrypt/encrypt/isOnNewKey helpers bound to a specific (newSecret, oldSecret) pair.
+ * Exported so unit tests can exercise the pure crypto behaviour without a database.
+ */
+export function createKeyHelpers(newSecret, oldSecret) {
+  function decrypt(encryptedText) {
+    try {
+      return tryDecrypt(encryptedText, newSecret);
+    } catch {
+      return tryDecrypt(encryptedText, oldSecret); // throws if both fail
+    }
+  }
+
+  function isOnNewKey(encryptedText) {
+    if (!encryptedText) return true;
+    try {
+      tryDecrypt(encryptedText, newSecret);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function encrypt(text, isSearchable = false) {
+    return encryptWith(text, isSearchable, newSecret);
+  }
+
+  return { decrypt, isOnNewKey, encrypt };
+}
+
 // ─── Migration logic ──────────────────────────────────────────────────────────
 
 /**
  * @param {object} opts
- * @param {string}   opts.label     - Human-readable model name for logging
- * @param {Function} opts.fetchBatch - (cursor) => Promise<record[]>
- * @param {string}   opts.idField   - Primary key field name
- * @param {Array}    opts.fields    - [{ name, searchable }]
+ * @param {string}   opts.label       - Human-readable model name for logging
+ * @param {Function} opts.fetchBatch  - (cursor) => Promise<record[]>
+ * @param {string}   opts.idField     - Primary key field name
+ * @param {Array}    opts.fields      - [{ name, searchable }]
  * @param {Function} opts.updateRecord - (id, updates) => Promise<void>
+ * @param {object}   opts.keyHelpers  - { decrypt, isOnNewKey, encrypt } from createKeyHelpers()
+ * @param {boolean}  [opts.dryRun]
  */
-async function migrateModel({ label, fetchBatch, idField, fields, updateRecord }) {
+export async function migrateModel({ label, fetchBatch, idField, fields, updateRecord, keyHelpers, dryRun = false }) {
+  const { decrypt, isOnNewKey, encrypt } = keyHelpers;
   let cursor   = undefined;
   let total    = 0;
   let migrated = 0;
@@ -147,7 +168,7 @@ async function migrateModel({ label, fetchBatch, idField, fields, updateRecord }
       }
 
       if (needsUpdate) {
-        if (!DRY_RUN) {
+        if (!dryRun) {
           await updateRecord(record[idField], updates);
         }
         migrated++;
@@ -164,148 +185,130 @@ async function migrateModel({ label, fetchBatch, idField, fields, updateRecord }
   process.stdout.write('\n');
   console.log(`  Done: ${total} total | ${migrated} migrated | ${skipped} already current | ${failed} failed`);
 
-  return { total, migrated, skipped, failed };
+  return { label, total, migrated, skipped, failed };
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+/** Maps a ROTATION_COVERAGE entry to a migrateModel() fetchBatch/updateRecord pair for the given Prisma client. */
+function buildJobFromCoverageEntry(entry, prisma, keyHelpers, dryRun) {
+  const select = { [entry.idField]: true };
+  for (const field of entry.fields) select[field.name] = true;
 
-async function main() {
-  // Validate inputs
-  if (!NEW_SECRET) {
-    console.error('ERROR: ENCRYPTION_SECRET (new key) is required');
-    process.exit(1);
-  }
-  if (!OLD_SECRET) {
-    console.error('ERROR: ENCRYPTION_SECRET_PREVIOUS (old key) is required');
-    process.exit(1);
-  }
-  if (NEW_SECRET === OLD_SECRET) {
-    console.error('ERROR: ENCRYPTION_SECRET and ENCRYPTION_SECRET_PREVIOUS are identical — nothing to do.');
-    process.exit(1);
-  }
+  return {
+    label: entry.label,
+    idField: entry.idField,
+    fields: entry.fields,
+    keyHelpers,
+    dryRun,
+    fetchBatch: (cursor) => prisma[entry.prismaModel].findMany({
+      take: BATCH_SIZE,
+      skip: cursor ? 1 : 0,
+      cursor: cursor ? { [entry.idField]: cursor } : undefined,
+      select,
+      orderBy: entry.orderBy,
+    }),
+    updateRecord: (id, data) => prisma[entry.prismaModel].update({
+      where: { [entry.idField]: id },
+      data,
+    }),
+  };
+}
 
-  const newFp = crypto.createHash('sha256').update(NEW_SECRET).digest('hex').slice(0, 16);
-  const oldFp = crypto.createHash('sha256').update(OLD_SECRET).digest('hex').slice(0, 16);
+/**
+ * Runs the full rotation against a live Prisma client. Exported (rather than
+ * executed automatically on import) so tests can drive migrateModel() in
+ * isolation without a database, and so this module is side-effect-free when
+ * imported.
+ */
+export async function run({ prisma, newSecret, oldSecret, dryRun = false }) {
+  assertCoverageComplete(encryptedFields);
+
+  const keyHelpers = createKeyHelpers(newSecret, oldSecret);
+  const newFp = keyFingerprint(newSecret);
+  const oldFp = keyFingerprint(oldSecret);
 
   console.log('╔══════════════════════════════════════════════════╗');
   console.log('║     Bliss — Encryption Key Rotation Migration    ║');
   console.log('╚══════════════════════════════════════════════════╝');
-  if (DRY_RUN) {
+  if (dryRun) {
     console.log('[DRY RUN] No changes will be written to the database.\n');
   }
   console.log(`New key fingerprint (SHA-256 prefix): ${newFp}...`);
   console.log(`Old key fingerprint (SHA-256 prefix): ${oldFp}...`);
 
-  const prisma = new PrismaClient();
+  const results = [];
+  for (const entry of ROTATION_COVERAGE) {
+    results.push(await migrateModel(buildJobFromCoverageEntry(entry, prisma, keyHelpers, dryRun)));
+  }
 
-  try {
-    const results = [];
+  const totals = results.reduce(
+    (acc, r) => ({
+      total:    acc.total    + r.total,
+      migrated: acc.migrated + r.migrated,
+      skipped:  acc.skipped  + r.skipped,
+      failed:   acc.failed   + r.failed,
+    }),
+    { total: 0, migrated: 0, skipped: 0, failed: 0 }
+  );
 
-    // ── User.email ────────────────────────────────────────────────────────────
-    results.push(await migrateModel({
-      label: 'User.email',
-      idField: 'id',
-      fields: [{ name: 'email', searchable: true }],
-      fetchBatch: (cursor) => prisma.user.findMany({
-        take: BATCH_SIZE,
-        skip: cursor ? 1 : 0,
-        cursor: cursor ? { id: cursor } : undefined,
-        select: { id: true, email: true },
-        orderBy: { id: 'asc' },
-      }),
-      updateRecord: (id, data) => prisma.user.update({ where: { id }, data }),
-    }));
+  console.log('\n╔══════════════════════════════════════════════════╗');
+  console.log('║                 Migration Summary                ║');
+  console.log('╚══════════════════════════════════════════════════╝');
+  console.log(`  Total records processed : ${totals.total}`);
+  console.log(`  Re-encrypted            : ${totals.migrated}`);
+  console.log(`  Already on new key      : ${totals.skipped}`);
+  console.log(`  Failed                  : ${totals.failed}`);
 
-    // ── Account.accountNumber ─────────────────────────────────────────────────
-    results.push(await migrateModel({
-      label: 'Account.accountNumber',
-      idField: 'id',
-      fields: [{ name: 'accountNumber', searchable: false }],
-      fetchBatch: (cursor) => prisma.account.findMany({
-        take: BATCH_SIZE,
-        skip: cursor ? 1 : 0,
-        cursor: cursor ? { id: cursor } : undefined,
-        select: { id: true, accountNumber: true },
-        orderBy: { id: 'asc' },
-      }),
-      updateRecord: (id, data) => prisma.account.update({ where: { id }, data }),
-    }));
-
-    // ── Transaction.description + details ────────────────────────────────────
-    results.push(await migrateModel({
-      label: 'Transaction.description/details',
-      idField: 'id',
-      fields: [
-        { name: 'description', searchable: false },
-        { name: 'details',     searchable: false },
-      ],
-      fetchBatch: (cursor) => prisma.transaction.findMany({
-        take: BATCH_SIZE,
-        skip: cursor ? 1 : 0,
-        cursor: cursor ? { id: cursor } : undefined,
-        select: { id: true, description: true, details: true },
-        orderBy: { id: 'asc' },
-      }),
-      updateRecord: (id, data) => prisma.transaction.update({ where: { id }, data }),
-    }));
-
-    // ── PlaidItem.accessToken ─────────────────────────────────────────────────
-    results.push(await migrateModel({
-      label: 'PlaidItem.accessToken',
-      idField: 'id',
-      fields: [{ name: 'accessToken', searchable: false }],
-      fetchBatch: (cursor) => prisma.plaidItem.findMany({
-        take: BATCH_SIZE,
-        skip: cursor ? 1 : 0,
-        cursor: cursor ? { id: cursor } : undefined,
-        select: { id: true, accessToken: true },
-        orderBy: { id: 'asc' },
-      }),
-      updateRecord: (id, data) => prisma.plaidItem.update({ where: { id }, data }),
-    }));
-
-    // ── Summary ───────────────────────────────────────────────────────────────
-    const totals = results.reduce(
-      (acc, r) => ({
-        total:    acc.total    + r.total,
-        migrated: acc.migrated + r.migrated,
-        skipped:  acc.skipped  + r.skipped,
-        failed:   acc.failed   + r.failed,
-      }),
-      { total: 0, migrated: 0, skipped: 0, failed: 0 }
-    );
-
-    console.log('\n╔══════════════════════════════════════════════════╗');
-    console.log('║                 Migration Summary                ║');
-    console.log('╚══════════════════════════════════════════════════╝');
-    console.log(`  Total records processed : ${totals.total}`);
-    console.log(`  Re-encrypted            : ${totals.migrated}`);
-    console.log(`  Already on new key      : ${totals.skipped}`);
-    console.log(`  Failed                  : ${totals.failed}`);
-
-    if (DRY_RUN) {
-      console.log('\n[DRY RUN] Re-run without --dry-run to apply these changes.');
-      return;
-    }
-
-    if (totals.failed > 0) {
-      console.error(`\nWARNING: ${totals.failed} field(s) could not be migrated.`);
-      console.error('Investigate the errors above before removing ENCRYPTION_SECRET_PREVIOUS.');
-      process.exit(1);
-    }
-
+  if (dryRun) {
+    console.log('\n[DRY RUN] Re-run without --dry-run to apply these changes.');
+  } else if (totals.failed > 0) {
+    console.error(`\nWARNING: ${totals.failed} field(s) could not be migrated.`);
+    console.error('Investigate the errors above before running verify-encryption-key.mjs.');
+  } else {
     console.log('\n✓ Migration complete. Next steps:');
-    console.log('  1. Verify that the application reads and writes data correctly');
+    console.log('  1. node apps/api/scripts/verify-encryption-key.mjs — must report 0 undecryptable rows');
     console.log('  2. Remove ENCRYPTION_SECRET_PREVIOUS from all environment configs');
     console.log('     (Vercel, Railway, or wherever your services are hosted)');
     console.log('  3. Restart both bliss-finance-api and bliss-backend-service');
+  }
 
+  return totals;
+}
+
+// ─── CLI entry point (guarded so importing this module has no side effects) ──
+
+async function main() {
+  const newSecret = process.env.ENCRYPTION_SECRET;
+  const oldSecret = process.env.ENCRYPTION_SECRET_PREVIOUS;
+  const dryRun = process.argv.includes('--dry-run');
+
+  if (!newSecret) {
+    console.error('ERROR: ENCRYPTION_SECRET (new key) is required');
+    process.exit(1);
+  }
+  if (!oldSecret) {
+    console.error('ERROR: ENCRYPTION_SECRET_PREVIOUS (old key) is required');
+    process.exit(1);
+  }
+  if (newSecret === oldSecret) {
+    console.error('ERROR: ENCRYPTION_SECRET and ENCRYPTION_SECRET_PREVIOUS are identical — nothing to do.');
+    process.exit(1);
+  }
+
+  const prisma = new PrismaClient();
+  try {
+    const totals = await run({ prisma, newSecret, oldSecret, dryRun });
+    if (!dryRun && totals.failed > 0) {
+      process.exit(1);
+    }
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main().catch((err) => {
-  console.error('\nMigration aborted:', err.message);
-  process.exit(1);
-});
+const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  main().catch((err) => {
+    console.error('\nMigration aborted:', err.message);
+    process.exit(1);
+  });
+}
