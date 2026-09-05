@@ -222,7 +222,7 @@ function SubscriptionRow({
 
   return (
     <div className="border-b border-border/60 last:border-0">
-      <div className="flex items-center gap-3 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -315,7 +315,7 @@ function SubscriptionRow({
         </div>
 
         {/* Amounts */}
-        <div className="shrink-0 w-32 text-right">
+        <div className="shrink-0 w-24 sm:w-32 text-right">
           <div className="font-medium tabular-nums">
             {item.amount != null && item.currency
               ? formatCurrency(item.amount, item.currency, locale)
@@ -339,7 +339,7 @@ function SubscriptionRow({
         </div>
 
         {/* Actions */}
-        <div className="shrink-0 flex items-center gap-1">
+        <div className="shrink-0 flex items-center gap-1 w-full sm:w-auto justify-end order-last sm:order-none">
           {merging ? (
             <>
               <Select onValueChange={runMerge}>
