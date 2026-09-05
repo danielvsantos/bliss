@@ -5,9 +5,11 @@ breaks while you're rotating it, the exact steps, how to verify it worked,
 and how to roll back. You should not need to read application source to
 follow it.
 
-**Reference topology:** every procedure below is written for Docker Compose
-first. If you run split-cloud (web + API on Vercel, backend worker on
-Railway — Daniel's production setup), each section has a **Split-cloud
+**Reference topology:** Docker Compose is Bliss's primary, officially
+supported deployment, so every procedure below is written for it first. If
+you instead run the split-cloud architecture from the
+[Multi-Tenant Deployment](./multi-tenant-deployment) guide (web + API on
+Vercel, backend worker on Railway), each section has a **Split-cloud
 delta** callout with the extra step.
 
 **Read this before rotating anything for the first time**, especially
@@ -466,5 +468,6 @@ their worst case is "briefly degraded, self-heals," not data loss.
 - [`docs/specs/backend/12-deployment-architecture.md`](/docs/specs/backend/12-deployment-architecture) —
   full deployment topology, including the Docker Compose and split-cloud
   PaaS paths this runbook assumes.
-- [Multi-Tenant Deployment](./multi-tenant-deployment.md) — background on
-  why Daniel's production instance is split across Vercel + Railway.
+- [Multi-Tenant Deployment](./multi-tenant-deployment.md) — why the
+  split-cloud Vercel + Railway architecture is recommended for hosting Bliss
+  as a multi-user service, and its full topology.
