@@ -279,6 +279,11 @@ function SubscriptionRow({
           </div>
         </div>
 
+        {/* Status — kept next to the name so the amount/actions line below stays short on mobile */}
+        <div className="shrink-0">
+          <StatusBadge status={item.status} t={t} />
+        </div>
+
         {/* Cadence */}
         <div className="hidden sm:block shrink-0 w-28 text-right">
           {editingCadence ? (
@@ -330,16 +335,13 @@ function SubscriptionRow({
           ) : null}
         </div>
 
-        {/* Next expected / status */}
+        {/* Next expected */}
         <div className="hidden md:block shrink-0 w-28 text-right text-xs text-muted-foreground">
           {formatRelative(item.nextExpectedAt, t)}
         </div>
-        <div className="shrink-0">
-          <StatusBadge status={item.status} t={t} />
-        </div>
 
         {/* Actions */}
-        <div className="shrink-0 flex items-center gap-1 w-full sm:w-auto justify-end order-last sm:order-none">
+        <div className="shrink-0 flex items-center gap-1">
           {merging ? (
             <>
               <Select onValueChange={runMerge}>
@@ -385,8 +387,9 @@ function SubscriptionRow({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-muted-foreground"
+                  className="text-muted-foreground px-2 sm:px-3"
                   disabled={dismiss.isPending}
+                  aria-label={t('subscriptions.remove')}
                   onClick={() =>
                     dismiss.mutate(item.descriptionHash, {
                       onSuccess: () => toast({ title: t('subscriptions.removed') }),
@@ -394,15 +397,17 @@ function SubscriptionRow({
                     })
                   }
                 >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  {t('subscriptions.remove')}
+                  <Trash2 className="h-4 w-4 sm:mr-1" />
+                  <span className="hidden sm:inline">{t('subscriptions.remove')}</span>
                 </Button>
               ) : (
                 <>
                   <Button
                     size="sm"
                     variant="outline"
+                    className="px-2 sm:px-3"
                     disabled={confirm.isPending}
+                    aria-label={t('subscriptions.confirm')}
                     onClick={() =>
                       confirm.mutate(
                         { descriptionHash: item.descriptionHash },
@@ -410,14 +415,15 @@ function SubscriptionRow({
                       )
                     }
                   >
-                    <Check className="h-4 w-4 mr-1" />
-                    {t('subscriptions.confirm')}
+                    <Check className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{t('subscriptions.confirm')}</span>
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-muted-foreground"
+                    className="text-muted-foreground px-2 sm:px-3"
                     disabled={dismiss.isPending}
+                    aria-label={t('subscriptions.notASubscription')}
                     onClick={() =>
                       dismiss.mutate(item.descriptionHash, {
                         onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
@@ -425,8 +431,8 @@ function SubscriptionRow({
                       })
                     }
                   >
-                    <X className="h-4 w-4 mr-1" />
-                    {t('subscriptions.notASubscription')}
+                    <X className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{t('subscriptions.notASubscription')}</span>
                   </Button>
                 </>
               )}
