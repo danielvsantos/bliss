@@ -796,6 +796,15 @@ const es = {
     selectBank: "Selecciona un banco",
     selectCurrency: "Selecciona una moneda",
     selectCountry: "Selecciona un país",
+    addBank: "+ Añadir un nuevo banco",
+    addBankError: "No se pudo añadir el banco. Por favor, inténtalo de nuevo.",
+  },
+  addBankDialog: {
+    title: "Añadir un nuevo banco",
+    description: "Introduce el nombre del banco que deseas añadir.",
+    nameLabel: "Nombre del banco",
+    namePlaceholder: "p. ej. Chase, Monzo, Revolut",
+    validationError: "El nombre del banco debe tener entre 2 y 100 caracteres.",
   },
   categoryForm: {
     name: "Nombre de la categoría",
