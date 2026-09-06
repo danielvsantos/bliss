@@ -8,21 +8,21 @@ follow it.
 **Reference topology:** Docker Compose is Bliss's primary, officially
 supported deployment, so every procedure below is written for it first. If
 you instead run the single-Railway-project architecture from the
-[Multi-Tenant Deployment](./multi-tenant-deployment) guide (web, API,
-backend, Postgres, and Redis all in one Railway project, on its private
+[Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment) guide (web,
+API, backend, Postgres, and Redis all in one Railway project, on its private
 network), each section has a **Railway note** callout with the extra step —
 it's the same procedure, just applied to each Railway service in turn
 instead of one `docker compose` restart.
 
-**Read this before rotating anything for the first time**, especially
-[§2 `ENCRYPTION_SECRET`](#2-encryption_secret) — it is the one secret whose
-failure mode is irreversible.
+**Read this before rotating anything for the first time**, especially the
+[ENCRYPTION_SECRET section](#encryption_secret) below — it is the one
+secret whose failure mode is irreversible.
 
 ---
 
-## §0. Before you start
+## Before you start
 
-### 0.1 Pre-flight checklist
+### Pre-flight checklist
 
 Run through this before rotating *any* secret, not just `ENCRYPTION_SECRET`:
 
@@ -34,22 +34,24 @@ Run through this before rotating *any* secret, not just `ENCRYPTION_SECRET`:
       note) — you'll want the old value on hand for rollback, and you should
       never have zero copies of a working `.env`.
 - [ ] **Maintenance window chosen.** Every procedure except the optional
-      zero-re-login JWT variant (§3.2) takes a short window (single-digit
-      minutes) where something is briefly degraded. Pick a low-traffic time.
+      zero-re-login JWT variant (see Auth secrets below) takes a short
+      window (single-digit minutes) where something is briefly degraded.
+      Pick a low-traffic time.
 - [ ] **Rollback owner identified.** For a single-operator instance this is
       just "you, and you know the plan" — but write down who's driving before
       you start.
 - [ ] **(Railway, first `ENCRYPTION_SECRET` rotation) Dry run on a cloned
       environment.** Before your first production `ENCRYPTION_SECRET`
       rotation, duplicate your Railway environment (see Multi-Tenant
-      Deployment's "Staging environments") and run the full §2 procedure
+      Deployment's ["Staging environments"](/docs/guides/multi-tenant-deployment#staging-environments))
+      and run the full [ENCRYPTION_SECRET procedure](#encryption_secret)
       there against a scratch database seeded with `seed-plaid-fixtures.mjs`
       (or a `pg_dump` copy of production). This is the only way to rehearse
-      the per-service redeploy ordering (§0.2) without risking production
-      data. Not required for Docker Compose, and not required for every
-      rotation — just the first one.
+      the [multi-service redeploy ordering](#multi-service-redeploy-ordering)
+      without risking production data. Not required for Docker Compose, and
+      not required for every rotation — just the first one.
 
-### 0.2 Multi-service redeploy ordering
+### Multi-service redeploy ordering
 
 If you're on Docker Compose, skip this — `docker compose up` restarts
 everything atomically enough that this doesn't apply.
@@ -72,12 +74,13 @@ each section states what "normal" looks like during that window.
 
 **Confirming a redeploy landed:** the service's "Deployments" tab in the
 Railway dashboard shows the new deploy as "Active". Check the service's logs
-for the `[env] ENCRYPTION_SECRET fingerprint: ...` startup line (§2) to
-confirm which key it actually loaded — this is more reliable than trusting
-the dashboard alone, since a deploy can show "Active" before you're sure it
-picked up the variable you just changed.
+for the `[env] ENCRYPTION_SECRET fingerprint: ...` startup line (see
+[ENCRYPTION_SECRET](#encryption_secret)) to confirm which key it actually
+loaded — this is more reliable than trusting the dashboard alone, since a
+deploy can show "Active" before you're sure it picked up the variable you
+just changed.
 
-### 0.3 Verification catalogue
+### Verification catalogue
 
 | Secret | How you know it worked |
 |---|---|
@@ -87,29 +90,29 @@ picked up the variable you just changed.
 | `POSTGRES_PASSWORD` | Both `api` and `backend` connect on restart (no `P1000`/auth errors in logs); `GET /health` on the backend returns 200. |
 | `REDIS_PASSWORD` | Backend `GET /health` returns 200 (it pings Redis); BullMQ jobs process again. |
 
-### 0.4 Rollback catalogue
+### Rollback catalogue
 
 | Secret | Reversible? | Until when |
 |---|---|---|
-| `ENCRYPTION_SECRET` | Yes, until `verify-encryption-key.mjs` passes AND `ENCRYPTION_SECRET_PREVIOUS` is removed. After that, only a database restore can recover data encrypted under a key you've discarded. | Before `ENCRYPTION_SECRET_PREVIOUS` removal (§2.4). |
+| `ENCRYPTION_SECRET` | Yes, until `verify-encryption-key.mjs` passes AND `ENCRYPTION_SECRET_PREVIOUS` is removed. After that, only a database restore can recover data encrypted under a key you've discarded. | Before `ENCRYPTION_SECRET_PREVIOUS` removal (see [Rollback](#rollback)). |
 | `JWT_SECRET_CURRENT` | Yes, any time — restore the old value and redeploy. Users signed in during the bad window need to sign in again either way. | Always. |
 | `NEXTAUTH_SECRET` | Yes, any time. | Always. |
 | `INTERNAL_API_KEY` | Yes, any time. | Always. |
 | `POSTGRES_PASSWORD` / `REDIS_PASSWORD` | Yes, any time — change it back at the engine and redeploy the services that reference it. | Always. |
 
-### 0.5 Cleanup (every rotation)
+### Cleanup (every rotation)
 
 - [ ] Remove any `*_PREVIOUS` value once you've confirmed you no longer need
       the fallback (immediately for `ENCRYPTION_SECRET` after verification;
       after the 24h TTL window if you used the optional JWT variant).
-- [ ] Re-archive the updated `.env` (see 0.1).
+- [ ] Re-archive the updated `.env` (see the pre-flight checklist above).
 - [ ] Confirm the new secret value isn't sitting in shell history
       (`history | grep`), a terminal scrollback you're about to screen-share,
       or CI logs (`echo`-ing a secret into a GitHub Actions log, for example).
 
 ---
 
-## §1. Secret inventory
+## Secret inventory
 
 Every secret Bliss reads, where it lives, what breaks if it's wrong, and how
 you recover. Cross-checked against `.env.example`,
@@ -119,7 +122,7 @@ you recover. Cross-checked against `.env.example`,
 
 | Secret | Purpose | Read by | Docker `.env` | Railway | If wrong | Recovery |
 |---|---|---|---|---|---|---|
-| `ENCRYPTION_SECRET` | AES-256-GCM key for data at rest (transaction descriptions, account numbers, Plaid tokens, user emails, `PlaidTransaction.rawJson`) | api, backend | ✅ | ✅ (api + backend) | Every encrypted field unreadable | **Irreversible** without the correct key — see §2 |
+| `ENCRYPTION_SECRET` | AES-256-GCM key for data at rest (transaction descriptions, account numbers, Plaid tokens, user emails, `PlaidTransaction.rawJson`) | api, backend | ✅ | ✅ (api + backend) | Every encrypted field unreadable | **Irreversible** without the correct key — see [ENCRYPTION_SECRET](#encryption_secret) below |
 | `ENCRYPTION_SECRET_PREVIOUS` | Dual-key fallback during rotation | api, backend | ✅ (rotation only) | ✅ (rotation only) | N/A — optional | N/A |
 | `JWT_SECRET_CURRENT` | Signs session JWTs | api | ✅ | ✅ (api only) | Sign-in fails / all sessions invalid | Restart |
 | `JWT_SECRET_PREVIOUS` | Optional zero-re-login fallback during JWT rotation | api | ✅ (rotation only) | ✅ (rotation only) | N/A — optional | N/A |
@@ -138,8 +141,7 @@ warned by the api for JWT denylist).
 ### Third-party credentials (listed, not covered by this runbook)
 
 These are rotated in the provider's own console. The mechanics are the
-provider's concern — this table exists so §1's inventory is complete, per
-AC1.
+provider's concern — this table exists so the inventory above is complete.
 
 | Secret | Provider | Rotate in |
 |---|---|---|
@@ -153,16 +155,17 @@ AC1.
 
 ---
 
-## §2. `ENCRYPTION_SECRET`
+## ENCRYPTION_SECRET
 
 **What breaks during this:** email/password sign-in (and Google sign-in's
 find-or-create lookup) is **down** for the few minutes the re-encryption
 script is running, because `User.email` lookups are searchable-encrypted
-with the *current* secret only (see 2.5). JWT-cookie sessions are
-unaffected. This is the one procedure in this runbook that has an
-irreversible failure mode if you skip a step — follow it in order.
+with the *current* secret only (see "Why sign-in breaks mid-rotation"
+below). JWT-cookie sessions are unaffected. This is the one procedure in
+this runbook that has an irreversible failure mode if you skip a step —
+follow it in order.
 
-### 2.1 The sequence
+### The sequence
 
 1. **Generate a new key:**
    ```bash
@@ -178,8 +181,9 @@ irreversible failure mode if you skip a step — follow it in order.
    encrypted under either key (`decrypt()` in `packages/shared/src/encryption.js`
    tries the current secret, then falls back to `ENCRYPTION_SECRET_PREVIOUS`).
 
-   *Railway note:* redeploy **api first**, confirm it landed (§0.2) — it's
-   both a reader and, via searchable-email lookups, the service most
+   *Railway note:* redeploy **api first**, confirm it landed (see
+   [Multi-service redeploy ordering](#multi-service-redeploy-ordering)) —
+   it's both a reader and, via searchable-email lookups, the service most
    sensitive to a mismatch. Then redeploy **backend**, confirm. Expect well
    under a minute where they're on different versions; during that window
    both still have the old key as their *primary* `ENCRYPTION_SECRET`, so
@@ -225,7 +229,7 @@ irreversible failure mode if you skip a step — follow it in order.
 8. **Re-run `verify-encryption-key.mjs` once more** post-cleanup as a final
    confirmation that everything is healthy with only the new key present.
 
-### 2.2 Key-identity aid
+### Key-identity aid
 
 Both `apps/api/instrumentation.js` and `apps/backend/src/index.js` log a line
 at startup:
@@ -236,22 +240,23 @@ at startup:
 
 This is a fingerprint, not the secret — safe to have in logs. Use it to
 confirm which key a running service actually loaded, especially useful
-during the multi-service redeploy window (§0.2) or if a redeploy seems to
-not have picked up your change. `rotate-encryption-key.mjs` and
-`verify-encryption-key.mjs` print the same fingerprint format for the keys
-they're using, so you can cross-check.
+during the multi-service redeploy window (see [above](#multi-service-redeploy-ordering))
+or if a redeploy seems to not have picked up your change.
+`rotate-encryption-key.mjs` and `verify-encryption-key.mjs` print the same
+fingerprint format for the keys they're using, so you can cross-check.
 
-### 2.3 Railway note (summary)
+### Railway note (summary)
 
-See step-by-step callouts in 2.1. Short version: redeploy api first at every
-step, backend second, confirm each via the fingerprint log line before
-moving on — both live in the same Railway project, so this is two quick
-redeploys from one dashboard, not two separate platforms. The whole rotation
-(steps 2–7) should take low single-digit minutes on a typical dataset;
-larger datasets take longer at step 4/5 proportional to row count (both
-scripts batch in pages of 100–200 and print running totals).
+See the step-by-step callouts in "The sequence" above. Short version:
+redeploy api first at every step, backend second, confirm each via the
+fingerprint log line before moving on — both live in the same Railway
+project, so this is two quick redeploys from one dashboard, not two separate
+platforms. The whole rotation (steps 2–7) should take low single-digit
+minutes on a typical dataset; larger datasets take longer at steps 4–5
+proportional to row count (both scripts batch in pages of 100–200 and print
+running totals).
 
-### 2.4 Rollback
+### Rollback
 
 **Only possible while `ENCRYPTION_SECRET_PREVIOUS` is still set and step 5
 (verification) has not yet passed.** If something looks wrong after step 4
@@ -272,9 +277,9 @@ but before step 5 passes:
 No manual database edits are required or supported. If you've already
 completed step 6 (removed `ENCRYPTION_SECRET_PREVIOUS`) and something is
 wrong, you are past the point of a clean rollback — restore from the backup
-taken in §0.1.
+taken in the [pre-flight checklist](#pre-flight-checklist).
 
-### 2.5 Why sign-in breaks mid-rotation
+### Why sign-in breaks mid-rotation
 
 `prisma/prisma.js`'s Prisma extension encrypts WHERE-clause lookups on
 searchable fields (just `User.email` today) using the **current**
@@ -290,30 +295,32 @@ practical. JWT-cookie sessions (already-signed-in users) are unaffected —
 `decrypt()` still has its old-key fallback for reading the JWT-bound
 `req.user` data.
 
-### 2.6 Emergency (key compromised)
+### Emergency: ENCRYPTION_SECRET compromised
 
 If `ENCRYPTION_SECRET` is confirmed leaked, skip the "pick a quiet window"
-niceties in §0.1 and go straight to step 1 — the exposure clock is already
-running. Everything else in the sequence stays the same; do not skip step 5
-(verification) even under time pressure, since that's the step protecting
-you from data loss.
+niceties in the [pre-flight checklist](#pre-flight-checklist) and go
+straight to step 1 — the exposure clock is already running. Everything else
+in the sequence stays the same; do not skip step 5 (verification) even
+under time pressure, since that's the step protecting you from data loss.
 
 ---
 
-## §3. Auth secrets — `JWT_SECRET_CURRENT` + `NEXTAUTH_SECRET`
+## Auth secrets — JWT_SECRET_CURRENT + NEXTAUTH_SECRET
 
 **What breaks during this:** existing sessions are invalidated; users sign
 in again. That's the whole user-visible impact — there's no data-loss risk
 here.
 
-### 3.1 Default path (both secrets, short window)
+### Default path
+
+Covers both secrets and takes a short window:
 
 1. Generate new values the same way as any secret:
    ```bash
    openssl rand -base64 48 | tr -d '\n/+=' | head -c 48
    ```
 2. Set the new `JWT_SECRET_CURRENT` and/or `NEXTAUTH_SECRET` on all services
-   that read them (api only — see §1 inventory).
+   that read them (api only — see the [inventory](#secret-inventory) above).
 3. Redeploy.
 4. Done. All previously issued JWTs and NextAuth session tokens stop
    validating; every user needs to sign in again once.
@@ -327,7 +334,7 @@ secret in use is fixed until the next redeploy/cold start; there's no
 "stale signer" window to worry about mid-deploy the way there is with
 `ENCRYPTION_SECRET`.
 
-### 3.2 Optional: zero-re-login variant for `JWT_SECRET_CURRENT` only
+### Optional: zero-re-login variant for JWT_SECRET_CURRENT only
 
 If you'd rather not force everyone to sign in again, `JWT_SECRET` rotation
 supports a dual-key fallback that `NEXTAUTH_SECRET` does not:
@@ -352,17 +359,17 @@ Note the `JWT_SECRET` legacy alias: if your `.env` still has a bare
 `JWT_SECRET_CURRENT` and before `JWT_SECRET_PREVIOUS`. New installs don't
 set it — ignore this note if you don't have it.
 
-### 3.3 Emergency (key compromised)
+### Emergency: JWT secret compromised
 
 Compromised JWT secret means anyone with it can forge session tokens. Go
-straight to §3.1 (the default, forced-re-login path) — do not use the
-zero-re-login variant, since that deliberately keeps old-secret-signed
-tokens valid for 24 hours, which is exactly what you don't want after a
-leak.
+straight to the [Default path](#default-path) above (the forced-re-login
+path) — do not use the zero-re-login variant, since that deliberately keeps
+old-secret-signed tokens valid for 24 hours, which is exactly what you don't
+want after a leak.
 
 ---
 
-## §4. Infra secrets — `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`
+## Infra secrets — INTERNAL_API_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD
 
 **What breaks during this:** a short maintenance window per secret. BullMQ
 jobs already queued are durable and retry/recover once the affected service
@@ -375,7 +382,7 @@ re-triggered the next time the same data changes (e.g. the next edit to that
 transaction, or the nightly revaluation cron). This is expected and
 self-heals; it is not silent data loss.
 
-### 4.1 `INTERNAL_API_KEY`
+### INTERNAL_API_KEY
 
 Stop → change → start, both services need to agree at all times (there's no
 dual-accept):
@@ -403,7 +410,7 @@ watch for in one place (backend logs) rather than swallowed api-side
 retries. Since both services are in the same project, this is two quick
 redeploys back to back, not a cross-platform coordination problem.
 
-### 4.2 `POSTGRES_PASSWORD`
+### POSTGRES_PASSWORD
 
 1. Generate a new value:
    ```bash
@@ -418,12 +425,12 @@ redeploys back to back, not a cross-platform coordination problem.
 3. **Railway:** rotate the password from the Postgres plugin's own settings
    (regenerate credentials, or set a new one directly). Because `api` and
    `backend` reference the connection string as `${{Postgres.DATABASE_URL}}`
-   rather than a copy-pasted value (see Multi-Tenant Deployment), you don't
-   need to manually update `DATABASE_URL` in two places — redeploy `api` and
-   `backend` so each resolves the new value. Order doesn't matter here: both
-   are pure readers of the connection string, and there's no dual-accept
-   concern the way there is with `INTERNAL_API_KEY` — you simply can't
-   connect with the old string once the plugin has rotated it.
+   rather than a copy-pasted value (see [Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment)),
+   you don't need to manually update `DATABASE_URL` in two places — redeploy
+   `api` and `backend` so each resolves the new value. Order doesn't matter
+   here: both are pure readers of the connection string, and there's no
+   dual-accept concern the way there is with `INTERNAL_API_KEY` — you simply
+   can't connect with the old string once the plugin has rotated it.
 4. Restart/redeploy api and backend.
 5. Confirm: `GET /health` on the backend returns 200; check api logs for
    successful Prisma connection (no `P1000`/authentication errors).
@@ -433,7 +440,7 @@ deploy && node prisma/seed.js` on every boot (`docker/Dockerfile.api`
 CMD) — this is idempotent and safe to run again during this restart, it
 will not re-apply already-applied migrations or duplicate seed data.
 
-### 4.3 `REDIS_PASSWORD`
+### REDIS_PASSWORD
 
 1. Generate a new value:
    ```bash
@@ -443,7 +450,7 @@ will not re-apply already-applied migrations or duplicate seed data.
    `docker compose down && docker compose up -d`. Update `REDIS_URL` to
    embed the new password.
 3. **Railway:** rotate from the Redis plugin's own settings. `backend`
-   references it as `${{Redis.REDIS_URL}}` (see Multi-Tenant Deployment),
+   references it as `${{Redis.REDIS_URL}}` (see [Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment)),
    so — same as `POSTGRES_PASSWORD` — you don't manually copy a connection
    string anywhere; just redeploy `backend` so it resolves the new value.
    `api` doesn't connect to Redis directly, so it needs no change.
@@ -451,22 +458,24 @@ will not re-apply already-applied migrations or duplicate seed data.
 5. Confirm: `GET /health` returns 200 (it pings Redis); watch backend logs
    for BullMQ workers reconnecting and resuming job processing.
 
-### 4.4 Emergency (any of the three compromised)
+### Emergency: infra secret compromised
 
-Same steps, just don't wait for a "good" maintenance window — the exposure
-clock matters more than user-visible disruption for these three, since
-their worst case is "briefly degraded, self-heals," not data loss.
+Same steps for whichever of the three is compromised — just don't wait for
+a "good" maintenance window. The exposure clock matters more than
+user-visible disruption for these three, since their worst case is "briefly
+degraded, self-heals," not data loss.
 
 ---
 
-## §5. Related reading
+## Next steps
 
-- [Maintenance](./maintenance.md) — what to do when data looks wrong (not a
-  key-rotation concern, but often checked around the same time).
-- [`docs/specs/api/12-deployment.md`](/docs/specs/api/12-deployment) —
-  api environment variable reference (the Docker Compose path; some of its
-  PaaS-specific notes predate the current Railway topology below).
-- [Multi-Tenant Deployment](./multi-tenant-deployment.md) — the current,
-  authoritative reference for the single-Railway-project production
-  topology this runbook's Railway notes assume: private networking,
-  `${{service.VAR}}` references, and staging environments.
+- [Maintenance](/docs/guides/maintenance) — what to do when data looks
+  wrong (not a key-rotation concern, but often checked around the same
+  time).
+- [Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment) — the
+  current, authoritative reference for the single-Railway-project
+  production topology this runbook's Railway notes assume: private
+  networking, `${{service.VAR}}` references, and staging environments.
+- [`docs/specs/api/12-deployment.md`](/docs/specs/api/12-deployment) — api
+  environment variable reference (the Docker Compose path; some of its
+  PaaS-specific notes predate the current Railway topology above).

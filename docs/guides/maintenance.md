@@ -216,7 +216,7 @@ problem — a rebuild won't help.
 Rotating `ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET`,
 `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, or `REDIS_PASSWORD` is a
 maintenance operation, but it's involved enough to have its own guide: see
-[Key Rotation](./key-rotation.md) for the full inventory, step-by-step
+[Key Rotation](/docs/guides/key-rotation) for the full inventory, step-by-step
 procedures, verification steps, and rollback paths — especially before
 touching `ENCRYPTION_SECRET`, which is the one secret whose failure mode is
 irreversible.

@@ -12,4 +12,5 @@ export default {
   'financial-insights': 'Financial Insights',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
   maintenance: 'Maintenance',
+  'key-rotation': 'Key Rotation',
 };

@@ -181,8 +181,8 @@ without manual duplication across services.
 Each service redeploys independently when its own variables or watched paths
 change -- there is no atomic "deploy all" across the project. This matters
 when rotating a secret read by more than one service; see
-[`docs/guides/key-rotation.md`](/docs/guides/key-rotation) §0.2 for the
-ordering this implies.
+["Multi-service redeploy ordering"](/docs/guides/key-rotation#multi-service-redeploy-ordering)
+in `docs/guides/key-rotation.md` for the ordering this implies.
 
 ## 12.7. Production Considerations
 
