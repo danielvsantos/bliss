@@ -4,6 +4,12 @@ export async function register() {
     const { validateEnv } = await import('./utils/validateEnv.js');
     validateEnv();
 
+    // Logs the SHA-256 prefix of the loaded ENCRYPTION_SECRET (never the secret
+    // itself) so an operator can confirm which key a running instance has
+    // picked up during a rotation. See docs/guides/key-rotation.md §2.
+    const { keyFingerprint } = await import('./utils/encryption.js');
+    console.log('[env] ENCRYPTION_SECRET fingerprint:', keyFingerprint());
+
     // Sentry must be initialized before OTEL so it can instrument spans
     const { init, prismaIntegration } = await import('@sentry/nextjs');
     init({

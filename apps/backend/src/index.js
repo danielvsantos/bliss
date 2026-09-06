@@ -15,6 +15,7 @@ const { initializeRedis, disconnectRedis } = require('./utils/redis');
 const logger = require('./utils/logger');
 const { waitForSchemaAndRefresh } = require('./utils/categoryCache');
 const { validateEnv } = require('./utils/validateEnv');
+const { keyFingerprint } = require('./utils/encryption');
 
 const PORT = process.env.PORT || 3001;
 
@@ -38,6 +39,11 @@ const startServer = async () => {
 
         // 0. Validate environment variables
         validateEnv();
+
+        // Logs the SHA-256 prefix of the loaded ENCRYPTION_SECRET (never the
+        // secret itself) so an operator can confirm which key this instance
+        // picked up during a rotation. See docs/guides/key-rotation.md §2.
+        logger.info('[env] ENCRYPTION_SECRET fingerprint', { fingerprint: keyFingerprint() });
 
         // 1. Initialize Redis Connection (Needed by both)
         await initializeRedis();
