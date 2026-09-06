@@ -33,10 +33,14 @@ Run through this before rotating *any* secret, not just `ENCRYPTION_SECRET`:
 - [ ] **Current `.env` archived** somewhere safe (password manager, encrypted
       note) — you'll want the old value on hand for rollback, and you should
       never have zero copies of a working `.env`.
-- [ ] **Maintenance window chosen.** Every procedure except the optional
-      zero-re-login JWT variant (see Auth secrets below) takes a short
-      window (single-digit minutes) where something is briefly degraded.
-      Pick a low-traffic time.
+- [ ] **Maintenance window chosen.** The auth and infra secrets below are
+      restart-based and take low single-digit minutes regardless of data
+      size — except the optional zero-re-login JWT variant, which trades
+      that for a 24h wait instead. `ENCRYPTION_SECRET` is different: its
+      window scales with row count (see the timing note under
+      [ENCRYPTION_SECRET](#encryption_secret) below) — get a real number
+      from your pre-flight dry run before picking a window length for that
+      one. Pick a low-traffic time either way.
 - [ ] **Rollback owner identified.** For a single-operator instance this is
       just "you, and you know the plan" — but write down who's driving before
       you start.
@@ -202,8 +206,9 @@ follow it in order.
    so the faster you get through it, the shorter that window is.
 
    **Where to run it:** inside the api service, not from your laptop.
-   Postgres is on the private network only (§1) — there's no need to open
-   it up or point a local connection string at it.
+   Postgres is on the private network only (see the [inventory](#secret-inventory)
+   above) — there's no need to open it up or point a local connection
+   string at it.
 
    - **Docker Compose:** `docker compose exec api sh`, then run the command
      above from inside the container (it already has `ENCRYPTION_SECRET`
@@ -270,10 +275,24 @@ See the step-by-step callouts in "The sequence" above. Short version:
 redeploy api first at every step, backend second, confirm each via the
 fingerprint log line before moving on — both live in the same Railway
 project, so this is two quick redeploys from one dashboard, not two separate
-platforms. The whole rotation (steps 2–7) should take low single-digit
-minutes on a typical dataset; larger datasets take longer at steps 4–5
-proportional to row count (both scripts batch in pages of 100–200 and print
-running totals).
+platforms.
+
+**Timing is data-dependent — don't assume "a few minutes."** Steps 4 and 5
+do real per-row cryptographic work (PBKDF2, 100k iterations per field), and
+both scripts run it concurrently (`ROTATION_CONCURRENCY`, default 16, capped
+by the service's actual CPU allocation — see the scripts' own headers) to
+keep this from being a purely sequential, single-threaded scan. Even so, at
+tens of thousands of rows this is a real number to know in advance, not
+assume: on a small dataset it's low single-digit minutes; at 30,000+
+Transaction rows plus thousands of Plaid transactions, expect somewhere in
+the 15–30 minute range for a first-ever rotation (step 4) — less on repeat
+runs, since already-migrated fields are skipped — plus a few more minutes
+per `verify-encryption-key.mjs` pass (step 5, and again in step 8). **Get
+your own number from the [pre-flight dry run](#pre-flight-checklist)** on a
+copy of your real row counts before you schedule the maintenance window,
+rather than
+trusting this range — CPU allocation varies by Railway plan, and Postgres
+round-trip latency adds on top of the derivation cost.
 
 ### Rollback
 
