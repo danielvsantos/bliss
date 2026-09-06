@@ -16,13 +16,15 @@
  *   2. Scoped update (`scoped-update-analytics`, or `recalculate-analytics`
  *      with a non-empty scope):
  *        - Does NOT wipe the tenant's rows.
- *        - Clears every cache key inside the job's scope up front (one
- *          $transaction([analytics.deleteMany, tagAnalytics.deleteMany])
- *          per scope) so a slice whose last transaction was just deleted
- *          loses its now-stale row. Skipped when the scope is unbounded.
  *        - Per batch: atomic $transaction([deleteMany-by-composite-key,
  *          createMany]) so existing rows for the same composite keys are
  *          replaced in place without losing untouched periods.
+ *        - Delete-safety: when the recompute yields NOTHING for the job
+ *          (every fed transaction is gone), the per-batch replace can't
+ *          run, so the job clears each scope's cache rows by
+ *          date-range/type/group/country (currency is not constrained —
+ *          scope currency is native, cache currency is display). Skipped
+ *          when a scope is unbounded, so the tenant is never wiped.
  *
  * These invariants aren't visible from `calculateAnalytics`'s own tests
  * (which only cover the pure compute step). Without this file a regression
@@ -273,7 +275,7 @@ describe('processAnalyticsJob — write path', () => {
   });
 
   describe('scoped update path', () => {
-    it('clears the scope up front, then writes each batch via $transaction(deleteMany-by-key + createMany)', async () => {
+    it('when the recompute produces rows, only the per-batch $transaction(deleteMany-by-key + createMany) runs', async () => {
       queueFindMany([makeTxn()]);
 
       await processAnalyticsJob(makeJob('scoped-update-analytics', {
@@ -281,25 +283,16 @@ describe('processAnalyticsJob — write path', () => {
         scopes: [{ year: 2026, month: 3 }],
       }));
 
-      // $transaction runs twice: (1) the up-front scope clear
-      // [analytics.deleteMany, tagAnalytics.deleteMany], then (2) the
-      // per-batch [deleteMany-by-key, createMany] for the one analytics row.
-      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
-      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
-      expect(prisma.$transaction.mock.calls[1][0]).toHaveLength(2);
+      // Recompute yielded a row → the delete-safety scope clear is NOT
+      // triggered; only the per-batch replace happens.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2); // [deleteMany, createMany]
 
-      // deleteMany #1 = scope clear: bounded to tenant + year/month, no OR,
-      //                and crucially NOT a bare { tenantId } tenant-wide wipe.
-      expect(prisma.analyticsCacheMonthly.deleteMany).toHaveBeenCalledTimes(2);
-      expect(prisma.analyticsCacheMonthly.deleteMany.mock.calls[0][0]).toEqual({
-        where: { tenantId: TENANT_ID, year: 2026, month: 3 },
-      });
-
-      // deleteMany #2 = per-batch composite-key delete for the recomputed row.
-      const batchDelete = prisma.analyticsCacheMonthly.deleteMany.mock.calls[1][0];
-      expect(batchDelete.where.tenantId).toBe(TENANT_ID);
-      expect(batchDelete.where.OR).toHaveLength(1);
-      expect(batchDelete.where.OR[0]).toEqual({
+      expect(prisma.analyticsCacheMonthly.deleteMany).toHaveBeenCalledTimes(1);
+      const deleteCall = prisma.analyticsCacheMonthly.deleteMany.mock.calls[0][0];
+      expect(deleteCall.where.tenantId).toBe(TENANT_ID);
+      expect(deleteCall.where.OR).toHaveLength(1);
+      expect(deleteCall.where.OR[0]).toEqual({
         year: 2026,
         month: 3,
         currency: 'USD',
@@ -321,16 +314,13 @@ describe('processAnalyticsJob — write path', () => {
         scopes: [{ year: 2026, month: 3 }],
       }));
 
-      // $transaction ×3: up-front scope clear, analytics per-batch, tag per-batch.
-      expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+      // Two per-batch $transaction calls: one for analytics, one for tag analytics.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
 
-      // tagAnalytics.deleteMany #1 = scope clear; #2 = per-batch composite key.
-      expect(prisma.tagAnalyticsCacheMonthly.deleteMany.mock.calls[0][0]).toEqual({
-        where: { tenantId: TENANT_ID, year: 2026, month: 3 },
-      });
-      const tagBatchDelete = prisma.tagAnalyticsCacheMonthly.deleteMany.mock.calls[1][0];
-      expect(tagBatchDelete.where.tenantId).toBe(TENANT_ID);
-      expect(tagBatchDelete.where.OR[0]).toEqual({
+      expect(prisma.tagAnalyticsCacheMonthly.deleteMany).toHaveBeenCalledTimes(1);
+      const tagDeleteCall = prisma.tagAnalyticsCacheMonthly.deleteMany.mock.calls[0][0];
+      expect(tagDeleteCall.where.tenantId).toBe(TENANT_ID);
+      expect(tagDeleteCall.where.OR[0]).toEqual({
         tagId: 42,
         year: 2026,
         month: 3,
@@ -342,7 +332,7 @@ describe('processAnalyticsJob — write path', () => {
       });
     });
 
-    it('with no matching transactions still clears the scope cache rows (delete-safety)', async () => {
+    it('when the recompute yields nothing, clears the scope cache rows (delete-safety)', async () => {
       queueFindMany([]);
 
       await processAnalyticsJob(makeJob('scoped-update-analytics', {
@@ -350,9 +340,10 @@ describe('processAnalyticsJob — write path', () => {
         scopes: [{ year: 2026, month: 3 }],
       }));
 
-      // The up-front scope clear still runs — a slice whose last transaction
-      // was removed must lose its stale row even though Pass 1 found nothing.
+      // The last transaction in the slice is gone: the per-batch replace has
+      // nothing to write, so the scope clear removes the now-stale row.
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2); // [analytics.deleteMany, tag.deleteMany]
       expect(prisma.analyticsCacheMonthly.deleteMany).toHaveBeenCalledTimes(1);
       expect(prisma.analyticsCacheMonthly.deleteMany.mock.calls[0][0]).toEqual({
         where: { tenantId: TENANT_ID, year: 2026, month: 3 },
@@ -364,10 +355,11 @@ describe('processAnalyticsJob — write path', () => {
       expect(prisma.tagAnalyticsCacheMonthly.createMany).not.toHaveBeenCalled();
     });
 
-    it('clears the exact slice of a deleted transaction from its consolidated scope (regression)', async () => {
+    it('clears the deleted slice from a consolidated scope, ignoring native currency (regression)', async () => {
       // The event scheduler turns a deletion into { earliestDate, filters }.
-      // When that was the last txn in the slice, Pass 1 finds nothing — the
-      // stale AnalyticsCacheMonthly row for that slice must still be removed.
+      // filters.currency is the transaction's NATIVE currency; cache rows are
+      // keyed by the tenant's DISPLAY currency — so the clear must not filter
+      // on currency, or it silently matches nothing (the bug this guards).
       queueFindMany([]);
 
       await processAnalyticsJob(makeJob('scoped-update-analytics', {
@@ -375,10 +367,10 @@ describe('processAnalyticsJob — write path', () => {
         scopes: [{
           earliestDate: '2026-03-01',
           filters: {
-            type: ['Expense'],
+            type: ['Growth'],
             group: ['Donations'],
-            currency: ['USD'],
-            country: ['US'],
+            currency: ['EUR'],
+            country: ['DEU'],
           },
         }],
       }));
@@ -387,10 +379,10 @@ describe('processAnalyticsJob — write path', () => {
       const where = prisma.analyticsCacheMonthly.deleteMany.mock.calls[0][0].where;
       expect(where.tenantId).toBe(TENANT_ID);
       expect(where.OR).toEqual([{ year: { gt: 2026 } }, { year: 2026, month: { gte: 3 } }]);
-      expect(where.currency).toEqual({ in: ['USD'] });
-      expect(where.type).toEqual({ in: ['Expense'] });
+      expect(where.type).toEqual({ in: ['Growth'] });
       expect(where.group).toEqual({ in: ['Donations'] });
-      expect(where.country).toEqual({ in: ['US'] });
+      expect(where.country).toEqual({ in: ['DEU'] });
+      expect(where.currency).toBeUndefined();
       expect(prisma.analyticsCacheMonthly.createMany).not.toHaveBeenCalled();
     });
 

@@ -252,23 +252,27 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
 // Cash holdings processing has been moved to the dedicated cash-processor.js worker
 
 /**
- * Build a Prisma `where` matching every analytics-cache row a scoped update
- * owns — the same slice `calculateAnalytics` scans, expressed against the
- * cache tables (year/month integers) instead of `transaction_date`. Shared
- * by AnalyticsCacheMonthly and TagAnalyticsCacheMonthly (both carry
- * year/month/currency/country/type/group).
+ * Map a scoped-update scope to a Prisma `where` over the analytics-cache
+ * tables (AnalyticsCacheMonthly / TagAnalyticsCacheMonthly, both keyed by
+ * year/month/currency/country/type/group), for the "scope recomputed to
+ * nothing → clear its now-stale rows" path. Caller adds `tenantId`.
  *
- * Returns `null` when the scope has neither a date bound nor filters — a
- * delete with that `where` would wipe the whole tenant, so callers skip it.
+ * `currency` from the scope is the transaction's *native* currency, whereas
+ * cache rows are keyed by the tenant's *display* currency — the two don't
+ * correspond, so currency is deliberately not constrained. (Rare edge: one
+ * {month,country,type,group} slice fed by more than one native currency —
+ * no worse than the pre-existing per-batch overwrite behaviour.)
+ *
+ * Returns `null` when the scope has neither a date bound nor filters, so the
+ * caller never issues a tenant-wide delete.
  */
-function scopeToCacheWhere(tenantId, scope = {}) {
+function scopeToCacheWhere(scope = {}) {
   const filters = scope.filters || {};
-  const currency = filters.currency || (scope.currency ? [scope.currency] : null);
-  const type     = filters.type     || (scope.type     ? [scope.type]     : null);
-  const group    = filters.group    || (scope.group    ? [scope.group]    : null);
-  const country  = filters.country  || (scope.country  ? [scope.country]  : null);
+  const type    = filters.type    || (scope.type    ? [scope.type]    : null);
+  const group   = filters.group   || (scope.group   ? [scope.group]   : null);
+  const country = filters.country || (scope.country ? [scope.country] : null);
 
-  const where = { tenantId };
+  const where = {};
   let bounded = false;
 
   if (scope.earliestDate) {
@@ -282,10 +286,9 @@ function scopeToCacheWhere(tenantId, scope = {}) {
     if (scope.month) { where.month = scope.month; }
   }
 
-  if (currency && currency.length) { where.currency = { in: currency }; bounded = true; }
-  if (type     && type.length)     { where.type     = { in: type };     bounded = true; }
-  if (group    && group.length)    { where.group    = { in: group };    bounded = true; }
-  if (country  && country.length)  { where.country  = { in: country };  bounded = true; }
+  if (type    && type.length)    { where.type    = { in: type };    bounded = true; }
+  if (group   && group.length)   { where.group   = { in: group };   bounded = true; }
+  if (country && country.length) { where.country = { in: country }; bounded = true; }
 
   return bounded ? where : null;
 }
@@ -372,19 +375,22 @@ const processAnalyticsJob = async (job, token) => {
                         return true;
                     });
 
-                    // A scoped update is authoritative for every cache key inside
-                    // its scope — including slices whose last transaction was just
-                    // deleted (Pass 1 then returns 0 rows for that slice). The
-                    // per-batch delete+create below only visits keys we recomputed,
-                    // so clear the whole scope up front; the write loop re-inserts
-                    // the slices that still have data.
-                    for (const singleScope of scopes) {
-                        const cacheWhere = scopeToCacheWhere(tenantId, singleScope);
-                        if (!cacheWhere) continue;
-                        await prisma.$transaction([
-                            prisma.analyticsCacheMonthly.deleteMany({ where: cacheWhere }),
-                            prisma.tagAnalyticsCacheMonthly.deleteMany({ where: cacheWhere }),
-                        ]);
+                    // When the recompute yields nothing, every transaction that fed
+                    // these slices is gone (e.g. the last one in a category/month was
+                    // deleted). The per-batch delete+create below only visits keys it
+                    // recomputed, so it can't clear a now-empty slice — do it here.
+                    // Guarded on "recomputed to nothing" so the normal edit / partial
+                    // delete path (already handled by the per-batch replace) is
+                    // untouched.
+                    if (newAnalytics.length === 0 && newTagAnalytics.length === 0) {
+                        for (const singleScope of scopes) {
+                            const cacheWhere = scopeToCacheWhere(singleScope);
+                            if (!cacheWhere) continue;
+                            await prisma.$transaction([
+                                prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId, ...cacheWhere } }),
+                                prisma.tagAnalyticsCacheMonthly.deleteMany({ where: { tenantId, ...cacheWhere } }),
+                            ]);
+                        }
                     }
                 }
                 break;
