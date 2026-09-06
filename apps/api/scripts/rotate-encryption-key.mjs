@@ -21,14 +21,30 @@
  *   1. Run scripts/verify-encryption-key.mjs — it must report 0 undecryptable rows
  *   2. Remove ENCRYPTION_SECRET_PREVIOUS from all environment configs
  *   3. Restart both services
+ *
+ * Performance: PBKDF2 (100k iterations, ~20ms each) is CPU-bound and this
+ * script processes many rows, so it runs derivations via the async
+ * `crypto.pbkdf2` (not `pbkdf2Sync`), which Node dispatches to its libuv
+ * threadpool, and processes ROTATION_CONCURRENCY records at once per model
+ * via mapWithConcurrency. UV_THREADPOOL_SIZE is raised (below, only if the
+ * operator hasn't already set it) so that concurrency actually reaches real
+ * parallel threads instead of queuing behind Node's default of 4.
  */
+
+process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '16';
 
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { encryptedFields } from '@bliss/shared/encryption';
 import { ROTATION_COVERAGE, assertCoverageComplete } from './lib/encryptionRotationCoverage.mjs';
+import { mapWithConcurrency } from './lib/concurrency.mjs';
 
 const BATCH_SIZE = 100;
+// How many records' crypto + DB write run concurrently within a batch. Bounded
+// by both UV_THREADPOOL_SIZE (for the PBKDF2 work) and Prisma's own connection
+// pool (for the DB write) — a value higher than either just means some workers
+// wait their turn rather than erroring, so this is safe to leave generous.
+const CONCURRENCY = Number(process.env.ROTATION_CONCURRENCY) || 16;
 
 // Crypto constants — must stay in sync with utils/encryption.js
 const ALGORITHM        = 'aes-256-gcm';
@@ -39,12 +55,20 @@ const MIN_ENC_LENGTH   = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
 
 // ─── Crypto helpers (self-contained — no dependency on the module singleton) ──
 
+// Looks up crypto.pbkdf2 fresh on every call (not a promisified reference
+// captured once at module load) so that both real usage and test spies
+// (vi.spyOn(crypto, 'pbkdf2')) go through the same call path.
 function deriveKey(salt, secret) {
-  return crypto.pbkdf2Sync(secret, salt, 100000, 32, 'sha256');
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(secret, salt, 100000, 32, 'sha256', (err, key) => {
+      if (err) reject(err);
+      else resolve(key);
+    });
+  });
 }
 
 /** Attempt to decrypt with a specific secret. Throws on auth-tag failure. */
-function tryDecrypt(encryptedText, secret) {
+async function tryDecrypt(encryptedText, secret) {
   const buffer = Buffer.from(encryptedText, 'base64');
   if (buffer.length < MIN_ENC_LENGTH) return encryptedText; // plain text / legacy
 
@@ -53,14 +77,14 @@ function tryDecrypt(encryptedText, secret) {
   const authTag   = buffer.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
   const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
 
-  const key = deriveKey(salt, secret);
+  const key = await deriveKey(salt, secret);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
 }
 
 /** Encrypt a value with the given secret. */
-function encryptWith(text, isSearchable, secret) {
+async function encryptWith(text, isSearchable, secret) {
   if (!text) return text;
 
   let salt, iv;
@@ -73,7 +97,7 @@ function encryptWith(text, isSearchable, secret) {
     iv   = crypto.randomBytes(IV_LENGTH);
   }
 
-  const key     = deriveKey(salt, secret);
+  const key     = await deriveKey(salt, secret);
   const cipher  = crypto.createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
@@ -87,27 +111,28 @@ export function keyFingerprint(secret) {
 /**
  * Builds decrypt/encrypt/isOnNewKey helpers bound to a specific (newSecret, oldSecret) pair.
  * Exported so unit tests can exercise the pure crypto behaviour without a database.
+ * All return Promises — PBKDF2 runs via the async crypto.pbkdf2 (see file header).
  */
 export function createKeyHelpers(newSecret, oldSecret) {
-  function decrypt(encryptedText) {
+  async function decrypt(encryptedText) {
     try {
-      return tryDecrypt(encryptedText, newSecret);
+      return await tryDecrypt(encryptedText, newSecret);
     } catch {
       return tryDecrypt(encryptedText, oldSecret); // throws if both fail
     }
   }
 
-  function isOnNewKey(encryptedText) {
+  async function isOnNewKey(encryptedText) {
     if (!encryptedText) return true;
     try {
-      tryDecrypt(encryptedText, newSecret);
+      await tryDecrypt(encryptedText, newSecret);
       return true;
     } catch {
       return false;
     }
   }
 
-  function encrypt(text, isSearchable = false) {
+  async function encrypt(text, isSearchable = false) {
     return encryptWith(text, isSearchable, newSecret);
   }
 
@@ -122,11 +147,11 @@ export function createKeyHelpers(newSecret, oldSecret) {
    * a 25% cut in migration time on large datasets, for free, with the exact
    * same decrypt/re-encrypt behavior.
    */
-  function resolve(encryptedText) {
+  async function resolve(encryptedText) {
     try {
-      return { onNewKey: true, plaintext: tryDecrypt(encryptedText, newSecret) };
+      return { onNewKey: true, plaintext: await tryDecrypt(encryptedText, newSecret) };
     } catch {
-      return { onNewKey: false, plaintext: tryDecrypt(encryptedText, oldSecret) }; // throws if both fail
+      return { onNewKey: false, plaintext: await tryDecrypt(encryptedText, oldSecret) }; // throws if both fail
     }
   }
 
@@ -144,8 +169,9 @@ export function createKeyHelpers(newSecret, oldSecret) {
  * @param {Function} opts.updateRecord - (id, updates) => Promise<void>
  * @param {object}   opts.keyHelpers  - { decrypt, isOnNewKey, encrypt, resolve } from createKeyHelpers()
  * @param {boolean}  [opts.dryRun]
+ * @param {number}   [opts.concurrency] - records processed at once per batch (default CONCURRENCY)
  */
-export async function migrateModel({ label, fetchBatch, idField, fields, updateRecord, keyHelpers, dryRun = false }) {
+export async function migrateModel({ label, fetchBatch, idField, fields, updateRecord, keyHelpers, dryRun = false, concurrency = CONCURRENCY }) {
   const { encrypt, resolve } = keyHelpers;
   let cursor   = undefined;
   let total    = 0;
@@ -162,7 +188,7 @@ export async function migrateModel({ label, fetchBatch, idField, fields, updateR
     cursor = records[records.length - 1][idField];
     total += records.length;
 
-    for (const record of records) {
+    await mapWithConcurrency(records, concurrency, async (record) => {
       const updates  = {};
       let needsUpdate = false;
 
@@ -171,12 +197,12 @@ export async function migrateModel({ label, fetchBatch, idField, fields, updateR
         if (!value) continue;
 
         try {
-          const { onNewKey, plaintext } = resolve(value);
+          const { onNewKey, plaintext } = await resolve(value);
           if (onNewKey) {
             skipped++;
             continue;
           }
-          updates[field.name] = encrypt(plaintext, field.searchable);
+          updates[field.name] = await encrypt(plaintext, field.searchable);
           needsUpdate = true;
         } catch (err) {
           console.error(`  FAILED ${label}#${record[idField]}.${field.name}: ${err.message}`);
@@ -190,7 +216,7 @@ export async function migrateModel({ label, fetchBatch, idField, fields, updateR
         }
         migrated++;
       }
-    }
+    });
 
     process.stdout.write(
       `  ${total} processed — ${migrated} migrated, ${skipped} already current, ${failed} failed\r`
@@ -251,6 +277,7 @@ export async function run({ prisma, newSecret, oldSecret, dryRun = false }) {
   }
   console.log(`New key fingerprint (SHA-256 prefix): ${newFp}...`);
   console.log(`Old key fingerprint (SHA-256 prefix): ${oldFp}...`);
+  console.log(`Concurrency: ${CONCURRENCY} records/batch (UV_THREADPOOL_SIZE=${process.env.UV_THREADPOOL_SIZE})`);
 
   const results = [];
   for (const entry of ROTATION_COVERAGE) {

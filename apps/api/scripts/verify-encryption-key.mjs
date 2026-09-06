@@ -16,14 +16,22 @@
  *
  * Usage:
  *   ENCRYPTION_SECRET=<new> node scripts/verify-encryption-key.mjs
+ *
+ * Performance: see rotate-encryption-key.mjs's header — same reasoning
+ * applies here (async crypto.pbkdf2 + concurrent records per batch instead
+ * of pbkdf2Sync run one row at a time).
  */
+
+process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '16';
 
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { encryptedFields } from '@bliss/shared/encryption';
 import { ROTATION_COVERAGE, assertCoverageComplete } from './lib/encryptionRotationCoverage.mjs';
+import { mapWithConcurrency } from './lib/concurrency.mjs';
 
 const BATCH_SIZE = 200;
+const CONCURRENCY = Number(process.env.ROTATION_CONCURRENCY) || 16;
 
 const ALGORITHM       = 'aes-256-gcm';
 const IV_LENGTH       = 12;
@@ -31,8 +39,16 @@ const AUTH_TAG_LENGTH = 16;
 const SALT_LENGTH     = 16;
 const MIN_ENC_LENGTH  = SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + 1;
 
+// Looks up crypto.pbkdf2 fresh on every call (not a promisified reference
+// captured once at module load) so real usage and test spies
+// (vi.spyOn(crypto, 'pbkdf2')) go through the same call path.
 function deriveKey(salt, secret) {
-  return crypto.pbkdf2Sync(secret, salt, 100000, 32, 'sha256');
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(secret, salt, 100000, 32, 'sha256', (err, key) => {
+      if (err) reject(err);
+      else resolve(key);
+    });
+  });
 }
 
 export function keyFingerprint(secret) {
@@ -40,7 +56,7 @@ export function keyFingerprint(secret) {
 }
 
 /** Throws on auth-tag failure — never falls back to another key. */
-export function tryDecryptStrict(encryptedText, secret) {
+export async function tryDecryptStrict(encryptedText, secret) {
   const buffer = Buffer.from(encryptedText, 'base64');
   if (buffer.length < MIN_ENC_LENGTH) {
     throw new Error('value is too short to be AES-256-GCM ciphertext');
@@ -51,7 +67,7 @@ export function tryDecryptStrict(encryptedText, secret) {
   const authTag   = buffer.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
   const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH);
 
-  const key = deriveKey(salt, secret);
+  const key = await deriveKey(salt, secret);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
@@ -65,8 +81,9 @@ export function tryDecryptStrict(encryptedText, secret) {
  * @param {string}   opts.idField
  * @param {Array}    opts.fields     - [{ name, sanity }]
  * @param {string}   opts.secret
+ * @param {number}   [opts.concurrency] - records processed at once per batch
  */
-export async function verifyModel({ label, fetchBatch, idField, fields, secret }) {
+export async function verifyModel({ label, fetchBatch, idField, fields, secret, concurrency = CONCURRENCY }) {
   let cursor = undefined;
   let scanned = 0;
   let ok = 0;
@@ -81,7 +98,7 @@ export async function verifyModel({ label, fetchBatch, idField, fields, secret }
     if (records.length === 0) break;
     cursor = records[records.length - 1][idField];
 
-    for (const record of records) {
+    await mapWithConcurrency(records, concurrency, async (record) => {
       for (const field of fields) {
         const value = record[field.name];
         if (!value) continue;
@@ -89,7 +106,7 @@ export async function verifyModel({ label, fetchBatch, idField, fields, secret }
 
         let plaintext;
         try {
-          plaintext = tryDecryptStrict(value, secret);
+          plaintext = await tryDecryptStrict(value, secret);
         } catch (err) {
           undecryptable++;
           problems.push(`${label}#${record[idField]}.${field.name}: undecryptable (${err.message})`);
@@ -104,7 +121,7 @@ export async function verifyModel({ label, fetchBatch, idField, fields, secret }
 
         ok++;
       }
-    }
+    });
 
     if (records.length < BATCH_SIZE) break;
   }
@@ -140,6 +157,7 @@ export async function run({ prisma, secret }) {
   console.log('╚══════════════════════════════════════════════════╝');
   console.log(`Active key fingerprint (SHA-256 prefix): ${keyFingerprint(secret)}...`);
   console.log('(ENCRYPTION_SECRET_PREVIOUS is never read by this script.)');
+  console.log(`Concurrency: ${CONCURRENCY} records/batch (UV_THREADPOOL_SIZE=${process.env.UV_THREADPOOL_SIZE})`);
 
   const results = [];
   for (const entry of ROTATION_COVERAGE) {

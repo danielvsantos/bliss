@@ -7,16 +7,16 @@ const NEW_SECRET = 'new-secret-for-verify-tests';
 const OLD_SECRET = 'old-secret-for-verify-tests';
 
 describe('verify-encryption-key: tryDecryptStrict / keyFingerprint', () => {
-  it('throws on ciphertext encrypted under a different key', () => {
+  it('throws on ciphertext encrypted under a different key', async () => {
     const { encrypt } = createKeyHelpers(OLD_SECRET, OLD_SECRET);
-    const ciphertext = encrypt('secret value');
-    expect(() => tryDecryptStrict(ciphertext, NEW_SECRET)).toThrow();
+    const ciphertext = await encrypt('secret value');
+    await expect(tryDecryptStrict(ciphertext, NEW_SECRET)).rejects.toThrow();
   });
 
-  it('decrypts ciphertext encrypted under the matching key', () => {
+  it('decrypts ciphertext encrypted under the matching key', async () => {
     const { encrypt } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
-    const ciphertext = encrypt('secret value');
-    expect(tryDecryptStrict(ciphertext, NEW_SECRET)).toBe('secret value');
+    const ciphertext = await encrypt('secret value');
+    expect(await tryDecryptStrict(ciphertext, NEW_SECRET)).toBe('secret value');
   });
 
   it('fingerprint is a stable 16-char prefix', () => {
@@ -28,7 +28,7 @@ describe('verify-encryption-key: tryDecryptStrict / keyFingerprint', () => {
 describe('verify-encryption-key: verifyModel', () => {
   it('reports 0 undecryptable/insane when every row is on the new key and sane', async () => {
     const { encrypt } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
-    const rows = [{ id: 1, email: encrypt('user@example.com', true) }];
+    const rows = [{ id: 1, email: await encrypt('user@example.com', true) }];
 
     const result = await verifyModel({
       label: 'FakeModel.email',
@@ -43,7 +43,7 @@ describe('verify-encryption-key: verifyModel', () => {
 
   it('counts a row still on the old key as undecryptable', async () => {
     const oldHelpers = createKeyHelpers(OLD_SECRET, OLD_SECRET);
-    const rows = [{ id: 1, email: oldHelpers.encrypt('user@example.com', true) }];
+    const rows = [{ id: 1, email: await oldHelpers.encrypt('user@example.com', true) }];
 
     const result = await verifyModel({
       label: 'FakeModel.email',
@@ -61,7 +61,7 @@ describe('verify-encryption-key: verifyModel', () => {
   it('counts a row that decrypts but fails the sanity check as insane', async () => {
     const { encrypt } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
     // Simulates the rawJson gap: decrypts fine, but the plaintext isn't valid JSON.
-    const rows = [{ id: 1, rawJson: encrypt('not valid json') }];
+    const rows = [{ id: 1, rawJson: await encrypt('not valid json') }];
 
     const result = await verifyModel({
       label: 'PlaidTransaction.rawJson',
@@ -74,6 +74,24 @@ describe('verify-encryption-key: verifyModel', () => {
     expect(result.insane).toBe(1);
     expect(result.ok).toBe(0);
     expect(result.problems[0]).toMatch(/sanity/);
+  });
+
+  it('processes records within a batch concurrently, not one at a time', async () => {
+    const { encrypt } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+    const rows = await Promise.all(
+      Array.from({ length: 10 }, async (_, i) => ({ id: i, email: await encrypt(`user${i}@example.com`, true) }))
+    );
+
+    const result = await verifyModel({
+      label: 'FakeModel.email',
+      idField: 'id',
+      fields: [{ name: 'email', sanity: (v) => v.includes('@') }],
+      secret: NEW_SECRET,
+      fetchBatch: async (cursor) => (cursor ? [] : rows),
+      concurrency: 5,
+    });
+
+    expect(result).toMatchObject({ scanned: 10, ok: 10, undecryptable: 0, insane: 0 });
   });
 });
 
@@ -89,7 +107,7 @@ describe('verify-encryption-key: run() never reads ENCRYPTION_SECRET_PREVIOUS', 
         const row = { id: `${entry.prismaModel}-1` };
         for (const field of entry.fields) {
           const plaintext = field.name === 'rawJson' ? JSON.stringify({ ok: true }) : field.name === 'email' ? 'user@example.com' : `${field.name}-value`;
-          row[field.name] = oldHelpers.encrypt(plaintext, field.searchable);
+          row[field.name] = await oldHelpers.encrypt(plaintext, field.searchable);
         }
         tables[entry.prismaModel] = [row];
       }
@@ -120,7 +138,7 @@ describe('verify-encryption-key: run() never reads ENCRYPTION_SECRET_PREVIOUS', 
       const row = { id: `${entry.prismaModel}-1` };
       for (const field of entry.fields) {
         const plaintext = field.name === 'rawJson' ? JSON.stringify({ ok: true }) : field.name === 'email' ? 'user@example.com' : `${field.name}-value`;
-        row[field.name] = newHelpers.encrypt(plaintext, field.searchable);
+        row[field.name] = await newHelpers.encrypt(plaintext, field.searchable);
       }
       tables[entry.prismaModel] = [row];
     }
