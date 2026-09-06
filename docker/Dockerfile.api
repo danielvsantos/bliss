@@ -85,6 +85,12 @@ EXPOSE 3000
 # Copy seed script (runs after migrations to populate reference data)
 COPY --from=builder /app/prisma/seed.js ./prisma/seed.js
 
+# Operator maintenance scripts (key rotation, Plaid fixture seeding, etc.) —
+# never invoked at startup, but must exist in the deployed image so an
+# operator can run them via `railway ssh` / `docker exec` without needing a
+# separate build. See docs/guides/key-rotation.md.
+COPY --from=builder /app/apps/api/scripts ./apps/api/scripts
+
 # Copy wait script
 COPY --chown=nextjs:nodejs docker/wait-for-db.sh ./wait-for-db.sh
 

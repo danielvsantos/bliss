@@ -197,18 +197,37 @@ follow it in order.
      node apps/api/scripts/rotate-encryption-key.mjs
    ```
    Add `--dry-run` first if you want a preview — it reports what *would*
-   change without writing anything. Run this against the shared database
-   from one environment (your local machine, or one of the deployed
-   services' shell) — it doesn't matter which, since all services already
-   have both keys. Run it as soon as the dual-key deploy is confirmed: this
-   is the window where email/password sign-in is degraded, so the faster you
-   get through it, the shorter that window is.
+   change without writing anything. Run it as soon as the dual-key deploy is
+   confirmed: this is the window where email/password sign-in is degraded,
+   so the faster you get through it, the shorter that window is.
+
+   **Where to run it:** inside the api service, not from your laptop.
+   Postgres is on the private network only (§1) — there's no need to open
+   it up or point a local connection string at it.
+
+   - **Docker Compose:** `docker compose exec api sh`, then run the command
+     above from inside the container (it already has `ENCRYPTION_SECRET`
+     and `ENCRYPTION_SECRET_PREVIOUS` from step 2's `.env` change).
+   - **Railway:** `railway ssh --service api --environment <env> -- node apps/api/scripts/rotate-encryption-key.mjs`
+     (add `--dry-run` the same way). This opens an SSH session into the
+     running container over Railway's own network — nothing touches your
+     machine except the terminal output. The api service already has both
+     keys from step 3, so no extra env vars are needed on the command line.
+     `railway ssh --service api --environment <env>` with no trailing
+     command instead drops you into an interactive shell if you'd rather
+     run the steps one at a time and look around first.
 
 5. **Run the verification gate** — this must print **0** before you touch
    `ENCRYPTION_SECRET_PREVIOUS`:
    ```bash
    ENCRYPTION_SECRET=<new> node apps/api/scripts/verify-encryption-key.mjs
    ```
+   Same place as step 4 (`docker compose exec api sh`, or
+   `railway ssh --service api --environment <env> -- node apps/api/scripts/verify-encryption-key.mjs`)
+   — the api service already has `ENCRYPTION_SECRET` set to the new value,
+   so the inline prefix above is only needed if you're running it somewhere
+   that doesn't already have it in its environment.
+
    This scans `User.email`, `Account.accountNumber`,
    `Transaction.description`, `Transaction.details`, `PlaidItem.accessToken`,
    `RecurringCharge.merchantLabel`, and `PlaidTransaction.rawJson` — every
