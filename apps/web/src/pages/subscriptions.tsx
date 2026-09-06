@@ -222,233 +222,243 @@ function SubscriptionRow({
 
   return (
     <div className="border-b border-border/60 last:border-0">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="text-muted-foreground shrink-0"
-          aria-label={t('subscriptions.toggleCharges')}
-        >
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
+      <div className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+        {/* Name row: chevron, icon, name, status badge. Kept as its own line on
+            mobile (via flex-col above) so the amount/actions row below never
+            competes with the name for width — sm:flex-1 lets it fill the
+            remaining space next to the stats row on desktop, same as before. */}
+        <div className="flex items-center gap-3 min-w-0 sm:flex-1">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-muted-foreground shrink-0"
+            aria-label={t('subscriptions.toggleCharges')}
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
 
-        <span className="text-lg shrink-0" aria-hidden>
-          {item.category?.icon || '🔁'}
-        </span>
+          <span className="text-lg shrink-0" aria-hidden>
+            {item.category?.icon || '🔁'}
+          </span>
 
-        <div className="min-w-0 flex-1">
-          {editingLabel ? (
-            <Input
-              autoFocus
-              value={labelDraft}
-              maxLength={140}
-              disabled={rename.isPending}
-              onChange={(e) => setLabelDraft(e.target.value)}
-              onBlur={submitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submitRename();
-                if (e.key === 'Escape') {
-                  setEditingLabel(false);
-                  setLabelDraft(item.merchantLabel);
-                }
-              }}
-              className="h-7 text-sm font-medium"
-              aria-label={t('subscriptions.rename.label')}
-            />
-          ) : (
-            <div className="font-medium truncate flex items-center gap-1.5 group">
-              <span className="truncate">{item.merchantLabel}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setLabelDraft(item.merchantLabel);
-                  setEditingLabel(true);
+          <div className="min-w-0 flex-1">
+            {editingLabel ? (
+              <Input
+                autoFocus
+                value={labelDraft}
+                maxLength={140}
+                disabled={rename.isPending}
+                onChange={(e) => setLabelDraft(e.target.value)}
+                onBlur={submitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submitRename();
+                  if (e.key === 'Escape') {
+                    setEditingLabel(false);
+                    setLabelDraft(item.merchantLabel);
+                  }
                 }}
-                className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                className="h-7 text-sm font-medium"
                 aria-label={t('subscriptions.rename.label')}
+              />
+            ) : (
+              <div className="font-medium truncate flex items-center gap-1.5 group">
+                <span className="truncate">{item.merchantLabel}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLabelDraft(item.merchantLabel);
+                    setEditingLabel(true);
+                  }}
+                  className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                  aria-label={t('subscriptions.rename.label')}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground truncate">
+              {item.category?.name || t('subscriptions.uncategorized')}
+              {' · '}
+              {t('subscriptions.occurrences', { count: item.occurrenceCount })}
+              {item.userLabelLocked ? ` · ${t('subscriptions.rename.custom')}` : ''}
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <StatusBadge status={item.status} t={t} />
+          </div>
+        </div>
+
+        {/* Stats + actions row: its own line on mobile, indented to align under
+            the name. Cadence and next-expected stay desktop-only; amount and
+            actions are always visible but compact enough to share this line. */}
+        <div className="flex items-center justify-between gap-3 pl-9 sm:justify-start sm:pl-0">
+          {/* Cadence */}
+          <div className="hidden sm:block shrink-0 w-28 text-right">
+            {editingCadence ? (
+              <Select
+                value={item.cadence ?? 'MONTHLY'}
+                onValueChange={(v) => {
+                  setCadence.mutate(
+                    { descriptionHash: item.descriptionHash, cadence: v as RecurringCadence },
+                    { onSettled: () => setEditingCadence(false), onError: handleErr },
+                  );
+                }}
               >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-          <div className="text-xs text-muted-foreground truncate">
-            {item.category?.name || t('subscriptions.uncategorized')}
-            {' · '}
-            {t('subscriptions.occurrences', { count: item.occurrenceCount })}
-            {item.userLabelLocked ? ` · ${t('subscriptions.rename.custom')}` : ''}
-          </div>
-        </div>
-
-        {/* Status — kept next to the name so the amount/actions line below stays short on mobile */}
-        <div className="shrink-0">
-          <StatusBadge status={item.status} t={t} />
-        </div>
-
-        {/* Cadence */}
-        <div className="hidden sm:block shrink-0 w-28 text-right">
-          {editingCadence ? (
-            <Select
-              value={item.cadence ?? 'MONTHLY'}
-              onValueChange={(v) => {
-                setCadence.mutate(
-                  { descriptionHash: item.descriptionHash, cadence: v as RecurringCadence },
-                  { onSettled: () => setEditingCadence(false), onError: handleErr },
-                );
-              }}
-            >
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CADENCES.map((c) => (
-                  <SelectItem key={c} value={c} className="text-xs">
-                    {t(`subscriptions.cadence.${c}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditingCadence(true)}
-              className="text-xs underline decoration-dotted text-muted-foreground hover:text-foreground"
-            >
-              {item.cadence ? t(`subscriptions.cadence.${item.cadence}`) : t('subscriptions.cadence.unknown')}
-              {item.userCadenceLocked ? ' *' : ''}
-            </button>
-          )}
-        </div>
-
-        {/* Amounts */}
-        <div className="shrink-0 w-24 sm:w-32 text-right">
-          <div className="font-medium tabular-nums">
-            {item.amount != null && item.currency
-              ? formatCurrency(item.amount, item.currency, locale)
-              : '—'}
-          </div>
-          {item.fxUnavailable ? (
-            <div className="text-xs text-warning">{t('subscriptions.fxUnavailable')}</div>
-          ) : item.amountInDisplayCurrency != null && item.currency !== displayCurrency ? (
-            <div className="text-xs text-muted-foreground tabular-nums">
-              ≈ {formatCurrency(item.amountInDisplayCurrency, displayCurrency, locale)}
-            </div>
-          ) : null}
-        </div>
-
-        {/* Next expected */}
-        <div className="hidden md:block shrink-0 w-28 text-right text-xs text-muted-foreground">
-          {formatRelative(item.nextExpectedAt, t)}
-        </div>
-
-        {/* Actions */}
-        <div className="shrink-0 flex items-center gap-1 w-full sm:w-auto justify-end order-last sm:order-none">
-          {merging ? (
-            <>
-              <Select onValueChange={runMerge}>
-                <SelectTrigger className="h-8 text-xs w-52">
-                  <SelectValue placeholder={t('subscriptions.merge.pickTarget')} />
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {mergeOptions.map((c) => (
-                    <SelectItem key={c.descriptionHash} value={c.descriptionHash} className="text-xs">
-                      {(c.categoryIcon ? `${c.categoryIcon} ` : '') + c.merchantLabel}
-                      {c.status === 'LAPSED' ? ` · ${t('subscriptions.status.lapsed')}` : ''}
+                  {CADENCES.map((c) => (
+                    <SelectItem key={c} value={c} className="text-xs">
+                      {t(`subscriptions.cadence.${c}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-muted-foreground"
-                disabled={merge.isPending}
-                onClick={() => setMerging(false)}
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingCadence(true)}
+                className="text-xs underline decoration-dotted text-muted-foreground hover:text-foreground"
               >
-                {t('common.cancel')}
-              </Button>
-            </>
-          ) : isTombstone ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={restore.isPending}
-              onClick={() =>
-                restore.mutate(item.descriptionHash, {
-                  onSuccess: () => toast({ title: t('subscriptions.restored') }),
-                  onError: handleErr,
-                })
-              }
-            >
-              {t('subscriptions.restore')}
-            </Button>
-          ) : (
-            <>
-              {item.state === 'CONFIRMED' ? (
+                {item.cadence ? t(`subscriptions.cadence.${item.cadence}`) : t('subscriptions.cadence.unknown')}
+                {item.userCadenceLocked ? ' *' : ''}
+              </button>
+            )}
+          </div>
+
+          {/* Amounts */}
+          <div className="shrink-0 w-24 sm:w-32 text-right">
+            <div className="font-medium tabular-nums">
+              {item.amount != null && item.currency
+                ? formatCurrency(item.amount, item.currency, locale)
+                : '—'}
+            </div>
+            {item.fxUnavailable ? (
+              <div className="text-xs text-warning">{t('subscriptions.fxUnavailable')}</div>
+            ) : item.amountInDisplayCurrency != null && item.currency !== displayCurrency ? (
+              <div className="text-xs text-muted-foreground tabular-nums">
+                ≈ {formatCurrency(item.amountInDisplayCurrency, displayCurrency, locale)}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Next expected */}
+          <div className="hidden md:block shrink-0 w-28 text-right text-xs text-muted-foreground">
+            {formatRelative(item.nextExpectedAt, t)}
+          </div>
+
+          {/* Actions */}
+          <div className="shrink-0 flex items-center gap-1">
+            {merging ? (
+              <>
+                <Select onValueChange={runMerge}>
+                  <SelectTrigger className="h-8 text-xs w-52">
+                    <SelectValue placeholder={t('subscriptions.merge.pickTarget')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mergeOptions.map((c) => (
+                      <SelectItem key={c.descriptionHash} value={c.descriptionHash} className="text-xs">
+                        {(c.categoryIcon ? `${c.categoryIcon} ` : '') + c.merchantLabel}
+                        {c.status === 'LAPSED' ? ` · ${t('subscriptions.status.lapsed')}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-muted-foreground px-2 sm:px-3"
-                  disabled={dismiss.isPending}
-                  aria-label={t('subscriptions.remove')}
-                  onClick={() =>
-                    dismiss.mutate(item.descriptionHash, {
-                      onSuccess: () => toast({ title: t('subscriptions.removed') }),
-                      onError: handleErr,
-                    })
-                  }
+                  className="text-muted-foreground"
+                  disabled={merge.isPending}
+                  onClick={() => setMerging(false)}
                 >
-                  <Trash2 className="h-4 w-4 sm:mr-1" />
-                  <span className="hidden sm:inline">{t('subscriptions.remove')}</span>
+                  {t('common.cancel')}
                 </Button>
-              ) : (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="px-2 sm:px-3"
-                    disabled={confirm.isPending}
-                    aria-label={t('subscriptions.confirm')}
-                    onClick={() =>
-                      confirm.mutate(
-                        { descriptionHash: item.descriptionHash },
-                        { onSuccess: () => toast({ title: t('subscriptions.confirmed') }), onError: handleErr },
-                      )
-                    }
-                  >
-                    <Check className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{t('subscriptions.confirm')}</span>
-                  </Button>
+              </>
+            ) : isTombstone ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={restore.isPending}
+                onClick={() =>
+                  restore.mutate(item.descriptionHash, {
+                    onSuccess: () => toast({ title: t('subscriptions.restored') }),
+                    onError: handleErr,
+                  })
+                }
+              >
+                {t('subscriptions.restore')}
+              </Button>
+            ) : (
+              <>
+                {item.state === 'CONFIRMED' ? (
                   <Button
                     size="sm"
                     variant="ghost"
                     className="text-muted-foreground px-2 sm:px-3"
                     disabled={dismiss.isPending}
-                    aria-label={t('subscriptions.notASubscription')}
+                    aria-label={t('subscriptions.remove')}
                     onClick={() =>
                       dismiss.mutate(item.descriptionHash, {
-                        onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
+                        onSuccess: () => toast({ title: t('subscriptions.removed') }),
                         onError: handleErr,
                       })
                     }
                   >
-                    <X className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{t('subscriptions.notASubscription')}</span>
+                    <Trash2 className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{t('subscriptions.remove')}</span>
                   </Button>
-                </>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-muted-foreground px-2"
-                disabled={merge.isPending || mergeOptions.length === 0}
-                onClick={() => setMerging(true)}
-                aria-label={t('subscriptions.merge.mergeInto')}
-                title={t('subscriptions.merge.mergeInto')}
-              >
-                <GitMerge className="h-4 w-4" />
-              </Button>
-            </>
-          )}
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="px-2 sm:px-3"
+                      disabled={confirm.isPending}
+                      aria-label={t('subscriptions.confirm')}
+                      onClick={() =>
+                        confirm.mutate(
+                          { descriptionHash: item.descriptionHash },
+                          { onSuccess: () => toast({ title: t('subscriptions.confirmed') }), onError: handleErr },
+                        )
+                      }
+                    >
+                      <Check className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{t('subscriptions.confirm')}</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground px-2 sm:px-3"
+                      disabled={dismiss.isPending}
+                      aria-label={t('subscriptions.notASubscription')}
+                      onClick={() =>
+                        dismiss.mutate(item.descriptionHash, {
+                          onSuccess: () => toast({ title: t('subscriptions.dismissed') }),
+                          onError: handleErr,
+                        })
+                      }
+                    >
+                      <X className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{t('subscriptions.notASubscription')}</span>
+                    </Button>
+                  </>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground px-2"
+                  disabled={merge.isPending || mergeOptions.length === 0}
+                  onClick={() => setMerging(true)}
+                  aria-label={t('subscriptions.merge.mergeInto')}
+                  title={t('subscriptions.merge.mergeInto')}
+                >
+                  <GitMerge className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
