@@ -3,7 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import axios from 'axios';
 import * as Sentry from '@sentry/nextjs';
 
-const backendApiUrl = process.env.INTERNAL_BACKEND_API_URL || 'http://localhost:3001';
+const backendApiUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 const apiKey = process.env.INTERNAL_API_KEY;
 
 /**
@@ -43,7 +43,10 @@ async function calculateAssetCurrentValue(asset) {
             return new Decimal(response.data.price);
         }
     } catch (error) {
-        console.error(`[ValuationService] Failed to fetch price for ${asset.symbol}. Error: ${error.message}`);
+        const detail = error.response
+            ? `HTTP ${error.response.status}`
+            : error.code || error.message || 'unknown error';
+        console.error(`[ValuationService] Failed to fetch price for ${asset.symbol} from ${backendApiUrl}. Error: ${detail}`);
         Sentry.captureException(error, {
             extra: {
                 message: `[ValuationService] Failed to fetch price for ${asset.symbol} from backend service.`,

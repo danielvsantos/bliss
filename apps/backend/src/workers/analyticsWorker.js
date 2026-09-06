@@ -251,6 +251,45 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
 
 // Cash holdings processing has been moved to the dedicated cash-processor.js worker
 
+/**
+ * Build a Prisma `where` matching every analytics-cache row a scoped update
+ * owns — the same slice `calculateAnalytics` scans, expressed against the
+ * cache tables (year/month integers) instead of `transaction_date`. Shared
+ * by AnalyticsCacheMonthly and TagAnalyticsCacheMonthly (both carry
+ * year/month/currency/country/type/group).
+ *
+ * Returns `null` when the scope has neither a date bound nor filters — a
+ * delete with that `where` would wipe the whole tenant, so callers skip it.
+ */
+function scopeToCacheWhere(tenantId, scope = {}) {
+  const filters = scope.filters || {};
+  const currency = filters.currency || (scope.currency ? [scope.currency] : null);
+  const type     = filters.type     || (scope.type     ? [scope.type]     : null);
+  const group    = filters.group    || (scope.group    ? [scope.group]    : null);
+  const country  = filters.country  || (scope.country  ? [scope.country]  : null);
+
+  const where = { tenantId };
+  let bounded = false;
+
+  if (scope.earliestDate) {
+    const d = new Date(scope.earliestDate);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    where.OR = [{ year: { gt: y } }, { year: y, month: { gte: m } }];
+    bounded = true;
+  } else {
+    if (scope.year)  { where.year = scope.year;  bounded = true; }
+    if (scope.month) { where.month = scope.month; }
+  }
+
+  if (currency && currency.length) { where.currency = { in: currency }; bounded = true; }
+  if (type     && type.length)     { where.type     = { in: type };     bounded = true; }
+  if (group    && group.length)    { where.group    = { in: group };    bounded = true; }
+  if (country  && country.length)  { where.country  = { in: country };  bounded = true; }
+
+  return bounded ? where : null;
+}
+
 // --- BullMQ Worker Setup ---
 const processAnalyticsJob = async (job, token) => {
     const { name, data } = job;
@@ -332,6 +371,21 @@ const processAnalyticsJob = async (job, token) => {
                         uniqueTagKeys.add(key);
                         return true;
                     });
+
+                    // A scoped update is authoritative for every cache key inside
+                    // its scope — including slices whose last transaction was just
+                    // deleted (Pass 1 then returns 0 rows for that slice). The
+                    // per-batch delete+create below only visits keys we recomputed,
+                    // so clear the whole scope up front; the write loop re-inserts
+                    // the slices that still have data.
+                    for (const singleScope of scopes) {
+                        const cacheWhere = scopeToCacheWhere(tenantId, singleScope);
+                        if (!cacheWhere) continue;
+                        await prisma.$transaction([
+                            prisma.analyticsCacheMonthly.deleteMany({ where: cacheWhere }),
+                            prisma.tagAnalyticsCacheMonthly.deleteMany({ where: cacheWhere }),
+                        ]);
+                    }
                 }
                 break;
 
