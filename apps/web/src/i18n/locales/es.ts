@@ -796,7 +796,7 @@ const es = {
     selectBank: "Selecciona un banco",
     selectCurrency: "Selecciona una moneda",
     selectCountry: "Selecciona un país",
-    addBank: "+ Añadir un nuevo banco",
+    addBank: "Añadir un nuevo banco",
     addBankError: "No se pudo añadir el banco. Por favor, inténtalo de nuevo.",
   },
   addBankDialog: {

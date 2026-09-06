@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
@@ -98,6 +99,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState<TenantSettingsData | null>(null);
@@ -265,6 +267,9 @@ export default function SettingsPage() {
       if (settings && !settings.bankIds.includes(newBank.id)) {
         handleSettingsChange("bankIds", [...settings.bankIds, newBank.id]);
       }
+      // Refresh the metadata query so the new bank appears in the "Your Banks" list,
+      // not just in the (now-selected) bankIds.
+      await queryClient.invalidateQueries({ queryKey: ["metadata"] });
       setNewBankName("");
     } catch (error) {
       toast({

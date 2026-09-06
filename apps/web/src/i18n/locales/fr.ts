@@ -802,7 +802,7 @@ const fr = {
     selectBank: "Sélectionnez une banque",
     selectCurrency: "Sélectionnez une devise",
     selectCountry: "Sélectionnez un pays",
-    addBank: "+ Ajouter une nouvelle banque",
+    addBank: "Ajouter une nouvelle banque",
     addBankError: "Échec de l'ajout de la banque. Veuillez réessayer.",
   },
   addBankDialog: {
