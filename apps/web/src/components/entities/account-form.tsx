@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -9,12 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
 import api from '@/lib/api';
-import { getTenantMeta } from '@/utils/tenantMetaStorage';
+import { getTenantMeta, updateTenantMetaFromAPI } from '@/utils/tenantMetaStorage';
 import type { Account, Bank, Country, Currency, User } from '@/types/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
 import { useAuth } from '@/hooks/use-auth';
 import { Checkbox } from '../ui/checkbox';
+import { AddBankDialog } from './add-bank-dialog';
+
+const ADD_BANK_OPTION = '__add_bank__';
 
 
 // Form schema
@@ -47,9 +51,11 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
 
   // Get tenant metadata from localStorage
   const tenantMeta = getTenantMeta();
-  const banks: Bank[] = tenantMeta?.banks || [];
+  const [banks, setBanks] = useState<Bank[]>(tenantMeta?.banks || []);
   const currencies: Currency[] = tenantMeta?.currencies || [];
   const countries: Country[] = tenantMeta?.countries || [];
+  const [isAddBankOpen, setIsAddBankOpen] = useState(false);
+  const [isCreatingBank, setIsCreatingBank] = useState(false);
 
   const tenantId = currentUser?.tenant?.id || currentUser?.tenantId;
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
@@ -112,9 +118,46 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
     }
   };
 
+  const handleCreateBank = async (name: string) => {
+    const existing = banks.find(
+      (b) => b.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (existing) {
+      form.setValue('bankId', existing.id.toString());
+      setIsAddBankOpen(false);
+      return;
+    }
+    setIsCreatingBank(true);
+    try {
+      const bank = await api.createBank({ name });
+      setBanks((prev) => [...prev, bank]);
+      // Yield a tick so the new SelectItem mounts (and Radix's internal native-options
+      // bookkeeping settles) before the selected value changes to it.
+      await Promise.resolve();
+      form.setValue('bankId', bank.id.toString());
+      if (tenantId) await updateTenantMetaFromAPI(tenantId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['banks'] }),
+        queryClient.invalidateQueries({ queryKey: ['metadata'] }),
+        queryClient.invalidateQueries({ queryKey: ['metadata', 'accounts'] }),
+      ]);
+      setIsAddBankOpen(false);
+    } catch (error) {
+      toast({
+        title: t('common.error'),
+        description: t('accountForm.addBankError'),
+        variant: 'destructive',
+      });
+      throw error;
+    } finally {
+      setIsCreatingBank(false);
+    }
+  };
+
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
+    <>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
         <FormField
           control={form.control}
           name="name"
@@ -185,8 +228,14 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
               <FormItem className="flex-1">
                 <FormLabel>{t('accountForm.bank')}</FormLabel>
                 <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  onValueChange={(value) => {
+                    if (value === ADD_BANK_OPTION) {
+                      setIsAddBankOpen(true);
+                      return;
+                    }
+                    field.onChange(value);
+                  }}
+                  value={field.value}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -199,6 +248,12 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
                         {bank.name}
                       </SelectItem>
                     ))}
+                    <SelectItem value={ADD_BANK_OPTION}>
+                      <span className="flex items-center gap-2 text-brand-primary">
+                        <Plus className="h-4 w-4" />
+                        {t('accountForm.addBank')}
+                      </span>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -273,5 +328,12 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
         </div>
       </form>
     </Form>
+    <AddBankDialog
+      open={isAddBankOpen}
+      onOpenChange={setIsAddBankOpen}
+      onConfirm={handleCreateBank}
+      isSubmitting={isCreatingBank}
+    />
+    </>
   );
 }

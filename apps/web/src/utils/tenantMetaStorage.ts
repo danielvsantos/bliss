@@ -50,12 +50,12 @@ export async function updateTenantMetaFromAPI(tenantId: string) {
       return meta;
     } else {
       console.warn(`Tenant with ID ${tenantId} not found.`);
-      clearTenantMeta();
     }
   } catch (error) {
+    // A failed refresh (network blip, rate limit, transient 5xx) is not evidence the
+    // cached data is wrong — keep the last known good tenantMeta rather than wiping it,
+    // which would otherwise blank out banks/currencies/countries everywhere they're read.
     console.error(`Failed to fetch or update tenant metadata for tenantId: ${tenantId}`, error);
-    // Optionally clear stale meta if the fetch fails
-    clearTenantMeta();
     return null;
   }
   return null;
