@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { describe, it, expect, vi } from 'vitest';
 import {
   createKeyHelpers,
@@ -42,6 +43,84 @@ describe('rotate-encryption-key: crypto helpers', () => {
   it('searchable encryption is deterministic under a fixed key', () => {
     const { encrypt } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
     expect(encrypt('user@example.com', true)).toBe(encrypt('user@example.com', true));
+  });
+
+  describe('resolve()', () => {
+    it('reports onNewKey=true and the plaintext for a value already on the new key', () => {
+      const { encrypt, resolve } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+      const ciphertext = encrypt('already migrated');
+      expect(resolve(ciphertext)).toEqual({ onNewKey: true, plaintext: 'already migrated' });
+    });
+
+    it('reports onNewKey=false and the old-key plaintext for a value still on the old key', () => {
+      const oldHelpers = createKeyHelpers(OLD_SECRET, OLD_SECRET);
+      const ciphertext = oldHelpers.encrypt('needs rotation');
+      const { resolve } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+      expect(resolve(ciphertext)).toEqual({ onNewKey: false, plaintext: 'needs rotation' });
+    });
+
+    it('throws when neither key decrypts the value', () => {
+      const { resolve } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+      const wrongHelpers = createKeyHelpers('some-other-secret', 'some-other-secret');
+      const ciphertext = wrongHelpers.encrypt('unrelated value');
+      expect(() => resolve(ciphertext)).toThrow();
+    });
+  });
+
+  describe('PBKDF2 cost — the reason resolve() exists', () => {
+    // migrateModel() used to call isOnNewKey() then decrypt() separately, which
+    // both attempt the new key independently — a wasted 4th PBKDF2 derivation
+    // (100k iterations, ~20ms) per migrated field on top of the unavoidable 3
+    // (new-key attempt that fails, old-key attempt that succeeds, re-encrypt).
+    // At 30k+ Transaction rows this waste alone was ~10+ minutes. Lock the
+    // count so this regression can't come back silently.
+    it('performs exactly 2 derivations to resolve a field still on the old key (not 3)', () => {
+      const oldHelpers = createKeyHelpers(OLD_SECRET, OLD_SECRET);
+      const ciphertext = oldHelpers.encrypt('needs rotation');
+      const { resolve } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+
+      const spy = vi.spyOn(crypto, 'pbkdf2Sync');
+      try {
+        resolve(ciphertext);
+        expect(spy).toHaveBeenCalledTimes(2); // failed new-key attempt + successful old-key attempt
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('performs exactly 1 derivation to resolve a field already on the new key', () => {
+      const { encrypt, resolve } = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+      const ciphertext = encrypt('already migrated');
+
+      const spy = vi.spyOn(crypto, 'pbkdf2Sync');
+      try {
+        resolve(ciphertext);
+        expect(spy).toHaveBeenCalledTimes(1);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('migrateModel performs exactly 3 total derivations per migrated field (resolve + re-encrypt), not 4', async () => {
+      const oldHelpers = createKeyHelpers(OLD_SECRET, OLD_SECRET);
+      const newHelpers = createKeyHelpers(NEW_SECRET, OLD_SECRET);
+      const db = [{ id: 1, value: oldHelpers.encrypt('needs rotation') }];
+
+      const spy = vi.spyOn(crypto, 'pbkdf2Sync');
+      try {
+        await migrateModel({
+          label: 'FakeModel.value',
+          idField: 'id',
+          fields: [{ name: 'value', searchable: false }],
+          fetchBatch: async (cursor) => (cursor ? [] : db.map((r) => ({ ...r }))),
+          updateRecord: async () => {},
+          keyHelpers: newHelpers,
+        });
+        expect(spy).toHaveBeenCalledTimes(3);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });
 

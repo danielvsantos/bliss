@@ -111,7 +111,26 @@ export function createKeyHelpers(newSecret, oldSecret) {
     return encryptWith(text, isSearchable, newSecret);
   }
 
-  return { decrypt, isOnNewKey, encrypt };
+  /**
+   * Combines isOnNewKey + decrypt into one pass. migrateModel() always needs
+   * "is this already on the new key, and if not, what's the plaintext"
+   * together — calling isOnNewKey() then decrypt() separately (as this
+   * replaces) meant every field still on the old key paid for the new-key
+   * PBKDF2 derivation (100k iterations, ~20ms) TWICE — once in isOnNewKey,
+   * once again as decrypt's failed first attempt — before even reaching the
+   * old-key attempt. That's 4 derivations per migrated field instead of 3:
+   * a 25% cut in migration time on large datasets, for free, with the exact
+   * same decrypt/re-encrypt behavior.
+   */
+  function resolve(encryptedText) {
+    try {
+      return { onNewKey: true, plaintext: tryDecrypt(encryptedText, newSecret) };
+    } catch {
+      return { onNewKey: false, plaintext: tryDecrypt(encryptedText, oldSecret) }; // throws if both fail
+    }
+  }
+
+  return { decrypt, isOnNewKey, encrypt, resolve };
 }
 
 // ─── Migration logic ──────────────────────────────────────────────────────────
@@ -123,11 +142,11 @@ export function createKeyHelpers(newSecret, oldSecret) {
  * @param {string}   opts.idField     - Primary key field name
  * @param {Array}    opts.fields      - [{ name, searchable }]
  * @param {Function} opts.updateRecord - (id, updates) => Promise<void>
- * @param {object}   opts.keyHelpers  - { decrypt, isOnNewKey, encrypt } from createKeyHelpers()
+ * @param {object}   opts.keyHelpers  - { decrypt, isOnNewKey, encrypt, resolve } from createKeyHelpers()
  * @param {boolean}  [opts.dryRun]
  */
 export async function migrateModel({ label, fetchBatch, idField, fields, updateRecord, keyHelpers, dryRun = false }) {
-  const { decrypt, isOnNewKey, encrypt } = keyHelpers;
+  const { encrypt, resolve } = keyHelpers;
   let cursor   = undefined;
   let total    = 0;
   let migrated = 0;
@@ -151,14 +170,12 @@ export async function migrateModel({ label, fetchBatch, idField, fields, updateR
         const value = record[field.name];
         if (!value) continue;
 
-        // Skip fields already encrypted with the new key
-        if (isOnNewKey(value)) {
-          skipped++;
-          continue;
-        }
-
         try {
-          const plaintext = decrypt(value);
+          const { onNewKey, plaintext } = resolve(value);
+          if (onNewKey) {
+            skipped++;
+            continue;
+          }
           updates[field.name] = encrypt(plaintext, field.searchable);
           needsUpdate = true;
         } catch (err) {
