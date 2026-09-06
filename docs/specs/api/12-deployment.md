@@ -92,5 +92,5 @@ The API supports two storage backends via `STORAGE_BACKEND`:
 ## 12.8. Production Notes
 
 - The standalone server listens on `0.0.0.0:3000` (configured via `HOSTNAME` env var in Dockerfile)
-- For Vercel deployment, the standard Next.js build is used instead of standalone mode
-- TLS termination should be handled by a reverse proxy in front of the Docker stack
+- The same standalone Docker image (`docker/Dockerfile.api`) is used for every deployment target, including Railway (see [`docs/guides/multi-tenant-deployment.md`](/docs/guides/multi-tenant-deployment) for the reference production topology) -- there is no separate build mode per platform
+- TLS termination should be handled by a reverse proxy in front of the Docker stack (Docker Compose) or by the platform's own edge (Railway terminates TLS for public services automatically)

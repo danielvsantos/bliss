@@ -146,17 +146,43 @@ Workers are closed before Redis is disconnected to ensure in-flight jobs complet
 ### Redis TLS Guard
 In production (`NODE_ENV=production`), the backend requires `REDIS_URL` to use the `rediss://` scheme (TLS). This can be bypassed with `REDIS_SKIP_TLS_CHECK=true` for providers whose internal network does not expose a TLS endpoint (e.g. Railway private-network Redis).
 
-## 12.6. PaaS Deployment (Secondary)
+## 12.6. PaaS Deployment (Secondary) -- Railway (single project)
 
-For Platform-as-a-Service providers like Railway or Render using a single GitHub repository:
+Railway is the reference PaaS target -- see
+[`docs/guides/multi-tenant-deployment.md`](/docs/guides/multi-tenant-deployment)
+for the full walkthrough (environment variables, private networking, staging
+environments, and migrating an existing database into it). The `START_MODE`
+mechanism described in §12.5 works on any container PaaS; Railway is
+documented here because it's what this project actually runs in production.
 
-1. **Web Service**: Deploy from the repo with `START_MODE=web`. Expose via public domain.
-2. **Worker Service**: Deploy from the same repo with `START_MODE=worker`. No public domain.
-3. **Shared Resources**: Both services must share the same `DATABASE_URL` and `REDIS_URL`.
-4. **API Layer**: Deploy `apps/api` as a separate Next.js service (or use Vercel for zero-config deployment).
-5. **Frontend**: Deploy `apps/web` as a static site (Vercel, Netlify, or any CDN).
+All five services -- `web`, `api`, `backend`, Postgres, and Redis -- live in
+**one Railway project** on its private network, built from the same
+Dockerfiles as Docker Compose:
 
-Code pushes to GitHub trigger simultaneous rebuilds of all service instances.
+1. **Web**: `docker/Dockerfile.web` (nginx). Public domain.
+2. **API**: `docker/Dockerfile.api` -- the same standalone Next.js build used
+   in Docker Compose. Public domain.
+3. **Backend**: `docker/Dockerfile.backend`, as either one `START_MODE=all`
+   service (low volume) or split into `START_MODE=web` (HTTP ingestion, no
+   public domain) + `START_MODE=worker` (BullMQ consumers) services for
+   higher throughput.
+4. **PostgreSQL**: Railway's Postgres plugin (pgvector image). Private
+   network only -- a direct `postgresql://` connection, not a pooled/serverless
+   one, since the API and backend hold long-running connection pools.
+5. **Redis**: Railway's Redis plugin. Private network only -- set
+   `REDIS_SKIP_TLS_CHECK=true`, since Railway's private Redis has no
+   `rediss://` endpoint (see the Redis TLS Guard note above).
+
+Cross-service variables (`DATABASE_URL`, `REDIS_URL`, `BACKEND_URL`) are set
+as `${{service.VAR}}` reference variables rather than copy-pasted connection
+strings, so they always resolve to the current internal hostname/credential
+without manual duplication across services.
+
+Each service redeploys independently when its own variables or watched paths
+change -- there is no atomic "deploy all" across the project. This matters
+when rotating a secret read by more than one service; see
+[`docs/guides/key-rotation.md`](/docs/guides/key-rotation) §0.2 for the
+ordering this implies.
 
 ## 12.7. Production Considerations
 
