@@ -41,7 +41,7 @@ All four services live in one Railway **environment**. Service-to-service traffi
 
 **Web** and **API** are separate Railway services built from [`docker/Dockerfile.web`](../../docker/Dockerfile.web) and [`docker/Dockerfile.api`](../../docker/Dockerfile.api). The web image bakes `NEXT_PUBLIC_API_URL` at **build time** -- rebuild it whenever the API domain changes.
 
-**Backend** runs as one `START_MODE=all` service for small deployments, or split into `START_MODE=web` (HTTP, needed for Plaid webhooks and the API's pricing calls) + `START_MODE=worker` (BullMQ consumers). BullMQ distributes jobs across all worker instances automatically -- add worker replicas to scale job throughput.
+**Backend** runs as one `START_MODE=all` service for small deployments, or split into `START_MODE=web` (the internal HTTP API the frontend API calls for events and pricing) + `START_MODE=worker` (BullMQ consumers). It never needs a public domain -- the frontend API reaches it over `*.railway.internal`. BullMQ distributes jobs across all worker instances automatically -- add worker replicas to scale job throughput.
 
 **PostgreSQL** uses Railway's pgvector-capable Postgres image. The API container runs `prisma migrate deploy` + `prisma db seed` on startup ([`docker/Dockerfile.api`](../../docker/Dockerfile.api)), so a fresh database is provisioned automatically on first boot.
 
@@ -90,7 +90,7 @@ In Google Cloud Console, set the Authorized Redirect URI to `<NEXTAUTH_URL>/api/
 
 ### Plaid
 
-`PLAID_WEBHOOK_URL` must point at the **backend's** public URL (`https://<backend-domain>/api/plaid/webhook`), so the backend service needs a public domain even though the API talks to it privately. Changing the env var only affects newly linked Items -- call Plaid's `/item/webhook/update` for existing `PlaidItem` rows after a domain change.
+`PLAID_WEBHOOK_URL` points at the **API's** public URL: `https://<api-domain>/api/plaid/webhook`. The handler lives in [`apps/api/pages/api/plaid/webhook.js`](../../apps/api/pages/api/plaid/webhook.js) and is intentionally unauthenticated -- Plaid signs every call with an ES256 JWT, which the handler verifies in production. The backend needs no public exposure for this. Changing the env var only affects newly linked Items -- call Plaid's `/item/webhook/update` for existing `PlaidItem` rows after a domain change.
 
 ### Sentry
 
