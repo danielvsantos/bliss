@@ -44,11 +44,10 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # API: Integration Tests (Vitest + real Postgres)
   #
-  # IMPORTANT — Prisma Accelerate vs direct connection:
-  #   postinstall runs "prisma generate --no-engine" (Accelerate client).
-  #   That client requires a prisma:// URL and throws on a direct postgresql://
-  #   URL. We regenerate with a full-engine client after pnpm install so that
-  #   tests can connect directly to the CI Postgres service.
+  # Prisma client: the API generates a full-engine client (see apps/api
+  #   package.json). We regenerate explicitly after pnpm install as a
+  #   defensive no-op so tests always connect directly to the CI Postgres
+  #   service regardless of install-order caching.
   # ─────────────────────────────────────────────────────────────────────────────
   api-integration:
     name: API — Integration Tests

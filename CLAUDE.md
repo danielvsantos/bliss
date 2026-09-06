@@ -304,7 +304,9 @@ Docker Compose orchestrates 5 services: postgres (with pgvector), redis, api, ba
 For production PaaS (e.g., Railway), the backend supports `START_MODE` env var:
 - `web` -- API-only instance (lightweight, highly available)
 - `worker` -- Worker-only instance (high CPU/RAM, no HTTP)
-- `all` (default) -- Both in same process (local dev only)
+- `all` (default) -- Both in same process (local dev, or a single-instance Railway deploy)
+
+Reference production topology (API + web + backend + Postgres/pgvector + Redis all on Railway's private network) and DB-migration steps: [`docs/guides/multi-tenant-deployment.md`](docs/guides/multi-tenant-deployment.md).
 
 ## Documentation reference
 

@@ -251,6 +251,48 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
 
 // Cash holdings processing has been moved to the dedicated cash-processor.js worker
 
+/**
+ * Map a scoped-update scope to a Prisma `where` over the analytics-cache
+ * tables (AnalyticsCacheMonthly / TagAnalyticsCacheMonthly, both keyed by
+ * year/month/currency/country/type/group), for the "scope recomputed to
+ * nothing → clear its now-stale rows" path. Caller adds `tenantId`.
+ *
+ * `currency` from the scope is the transaction's *native* currency, whereas
+ * cache rows are keyed by the tenant's *display* currency — the two don't
+ * correspond, so currency is deliberately not constrained. (Rare edge: one
+ * {month,country,type,group} slice fed by more than one native currency —
+ * no worse than the pre-existing per-batch overwrite behaviour.)
+ *
+ * Returns `null` when the scope has neither a date bound nor filters, so the
+ * caller never issues a tenant-wide delete.
+ */
+function scopeToCacheWhere(scope = {}) {
+  const filters = scope.filters || {};
+  const type    = filters.type    || (scope.type    ? [scope.type]    : null);
+  const group   = filters.group   || (scope.group   ? [scope.group]   : null);
+  const country = filters.country || (scope.country ? [scope.country] : null);
+
+  const where = {};
+  let bounded = false;
+
+  if (scope.earliestDate) {
+    const d = new Date(scope.earliestDate);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    where.OR = [{ year: { gt: y } }, { year: y, month: { gte: m } }];
+    bounded = true;
+  } else {
+    if (scope.year)  { where.year = scope.year;  bounded = true; }
+    if (scope.month) { where.month = scope.month; }
+  }
+
+  if (type    && type.length)    { where.type    = { in: type };    bounded = true; }
+  if (group   && group.length)   { where.group   = { in: group };   bounded = true; }
+  if (country && country.length) { where.country = { in: country }; bounded = true; }
+
+  return bounded ? where : null;
+}
+
 // --- BullMQ Worker Setup ---
 const processAnalyticsJob = async (job, token) => {
     const { name, data } = job;
@@ -332,6 +374,24 @@ const processAnalyticsJob = async (job, token) => {
                         uniqueTagKeys.add(key);
                         return true;
                     });
+
+                    // When the recompute yields nothing, every transaction that fed
+                    // these slices is gone (e.g. the last one in a category/month was
+                    // deleted). The per-batch delete+create below only visits keys it
+                    // recomputed, so it can't clear a now-empty slice — do it here.
+                    // Guarded on "recomputed to nothing" so the normal edit / partial
+                    // delete path (already handled by the per-batch replace) is
+                    // untouched.
+                    if (newAnalytics.length === 0 && newTagAnalytics.length === 0) {
+                        for (const singleScope of scopes) {
+                            const cacheWhere = scopeToCacheWhere(singleScope);
+                            if (!cacheWhere) continue;
+                            await prisma.$transaction([
+                                prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId, ...cacheWhere } }),
+                                prisma.tagAnalyticsCacheMonthly.deleteMany({ where: { tenantId, ...cacheWhere } }),
+                            ]);
+                        }
+                    }
                 }
                 break;
 
