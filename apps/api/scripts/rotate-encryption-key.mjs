@@ -267,7 +267,7 @@ export async function run({ prisma, newSecret, oldSecret, dryRun = false }) {
     console.log('\n✓ Migration complete. Next steps:');
     console.log('  1. node apps/api/scripts/verify-encryption-key.mjs — must report 0 undecryptable rows');
     console.log('  2. Remove ENCRYPTION_SECRET_PREVIOUS from all environment configs');
-    console.log('     (Vercel, Railway, or wherever your services are hosted)');
+    console.log('     (Railway, Docker Compose, or wherever your services are hosted)');
     console.log('  3. Restart both bliss-finance-api and bliss-backend-service');
   }
 
