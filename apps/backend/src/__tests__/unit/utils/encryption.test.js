@@ -1,5 +1,5 @@
 // ENCRYPTION_SECRET is loaded from .env.test by setup/env.js before this module is required
-const { encrypt, decrypt } = require('../../../utils/encryption');
+const { encrypt, decrypt, keyFingerprint } = require('../../../utils/encryption');
 
 describe('encryption', () => {
   describe('encrypt()', () => {
@@ -57,6 +57,24 @@ describe('encryption', () => {
     it('returns the original value on tampered ciphertext (graceful failure)', () => {
       const tampered = 'definitely-not-base64-encrypted-data!!!';
       expect(decrypt(tampered)).toBe(tampered);
+    });
+  });
+
+  describe('keyFingerprint()', () => {
+    it('is stable for a given secret', () => {
+      expect(keyFingerprint('secret-a')).toBe(keyFingerprint('secret-a'));
+    });
+
+    it('differs across secrets', () => {
+      expect(keyFingerprint('secret-a')).not.toBe(keyFingerprint('secret-b'));
+    });
+
+    it('is a 16-character hex prefix', () => {
+      expect(keyFingerprint('secret-a')).toMatch(/^[0-9a-f]{16}$/);
+    });
+
+    it('defaults to the active ENCRYPTION_SECRET when no argument is given', () => {
+      expect(keyFingerprint()).toHaveLength(16);
     });
   });
 });

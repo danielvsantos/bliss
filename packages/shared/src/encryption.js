@@ -115,6 +115,15 @@ export function decrypt(encryptedText) {
   }
 }
 
+// SHA-256 prefix identifying which secret a running service has loaded, without
+// exposing the secret itself. Used at startup (see instrumentation.js /
+// index.js) and by the rotation/verification scripts so an operator can
+// confirm which key is active. Matches the prefix rotate-encryption-key.mjs
+// has always printed.
+export function keyFingerprint(secret = ENCRYPTION_SECRET) {
+  return crypto.createHash('sha256').update(secret).digest('hex').slice(0, 16);
+}
+
 // Fields that should be encrypted for each model, with searchable flag
 export const encryptedFields = {
   User: {

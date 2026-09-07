@@ -1,1 +1,1 @@
-export { encrypt, decrypt, encryptedFields } from '@bliss/shared/encryption';
+export { encrypt, decrypt, encryptedFields, keyFingerprint } from '@bliss/shared/encryption';
