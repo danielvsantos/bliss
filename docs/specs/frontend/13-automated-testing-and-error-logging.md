@@ -290,7 +290,7 @@ The unified CI workflow triggers on every push and pull request to main/develop.
 
 ### Frontend Unit & Component Tests
 
-The frontend test suite consists of **75 test files with 472 tests** covering the major application layers. Run `pnpm test:web` to execute all tests.
+The frontend test suite consists of **89 test files with 601 tests** covering the major application layers. Run `pnpm test:web` to execute all tests. (The account-creation-during-onboarding feature added `onboarding-account-setup.test.tsx` and placeholder-number coverage in `use-account-list`.)
 
 **Test categories:**
 

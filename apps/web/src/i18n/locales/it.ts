@@ -1109,6 +1109,8 @@ const it = {
   accountDetail: {
     edit: "Modifica",
     plaidConnected: "Plaid collegato",
+    placeholderNumberHint: "Questo conto ha ancora un numero provvisorio dalla configurazione.",
+    addAccountNumber: "Aggiungi il numero di conto reale",
     connectionHealth: "Stato connessione",
     consentExpired: "Consenso scaduto",
     consentExpiringSoon: "Consenso in scadenza",

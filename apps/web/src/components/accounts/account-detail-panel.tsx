@@ -110,6 +110,23 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
         </Button>
       </div>
 
+      {/* Nudge: onboarding scaffolded this account with a placeholder number. */}
+      {account.hasPlaceholderNumber && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-warning" />
+          <span>
+            {t('accountDetail.placeholderNumberHint')}{' '}
+            <button
+              type="button"
+              onClick={onEdit}
+              className="font-medium text-warning underline underline-offset-2"
+            >
+              {t('accountDetail.addAccountNumber')}
+            </button>
+          </span>
+        </div>
+      )}
+
       <Separator />
 
       {/* Connection Health */}

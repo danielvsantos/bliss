@@ -87,7 +87,12 @@ The `useAccountList()` hook enriches raw `Account` objects into an `EnrichedAcco
 - `plaidItem`: Linked `PlaidItem` reference (null for manual accounts)
 - `plaidAccountId`: Specific Plaid sub-account ID
 - `historicalSyncComplete`, `earliestTransactionDate`: Sync progress indicators
+- `hasPlaceholderNumber` (optional): `true` when `accountNumber` still matches the onboarding `"{bank-slug}-acc-{n}"` placeholder (regex `^[a-z0-9-]+-acc-\d+$`). Purely derived — no persisted flag. When set, `mask` shows the number verbatim (masking it to `•••• cc-1` would read like a broken real number) and the detail panel renders a warning-token hint linking to Edit.
 - `originalAccount`: Reference to the raw `Account` object
+
+### Onboarding-scaffolded accounts
+
+The onboarding bank & account picker creates **ordinary accounts** with a `"{bank-slug}-acc-{n}"` placeholder number — no draft state, no picker filtering. They appear everywhere a normal account does (transaction form, filters, Smart Import, portfolio, net-worth). The only special treatment is `hasPlaceholderNumber` (above): the account detail panel shows a subtle "This account still has a placeholder number from setup — Add the real account number" hint (`bg-warning/5 border-warning/30`, `accountDetail.placeholderNumberHint` / `accountDetail.addAccountNumber`) that opens the standard Edit form.
 
 ### Plaid Items Polling
 

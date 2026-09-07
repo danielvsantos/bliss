@@ -32,6 +32,8 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 - `subtype` (String?): Plaid account subtype (e.g., `checking`, `savings`, `cd`).
 - `plaidItem` (Relation): Optional belongs-to relation with `PlaidItem` via `plaidItemId`.
 
+> **Onboarding scaffolding.** The onboarding bank & account picker creates ordinary `Account` rows (one per declared account) with a placeholder `accountNumber` of the form `"{bank-slug}-acc-{n}"`. These are real accounts in every respect; the frontend detects the placeholder pattern purely from `accountNumber` to show an "add your real number" hint. There is no `isDraft` column or special API handling.
+
 ### Business Logic & Security
 
 - **Encryption at Rest**: The `accountNumber` field is encrypted using AES-256-GCM with a random salt per entry (non-searchable). Decryption is handled transparently by Prisma middleware.

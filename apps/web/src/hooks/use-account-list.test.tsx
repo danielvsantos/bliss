@@ -175,6 +175,33 @@ describe('useAccountList', () => {
     expect(result.current.plaidItems).toHaveLength(1);
   });
 
+  it('flags a "{slug}-acc-N" placeholder number and shows it verbatim (not masked)', async () => {
+    vi.mocked(useMetadata).mockReturnValue({
+      data: {
+        ...mockMetadata,
+        accounts: [
+          { id: 7, name: 'Chase', bankId: 70, currencyCode: 'USD', countryId: 'US', accountNumber: 'chase-acc-1' },
+          { id: 8, name: 'Real', bankId: 70, currencyCode: 'USD', countryId: 'US', accountNumber: '12345678' },
+        ],
+        banks: [{ id: 70, name: 'Chase' }],
+      },
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMetadata>);
+    vi.mocked(api.getPlaidItems).mockResolvedValue([]);
+
+    const { result } = renderHook(() => useAccountList(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.accounts).toHaveLength(2));
+
+    const placeholder = result.current.accounts.find((a) => a.id === 7)!;
+    expect(placeholder.hasPlaceholderNumber).toBe(true);
+    expect(placeholder.mask).toBe('chase-acc-1'); // shown as-is, not "•••• cc-1"
+
+    const real = result.current.accounts.find((a) => a.id === 8)!;
+    expect(real.hasPlaceholderNumber).toBe(false);
+    expect(real.mask).toBe('•••• 5678');
+  });
+
   it('sets healthColor to destructive for ERROR status plaid item', async () => {
     const mockAccount = { id: 6, name: 'Err', bankId: 60, currencyCode: 'USD', countryId: 'US', accountNumber: '1111' };
     const mockPlaidItem = {

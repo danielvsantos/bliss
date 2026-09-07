@@ -36,12 +36,16 @@ export type Country = {
   id: string;
   name: string;
   emoji?: string;
+  /** True for the tenant's primary country (first picked during onboarding). */
+  isDefault?: boolean;
 };
 
 export type Currency = {
   id: string;
   name: string;
   symbol?: string;
+  /** True for the tenant's primary currency (first picked during onboarding). */
+  isDefault?: boolean;
 };
 
 export type Account = {

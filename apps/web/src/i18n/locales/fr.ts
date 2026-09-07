@@ -1094,6 +1094,8 @@ const fr = {
   accountDetail: {
     edit: "Modifier",
     plaidConnected: "Connecté par Plaid",
+    placeholderNumberHint: "Ce compte a encore un numéro provisoire issu de la configuration.",
+    addAccountNumber: "Ajouter le vrai numéro de compte",
     connectionHealth: "État de la connexion",
     consentExpired: "Consentement expiré",
     consentExpiringSoon: "Consentement bientôt expiré",
