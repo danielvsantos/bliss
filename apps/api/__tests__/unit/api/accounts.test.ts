@@ -186,7 +186,6 @@ describe('POST /api/accounts', () => {
 
     expect(res._status).toBe(201);
   });
-
 });
 
 describe('PUT /api/accounts', () => {
