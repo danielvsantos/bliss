@@ -150,34 +150,6 @@ describe('GET /api/onboarding/progress', () => {
     expect(res._body.onboardingProgress.checklist.reviewTransactions.done).toBe(true);
   });
 
-  it('marks connectBank done when only a draft (scaffolded) account exists', async () => {
-    // The handler gates connectBank on account.count > 0 with no isDraft filter,
-    // so an onboarding-scaffolded draft account satisfies the checklist item
-    // exactly like a fully configured one.
-    mockPrisma.tenant.findUnique.mockResolvedValueOnce({
-      onboardingProgress: {
-        checklist: {
-          connectBank: { done: false, skipped: false },
-          reviewTransactions: { done: false },
-          exploreExpenses: { done: false },
-          checkPnL: { done: false },
-        },
-        setupFlow: {},
-      },
-      onboardingCompletedAt: null,
-    });
-    mockPrisma.account.count.mockResolvedValueOnce(1); // single draft account
-    mockPrisma.transaction.findFirst.mockResolvedValueOnce(null);
-
-    const req = makeReq();
-    const res = makeRes();
-
-    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
-
-    expect(res._status).toBe(200);
-    expect(res._body.onboardingProgress.checklist.connectBank.done).toBe(true);
-  });
-
   it('returns 404 when tenant not found', async () => {
     mockPrisma.tenant.findUnique.mockResolvedValueOnce(null);
     mockPrisma.account.count.mockResolvedValueOnce(0);

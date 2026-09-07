@@ -33,16 +33,6 @@ vi.mock('@/hooks/use-normalized-portfolio-items', () => ({ usePortfolioItems: vi
 vi.mock('./category-combobox', () => ({ CategoryCombobox: () => <div data-testid="category-combobox" /> }));
 vi.mock('./tag-input', () => ({ TagInput: () => <div data-testid="tag-input" /> }));
 
-// jsdom stubs for Radix Select
-global.ResizeObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as unknown as typeof ResizeObserver;
-window.HTMLElement.prototype.scrollIntoView = vi.fn();
-window.HTMLElement.prototype.hasPointerCapture = vi.fn();
-window.HTMLElement.prototype.releasePointerCapture = vi.fn();
-
 const account = { id: 5, name: 'Checking', currencyCode: 'USD' };
 const category = { id: 9, name: 'Groceries', type: 'Expenses', group: 'Essentials' };
 
@@ -102,39 +92,5 @@ describe('TransactionForm — portfolio cache invalidation', () => {
         'equity-analysis',
       ]),
     );
-  });
-});
-
-describe('TransactionForm — draft accounts hidden from the account picker', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult([category]) as ReturnType<typeof useCategories>);
-    vi.mocked(useTickerSearch).mockReturnValue(mockQueryResult([]) as ReturnType<typeof useTickerSearch>);
-    vi.mocked(usePortfolioItems).mockReturnValue(mockQueryResult([]) as ReturnType<typeof usePortfolioItems>);
-  });
-
-  it('excludes isDraft accounts from the selectable options', async () => {
-    vi.mocked(useAccounts).mockReturnValue(
-      mockQueryResult([
-        account,
-        { id: 7, name: 'Draft Chase', currencyCode: 'USD', isDraft: true },
-      ]) as ReturnType<typeof useAccounts>,
-    );
-
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <TransactionForm transaction={editTransaction} onClose={vi.fn()} />
-      </QueryClientProvider>,
-    );
-
-    // The account Select trigger shows the currently-selected account name.
-    const accountTrigger = screen
-      .getAllByRole('combobox')
-      .find((el) => el.textContent?.includes('Checking')) as HTMLElement;
-    fireEvent.click(accountTrigger);
-
-    expect(await screen.findByRole('option', { name: 'Checking' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Draft Chase' })).not.toBeInTheDocument();
   });
 });

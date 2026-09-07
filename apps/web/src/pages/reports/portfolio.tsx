@@ -289,10 +289,7 @@ export default function PortfolioHoldingsPage() {
 
   // ── Data Fetching ──
   const { data: metadata, isLoading: metadataLoading, error: metadataError } = useMetadata();
-  const { accounts: allAccounts } = useAccountList();
-  // Draft (onboarding-scaffolded) accounts hold no positions until confirmed —
-  // keep them out of the portfolio account filter.
-  const accounts = useMemo(() => allAccounts.filter((a) => !a.isDraft), [allAccounts]);
+  const { accounts } = useAccountList();
 
   // Derive distinct countries from the account list for the country filter
   const distinctCountries = useMemo(() => {

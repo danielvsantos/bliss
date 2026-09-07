@@ -101,7 +101,7 @@ beforeEach(() => {
 });
 
 describe('OnboardingAccountSetup', () => {
-  it('creates one TenantBank per selected bank and one draft Account per row', async () => {
+  it('creates one TenantBank per selected bank and one Account per row', async () => {
     const { onComplete } = renderSetup();
 
     fireEvent.click(screen.getByText('Chase'));
@@ -123,7 +123,6 @@ describe('OnboardingAccountSetup', () => {
 
     await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(3));
     const payloads = vi.mocked(api.createAccount).mock.calls.map((c) => c[0]);
-    expect(payloads.every((p) => p.isDraft === true)).toBe(true);
     expect(payloads.every((p) => p.countryId === 'USA')).toBe(true);
     expect(payloads.every((p) => p.ownerIds.length === 1 && p.ownerIds[0] === 'u1')).toBe(true);
 
@@ -166,7 +165,7 @@ describe('OnboardingAccountSetup', () => {
     const { onComplete } = renderSetup();
 
     fireEvent.click(screen.getByText('Chase'));
-    fireEvent.click(screen.getByText('Create {{count}} accounts:1'));
+    fireEvent.click(screen.getByText('Create 1 account'));
 
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' })),
@@ -182,7 +181,7 @@ describe('OnboardingAccountSetup', () => {
     // One combobox per row (currency only) — no country Select rendered.
     expect(screen.getAllByRole('combobox')).toHaveLength(1);
 
-    fireEvent.click(screen.getByText('Create {{count}} accounts:1'));
+    fireEvent.click(screen.getByText('Create 1 account'));
 
     await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(1));
     expect(vi.mocked(api.createAccount).mock.calls[0][0].countryId).toBe('USA');

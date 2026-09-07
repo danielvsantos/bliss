@@ -1083,12 +1083,13 @@ const es = {
     actionRequired: "Acción requerida",
     disconnected: "Desconectada",
     manual: "Manual",
-    needsSetup: "Necesita configuración",
   },
 
   accountDetail: {
     edit: "Editar",
     plaidConnected: "Conectado por Plaid",
+    placeholderNumberHint: "Esta cuenta todavía tiene un número provisional de la configuración.",
+    addAccountNumber: "Añade el número de cuenta real",
     connectionHealth: "Estado de conexión",
     consentExpired: "Consentimiento expirado",
     consentExpiringSoon: "Consentimiento por expirar",

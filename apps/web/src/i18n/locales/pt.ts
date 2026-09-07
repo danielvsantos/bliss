@@ -1103,13 +1103,14 @@ const pt = {
     actionRequired: "Ação Necessária",
     disconnected: "Desconectada",
     manual: "Manual",
-    needsSetup: "Precisa de configuração",
   },
 
   // Painel de detalhes da conta
   accountDetail: {
     edit: "Editar",
     plaidConnected: "Plaid Conectado",
+    placeholderNumberHint: "Esta conta ainda tem um número provisório da configuração.",
+    addAccountNumber: "Adicionar o número de conta real",
     connectionHealth: "Saúde da Conexão",
     consentExpired: "Consentimento expirado",
     consentExpiringSoon: "Consentimento expirando em breve",

@@ -144,43 +144,6 @@ describe('AccountListPanel Component', () => {
     expect(screen.getByText('accountsPage.noAccountsMatch')).toBeInTheDocument();
   });
 
-  it('shows a "Needs setup" warning badge for draft accounts and not for others', () => {
-    const draftAccount: EnrichedAccount = {
-      ...mockAccounts[2],
-      id: 4,
-      accountName: 'Chase',
-      institution: 'Chase',
-      isDraft: true,
-    };
-    render(
-      <AccountListPanel
-        accounts={[mockAccounts[0], draftAccount]}
-        selectedAccountId={null}
-        onSelectAccount={vi.fn()}
-        isLoading={false}
-      />
-    );
-
-    const badge = screen.getByText('accountsPage.needsSetup');
-    expect(badge).toBeInTheDocument();
-    expect(badge.className).toContain('text-warning');
-
-    // The non-draft account keeps its normal status badge.
-    expect(screen.getByText('accountsPage.synced')).toBeInTheDocument();
-  });
-
-  it('does not render the "Needs setup" badge when no account is a draft', () => {
-    render(
-      <AccountListPanel
-        accounts={mockAccounts}
-        selectedAccountId={null}
-        onSelectAccount={vi.fn()}
-        isLoading={false}
-      />
-    );
-    expect(screen.queryByText('accountsPage.needsSetup')).not.toBeInTheDocument();
-  });
-
   it('calls onSelectAccount when an account is clicked', () => {
     const onSelectMock = vi.fn();
     render(

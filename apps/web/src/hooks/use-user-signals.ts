@@ -52,10 +52,7 @@ export interface UseUserSignalsResult {
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useUserSignals(year?: string, currency?: string): UseUserSignalsResult {
-  const { accounts: allAccounts, isLoading: accountsLoading } = useAccountList();
-  // Draft (onboarding-scaffolded) accounts don't count as configured accounts
-  // for dashboard/onboarding signals until the user confirms them.
-  const accounts = useMemo(() => allAccounts.filter(a => !a.isDraft), [allAccounts]);
+  const { accounts, isLoading: accountsLoading } = useAccountList();
   const { data: metrics, portfolioCurrency, isLoading: metricsLoading, isPortfolioRefreshing: metricsRefreshing } = useDashboardMetrics(year ?? new Date().getFullYear().toString(), currency);
   const { data: plaidData } = usePlaidTransactions({ limit: 1 });
   const { data: pendingImportData } = usePendingImports();

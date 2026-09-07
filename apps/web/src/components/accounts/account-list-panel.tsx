@@ -24,20 +24,8 @@ function getAccountIcon(institution: string) {
   return <Landmark className="h-4 w-4" />;
 }
 
-function StatusBadge({ status, isDraft }: { status: EnrichedAccount['status']; isDraft?: boolean }) {
+function StatusBadge({ status }: { status: EnrichedAccount['status'] }) {
   const { t } = useTranslation();
-
-  if (isDraft) {
-    return (
-      <Badge
-        variant="default"
-        className="text-[10px] font-medium px-1.5 py-0 bg-warning/10 text-warning border-warning/20 hover:bg-warning/10"
-      >
-        {t('accountsPage.needsSetup')}
-      </Badge>
-    );
-  }
-
   const config = {
     synced: { label: t('accountsPage.synced'), variant: 'default' as const, className: 'bg-positive/10 text-positive border-positive/20 hover:bg-positive/10' },
     'action-required': { label: t('accountsPage.actionRequired'), variant: 'default' as const, className: 'bg-warning/10 text-warning border-warning/20 hover:bg-warning/10' },
@@ -146,7 +134,7 @@ export function AccountListPanel({ accounts, selectedAccountId, onSelectAccount,
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{account.accountName}</span>
-                            <StatusBadge status={account.status} isDraft={account.isDraft} />
+                            <StatusBadge status={account.status} />
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-xs text-muted-foreground truncate">{account.institution}</span>

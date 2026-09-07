@@ -377,7 +377,7 @@ export default function OnboardingPage() {
                     <div>
                       <h2 className="text-xl font-bold">{t("Add your banks & accounts")}</h2>
                       <p className="text-sm text-muted-foreground">
-                        {t("Pick the banks you use and add an account for each — we'll set up drafts you can finish later.")}
+                        {t("Pick the banks you use and add an account for each. You can fill in the account numbers later.")}
                       </p>
                     </div>
                   </div>

@@ -1103,13 +1103,14 @@ const en = {
     actionRequired: "Action Required",
     disconnected: "Disconnected",
     manual: "Manual",
-    needsSetup: "Needs setup",
   },
 
   // Account detail panel
   accountDetail: {
     edit: "Edit",
     plaidConnected: "Plaid Connected",
+    placeholderNumberHint: "This account still has a placeholder number from setup.",
+    addAccountNumber: "Add the real account number",
     connectionHealth: "Connection Health",
     consentExpired: "Consent expired",
     consentExpiringSoon: "Consent expiring soon",

@@ -98,11 +98,6 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
           </div>
           <div className="flex items-center gap-2 mt-2">
             <Badge variant="outline" className="text-xs">{account.currencyCode}</Badge>
-            {account.isDraft && (
-              <Badge variant="default" className="text-xs bg-warning/10 text-warning border-warning/20 hover:bg-warning/10">
-                <AlertTriangle className="h-3 w-3 mr-1" /> {t('accountsPage.needsSetup')}
-              </Badge>
-            )}
             {isPlaid && (
               <Badge variant="default" className="text-xs bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
                 <Landmark className="h-3 w-3 mr-1" /> {t('accountDetail.plaidConnected')}
@@ -114,6 +109,23 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
           <Edit2 className="h-3.5 w-3.5 mr-1" /> {t('common.edit')}
         </Button>
       </div>
+
+      {/* Nudge: onboarding scaffolded this account with a placeholder number. */}
+      {account.hasPlaceholderNumber && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-warning" />
+          <span>
+            {t('accountDetail.placeholderNumberHint')}{' '}
+            <button
+              type="button"
+              onClick={onEdit}
+              className="font-medium text-warning underline underline-offset-2"
+            >
+              {t('accountDetail.addAccountNumber')}
+            </button>
+          </span>
+        </div>
+      )}
 
       <Separator />
 

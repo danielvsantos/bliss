@@ -11,8 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useToast } from '@/hooks/use-toast';
-import { useCategories } from '@/hooks/use-metadata';
-import { useSelectableAccounts } from '@/hooks/use-selectable-accounts';
+import { useAccounts, useCategories } from '@/hooks/use-metadata';
 import { api } from '@/lib/api';
 import { CalendarIcon, Target } from 'lucide-react';
 import { format } from 'date-fns';
@@ -86,7 +85,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
   const [closePositionMode, setClosePositionMode] = useState(false);
   const [matchedPortfolioItem, setMatchedPortfolioItem] = useState<PortfolioItem | null>(null);
 
-  const { data: accounts, isLoading: accountsLoading } = useSelectableAccounts();
+  const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const { data: categories, isLoading: categoriesLoading } = useCategories();
   const { data: portfolioItems } = usePortfolioItems();
 

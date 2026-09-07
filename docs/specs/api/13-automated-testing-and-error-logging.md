@@ -300,7 +300,7 @@ The CI job runs `npx prisma migrate deploy` before executing tests to ensure the
 
 ## 13.7 Test Results Summary
 
-The API test suite totals **730 tests across 90 files**. Unit tests cover middleware, utilities, and route handlers across `unit/middleware/`, `unit/utils/`, and `unit/api/` directories. Integration tests use both real-DB and mocked-handler patterns. Run `pnpm test:api` to execute all tests. (The account-creation-during-onboarding feature added `isDraft` coverage to `unit/api/accounts.test.ts`, `integration/api/accounts.test.ts`, and `unit/api/onboarding-progress.test.ts`.)
+The API test suite totals **722 tests across 90 files**. Unit tests cover middleware, utilities, and route handlers across `unit/middleware/`, `unit/utils/`, and `unit/api/` directories. Integration tests use both real-DB and mocked-handler patterns. Run `pnpm test:api` to execute all tests.
 
 ### Key Implementation Patterns
 

@@ -205,7 +205,6 @@ export function OnboardingAccountSetup({
               currencyCode: row.currencyCode,
               countryId: row.countryCode || defaultCountry,
               ownerIds: [user.id],
-              isDraft: true,
             }),
           ),
         );
@@ -327,51 +326,54 @@ export function OnboardingAccountSetup({
               </div>
 
               {bank.accounts.map((row, index) => (
-                <div key={row.id} className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-16 shrink-0">
+                <div key={row.id} className="flex items-start gap-2">
+                  <span className="text-xs text-muted-foreground w-14 shrink-0 pt-2">
                     {t("Account")} {index + 1}
                   </span>
-                  <Select
-                    value={row.currencyCode}
-                    onValueChange={(value) =>
-                      setRowField(bank.key, row.id, { currencyCode: value })
-                    }
-                  >
-                    <SelectTrigger className="h-8 flex-1">
-                      <SelectValue placeholder={t("Currency")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencyOptions.map((c) => (
-                        <SelectItem key={c.code} value={c.code}>
-                          {c.label} ({c.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {multiCountry && (
+                  {/* Selectors stack on mobile, sit side-by-side from sm: up. */}
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
                     <Select
-                      value={row.countryCode}
+                      value={row.currencyCode}
                       onValueChange={(value) =>
-                        setRowField(bank.key, row.id, { countryCode: value })
+                        setRowField(bank.key, row.id, { currencyCode: value })
                       }
                     >
-                      <SelectTrigger className="h-8 flex-1">
-                        <SelectValue placeholder={t("Country")} />
+                      <SelectTrigger className="h-8 w-full min-w-0 sm:flex-1">
+                        <SelectValue placeholder={t("Currency")} />
                       </SelectTrigger>
                       <SelectContent>
-                        {countryOptions.map((c) => (
+                        {currencyOptions.map((c) => (
                           <SelectItem key={c.code} value={c.code}>
-                            {c.label}
+                            {c.label} ({c.code})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                  )}
+                    {multiCountry && (
+                      <Select
+                        value={row.countryCode}
+                        onValueChange={(value) =>
+                          setRowField(bank.key, row.id, { countryCode: value })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-full min-w-0 sm:flex-1">
+                          <SelectValue placeholder={t("Country")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {countryOptions.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              {c.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                   {bank.accounts.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeAccountRow(bank.key, row.id)}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
+                      className="shrink-0 pt-2 text-muted-foreground hover:text-destructive transition-colors"
                       aria-label={t("Remove account")}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -409,6 +411,8 @@ export function OnboardingAccountSetup({
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : selectedBanks.length === 0 ? (
             t("Skip for now")
+          ) : totalAccounts === 1 ? (
+            t("Create 1 account")
           ) : (
             t("Create {{count}} accounts", { count: totalAccounts })
           )}

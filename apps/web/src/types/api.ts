@@ -57,8 +57,6 @@ export type Account = {
   countryId: string;
   owners: { userId: string }[];
   plaidAccountId?: string | null;
-  /** True for onboarding-scaffolded accounts awaiting confirmation via AccountForm. */
-  isDraft?: boolean;
 };
 
 export type AccountRequest = {
@@ -68,8 +66,6 @@ export type AccountRequest = {
   currencyCode: string;
   countryId: string;
   ownerIds: string[];
-  /** Set to true to scaffold a draft account; send false to confirm one. */
-  isDraft?: boolean;
 };
 
 export type Category = {

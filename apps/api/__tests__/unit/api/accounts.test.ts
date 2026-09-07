@@ -187,52 +187,6 @@ describe('POST /api/accounts', () => {
     expect(res._status).toBe(201);
   });
 
-  it('persists isDraft: true when the request asks for a draft account', async () => {
-    mockPrisma.tenantCurrency.findFirst.mockResolvedValue({ id: 'USD' });
-    mockPrisma.tenantCountry.findFirst.mockResolvedValue({ id: 'US' });
-    mockPrisma.tenantBank.findUnique.mockResolvedValue({ bankId: 1 });
-    mockPrisma.user.findMany.mockResolvedValue([{ id: 1 }]);
-    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
-      mockPrisma.account.create.mockResolvedValue({ id: 11 });
-      return fn(mockPrisma);
-    });
-
-    const req = makeReq({
-      method: 'POST',
-      body: { name: 'Draft', accountNumber: 'chase-acc-1', bankId: 1, currencyCode: 'USD', countryId: 'US', ownerIds: [1], isDraft: true },
-    });
-    const res = makeRes();
-
-    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
-
-    expect(res._status).toBe(201);
-    expect(mockPrisma.account.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ isDraft: true }) }),
-    );
-  });
-
-  it('defaults isDraft to false when the field is omitted', async () => {
-    mockPrisma.tenantCurrency.findFirst.mockResolvedValue({ id: 'USD' });
-    mockPrisma.tenantCountry.findFirst.mockResolvedValue({ id: 'US' });
-    mockPrisma.tenantBank.findUnique.mockResolvedValue({ bankId: 1 });
-    mockPrisma.user.findMany.mockResolvedValue([{ id: 1 }]);
-    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
-      mockPrisma.account.create.mockResolvedValue({ id: 12 });
-      return fn(mockPrisma);
-    });
-
-    const req = makeReq({
-      method: 'POST',
-      body: { name: 'Real', accountNumber: '123456', bankId: 1, currencyCode: 'USD', countryId: 'US', ownerIds: [1] },
-    });
-    const res = makeRes();
-
-    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
-
-    expect(mockPrisma.account.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ isDraft: false }) }),
-    );
-  });
 });
 
 describe('PUT /api/accounts', () => {
@@ -265,49 +219,6 @@ describe('PUT /api/accounts', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(404);
-  });
-
-  it('writes isDraft: false into updateData when the client confirms a draft', async () => {
-    mockPrisma.account.findUnique.mockResolvedValue({
-      id: 5, tenantId: 'tenant-abc', bankId: 1, owners: [{ userId: 1 }],
-    });
-    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
-      mockPrisma.account.update.mockResolvedValue({ id: 5, isDraft: false });
-      return fn(mockPrisma);
-    });
-
-    const req = makeReq({
-      method: 'PUT',
-      query: { id: '5' },
-      body: { accountNumber: '999888777', isDraft: false },
-    });
-    const res = makeRes();
-
-    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
-
-    expect(res._status).toBe(200);
-    expect(mockPrisma.account.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ isDraft: false }) }),
-    );
-  });
-
-  it('leaves isDraft untouched when the field is absent from the request', async () => {
-    mockPrisma.account.findUnique.mockResolvedValue({
-      id: 6, tenantId: 'tenant-abc', bankId: 1, owners: [{ userId: 1 }],
-    });
-    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
-      mockPrisma.account.update.mockResolvedValue({ id: 6 });
-      return fn(mockPrisma);
-    });
-
-    const req = makeReq({ method: 'PUT', query: { id: '6' }, body: { name: 'Renamed' } });
-    const res = makeRes();
-
-    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
-
-    expect(res._status).toBe(200);
-    const updateArg = mockPrisma.account.update.mock.calls[0][0];
-    expect(updateArg.data).not.toHaveProperty('isDraft');
   });
 });
 

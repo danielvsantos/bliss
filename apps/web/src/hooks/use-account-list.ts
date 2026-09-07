@@ -22,9 +22,15 @@ export interface EnrichedAccount {
   plaidAccountId: number | null;   // Specific Plaid sub-account id
   historicalSyncComplete: boolean;
   earliestTransactionDate: Date | null;
-  isDraft?: boolean;              // Onboarding-scaffolded, awaiting confirmation
+  /** True when the account number still matches the "{bank-slug}-acc-N" placeholder
+   *  written by the onboarding bank & account picker — the user hasn't entered a
+   *  real number yet. Purely derived from `accountNumber`, not persisted. */
+  hasPlaceholderNumber?: boolean;
   originalAccount: Account;        // Reference to original Account object
 }
+
+/** Matches the lowercase "{slug}-acc-N" placeholder from onboarding-account-setup. */
+const PLACEHOLDER_ACCOUNT_NUMBER = /^[a-z0-9-]+-acc-\d+$/;
 
 // ─── Query Keys ────────────────────────────────────────────────────────────
 export const accountListKeys = {
@@ -109,9 +115,15 @@ export function useAccountList() {
         }
       }
 
-      // Mask account number
+      // Mask account number. A "{slug}-acc-N" placeholder from onboarding is shown
+      // verbatim (masking it to "•••• cc-1" would read like a broken real number).
       const numStr = String(acc.accountNumber || '');
-      const mask = numStr.length > 4 ? `•••• ${numStr.slice(-4)}` : numStr;
+      const hasPlaceholderNumber = PLACEHOLDER_ACCOUNT_NUMBER.test(numStr);
+      const mask = hasPlaceholderNumber
+        ? numStr
+        : numStr.length > 4
+          ? `•••• ${numStr.slice(-4)}`
+          : numStr;
 
       return {
         id: acc.id,
@@ -131,7 +143,7 @@ export function useAccountList() {
         earliestTransactionDate: plaidItem?.earliestTransactionDate
           ? new Date(plaidItem.earliestTransactionDate)
           : null,
-        isDraft: acc.isDraft ?? false,
+        hasPlaceholderNumber,
         originalAccount: acc,
       };
     });

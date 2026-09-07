@@ -47,7 +47,6 @@ The outer flex container uses `flex flex-1 min-h-0` for correct overflow handlin
   - `LOGIN_REQUIRED` / `ERROR` → `bg-warning/10 text-warning border-warning/20` ("Action Required")
   - `REVOKED` / `DISCONNECTED` → `bg-muted text-muted-foreground` ("Disconnected")
   - Manual accounts → `bg-muted text-muted-foreground` ("Manual")
-  - **Draft accounts** (`isDraft === true`, scaffolded during onboarding) → `bg-warning/10 text-warning border-warning/20` (`accountsPage.needsSetup` — "Needs setup"). This badge replaces the status/manual badge and also appears in the detail panel header. Clicking a draft row opens the same `AccountForm` pre-filled with its bank / currency / country / owners, with the placeholder account number blanked; submitting with a real account number sends `isDraft: false` and the badge disappears.
 - Selected item: `bg-muted border-l-2 border-l-primary`.
 - Real-time search by account name or institution.
 - Data fetched via `useAccountList()` hook.
@@ -88,12 +87,12 @@ The `useAccountList()` hook enriches raw `Account` objects into an `EnrichedAcco
 - `plaidItem`: Linked `PlaidItem` reference (null for manual accounts)
 - `plaidAccountId`: Specific Plaid sub-account ID
 - `historicalSyncComplete`, `earliestTransactionDate`: Sync progress indicators
-- `isDraft` (optional): `true` for onboarding-scaffolded accounts awaiting confirmation. Mapped straight through from `Account.isDraft` (`?? false`).
+- `hasPlaceholderNumber` (optional): `true` when `accountNumber` still matches the onboarding `"{bank-slug}-acc-{n}"` placeholder (regex `^[a-z0-9-]+-acc-\d+$`). Purely derived — no persisted flag. When set, `mask` shows the number verbatim (masking it to `•••• cc-1` would read like a broken real number) and the detail panel renders a warning-token hint linking to Edit.
 - `originalAccount`: Reference to the raw `Account` object
 
-### Draft accounts & transaction pickers
+### Onboarding-scaffolded accounts
 
-Draft accounts are shown on the Accounts page (with the "Needs setup" badge) and remain valid **Smart Import** destinations, but are filtered out of every transaction-entry surface via the `useSelectableAccounts()` hook (`useAccounts()` filtered to `!isDraft`): the transaction form account select, the transactions-page account filter dropdown, the Plaid review account picker, the portfolio report account filter, and the `use-user-signals` account count. This asymmetry is intentional — the head start must be usable for the CSV the user is importing, but a placeholder-number account should not be a target for manual transaction entry until confirmed.
+The onboarding bank & account picker creates **ordinary accounts** with a `"{bank-slug}-acc-{n}"` placeholder number — no draft state, no picker filtering. They appear everywhere a normal account does (transaction form, filters, Smart Import, portfolio, net-worth). The only special treatment is `hasPlaceholderNumber` (above): the account detail panel shows a subtle "This account still has a placeholder number from setup — Add the real account number" hint (`bg-warning/5 border-warning/30`, `accountDetail.placeholderNumberHint` / `accountDetail.addAccountNumber`) that opens the standard Edit form.
 
 ### Plaid Items Polling
 
