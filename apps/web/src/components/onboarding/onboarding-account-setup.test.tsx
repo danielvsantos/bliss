@@ -22,6 +22,18 @@ vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'a@b.com', tenantId: 't1' } }),
 }));
 
+const ALL_COUNTRIES = [
+  { id: 'USA', name: 'United States' },
+  { id: 'PRT', name: 'Portugal' },
+  { id: 'GBR', name: 'United Kingdom' },
+];
+
+// Countries the tenant picked in step 1 — mutated per test to exercise the
+// single-country (read-only) vs multi-country (per-account selector) paths.
+let tenantCountries: Array<{ id: string; name: string; isDefault?: boolean }> = [
+  { id: 'USA', name: 'United States', isDefault: true },
+];
+
 vi.mock('@/hooks/use-metadata', () => ({
   useBanks: () => ({
     data: [
@@ -39,7 +51,7 @@ vi.mock('@/hooks/use-metadata', () => ({
         { id: 'USD', name: 'US Dollar' },
         { id: 'EUR', name: 'Euro' },
       ],
-      countries: [{ id: 'USA', name: 'United States' }],
+      countries: ALL_COUNTRIES,
     },
   }),
 }));
@@ -47,7 +59,7 @@ vi.mock('@/hooks/use-metadata', () => ({
 vi.mock('@/utils/tenantMetaStorage', () => ({
   getTenantMeta: () => ({
     id: 't1',
-    countries: [{ id: 'USA', name: 'United States', isDefault: true }],
+    countries: tenantCountries,
     currencies: [{ id: 'USD', name: 'US Dollar' }],
   }),
   updateTenantMetaFromAPI: vi.fn(),
@@ -81,6 +93,7 @@ function renderSetup(props: Partial<React.ComponentProps<typeof OnboardingAccoun
 
 beforeEach(() => {
   vi.clearAllMocks();
+  tenantCountries = [{ id: 'USA', name: 'United States', isDefault: true }];
   vi.mocked(api.createBank).mockImplementation(async ({ name }) => ({ id: name === 'Chase' ? 1 : 2, name }));
   vi.mocked(api.createAccount).mockResolvedValue({
     id: 10, name: 'X', accountNumber: 'x', bankId: 1, currencyCode: 'USD', countryId: 'USA', owners: [{ userId: 'u1' }],
@@ -159,5 +172,49 @@ describe('OnboardingAccountSetup', () => {
       expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' })),
     );
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('single-country tenant: no per-account country selector, all accounts get the primary country', async () => {
+    // tenantCountries defaults to [USA] in beforeEach
+    const { onComplete } = renderSetup({ countryId: 'USA' });
+
+    fireEvent.click(screen.getByText('Chase'));
+    // One combobox per row (currency only) — no country Select rendered.
+    expect(screen.getAllByRole('combobox')).toHaveLength(1);
+
+    fireEvent.click(screen.getByText('Create {{count}} accounts:1'));
+
+    await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.createAccount).mock.calls[0][0].countryId).toBe('USA');
+    await waitFor(() => expect(onComplete).toHaveBeenCalled());
+  });
+
+  it('multi-country tenant: per-account country selector defaults to primary and is editable', async () => {
+    tenantCountries = [
+      { id: 'USA', name: 'United States', isDefault: true },
+      { id: 'PRT', name: 'Portugal' },
+    ];
+    const { onComplete } = renderSetup({ countryId: 'USA' });
+
+    fireEvent.click(screen.getByText('Chase'));
+    fireEvent.click(screen.getAllByText('Add account')[0]); // Chase gets 2 rows
+
+    // Each row now has 2 comboboxes: [currency, country].
+    const combos = screen.getAllByRole('combobox');
+    expect(combos).toHaveLength(4);
+
+    // Switch the 2nd row's country (combos[3]) to Portugal; leave row 1 as default.
+    fireEvent.click(combos[3]);
+    fireEvent.click(await screen.findByRole('option', { name: 'Portugal' }));
+
+    fireEvent.click(screen.getByText('Create {{count}} accounts:2'));
+
+    await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(2));
+    const countries = vi
+      .mocked(api.createAccount)
+      .mock.calls.map((c) => c[0].countryId)
+      .sort();
+    expect(countries).toEqual(['PRT', 'USA']);
+    await waitFor(() => expect(onComplete).toHaveBeenCalled());
   });
 });

@@ -23,6 +23,7 @@ const MAX_ACCOUNTS_PER_BANK = 3;
 interface AccountRow {
   id: string;
   currencyCode: string;
+  countryCode: string;
 }
 
 interface SelectedBank {
@@ -35,7 +36,8 @@ interface SelectedBank {
 interface OnboardingAccountSetupProps {
   /** Currency codes the user picked in onboarding step 1. */
   selectedCurrencies: string[];
-  /** Country the scaffolded accounts are created in (tenant primary country). */
+  /** Tenant primary country — the default for every scaffolded account, and the
+   *  only country used when the user picked a single country in step 1. */
   countryId: string;
   /** Called once bank/account scaffolding succeeds (or is skipped entirely). */
   onComplete: () => void;
@@ -54,6 +56,12 @@ function slugifyBankName(name: string): string {
 
 let rowSeq = 0;
 const nextRowId = () => `row-${Date.now()}-${rowSeq++}`;
+
+interface RowDefaults {
+  currencyCode: string;
+  countryCode: string;
+}
+const newRow = (d: RowDefaults): AccountRow => ({ id: nextRowId(), ...d });
 
 export function OnboardingAccountSetup({
   selectedCurrencies,
@@ -87,9 +95,24 @@ export function OnboardingAccountSetup({
   }, [selectedCurrencies, metadata]);
 
   const defaultCurrency = currencyOptions[0]?.code ?? "";
+
+  // Country options = the countries the user picked in step 1 (persisted on the
+  // tenant). A per-account country selector is only shown when there's more than
+  // one — single-country users just see a read-only line.
+  const countryOptions = useMemo(() => {
+    const picked = getTenantMeta()?.countries || [];
+    const nameById = new Map((metadata?.countries || []).map((c) => [c.id, c.name]));
+    return picked.map((c) => ({ code: c.id, label: nameById.get(c.id) || c.name || c.id }));
+  }, [metadata]);
+
+  const defaultCountry = countryId || countryOptions[0]?.code || "";
+  const multiCountry = countryOptions.length > 1;
   const countryLabel =
-    (metadata?.countries || []).find((c) => c.id === countryId)?.name || countryId;
-  const multiCountry = (getTenantMeta()?.countries?.length ?? 0) > 1;
+    countryOptions.find((c) => c.code === defaultCountry)?.label ||
+    (metadata?.countries || []).find((c) => c.id === defaultCountry)?.name ||
+    defaultCountry;
+
+  const rowDefaults: RowDefaults = { currencyCode: defaultCurrency, countryCode: defaultCountry };
 
   const isBankSelected = (key: string) => selectedBanks.some((b) => b.key === key);
 
@@ -98,10 +121,7 @@ export function OnboardingAccountSetup({
       const existing = prev.find((b) => b.key === key);
       if (existing) return prev.filter((b) => b.key !== key);
       if (prev.length >= MAX_BANKS) return prev;
-      return [
-        ...prev,
-        { key, name, accounts: [{ id: nextRowId(), currencyCode: defaultCurrency }] },
-      ];
+      return [...prev, { key, name, accounts: [newRow(rowDefaults)] }];
     });
   };
 
@@ -110,10 +130,7 @@ export function OnboardingAccountSetup({
     if (name.length < 2) return;
     const key = `custom:${name.toLowerCase()}`;
     if (isBankSelected(key) || selectedBanks.length >= MAX_BANKS) return;
-    setSelectedBanks((prev) => [
-      ...prev,
-      { key, name, accounts: [{ id: nextRowId(), currencyCode: defaultCurrency }] },
-    ]);
+    setSelectedBanks((prev) => [...prev, { key, name, accounts: [newRow(rowDefaults)] }]);
     setNewBankName("");
     setShowNewBankInput(false);
   };
@@ -122,7 +139,7 @@ export function OnboardingAccountSetup({
     setSelectedBanks((prev) =>
       prev.map((b) =>
         b.key === bankKey && b.accounts.length < MAX_ACCOUNTS_PER_BANK
-          ? { ...b, accounts: [...b.accounts, { id: nextRowId(), currencyCode: defaultCurrency }] }
+          ? { ...b, accounts: [...b.accounts, newRow(rowDefaults)] }
           : b,
       ),
     );
@@ -141,15 +158,17 @@ export function OnboardingAccountSetup({
     );
   };
 
-  const setRowCurrency = (bankKey: string, rowId: string, currencyCode: string) => {
+  const setRowField = (
+    bankKey: string,
+    rowId: string,
+    patch: Partial<Pick<AccountRow, "currencyCode" | "countryCode">>,
+  ) => {
     setSelectedBanks((prev) =>
       prev.map((b) =>
         b.key === bankKey
           ? {
               ...b,
-              accounts: b.accounts.map((r) =>
-                r.id === rowId ? { ...r, currencyCode } : r,
-              ),
+              accounts: b.accounts.map((r) => (r.id === rowId ? { ...r, ...patch } : r)),
             }
           : b,
       ),
@@ -184,7 +203,7 @@ export function OnboardingAccountSetup({
               accountNumber: `${slug}-acc-${index + 1}`,
               bankId: bank.id,
               currencyCode: row.currencyCode,
-              countryId,
+              countryId: row.countryCode || defaultCountry,
               ownerIds: [user.id],
               isDraft: true,
             }),
@@ -314,7 +333,9 @@ export function OnboardingAccountSetup({
                   </span>
                   <Select
                     value={row.currencyCode}
-                    onValueChange={(value) => setRowCurrency(bank.key, row.id, value)}
+                    onValueChange={(value) =>
+                      setRowField(bank.key, row.id, { currencyCode: value })
+                    }
                   >
                     <SelectTrigger className="h-8 flex-1">
                       <SelectValue placeholder={t("Currency")} />
@@ -327,6 +348,25 @@ export function OnboardingAccountSetup({
                       ))}
                     </SelectContent>
                   </Select>
+                  {multiCountry && (
+                    <Select
+                      value={row.countryCode}
+                      onValueChange={(value) =>
+                        setRowField(bank.key, row.id, { countryCode: value })
+                      }
+                    >
+                      <SelectTrigger className="h-8 flex-1">
+                        <SelectValue placeholder={t("Country")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {countryOptions.map((c) => (
+                          <SelectItem key={c.code} value={c.code}>
+                            {c.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {bank.accounts.length > 1 && (
                     <button
                       type="button"
@@ -354,9 +394,11 @@ export function OnboardingAccountSetup({
           ))}
 
           <p className="text-xs text-muted-foreground">
-            {t("Accounts will be created in {{country}}.", { country: countryLabel })}
-            {multiCountry &&
-              ` ${t("You can change the country on any account afterwards.")}`}
+            {multiCountry
+              ? t("Pick the country for each account — it defaults to {{country}}.", {
+                  country: countryLabel,
+                })
+              : t("Accounts will be created in {{country}}.", { country: countryLabel })}
           </p>
         </div>
       )}
