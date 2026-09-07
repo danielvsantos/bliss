@@ -1103,6 +1103,7 @@ const en = {
     actionRequired: "Action Required",
     disconnected: "Disconnected",
     manual: "Manual",
+    needsSetup: "Needs setup",
   },
 
   // Account detail panel

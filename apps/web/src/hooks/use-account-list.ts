@@ -22,6 +22,7 @@ export interface EnrichedAccount {
   plaidAccountId: number | null;   // Specific Plaid sub-account id
   historicalSyncComplete: boolean;
   earliestTransactionDate: Date | null;
+  isDraft?: boolean;              // Onboarding-scaffolded, awaiting confirmation
   originalAccount: Account;        // Reference to original Account object
 }
 
@@ -130,6 +131,7 @@ export function useAccountList() {
         earliestTransactionDate: plaidItem?.earliestTransactionDate
           ? new Date(plaidItem.earliestTransactionDate)
           : null,
+        isDraft: acc.isDraft ?? false,
         originalAccount: acc,
       };
     });

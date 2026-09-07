@@ -98,6 +98,11 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
           </div>
           <div className="flex items-center gap-2 mt-2">
             <Badge variant="outline" className="text-xs">{account.currencyCode}</Badge>
+            {account.isDraft && (
+              <Badge variant="default" className="text-xs bg-warning/10 text-warning border-warning/20 hover:bg-warning/10">
+                <AlertTriangle className="h-3 w-3 mr-1" /> {t('accountsPage.needsSetup')}
+              </Badge>
+            )}
             {isPlaid && (
               <Badge variant="default" className="text-xs bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
                 <Landmark className="h-3 w-3 mr-1" /> {t('accountDetail.plaidConnected')}

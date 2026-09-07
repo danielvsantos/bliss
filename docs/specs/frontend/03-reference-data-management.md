@@ -27,6 +27,14 @@ The `onboarding.tsx` component guides new users through the initial setup of the
 -   **User Interaction**: It presents the data in a multi-select format, allowing users to choose their preferred options.
 -   **Submission**: On completion, it sends the selected IDs to the `tenants` API to update the tenant's profile.
 
+#### Step 3 — bank & account picker (manual / CSV path only)
+
+Reached via **"Import a spreadsheet"** at the `connect` step (the Plaid path is unchanged and never shows this step). The step body is `<OnboardingAccountSetup />` (`src/components/onboarding/onboarding-account-setup.tsx`), which replaces the previous one-bank-at-a-time loop (bank grid → full `AccountForm` per account):
+
+-   **Multi-bank select** — the reference bank grid plus an "Add a different bank" free-text input, as checkbox-style toggles, capped at **5 banks**.
+-   **Per-account currency** — under each selected bank, one or more account rows (capped at **3 per bank**), each paired with one of the currencies chosen in step 1. Currency is bound to the **account**, not the bank, so one bank can hold accounts in different currencies. Country is the tenant's primary (`isDefault`) country from step 1, shown read-only.
+-   **On continue** — for each bank: one `api.createBank({ name })` (idempotent `Bank` + `TenantBank` upsert); then one `api.createAccount({ …, isDraft: true })` per account row, with `name` = bank name, `accountNumber` = `"{bank-slug}-acc-{n}"` placeholder, `ownerIds` = `[currentUser.id]`. Selecting zero banks skips straight through with no writes. Partial failures leave the already-created drafts in place (visible on `/accounts`) and keep the user on the step with a destructive toast. On success the user lands on `/agents/import` and the draft accounts populate `/accounts` with a "Needs setup" badge each.
+
 ## 3.3. Application Settings
 
 The main application settings page is a comprehensive tenant configuration interface with multiple tabs.

@@ -128,6 +128,11 @@ model Account {
   type           String?   // depository, credit, investment, loan
   subtype        String?   // checking, savings, cd
 
+  // Draft accounts are scaffolded during onboarding (one per declared bank/account)
+  // with placeholder defaults. They stay out of transaction pickers until the user
+  // confirms them via AccountForm, which flips this back to false.
+  isDraft        Boolean   @default(false)
+
   plaidItem      PlaidItem? @relation(fields: [plaidItemId], references: [id])
 
   bank           Bank           @relation(fields: [bankId], references: [id])

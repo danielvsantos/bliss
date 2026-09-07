@@ -36,12 +36,16 @@ export type Country = {
   id: string;
   name: string;
   emoji?: string;
+  /** True for the tenant's primary country (first picked during onboarding). */
+  isDefault?: boolean;
 };
 
 export type Currency = {
   id: string;
   name: string;
   symbol?: string;
+  /** True for the tenant's primary currency (first picked during onboarding). */
+  isDefault?: boolean;
 };
 
 export type Account = {
@@ -53,6 +57,8 @@ export type Account = {
   countryId: string;
   owners: { userId: string }[];
   plaidAccountId?: string | null;
+  /** True for onboarding-scaffolded accounts awaiting confirmation via AccountForm. */
+  isDraft?: boolean;
 };
 
 export type AccountRequest = {
@@ -62,6 +68,8 @@ export type AccountRequest = {
   currencyCode: string;
   countryId: string;
   ownerIds: string[];
+  /** Set to true to scaffold a draft account; send false to confirm one. */
+  isDraft?: boolean;
 };
 
 export type Category = {

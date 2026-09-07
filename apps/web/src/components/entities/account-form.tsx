@@ -29,6 +29,9 @@ const accountSchema = z.object({
   currencyCode: z.string().min(1, { message: 'Currency is required' }),
   countryId: z.string().min(1, { message: 'Country is required' }),
   ownerIds: z.array(z.string()).min(1, { message: 'Select at least one owner' }),
+  // Not surfaced as an input — kept on the schema so parse() preserves it if a
+  // caller ever injects it. Draft confirmation is handled explicitly in onSubmit.
+  isDraft: z.boolean().optional(),
 });
 
 const transformedAccountSchema = accountSchema.extend({
@@ -70,7 +73,9 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
     resolver: zodResolver(accountSchema),
     defaultValues: {
       name: account?.name || '',
-      accountNumber: account?.accountNumber || '',
+      // Draft accounts carry an obviously-fake placeholder number ("chase-acc-1").
+      // Blank it so the user is forced to enter a real one, which confirms the account.
+      accountNumber: account?.isDraft ? '' : (account?.accountNumber || ''),
       bankId: account?.bankId?.toString() || (banks[0]?.id?.toString() ?? ''),
       currencyCode: account?.currencyCode || (currencies[0]?.id ?? ''),
       countryId: account?.countryId || (countries[0]?.id ?? ''),
@@ -83,7 +88,12 @@ export function AccountForm({ account, onClose }: AccountFormProps) {
     try {
       const transformedValues = transformedAccountSchema.parse(values);
       if (account) {
-        await api.updateAccount(account.id, transformedValues);
+        // Confirming a scaffolded draft: a successful save with a real account
+        // number flips isDraft to false and removes the "Needs setup" badge.
+        const updatePayload = account.isDraft
+          ? { ...transformedValues, isDraft: false }
+          : transformedValues;
+        await api.updateAccount(account.id, updatePayload);
         toast({
           title: t('accountForm.accountUpdated'),
           description: t('accountForm.accountUpdatedSuccess'),

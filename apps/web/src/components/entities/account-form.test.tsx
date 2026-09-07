@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AccountForm } from './account-form';
 import { api } from '@/lib/api';
 import * as tenantMetaStorage from '@/utils/tenantMetaStorage';
-import type { Bank, User } from '@/types/api';
+import type { Account, Bank, User } from '@/types/api';
 
 vi.mock('@/lib/api');
 vi.mock('react-i18next', () => ({
@@ -184,5 +184,56 @@ describe('AccountForm — inline add bank', () => {
       expect(api.createBank).toHaveBeenCalledWith({ name: 'Monzo' });
     });
     expect(api.createAccount).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountForm — draft account confirmation', () => {
+  function renderEdit(account: Account, onClose = vi.fn()) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <AccountForm account={account} onClose={onClose} />
+      </QueryClientProvider>,
+    );
+  }
+
+  const baseAccount: Account = {
+    id: 5,
+    name: 'Chase',
+    accountNumber: 'chase-acc-1',
+    bankId: 1,
+    currencyCode: 'USD',
+    countryId: 'US',
+    owners: [{ userId: 'u1' }],
+  };
+
+  it('blanks the placeholder account number for a draft and submits isDraft:false', async () => {
+    vi.mocked(api.updateAccount).mockResolvedValue({ ...baseAccount, isDraft: false });
+    renderEdit({ ...baseAccount, isDraft: true });
+
+    const numberInput = screen.getByPlaceholderText('Last 4 or full account number');
+    expect(numberInput).toHaveValue('');
+
+    fireEvent.change(numberInput, { target: { value: '12345678' } });
+    await waitFor(() => expect(screen.getByText('a@b.com')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'accountForm.updateAccount' }));
+
+    await waitFor(() => expect(api.updateAccount).toHaveBeenCalled());
+    const [, payload] = vi.mocked(api.updateAccount).mock.calls[0];
+    expect(payload).toMatchObject({ accountNumber: '12345678', isDraft: false });
+  });
+
+  it('does not send isDraft when editing a non-draft account', async () => {
+    vi.mocked(api.updateAccount).mockResolvedValue({ ...baseAccount });
+    renderEdit({ ...baseAccount, accountNumber: '87654321', isDraft: false });
+
+    expect(screen.getByPlaceholderText('Last 4 or full account number')).toHaveValue('87654321');
+
+    await waitFor(() => expect(screen.getByText('a@b.com')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'accountForm.updateAccount' }));
+
+    await waitFor(() => expect(api.updateAccount).toHaveBeenCalled());
+    const [, payload] = vi.mocked(api.updateAccount).mock.calls[0];
+    expect(payload).not.toHaveProperty('isDraft');
   });
 });

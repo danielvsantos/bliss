@@ -152,7 +152,7 @@ async function handleGet(req, res, user) {
 
 async function handlePost(req, res, user) {
   const tenantId = user.tenantId;
-  const { name, accountNumber, bankId, currencyCode, countryId, ownerIds = [] } = req.body;
+  const { name, accountNumber, bankId, currencyCode, countryId, ownerIds = [], isDraft = false } = req.body;
 
   if (!name || !accountNumber || !bankId || !currencyCode || !countryId || ownerIds.length === 0) {
     res.status(StatusCodes.BAD_REQUEST).json({
@@ -227,6 +227,7 @@ async function handlePost(req, res, user) {
         currencyCode: currencyCode.toUpperCase(),
         countryId: countryId.toUpperCase(),
         tenantId,
+        isDraft: Boolean(isDraft),
         owners: {
           create: ownerIds.map(userId => ({ userId }))
         }
@@ -249,7 +250,7 @@ async function handlePost(req, res, user) {
 async function handlePut(req, res, user) {
   const tenantId = user.tenantId;
   const { id } = req.query;
-  const { name, accountNumber, bankId, currencyCode, countryId, ownerIds } = req.body;
+  const { name, accountNumber, bankId, currencyCode, countryId, ownerIds, isDraft } = req.body;
 
   if (!id) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Account ID must be provided in the query.' });
@@ -343,6 +344,9 @@ async function handlePut(req, res, user) {
   if (currencyCode !== undefined) updateData.currencyCode = currencyCode.toUpperCase();
   if (countryId !== undefined) updateData.countryId = countryId.toUpperCase();
   if (bankId !== undefined) updateData.bankId = parsedBankId; // Use the parsed ID
+  // Explicit-only: the client clears the draft flag by sending `isDraft: false`
+  // when a scaffolded account is confirmed. No implicit promotion.
+  if (isDraft !== undefined) updateData.isDraft = Boolean(isDraft);
 
   // Handle owner updates if ownerIds is provided
   let ownerUpdates = {};

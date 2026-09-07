@@ -1103,6 +1103,7 @@ const pt = {
     actionRequired: "Ação Necessária",
     disconnected: "Desconectada",
     manual: "Manual",
+    needsSetup: "Precisa de configuração",
   },
 
   // Painel de detalhes da conta

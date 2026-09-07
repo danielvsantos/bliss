@@ -1103,6 +1103,7 @@ const it = {
     actionRequired: "Azione richiesta",
     disconnected: "Disconnesso",
     manual: "Manuale",
+    needsSetup: "Da configurare",
   },
 
   // Account detail panel

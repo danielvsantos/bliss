@@ -120,6 +120,24 @@ describe('SmartImportPage', () => {
     expect(fileInput).toBeInTheDocument();
   });
 
+  it('offers draft (onboarding-scaffolded) accounts as import destinations', async () => {
+    vi.mocked(UseMetadata.useAccounts).mockReturnValue(
+      mockQueryResult([
+        { id: 1, name: 'Bank of America' },
+        { id: 2, name: 'Draft Ally', isDraft: true },
+      ]),
+    );
+
+    renderPage();
+
+    fireEvent.click(screen.getByText('smartImport.selectAccount'));
+
+    // Both the real and the draft account are selectable — Smart Import must keep
+    // showing drafts so the head start is usable for the CSV being imported.
+    expect(await screen.findByRole('option', { name: 'Bank of America' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Draft Ally' })).toBeInTheDocument();
+  });
+
   it('selects file and calls detectAdapter', async () => {
     renderPage();
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;

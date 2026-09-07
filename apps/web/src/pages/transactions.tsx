@@ -333,7 +333,7 @@ export default function TransactionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('pages.transactions.allAccounts')}</SelectItem>
-                  {metadata?.accounts?.map((account: Account) => (
+                  {metadata?.accounts?.filter((account: Account) => !account.isDraft).map((account: Account) => (
                     <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>
                   ))}
                 </SelectContent>

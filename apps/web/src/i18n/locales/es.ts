@@ -1083,6 +1083,7 @@ const es = {
     actionRequired: "Acción requerida",
     disconnected: "Desconectada",
     manual: "Manual",
+    needsSetup: "Necesita configuración",
   },
 
   accountDetail: {

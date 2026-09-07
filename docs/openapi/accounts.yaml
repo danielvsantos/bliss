@@ -34,6 +34,13 @@ components:
           type: array
           items:
             type: string
+        isDraft:
+          type: boolean
+          default: false
+          description: >
+            True for accounts scaffolded during onboarding (one per declared
+            bank/account) that carry placeholder defaults and await confirmation.
+            Optional on create (defaults to false).
     AccountUpdate:
       type: object
       properties:
@@ -51,6 +58,12 @@ components:
           type: array
           items:
             type: string
+        isDraft:
+          type: boolean
+          description: >
+            Send `false` to confirm a scaffolded draft account. Only ever written
+            when explicitly present in the request body — omitting it leaves the
+            existing value untouched.
     AccountList:
       type: object
       properties:

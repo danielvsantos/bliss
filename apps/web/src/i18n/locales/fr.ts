@@ -1089,6 +1089,7 @@ const fr = {
     actionRequired: "Action requise",
     disconnected: "Déconnecté",
     manual: "Manuel",
+    needsSetup: "Configuration requise",
   },
 
   accountDetail: {

@@ -25,6 +25,7 @@ vi.mock('../../../utils/rateLimit.js', () => ({
 }));
 
 import handler from '../../../pages/api/accounts.js';
+import prisma from '../../../prisma/prisma.js';
 import { createIsolatedTenant, teardownTenant } from '../../helpers/tenant.js';
 
 // ---------------------------------------------------------------------------
@@ -143,5 +144,105 @@ describe('POST /api/accounts', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(400);
+  });
+});
+
+describe('POST /api/accounts — isDraft flag', () => {
+  let tenantId: string;
+  let userId: string;
+  let token: string;
+  const bankId = 1; // seeded reference bank
+
+  beforeAll(async () => {
+    ({ tenantId, userId, token } = await createIsolatedTenant('accounts-isdraft'));
+    await prisma.tenantCurrency.create({ data: { tenantId, currencyId: 'USD' } });
+    await prisma.tenantCountry.create({ data: { tenantId, countryId: 'USA' } });
+    await prisma.tenantBank.create({ data: { tenantId, bankId } });
+  });
+
+  afterAll(async () => {
+    await prisma.accountOwner.deleteMany({ where: { account: { tenantId } } });
+    await prisma.account.deleteMany({ where: { tenantId } });
+    await prisma.tenantBank.deleteMany({ where: { tenantId } });
+    await prisma.tenantCountry.deleteMany({ where: { tenantId } });
+    await prisma.tenantCurrency.deleteMany({ where: { tenantId } });
+    await teardownTenant(tenantId);
+  });
+
+  async function createAccount(body: Record<string, unknown>) {
+    const req = makeReq({
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body,
+    });
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+    return res;
+  }
+
+  it('persists isDraft: true and GET by id returns it', async () => {
+    const res = await createAccount({
+      name: 'Chase',
+      accountNumber: 'chase-acc-1',
+      bankId,
+      currencyCode: 'USD',
+      countryId: 'USA',
+      ownerIds: [userId],
+      isDraft: true,
+    });
+
+    expect(res._status).toBe(201);
+    const created = res._body as { id: number; isDraft: boolean };
+    expect(created.isDraft).toBe(true);
+
+    const getReq = makeReq({
+      method: 'GET',
+      headers: { authorization: `Bearer ${token}` },
+      query: { id: String(created.id) },
+    });
+    const getRes = makeRes();
+    await handler(getReq as NextApiRequest, getRes as unknown as NextApiResponse);
+
+    expect(getRes._status).toBe(200);
+    expect((getRes._body as { isDraft: boolean }).isDraft).toBe(true);
+  });
+
+  it('defaults isDraft to false when omitted', async () => {
+    const res = await createAccount({
+      name: 'Chase Real',
+      accountNumber: '000123456789',
+      bankId,
+      currencyCode: 'USD',
+      countryId: 'USA',
+      ownerIds: [userId],
+    });
+
+    expect(res._status).toBe(201);
+    expect((res._body as { isDraft: boolean }).isDraft).toBe(false);
+  });
+
+  it('PUT with isDraft: false clears the flag on a draft account', async () => {
+    const createRes = await createAccount({
+      name: 'Ally',
+      accountNumber: 'ally-acc-1',
+      bankId,
+      currencyCode: 'USD',
+      countryId: 'USA',
+      ownerIds: [userId],
+      isDraft: true,
+    });
+    const draftId = (createRes._body as { id: number }).id;
+
+    const putReq = makeReq({
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}` },
+      query: { id: String(draftId) },
+      body: { accountNumber: '999888777666', isDraft: false },
+    });
+    const putRes = makeRes();
+    await handler(putReq as NextApiRequest, putRes as unknown as NextApiResponse);
+
+    expect(putRes._status).toBe(200);
+    expect((putRes._body as { isDraft: boolean }).isDraft).toBe(false);
   });
 });

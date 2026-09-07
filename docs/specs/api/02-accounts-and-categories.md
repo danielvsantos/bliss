@@ -31,6 +31,7 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 - `type` (String?): Plaid account type (e.g., `depository`, `credit`, `investment`, `loan`).
 - `subtype` (String?): Plaid account subtype (e.g., `checking`, `savings`, `cd`).
 - `plaidItem` (Relation): Optional belongs-to relation with `PlaidItem` via `plaidItemId`.
+- `isDraft` (Boolean, default `false`): `true` for accounts scaffolded during onboarding (one per bank/account the user declares in the bank & account picker). Draft accounts carry an obviously-fake placeholder `accountNumber` (`"{bank-slug}-acc-{n}"`) and the user's primary country, and are hidden from transaction-entry pickers (transaction form, transactions filter, Plaid review, portfolio report, dashboard signals) — but **shown** in Smart Import so the CSV about to be imported has a destination. They still satisfy the dashboard "Connect bank" checklist (`accountCount > 0`, no `isDraft` filter) and participate in analytics/net-worth at $0 until confirmed.
 
 ### Business Logic & Security
 
@@ -38,6 +39,7 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 - **Authorization**: All queries are strictly scoped to the `tenantId` of the authenticated user.
 - **Rate Limiting**: The endpoint uses a per-route rate limiter (`rateLimiters.accounts`).
 - **Validation**: `POST` and `PUT` endpoints validate that all associated entities (banks, currencies, countries, owners) belong to the current tenant.
+- **Draft flag**: `POST /api/accounts` accepts an optional `isDraft` (coerced via `Boolean(...)`, defaults `false`). `PUT /api/accounts` writes `isDraft` **only when the key is present** in the request body — the client sends `isDraft: false` to confirm a scaffolded account once a real account number is entered. There is no implicit promotion. All other required-field validation is unchanged for both verbs.
 - **Deletion Protection**: An account cannot be deleted if it has any linked transactions. DELETE returns `409 Conflict` with a transaction count, or `204 No Content` on success.
 
 ---

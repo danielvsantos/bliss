@@ -23,7 +23,8 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import { useCategories, useAccounts } from '@/hooks/use-metadata';
+import { useCategories } from '@/hooks/use-metadata';
+import { useSelectableAccounts } from '@/hooks/use-selectable-accounts';
 import {
   usePlaidTransactions,
   useUpdatePlaidTransaction,
@@ -341,7 +342,7 @@ export default function TransactionReviewPage() {
     () => new Map(categories.map((c: Category) => [c.id, c])),
     [categories],
   );
-  const { data: accounts = [] } = useAccounts();
+  const { data: accounts = [] } = useSelectableAccounts();
   const accountsMap = useMemo(
     () => new Map(accounts.map((a: { id: number; name: string }) => [a.id, a])),
     [accounts],
