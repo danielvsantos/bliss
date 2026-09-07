@@ -151,10 +151,29 @@ describe('POST /api/accounts — isDraft flag', () => {
   let tenantId: string;
   let userId: string;
   let token: string;
-  const bankId = 1; // seeded reference bank
+  let bankId: number;
 
   beforeAll(async () => {
     ({ tenantId, userId, token } = await createIsolatedTenant('accounts-isdraft'));
+    // Reference data (Currency/Country/Bank) is only present when the DB has been
+    // seeded — the api-integration CI job runs `migrate deploy` without a seed,
+    // so make this suite self-sufficient by upserting the rows it needs.
+    await prisma.currency.upsert({
+      where: { id: 'USD' },
+      update: {},
+      create: { id: 'USD', name: 'US Dollar', symbol: '$' },
+    });
+    await prisma.country.upsert({
+      where: { id: 'USA' },
+      update: {},
+      create: { id: 'USA', name: 'United States' },
+    });
+    const bank = await prisma.bank.upsert({
+      where: { name: 'isDraft Test Bank' },
+      update: {},
+      create: { name: 'isDraft Test Bank' },
+    });
+    bankId = bank.id;
     await prisma.tenantCurrency.create({ data: { tenantId, currencyId: 'USD' } });
     await prisma.tenantCountry.create({ data: { tenantId, countryId: 'USA' } });
     await prisma.tenantBank.create({ data: { tenantId, bankId } });
@@ -167,6 +186,10 @@ describe('POST /api/accounts — isDraft flag', () => {
     await prisma.tenantCountry.deleteMany({ where: { tenantId } });
     await prisma.tenantCurrency.deleteMany({ where: { tenantId } });
     await teardownTenant(tenantId);
+    // Drop the bank this suite created (no other rows reference it by now).
+    // Currency/Country rows are shared reference data — leave them (upsert is idempotent).
+    await prisma.tenantBank.deleteMany({ where: { bankId } });
+    await prisma.bank.deleteMany({ where: { id: bankId, name: 'isDraft Test Bank' } });
   });
 
   async function createAccount(body: Record<string, unknown>) {
