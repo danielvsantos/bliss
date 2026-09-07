@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -9,6 +9,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Check,
   X,
   Trash2,
@@ -143,10 +144,14 @@ function SubscriptionRow({
   const isTombstone = item.state === 'DISMISSED' || isMerged;
 
   const handleErr = (err: unknown) => {
-    const ax = err as AxiosError<{ error?: string }>;
+    const ax = err as AxiosError<{ error?: string; code?: string }>;
+    const code = ax?.response?.data?.code;
     toast({
       title: t('subscriptions.actionFailed'),
-      description: ax?.response?.data?.error || ax?.message || '',
+      description:
+        code === 'MERGE_TARGET_HAS_DEPENDENTS'
+          ? t('subscriptions.merge.dismissBlocked')
+          : ax?.response?.data?.error || ax?.message || '',
       variant: 'destructive',
     });
   };
@@ -190,21 +195,30 @@ function SubscriptionRow({
   // Unmerge action. Only ever reached in the "All" view.
   if (isMerged) {
     return (
-      <div className="flex items-center gap-3 py-3 border-b border-border/60 last:border-0 text-muted-foreground">
-        <GitMerge className="h-4 w-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate">
-            <span className="line-through">{item.merchantLabel}</span>
-            <span className="mx-1.5">→</span>
-            <span className="font-medium text-foreground">
-              {item.mergedIntoLabel || t('subscriptions.merge.unknownTarget')}
-            </span>
+      <div className="flex items-center gap-3 py-3 border-b border-border/60 last:border-0 text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem_13rem] sm:items-center sm:gap-3">
+        <div className="flex items-center gap-3 min-w-0 sm:col-span-4">
+          <GitMerge className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate">
+              <span className="line-through">{item.merchantLabel}</span>
+              <span className="mx-1.5">→</span>
+              {item.mergeTargetMissing ? (
+                <span className="font-medium text-warning">
+                  {t('subscriptions.merge.targetMissing')}
+                </span>
+              ) : (
+                <span className="font-medium text-foreground">
+                  {item.mergedIntoLabel || t('subscriptions.merge.unknownTarget')}
+                </span>
+              )}
+            </div>
+            <div className="text-xs truncate">{t('subscriptions.merge.tombstoneHint')}</div>
           </div>
-          <div className="text-xs truncate">{t('subscriptions.merge.tombstoneHint')}</div>
         </div>
         <Button
           size="sm"
           variant="outline"
+          className="sm:justify-self-end"
           disabled={unmerge.isPending}
           onClick={() =>
             unmerge.mutate(item.descriptionHash, {
@@ -222,12 +236,12 @@ function SubscriptionRow({
 
   return (
     <div className="border-b border-border/60 last:border-0">
-      <div className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+      <div className="flex flex-col gap-2 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem_13rem] sm:items-center sm:gap-3">
         {/* Name row: chevron, icon, name, status badge. Kept as its own line on
-            mobile (via flex-col above) so the amount/actions row below never
-            competes with the name for width — sm:flex-1 lets it fill the
-            remaining space next to the stats row on desktop, same as before. */}
-        <div className="flex items-center gap-3 min-w-0 sm:flex-1">
+            mobile (via flex-col above); on desktop it is grid track 1
+            (minmax(0,1fr)) so the cadence / amount / next / action columns line
+            up on a fixed x in every row state. */}
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
@@ -282,6 +296,12 @@ function SubscriptionRow({
               {t('subscriptions.occurrences', { count: item.occurrenceCount })}
               {item.userLabelLocked ? ` · ${t('subscriptions.rename.custom')}` : ''}
             </div>
+            {item.mergeStale && (
+              <div className="text-xs text-warning flex items-center gap-1 mt-0.5">
+                <Info className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('subscriptions.merge.stale')}</span>
+              </div>
+            )}
           </div>
 
           <div className="shrink-0">
@@ -289,10 +309,10 @@ function SubscriptionRow({
           </div>
         </div>
 
-        {/* Stats + actions row: its own line on mobile, indented to align under
-            the name. Cadence and next-expected stay desktop-only; amount and
-            actions are always visible but compact enough to share this line. */}
-        <div className="flex items-center justify-between gap-3 pl-9 sm:justify-start sm:pl-0">
+        {/* Stats + actions: their own line on mobile; on desktop `sm:contents`
+            promotes the four children into grid tracks 2–5 so column x-positions
+            stay fixed regardless of how many action controls a row shows. */}
+        <div className="flex items-center justify-between gap-3 pl-9 sm:contents">
           {/* Cadence */}
           <div className="hidden sm:block shrink-0 w-28 text-right">
             {editingCadence ? (
@@ -349,12 +369,13 @@ function SubscriptionRow({
             {formatRelative(item.nextExpectedAt, t)}
           </div>
 
-          {/* Actions */}
-          <div className="shrink-0 flex items-center gap-1">
+          {/* Actions — fixed 13rem grid track (track 5), right-aligned so 1, 2 or
+              3 controls never shift the columns to the left. */}
+          <div className="shrink-0 flex items-center gap-1 sm:w-full sm:justify-end">
             {merging ? (
               <>
                 <Select onValueChange={runMerge}>
-                  <SelectTrigger className="h-8 text-xs w-52">
+                  <SelectTrigger className="h-8 text-xs w-full">
                     <SelectValue placeholder={t('subscriptions.merge.pickTarget')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -475,11 +496,22 @@ export default function SubscriptionsPage() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
 
-  const [view, setView] = useState<SubscriptionsView>('active');
-  const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [view, setViewState] = useState<SubscriptionsView>('active');
+  const [categoryId, setCategoryIdState] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
 
-  const { data, isLoading, isError } = useSubscriptions({ view, categoryId });
+  // Changing the tab or category filter always returns to page 1.
+  const setView = (v: SubscriptionsView) => { setViewState(v); setPage(1); };
+  const setCategoryId = (id: number | null) => { setCategoryIdState(id); setPage(1); };
+
+  const { data, isLoading, isError } = useSubscriptions({ view, categoryId, page });
   const refresh = useRefreshSubscriptions();
+
+  const totalPages = data?.totalPages ?? 1;
+  // Clamp if the current page falls past the end after data changes.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const locale = i18n.language || 'en';
   const displayCurrency = data?.displayCurrency ?? 'USD';
@@ -660,6 +692,32 @@ export default function SubscriptionsPage() {
                 mergeCandidates={mergeCandidates}
               />
             ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between gap-3 pt-4 mt-2 border-t border-border/60">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              {t('subscriptions.pager.prev')}
+            </Button>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {t('subscriptions.pager.pageOf', { page, total: totalPages })}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              {t('subscriptions.pager.next')}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
           </div>
         )}
       </Card>

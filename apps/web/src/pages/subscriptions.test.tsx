@@ -35,6 +35,10 @@ function baseResponse(
     lastDetectedAt: null,
     fullScanAt: '2026-01-01T00:00:00.000Z',
     refreshCooldownSeconds: 0,
+    page: 1,
+    limit: 25,
+    total: items.length,
+    totalPages: 1,
     categories: [{ id: 10, name: 'Media', icon: '📺', count: items.length }],
     mergeCandidates,
     summary: {
@@ -241,5 +245,77 @@ describe('SubscriptionsPage', () => {
     renderPage();
     expect(screen.getByRole('button', { name: /subscriptions\.merge\.unmerge/i })).toBeInTheDocument();
     expect(screen.getByText('Orange')).toBeInTheDocument();
+  });
+
+  it('renders the "merge target missing" state on a tombstone whose target is gone', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(
+        baseResponse([
+          makeItem({
+            descriptionHash: 'hash-2',
+            merchantLabel: 'Orphaned',
+            mergedIntoHash: 'gone',
+            mergedIntoLabel: null,
+            mergeTargetMissing: true,
+          }),
+        ]),
+      ),
+    );
+    renderPage();
+    expect(screen.getByText('subscriptions.merge.targetMissing')).toBeInTheDocument();
+  });
+
+  it('shows the stale-merge warning on a normal row flagged mergeStale', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(baseResponse([makeItem({ mergeStale: true })])),
+    );
+    renderPage();
+    expect(screen.getByText('subscriptions.merge.stale')).toBeInTheDocument();
+  });
+
+  it('puts the desktop row on a fixed grid without touching the mobile stacked layout', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(baseResponse([makeItem()])));
+    const { container } = renderPage();
+    const html = container.innerHTML;
+    // fixed desktop tracks, all sm:-scoped
+    expect(html).toContain('sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem_13rem]');
+    // mobile layout untouched: the row is still a flex column below sm
+    expect(html).toContain('flex flex-col gap-2 py-3 sm:grid');
+  });
+
+  it('shows a pager only when there is more than one page, and Next advances the query page', () => {
+    const resp = baseResponse([makeItem()]);
+    resp.totalPages = 3;
+    resp.total = 60;
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(resp));
+    renderPage();
+
+    expect(screen.getByText('subscriptions.pager.pageOf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.pager\.next/i }));
+
+    const lastCall = vi.mocked(UseSubs.useSubscriptions).mock.calls.at(-1)?.[0];
+    expect(lastCall).toMatchObject({ page: 2 });
+  });
+
+  it('resets to page 1 when the tab filter changes', () => {
+    const resp = baseResponse([makeItem()]);
+    resp.totalPages = 3;
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(resp));
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.pager\.next/i }));
+    expect(vi.mocked(UseSubs.useSubscriptions).mock.calls.at(-1)?.[0]).toMatchObject({ page: 2 });
+
+    // change the view tab (first combobox on the page)
+    fireEvent.click(screen.getAllByRole('combobox')[0]);
+    fireEvent.click(screen.getByRole('option', { name: 'subscriptions.filter.lapsed' }));
+
+    expect(vi.mocked(UseSubs.useSubscriptions).mock.calls.at(-1)?.[0]).toMatchObject({ page: 1, view: 'lapsed' });
+  });
+
+  it('does not render a pager for a single page', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(baseResponse([makeItem()])));
+    renderPage();
+    expect(screen.queryByText('subscriptions.pager.pageOf')).not.toBeInTheDocument();
   });
 });

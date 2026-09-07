@@ -2151,6 +2151,14 @@ const fr = {
       unknownTarget: "un autre abonnement",
       mergedCountHint_one: "{{count}} fusionné avec un autre — gérer",
       mergedCountHint_other: "{{count}} fusionnés avec d'autres — gérer",
+      targetMissing: "Cible de fusion introuvable",
+      stale: "Cette fusion ne prend pas effet — annulez-la puis fusionnez à nouveau.",
+      dismissBlocked: "Annulez d'abord la fusion des lignes intégrées à celle-ci.",
+    },
+    pager: {
+      prev: "Précédent",
+      next: "Suivant",
+      pageOf: "Page {{page}} sur {{total}}",
     },
   },
 };

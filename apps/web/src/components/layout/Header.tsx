@@ -45,6 +45,7 @@ export function Header({ sidebarOpen, onSidebarToggle, isMobile = false }: Heade
       "/transactions": "nav.transactions",
       "/accounts": "nav.accounts",
       "/categories": "nav.categories",
+      "/subscriptions": "nav.subscriptions",
       "/manual-updates": "nav.assetPriceUpdates",
       "/reports/financial-summary": "nav.financialSummary",
       "/reports/expenses": "nav.expenses",

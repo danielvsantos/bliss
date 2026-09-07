@@ -1015,7 +1015,12 @@ class APIClient {
 
   // --- Subscriptions / recurring charges ---
 
-  async getSubscriptions(params?: { view?: SubscriptionsView; categoryId?: number }): Promise<SubscriptionsResponse> {
+  async getSubscriptions(params?: {
+    view?: SubscriptionsView;
+    categoryId?: number;
+    page?: number;
+    limit?: number;
+  }): Promise<SubscriptionsResponse> {
     const response = await this.client.get('/api/subscriptions', { params });
     return response.data;
   }

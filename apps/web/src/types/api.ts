@@ -667,6 +667,10 @@ export type SubscriptionItem = {
   mergedIntoHash: string | null;
   /** Human label of the merge target (the row this one folds into). */
   mergedIntoLabel: string | null;
+  /** True when this tombstone's merge target row no longer exists. */
+  mergeTargetMissing?: boolean;
+  /** True when this row is a merge target that a detection run has not folded into (guard-rail). */
+  mergeStale?: boolean;
 };
 
 export type SubscriptionsResponse = {
@@ -674,6 +678,11 @@ export type SubscriptionsResponse = {
   lastDetectedAt: string | null;
   fullScanAt: string | null;
   refreshCooldownSeconds: number;
+  /** 1-based page of `items` (summary/facets always span the full filtered set). */
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
   categories: Array<{ id: number; name: string; icon?: string | null; count: number }>;
   /** All non-dismissed, non-merged rows for the tenant — merge picker targets, view-independent. */
   mergeCandidates: Array<{

@@ -18,6 +18,7 @@ const {
   normalizeMerchant,
   hashMerchant,
   sha256Hex,
+  runKeyFor,
   clusterByAmount,
   clusterKey,
   inferCadence,
@@ -49,29 +50,38 @@ function txn(id, description, debit, date, category) {
   };
 }
 
+let _rowIdSeq = 1000;
+
+/**
+ * Build a full `RecurringCharge` row as the detector now loads it (one
+ * `findMany({ where: { tenantId } })` with every field). Only `descriptionHash`
+ * is required; everything else defaults.
+ */
+function existingRow(o) {
+  return {
+    id: o.id ?? (_rowIdSeq += 1),
+    descriptionHash: o.descriptionHash,
+    chargeKey: o.chargeKey ?? null,
+    state: o.state ?? 'DETECTED',
+    cadence: o.cadence ?? null,
+    userCadenceLocked: o.userCadenceLocked ?? false,
+    userLabelLocked: o.userLabelLocked ?? false,
+    mergedIntoHash: o.mergedIntoHash ?? null,
+    merchantLabel: o.merchantLabel ?? null,
+    categoryId: o.categoryId ?? null,
+    currency: o.currency ?? null,
+    contributingTransactionIds: o.contributingTransactionIds ?? [],
+  };
+}
+
 /**
  * Wire prisma mocks: tierA rows returned for isRecurring=true, tierB for
- * isRecurring=false. `prior` feeds the CONFIRMED/DISMISSED/locked-cadence query.
- * `merges` feeds the manual-merge alias query — each entry is
- * `{ descriptionHash, mergedIntoHash, target? }` where `target` (optional) is the
- * merge-target metadata row `{ descriptionHash, merchantLabel, categoryId,
- * cadence, currency }`.
+ * isRecurring=false. `existing` feeds the single "load every row for this
+ * tenant" query the detector now issues (user decisions, merge tombstones,
+ * chargeKey identity and the transaction-overlap index all derive from it).
  */
-function mockTxns({ tierA = [], tierB = [], tierBCount = null, prior = [], merges = [] }) {
-  prisma.recurringCharge.findMany.mockImplementation(({ where }) => {
-    // aliasRows — where: { mergedIntoHash: { not: null } }
-    if (where?.mergedIntoHash && typeof where.mergedIntoHash === 'object') {
-      return Promise.resolve(
-        merges.map((m) => ({ descriptionHash: m.descriptionHash, mergedIntoHash: m.mergedIntoHash })),
-      );
-    }
-    // aliasTargets — where: { descriptionHash: { in: [...] } }
-    if (where?.descriptionHash?.in) {
-      return Promise.resolve(merges.filter((m) => m.target).map((m) => m.target));
-    }
-    // priorRows — where: { mergedIntoHash: null, OR: [...] }
-    return Promise.resolve(prior);
-  });
+function mockTxns({ tierA = [], tierB = [], tierBCount = null, existing = [] }) {
+  prisma.recurringCharge.findMany.mockResolvedValue(existing);
   prisma.transaction.count.mockResolvedValue(tierBCount == null ? tierB.length : tierBCount);
   prisma.transaction.findMany.mockImplementation(({ where }) => {
     const isRecurring = where?.category?.is?.isRecurring;
@@ -222,7 +232,7 @@ describe('detectForTenant', () => {
   it('honours a DISMISSED tombstone', async () => {
     const dismissedHash = hashMerchant('CITY GYM');
     mockTxns({
-      prior: [{ descriptionHash: dismissedHash, state: 'DISMISSED', cadence: null, userCadenceLocked: false }],
+      existing: [existingRow({ descriptionHash: dismissedHash, state: 'DISMISSED' })],
       tierB: [
         txn(1, 'CITY GYM', 29.99, daysAgo(120), SPENDING_CAT),
         txn(2, 'CITY GYM', 29.99, daysAgo(90), SPENDING_CAT),
@@ -237,7 +247,7 @@ describe('detectForTenant', () => {
   it('force-includes a CONFIRMED merchant the heuristic would skip', async () => {
     const confirmedHash = hashMerchant('ODD MERCHANT');
     mockTxns({
-      prior: [{ descriptionHash: confirmedHash, state: 'CONFIRMED', cadence: null, userCadenceLocked: false }],
+      existing: [existingRow({ descriptionHash: confirmedHash, state: 'CONFIRMED' })],
       tierB: [txn(1, 'ODD MERCHANT', 5, daysAgo(10), SPENDING_CAT)],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
@@ -355,7 +365,7 @@ describe('detectForTenant — aggregator merchant splitting', () => {
 
   it('produces one row per recurring price band and drops the lone purchase', async () => {
     mockTxns({ tierA: appleFixture() });
-    const { rows, legacyRetireHashes } = await detectForTenant(TENANT, { mode: 'full' });
+    const { rows, reconciliations } = await detectForTenant(TENANT, { mode: 'full' });
 
     const amounts = rows.map((r) => Number(r.amount)).sort((a, b) => a - b);
     expect(amounts).toEqual([2.99, 9.99, 22]); // stored amount = the real band median; no €39.99 row
@@ -366,28 +376,36 @@ describe('detectForTenant — aggregator merchant splitting', () => {
     expect(new Set(rows.map((r) => r.descriptionHash))).toEqual(
       new Set([sha256Hex(`${key}#3`), sha256Hex(`${key}#10`), sha256Hex(`${key}#22`)]),
     );
-    // the pre-clustering bare "apple" row is scheduled for retirement
-    expect(legacyRetireHashes).toEqual([sha256Hex(key)]);
+    // each band carries its own durable chargeKey (identical to its hash on a
+    // brand-new row)
+    expect(rows.every((r) => r.chargeKey === r.descriptionHash)).toBe(true);
+    // no prior decided rows → nothing to reconcile
+    expect(reconciliations).toEqual([]);
   });
 
-  it('a single-price merchant is unchanged (bare hash, nothing retired)', async () => {
+  it('a single-price merchant is unchanged (bare hash, nothing reconciled)', async () => {
     mockTxns({
       tierA: Array.from({ length: 8 }, (_, i) => ({
         id: i + 1, description: 'Netflix', debit: 15.99, currency: 'USD',
         transaction_date: daysAgo(10 + i * 30), categoryId: MEDIA.id, category: MEDIA,
       })),
     });
-    const { rows, legacyRetireHashes } = await detectForTenant(TENANT, { mode: 'incremental' });
+    const { rows, reconciliations } = await detectForTenant(TENANT, { mode: 'incremental' });
     expect(rows).toHaveLength(1);
     expect(rows[0].descriptionHash).toBe(hashMerchant('Netflix'));
-    expect(legacyRetireHashes).toEqual([]);
+    expect(rows[0].chargeKey).toBe(hashMerchant('Netflix'));
+    expect(reconciliations).toEqual([]);
   });
 
   it('honours a DISMISSED tombstone on a specific band', async () => {
     const key = normalizeMerchant('APPLE.COM/BILL');
     mockTxns({
       tierA: appleFixture(),
-      prior: [{ descriptionHash: sha256Hex(`${key}#10`), state: 'DISMISSED', cadence: null, userCadenceLocked: false }],
+      existing: [existingRow({
+        descriptionHash: sha256Hex(`${key}#10`),
+        chargeKey: sha256Hex(`${key}#10`),
+        state: 'DISMISSED',
+      })],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'full' });
     const amounts = rows.map((r) => Number(r.amount)).sort((a, b) => a - b);
@@ -395,12 +413,36 @@ describe('detectForTenant — aggregator merchant splitting', () => {
   });
 });
 
+describe('runKeyFor', () => {
+  it('is the bare merchant hash for a single-price merchant', () => {
+    expect(runKeyFor('netflix')).toBe(sha256Hex('netflix'));
+    expect(runKeyFor('netflix', { isSplit: false })).toBe(sha256Hex('netflix'));
+  });
+  it('appends the rounded band median for a split merchant', () => {
+    expect(runKeyFor('apple bill', { isSplit: true, bandMedian: 9.99 })).toBe(sha256Hex('apple bill#10'));
+    expect(runKeyFor('apple bill', { isSplit: true, bandMedian: 2.49 })).toBe(sha256Hex('apple bill#2'));
+  });
+});
+
 describe('detectForTenant — manual merchant merge', () => {
   const ORANGE = { id: 50, name: 'Telecom', icon: '📱', isRecurring: true, type: 'Essentials' };
+
+  // A post-reset merge: source row's chargeKey is repointed to the target's.
+  const mergedSource = (sourceHash, target) => existingRow({
+    descriptionHash: sourceHash,
+    chargeKey: target.chargeKey ?? target.descriptionHash,
+    mergedIntoHash: target.descriptionHash,
+    merchantLabel: 'source descriptor',
+    currency: target.currency ?? 'USD',
+  });
 
   it('folds the source merchant\'s charges into the target row and emits no standalone source row', async () => {
     const sourceHash = hashMerchant('To Orange Espagne S.a.');
     const targetHash = hashMerchant('Orange');
+    const target = existingRow({
+      id: 1, descriptionHash: targetHash, chargeKey: targetHash,
+      merchantLabel: 'Orange', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD',
+    });
     mockTxns({
       tierA: [
         txn(1, 'Orange', 30, daysAgo(90), ORANGE),
@@ -408,27 +450,25 @@ describe('detectForTenant — manual merchant merge', () => {
         txn(3, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
         txn(4, 'To Orange Espagne S.a.', 30, daysAgo(2), ORANGE),
       ],
-      merges: [{
-        descriptionHash: sourceHash,
-        mergedIntoHash: targetHash,
-        target: { descriptionHash: targetHash, merchantLabel: 'Orange', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
-      }],
+      existing: [target, mergedSource(sourceHash, target)],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
     expect(rows).toHaveLength(1);
     expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].chargeKey).toBe(targetHash);
     expect(rows[0].occurrenceCount).toBe(4); // 2 Orange + 2 folded-in
-    // the target's own label survives even though the folded-in charges are newer
     expect(rows[0].merchantLabel).toBe('Orange');
-    // most-recent contributing charge is one of the folded-in transactions
     expect(rows[0].contributingTransactionIds).toContain(4);
   });
 
-  it('folds into a RENAMED target — the alias is the row hash, not a label hash', async () => {
+  it('folds into a RENAMED target — identity is the stored chargeKey', async () => {
     const sourceHash = hashMerchant('To Orange Espagne S.a.');
-    // Target row was detected from "Orange" charges, then renamed by the user.
-    // Its descriptionHash is still hashMerchant('Orange'); its label is custom.
     const targetHash = hashMerchant('Orange');
+    const target = existingRow({
+      id: 1, descriptionHash: targetHash, chargeKey: targetHash,
+      merchantLabel: 'My Phone Plan', userLabelLocked: true,
+      categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD',
+    });
     mockTxns({
       tierA: [
         txn(1, 'Orange', 30, daysAgo(90), ORANGE),
@@ -436,21 +476,17 @@ describe('detectForTenant — manual merchant merge', () => {
         txn(3, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
         txn(4, 'To Orange Espagne S.a.', 30, daysAgo(2), ORANGE),
       ],
-      merges: [{
-        descriptionHash: sourceHash,
-        mergedIntoHash: targetHash,
-        target: { descriptionHash: targetHash, merchantLabel: 'My Phone Plan', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
-      }],
+      existing: [target, mergedSource(sourceHash, target)],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
     expect(rows).toHaveLength(1);
     expect(rows[0].descriptionHash).toBe(targetHash);
-    expect(rows[0].occurrenceCount).toBe(4); // folded, not a phantom standalone row
-    expect(rows[0].merchantLabel).toBe('My Phone Plan'); // custom name kept
+    expect(rows[0].occurrenceCount).toBe(4);
+    expect(rows[0].merchantLabel).toBe('My Phone Plan');
     expect(rows[0].status).toBe('ACTIVE');
   });
 
-  it('resolves a merge chain (A→B→C) to the final target', async () => {
+  it('resolves a legacy merge chain (A→B→C, chargeKey never repointed) to the final target', async () => {
     const aHash = hashMerchant('Orange ES old');
     const bHash = hashMerchant('To Orange Espagne S.a.');
     const cHash = hashMerchant('Orange');
@@ -460,9 +496,10 @@ describe('detectForTenant — manual merchant merge', () => {
         txn(2, 'Orange ES old', 30, daysAgo(30), ORANGE),
         txn(3, 'To Orange Espagne S.a.', 30, daysAgo(3), ORANGE),
       ],
-      merges: [
-        { descriptionHash: aHash, mergedIntoHash: bHash },
-        { descriptionHash: bHash, mergedIntoHash: cHash },
+      existing: [
+        existingRow({ id: 1, descriptionHash: cHash, merchantLabel: 'Orange', categoryId: ORANGE.id }),
+        existingRow({ id: 2, descriptionHash: aHash, mergedIntoHash: bHash }),
+        existingRow({ id: 3, descriptionHash: bHash, mergedIntoHash: cHash }),
       ],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
@@ -474,6 +511,7 @@ describe('detectForTenant — manual merchant merge', () => {
   it('does not re-split a merged group by amount even when the bands diverge', async () => {
     const sourceHash = hashMerchant('APPLE ES');
     const targetHash = hashMerchant('APPLE.COM/BILL');
+    const target = existingRow({ id: 1, descriptionHash: targetHash, chargeKey: targetHash });
     const tierA = [];
     let id = 1;
     for (let i = 0; i < 6; i++) {
@@ -482,33 +520,94 @@ describe('detectForTenant — manual merchant merge', () => {
     for (let i = 0; i < 4; i++) {
       tierA.push(txn(id++, 'APPLE ES', 49.99, daysAgo(15 + i * 30), ORANGE));
     }
-    mockTxns({ tierA, merges: [{ descriptionHash: sourceHash, mergedIntoHash: targetHash }] });
-    const { rows, legacyRetireHashes } = await detectForTenant(TENANT, { mode: 'incremental' });
+    mockTxns({ tierA, existing: [target, mergedSource(sourceHash, target)] });
+    const { rows, reconciliations } = await detectForTenant(TENANT, { mode: 'incremental' });
     expect(rows).toHaveLength(1); // one combined row, NOT one per band
     expect(rows[0].descriptionHash).toBe(targetHash);
     expect(rows[0].occurrenceCount).toBe(10);
-    expect(legacyRetireHashes).toEqual([]); // a merged row is never a "split"
+    expect(reconciliations).toEqual([]); // a merged row is never a "split"
+  });
+
+  it('folds a merged BAND row into its target on the next run (fixes the band-merge no-op)', async () => {
+    const key = normalizeMerchant('APPLE.COM/BILL');
+    const band10 = sha256Hex(`${key}#10`); // the €10 band that the user merged away
+    const targetHash = hashMerchant('Apple Music');
+    const target = existingRow({
+      id: 100, descriptionHash: targetHash, chargeKey: targetHash, state: 'CONFIRMED',
+      merchantLabel: 'Apple Music', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'EUR',
+      contributingTransactionIds: [900],
+    });
+    // The aggregator still splits this run: €3 ×4, €10 ×4, €22 ×3.
+    const tierA = [];
+    let id = 1;
+    for (const [amt, n] of [[2.99, 4], [9.99, 4], [22, 3]]) {
+      for (let i = 0; i < n; i++) {
+        tierA.push(txn(id++, 'APPLE.COM/BILL', amt, daysAgo(15 + i * 30), ORANGE));
+      }
+    }
+    mockTxns({
+      tierA,
+      existing: [
+        target,
+        existingRow({
+          id: 101, descriptionHash: band10, chargeKey: targetHash,
+          mergedIntoHash: targetHash, merchantLabel: 'APPLE.COM/BILL', currency: 'EUR',
+        }),
+      ],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'full' });
+    const byHash = new Map(rows.map((r) => [r.descriptionHash, r]));
+    expect(byHash.has(band10)).toBe(false);       // no standalone €10 band row
+    expect(byHash.has(targetHash)).toBe(true);    // it folded into the target
+    expect(byHash.get(targetHash).occurrenceCount).toBe(4);
+    expect(byHash.get(targetHash).merchantLabel).toBe('Apple Music'); // target label kept
+    // the other two bands still detect standalone
+    expect(byHash.has(sha256Hex(`${key}#3`))).toBe(true);
+    expect(byHash.has(sha256Hex(`${key}#22`))).toBe(true);
+  });
+
+  it('folds a confirm-from-transaction row (chargeKey = its own hash) as a merge target', async () => {
+    const sourceHash = hashMerchant('SPOT ES');
+    const targetHash = hashMerchant('Spotify'); // created by "confirm from a transaction"
+    const target = existingRow({
+      id: 1, descriptionHash: targetHash, chargeKey: targetHash, state: 'CONFIRMED',
+      merchantLabel: 'Spotify', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD',
+      contributingTransactionIds: [50],
+    });
+    mockTxns({
+      tierA: [
+        txn(1, 'Spotify', 9.99, daysAgo(60), ORANGE),
+        txn(2, 'SPOT ES', 9.99, daysAgo(30), ORANGE),
+        txn(3, 'SPOT ES', 9.99, daysAgo(2), ORANGE),
+      ],
+      existing: [target, mergedSource(sourceHash, target)],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(targetHash);
+    expect(rows[0].occurrenceCount).toBe(3);
+    expect(rows[0].detectionReason).toBe('USER_CONFIRMED');
   });
 
   it('synthesizes a target row from folded-in charges when the target has no charges this window', async () => {
     const sourceHash = hashMerchant('To Orange Espagne S.a.');
     const targetHash = hashMerchant('Orange');
+    const target = existingRow({
+      id: 1, descriptionHash: targetHash, chargeKey: targetHash,
+      merchantLabel: 'Orange', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD',
+    });
     mockTxns({
       tierA: [
         txn(1, 'To Orange Espagne S.a.', 30, daysAgo(60), ORANGE),
         txn(2, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
         txn(3, 'To Orange Espagne S.a.', 30, daysAgo(3), ORANGE),
       ],
-      merges: [{
-        descriptionHash: sourceHash,
-        mergedIntoHash: targetHash,
-        target: { descriptionHash: targetHash, merchantLabel: 'Orange', categoryId: ORANGE.id, cadence: 'MONTHLY', currency: 'USD' },
-      }],
+      existing: [target, mergedSource(sourceHash, target)],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
     expect(rows).toHaveLength(1);
     expect(rows[0].descriptionHash).toBe(targetHash);
-    expect(rows[0].merchantLabel).toBe('Orange'); // from target metadata, not the source descriptor
+    expect(rows[0].merchantLabel).toBe('Orange');
     expect(rows[0].occurrenceCount).toBe(3);
     expect(rows[0].cadence).toBe('MONTHLY');
   });
@@ -516,16 +615,80 @@ describe('detectForTenant — manual merchant merge', () => {
   it('a DISMISSED target still suppresses the synthesized row', async () => {
     const sourceHash = hashMerchant('To Orange Espagne S.a.');
     const targetHash = hashMerchant('Orange');
+    const target = existingRow({
+      id: 1, descriptionHash: targetHash, chargeKey: targetHash, state: 'DISMISSED',
+    });
     mockTxns({
       tierA: [
         txn(1, 'To Orange Espagne S.a.', 30, daysAgo(60), ORANGE),
         txn(2, 'To Orange Espagne S.a.', 30, daysAgo(30), ORANGE),
         txn(3, 'To Orange Espagne S.a.', 30, daysAgo(3), ORANGE),
       ],
-      prior: [{ descriptionHash: targetHash, state: 'DISMISSED', cadence: null, userCadenceLocked: false }],
-      merges: [{ descriptionHash: sourceHash, mergedIntoHash: targetHash }],
+      existing: [target, mergedSource(sourceHash, target)],
     });
     const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('detectForTenant — amount-band reconciliation (no orphaned decisions)', () => {
+  const MEDIA = { id: 40, name: 'App Store', icon: '📺', isRecurring: true, type: 'Lifestyle' };
+
+  it('collapses two CONFIRMED bands into one row, keeping the decision, cadence lock and custom label', async () => {
+    const key = normalizeMerchant('DAZN');
+    const band5 = sha256Hex(`${key}#5`);
+    const band10 = sha256Hex(`${key}#10`);
+    // This run every charge is ~5.00 — the €10 band aged out, so clusterByAmount
+    // yields a single band and the merchant is no longer "split".
+    const tierA = Array.from({ length: 6 }, (_, i) =>
+      txn(i + 1, 'DAZN', 4.99, daysAgo(10 + i * 30), MEDIA));
+    mockTxns({
+      tierA,
+      existing: [
+        existingRow({
+          id: 1, descriptionHash: band5, chargeKey: band5, state: 'CONFIRMED',
+          cadence: 'MONTHLY', userCadenceLocked: true,
+          merchantLabel: 'DAZN Sports', userLabelLocked: true,
+          contributingTransactionIds: [1, 2, 3],
+        }),
+        existingRow({
+          id: 2, descriptionHash: band10, chargeKey: band10, state: 'CONFIRMED',
+          cadence: 'MONTHLY', contributingTransactionIds: [4, 5, 6],
+        }),
+      ],
+    });
+    const { rows, reconciliations } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(row.descriptionHash).toBe(band5);       // winner = lowest id
+    expect(row.chargeKey).toBe(band5);
+    expect(row._isConfirmed).toBe(true);
+    expect(row.occurrenceCount).toBe(6);
+    expect(reconciliations).toHaveLength(1);
+    expect(reconciliations[0].loserId).toBe(2);
+    expect(reconciliations[0].winnerDescriptionHash).toBe(band5);
+  });
+
+  it('a re-created bare window folds into the CONFIRMED row that already owns its transactions', async () => {
+    const key = normalizeMerchant('DAZN');
+    const confirmedHash = sha256Hex(`${key}#8`); // an old CONFIRMED band row
+    // The 6 newest of the confirmed row's transactions recur this window as a
+    // plain (unsplit) series.
+    const tierA = Array.from({ length: 6 }, (_, i) =>
+      txn(100 + i, 'DAZN', 8.0, daysAgo(5 + i * 30), MEDIA));
+    mockTxns({
+      tierA,
+      existing: [
+        existingRow({
+          id: 119, descriptionHash: confirmedHash, chargeKey: confirmedHash,
+          state: 'CONFIRMED', cadence: 'MONTHLY',
+          contributingTransactionIds: [100, 101, 102, 103, 104, 105, 90, 91, 92, 93, 94],
+        }),
+      ],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(confirmedHash); // folded in, no parallel row
+    expect(rows[0]._isConfirmed).toBe(true);
   });
 });

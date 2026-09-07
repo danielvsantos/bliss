@@ -915,6 +915,16 @@ model RecurringCharge {
   // null = not merged.
   mergedIntoHash  String?
 
+  // Durable identity key. Assigned once when the row is first created and never
+  // re-derived from the live bank descriptor thereafter. On a manual merge the
+  // source row's `chargeKey` is repointed to the target's `chargeKey`, so the
+  // detector folds by stored identity instead of re-hashing the descriptor.
+  //   bare merchant  → sha256("<merchantKey>")
+  //   amount band    → sha256("<merchantKey>#<clusterKey(median)>")
+  // Nullable for rows created before the migration (detector falls back to
+  // `descriptionHash`); every row created on the current code path gets one.
+  chargeKey       String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -925,4 +935,5 @@ model RecurringCharge {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, categoryId])
+  @@index([tenantId, chargeKey])
 }
