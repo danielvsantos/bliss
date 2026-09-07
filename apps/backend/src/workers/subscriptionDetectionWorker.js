@@ -56,16 +56,26 @@ async function handleDetectTenant(data) {
   const { tenantId, mode = 'incremental' } = data;
   if (!tenantId) throw new Error('detect-tenant job missing tenantId');
 
-  const { rows, legacyRetireHashes = [], tierACount, tierBCount, tierBSkipped } =
+  const { rows, reconciliations = [], tierACount, tierBCount, tierBSkipped } =
     await detectForTenant(tenantId, { mode });
 
   // Existing rows for this tenant — so we know which cadences are user-locked
-  // and which state to preserve on update.
+  // and which state to preserve on update, and which rows are merge targets.
   const existing = await prisma.recurringCharge.findMany({
     where: { tenantId },
-    select: { descriptionHash: true, state: true, userCadenceLocked: true, userLabelLocked: true },
+    select: {
+      descriptionHash: true,
+      state: true,
+      userCadenceLocked: true,
+      userLabelLocked: true,
+      mergedIntoHash: true,
+    },
   });
   const existingByHash = new Map(existing.map((r) => [r.descriptionHash, r]));
+  // descriptionHashes that some other row folds into — never prune these.
+  const mergeTargetHashes = new Set(
+    existing.filter((r) => r.mergedIntoHash).map((r) => r.mergedIntoHash),
+  );
 
   const desiredHashes = rows.map((r) => r.descriptionHash);
 
@@ -82,37 +92,71 @@ async function handleDetectTenant(data) {
       create: {
         tenantId,
         descriptionHash: row.descriptionHash,
+        // Durable identity, assigned once at creation and never re-derived.
+        chargeKey: row.chargeKey || row.descriptionHash,
         state: 'DETECTED',
         cadence: row.cadence,
         ...detectorFields(row),
       },
-      update, // detector fields only — never state / userCadenceLocked
+      update, // detector fields only — never state / userCadenceLocked / chargeKey
     });
   });
 
+  // Promote a brand-new split-band row that inherited a CONFIRMED decision from
+  // the bare row it replaced (see recurringDetectionService reconciliation).
+  const promoteWrites = rows
+    .filter((r) => r._promoteState)
+    .map((r) => prisma.recurringCharge.updateMany({
+      where: { tenantId, descriptionHash: r.descriptionHash },
+      data: { state: r._promoteState },
+    }));
+
+  // Reconciliation: two or more decided rows resolved to one identity this run
+  // (bands collapsed, or a bare row split into per-amount bands). The winner
+  // keeps the strongest decision + any user lock; the loser row is deleted.
+  // This is explicitly distinct from prune/retire — no user decision is lost.
+  const reconWinnerWrites = [];
+  const reconLoserDeletes = [];
+  for (const rec of reconciliations) {
+    const data = {};
+    if (rec.promoteState) data.state = rec.promoteState;
+    if (rec.carryCadence) { data.cadence = rec.carryCadence; data.userCadenceLocked = true; }
+    if (rec.carryLabel) { data.merchantLabel = rec.carryLabel; data.userLabelLocked = true; }
+    if (Object.keys(data).length) {
+      reconWinnerWrites.push(prisma.recurringCharge.updateMany({
+        where: { tenantId, descriptionHash: rec.winnerDescriptionHash },
+        data,
+      }));
+    }
+    reconLoserDeletes.push(prisma.recurringCharge.deleteMany({
+      where: { tenantId, id: rec.loserId },
+    }));
+  }
+
   // Prune DETECTED rows that are no longer detected. CONFIRMED / DISMISSED
-  // tombstones — and merge tombstones (`mergedIntoHash` set) — are retained.
+  // rows, merge tombstones (`mergedIntoHash` set) and merge *targets* are all
+  // retained — the guard against ever deleting a user decision or a fold target.
   const prune = prisma.recurringCharge.deleteMany({
     where: {
       tenantId,
       state: 'DETECTED',
       mergedIntoHash: null,
-      descriptionHash: { notIn: desiredHashes.length ? desiredHashes : ['__none__'] },
+      descriptionHash: {
+        notIn: [...new Set([
+          ...(desiredHashes.length ? desiredHashes : ['__none__']),
+          ...mergeTargetHashes,
+        ])],
+      },
     },
   });
 
-  // Retire the pre-clustering single row (any state) for merchants that this run
-  // split into per-amount bands — e.g. the old combined "Apple" row and any
-  // Confirm/Dismiss the user applied to it. The band rows carry `#`-suffixed
-  // hashes so they can never collide with the retire list.
-  const retire = prisma.recurringCharge.deleteMany({
-    where: {
-      tenantId,
-      descriptionHash: { in: legacyRetireHashes.length ? legacyRetireHashes : ['__none__'] },
-    },
-  });
-
-  const [pruneResult, retireResult] = await prisma.$transaction([prune, retire, ...writes]);
+  const [pruneResult] = await prisma.$transaction([
+    prune,
+    ...writes,
+    ...promoteWrites,
+    ...reconWinnerWrites,
+    ...reconLoserDeletes,
+  ]);
 
   if (mode === 'full') {
     await prisma.tenant.update({
@@ -132,7 +176,7 @@ async function handleDetectTenant(data) {
     active,
     lapsed,
     pruned: pruneResult?.count ?? 0,
-    retired: retireResult?.count ?? 0,
+    reconciled: reconciliations.length,
     durationMs: Date.now() - startedAt,
   });
 

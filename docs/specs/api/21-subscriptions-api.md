@@ -13,6 +13,8 @@ Query params:
 |---|---|---|---|
 | `view` | `active` \| `lapsed` \| `all` | `active` | `active`/`lapsed` exclude `DISMISSED` tombstones **and merge tombstones** (`mergedIntoHash != null`) and filter on `status`; `all` includes both so the UI can offer "Restore" / "Unmerge". |
 | `categoryId` | integer | — | Restricts to one category. |
+| `page` | integer ≥ 1 | `1` | 1-based page of `items`. `400` if non-numeric. |
+| `limit` | integer 1–100 | `25` | Page size (clamped). `400` if non-numeric. |
 
 Response:
 
@@ -22,6 +24,7 @@ Response:
   "lastDetectedAt": "2026-09-01T05:00:00Z",
   "fullScanAt": null,                    // Tenant.subscriptionsFullScanAt — null → page shows the Maintenance hint
   "refreshCooldownSeconds": 0,           // >0 → "Scan now" is on cooldown
+  "page": 1, "limit": 25, "total": 42, "totalPages": 2,  // items is one page; summary/facets span the full filtered set
   "categories": [ { "id": 10, "name": "Content & Media", "icon": "📺", "count": 4 } ],
   "mergeCandidates": [   // every non-dismissed, non-merged row for the tenant — view/filter-independent, so a Lapsed row can merge into a hidden Active one
     { "descriptionHash": "…", "merchantLabel": "Orange", "status": "ACTIVE", "state": "CONFIRMED", "categoryIcon": "📱", "categoryName": "Telecom" }
@@ -48,13 +51,19 @@ Response:
     "firstChargedAt": "…", "lastChargedAt": "…", "nextExpectedAt": "…", "lastDetectedAt": "…",
     "contributingTransactionIds": [ 812, 799, 781 ],
     "mergedIntoHash": null,             // non-null → this row is a merge tombstone (only surfaces under view=all)
-    "mergedIntoLabel": null             // merchantLabel of the merge target, resolved for the UI
+    "mergedIntoLabel": null,            // merchantLabel of the merge target, resolved for the UI
+    "mergeTargetMissing": false,        // tombstone whose target row no longer exists → UI shows a distinct state
+    "mergeStale": false                 // merge target not folded into by the last run (guard-rail; also logged at warn)
   } ]
 }
 ```
 
 Monthly-normalization factors: `WEEKLY × 52/12`, `MONTHLY × 1`,
 `QUARTERLY × 1/3`, `ANNUAL × 1/12`.
+
+`items` are ordered DETECTED → CONFIRMED → DISMISSED, then ACTIVE → LAPSED, then
+`lastChargedAt` desc — needs-review rows land on page 1. Per-row FX conversion
+batches one rate lookup per distinct source currency (parallel), not one per row.
 
 ## `POST /api/subscriptions`
 
@@ -63,12 +72,12 @@ Body `{ action, … }`:
 | `action` | Body | Result |
 |---|---|---|
 | `confirm` | `{ descriptionHash }` | `updateMany` → `state: CONFIRMED`, `detectionReason: USER_CONFIRMED`. `200`; `404` if no match. |
-| `confirm` | `{ transactionId }` | Derives hash/category/label/amount/currency/dates from the transaction (tenant-scoped) and `upsert`s a provisional row (`cadence: MONTHLY`, `occurrenceCount: 1`, `state: CONFIRMED`). `201` on create, `200` on update. |
-| `dismiss` | `{ descriptionHash }` | `updateMany` → `state: DISMISSED`, detector fields cleared. `200`; `404` if no match. |
+| `confirm` | `{ transactionId }` | Derives hash/category/label/amount/currency/dates from the transaction (tenant-scoped) and `upsert`s a provisional row (`cadence: MONTHLY`, `occurrenceCount: 1`, `state: CONFIRMED`, `chargeKey` stamped = its own hash). `201` on create, `200` on update. |
+| `dismiss` | `{ descriptionHash }` | `updateMany` → `state: DISMISSED`, detector fields cleared. `200`; `404` if no match. **`409 { code: 'MERGE_TARGET_HAS_DEPENDENTS' }`** if another row is still merged into this one — unmerge first (no cascade). |
 | `restore` | `{ descriptionHash }` | `deleteMany` the `DISMISSED` tombstone. `200`; `404` if none. |
 | `setCadence` | `{ descriptionHash, cadence }` | `update` → `cadence`, `userCadenceLocked: true`, `nextExpectedAt` recomputed, `status` recomputed. `400` on bad enum; `404` if no row. |
 | `rename` | `{ descriptionHash, merchantLabel }` | `update` → `merchantLabel` (trimmed, non-empty, ≤140), `userLabelLocked: true`. `400` on empty/too-long; `404` if no row. |
-| `merge` | `{ sourceDescriptionHash, targetDescriptionHash }` | `update` source → `mergedIntoHash = targetDescriptionHash` (the target row's own hash — **not** a label hash, so a renamed target still resolves), `nextExpectedAt: null`, `contributingTransactionIds: []`; then `produceEvent(…, mode: 'incremental', source: 'merge')` (no cooldown). `200 { merged: 1, mergedIntoHash }`. `400` on same hash / source already merged / target itself merged; `404` if either row is missing. |
+| `merge` | `{ sourceDescriptionHash, targetDescriptionHash }` | `update` source → `mergedIntoHash = targetDescriptionHash` (the target row's own hash — **not** a label hash) **and `chargeKey = target.chargeKey ?? target.descriptionHash`** (durable identity repoint), `nextExpectedAt: null`, `contributingTransactionIds: []`; then `produceEvent(…, mode: 'incremental', source: 'merge')` (no cooldown). `200 { merged: 1, mergedIntoHash }`. `400` on same hash / source already merged / target itself merged; `404` if either row is missing. |
 | `unmerge` | `{ descriptionHash }` | `updateMany where { …, mergedIntoHash: { not: null } }` → `mergedIntoHash: null`; then rescan (`source: 'unmerge'`). `200 { unmerged: n }`; `404` if the row is not merged. |
 | `refresh` | — | 30-min per-tenant cooldown → `429 { retryAfter }`, else `produceEvent(SUBSCRIPTION_DETECTION_REQUESTED, mode: 'incremental')` → `202`. |
 | `fullScan` | — | `produceEvent(SUBSCRIPTION_DETECTION_REQUESTED, mode: 'full')` → `202`. No cooldown (called from the admin Maintenance tab). |

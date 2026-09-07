@@ -2191,6 +2191,14 @@ const it = {
       unknownTarget: "un altro abbonamento",
       mergedCountHint_one: "{{count}} unito a un altro — gestisci",
       mergedCountHint_other: "{{count}} uniti ad altri — gestisci",
+      targetMissing: "Destinazione dell'unione mancante",
+      stale: "Questa unione non ha effetto — annullala e unisci di nuovo.",
+      dismissBlocked: "Prima annulla l'unione delle righe integrate in questa.",
+    },
+    pager: {
+      prev: "Precedente",
+      next: "Successiva",
+      pageOf: "Pagina {{page}} di {{total}}",
     },
   },
 };

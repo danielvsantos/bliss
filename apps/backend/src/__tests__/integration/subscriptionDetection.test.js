@@ -197,20 +197,23 @@ describe('subscription detection — aggregator merchant splitting (integration)
   let tenantId;
   let account;
   let mediaCat;
+  let seededIds;
 
   beforeAll(async () => {
     ref = await ensureReferenceData();
     ({ tenantId } = await createIsolatedTenant({ suffix: 'subsdetect-split' }));
     account = await seedAccount(tenantId, 'USD');
     mediaCat = await seedCategory(tenantId, 'App Store', true);
+    seededIds = [];
 
     // €2.99 ×4 monthly, €9.99 ×4 monthly, one $39.99 purchase — all "APPLE.COM/BILL".
     for (const [amt, count] of [[2.99, 4], [9.99, 4]]) {
       for (let i = 0; i < count; i++) {
-        await seedTxn(tenantId, {
+        const t = await seedTxn(tenantId, {
           accountId: account.id, categoryId: mediaCat.id,
           description: 'APPLE.COM/BILL', debit: amt, date: daysAgo(15 + i * 30),
         });
+        seededIds.push(t.id);
       }
     }
     await seedTxn(tenantId, {
@@ -224,16 +227,18 @@ describe('subscription detection — aggregator merchant splitting (integration)
     await teardownTenant(tenantId);
   });
 
-  it('splits one busy merchant into per-price rows and retires the legacy combined row', async () => {
+  it('splits one busy merchant into per-price rows and reconciles the legacy combined row away', async () => {
     const key = normalizeMerchant('APPLE.COM/BILL');
 
-    // Simulate the pre-clustering world: a single combined row the user confirmed.
+    // Simulate the pre-clustering world: a single combined row the user confirmed,
+    // still holding the transactions that now split into bands.
     await prisma.recurringCharge.create({
       data: {
-        tenantId, descriptionHash: sha256Hex(key), merchantLabel: 'APPLE.COM/BILL',
-        categoryId: mediaCat.id, state: 'CONFIRMED', cadence: 'WEEKLY', status: 'ACTIVE',
+        tenantId, descriptionHash: sha256Hex(key), chargeKey: sha256Hex(key),
+        merchantLabel: 'APPLE.COM/BILL', categoryId: mediaCat.id,
+        state: 'CONFIRMED', cadence: 'WEEKLY', status: 'ACTIVE',
         amount: 9.99, currency: 'USD', occurrenceCount: 9, lastChargedAt: daysAgo(15),
-        contributingTransactionIds: [],
+        contributingTransactionIds: seededIds,
       },
     });
 
@@ -242,9 +247,14 @@ describe('subscription detection — aggregator merchant splitting (integration)
     const rows = await prisma.recurringCharge.findMany({ where: { tenantId }, orderBy: { amount: 'asc' } });
     // Two price bands (€2.99, €9.99); the lone €39.99 forms no band.
     expect(rows.map((r) => Number(r.amount))).toEqual([2.99, 9.99]);
-    expect(rows.every((r) => r.state === 'DETECTED')).toBe(true);
+    // The CONFIRMED decision migrates onto each band — no re-review, no orphan.
+    expect(rows.every((r) => r.state === 'CONFIRMED')).toBe(true);
+    // Each band carries its own durable chargeKey.
+    expect(rows.map((r) => r.chargeKey).sort()).toEqual(
+      [sha256Hex(`${key}#3`), sha256Hex(`${key}#10`)].sort(),
+    );
 
-    // The legacy combined row (bare merchant hash) is gone.
+    // The legacy combined row (bare merchant hash) has been reconciled away.
     const legacy = await prisma.recurringCharge.findUnique({
       where: { tenantId_descriptionHash: { tenantId, descriptionHash: sha256Hex(key) } },
     });
@@ -333,5 +343,123 @@ describe('subscription detection — manual merge + rename (integration)', () =>
     expect(src.mergedIntoHash).toBeNull();
     expect(src.occurrenceCount).toBe(2);
     expect(tgt.occurrenceCount).toBe(2); // folded-in charges released
+  });
+});
+
+describe('subscription detection — chargeKey reconciliation (integration)', () => {
+  let tenantId;
+  let account;
+  let mediaCat;
+
+  beforeAll(async () => {
+    ref = await ensureReferenceData();
+    ({ tenantId } = await createIsolatedTenant({ suffix: 'subsdetect-chargekey' }));
+    account = await seedAccount(tenantId, 'USD');
+    mediaCat = await seedCategory(tenantId, 'Streaming', true);
+  });
+
+  afterAll(async () => {
+    await prisma.recurringCharge.deleteMany({ where: { tenantId } });
+    await teardownTenant(tenantId);
+  });
+
+  it('a merged band row folds into its target and leaves no shared-transaction pair (D2 = 0)', async () => {
+    // An aggregator that splits into €3 / €10 bands, plus a standalone "Apple Music".
+    for (const [amt, n] of [[2.99, 4], [9.99, 4]]) {
+      for (let i = 0; i < n; i++) {
+        await seedTxn(tenantId, {
+          accountId: account.id, categoryId: mediaCat.id,
+          description: 'APPLE.COM/BILL', debit: amt, date: daysAgo(12 + i * 30),
+        });
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      await seedTxn(tenantId, {
+        accountId: account.id, categoryId: mediaCat.id,
+        description: 'APPLE MUSIC MEMBERSHIP', debit: 10.99, date: daysAgo(8 + i * 30),
+      });
+    }
+
+    await handleDetectTenant({ tenantId, mode: 'full' });
+
+    const key = normalizeMerchant('APPLE.COM/BILL');
+    const band10 = sha256Hex(`${key}#10`);
+    const musicHash = hashMerchant('APPLE MUSIC MEMBERSHIP');
+    const musicRow = await prisma.recurringCharge.findUnique({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: musicHash } },
+    });
+    expect(musicRow).toBeTruthy();
+
+    // Merge the €10 APPLE.COM band into the Apple Music row (what the picker does):
+    // repoint the source's identity to the target's chargeKey.
+    await prisma.recurringCharge.update({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: band10 } },
+      data: { mergedIntoHash: musicHash, chargeKey: musicRow.chargeKey, contributingTransactionIds: [] },
+    });
+
+    await handleDetectTenant({ tenantId, mode: 'full' });
+
+    // The €10 band tombstone is kept but produces nothing standalone; its live
+    // charges fold into the Apple Music row.
+    const rows = await prisma.recurringCharge.findMany({ where: { tenantId } });
+    const live = rows.filter((r) => r.mergedIntoHash == null);
+    // €3 band + Apple Music (which now also holds the €10 APPLE.COM charges).
+    expect(live.map((r) => r.chargeKey).sort()).toEqual(
+      [sha256Hex(`${key}#3`), musicRow.chargeKey].sort(),
+    );
+
+    // D2: no two non-tombstone rows may share a contributing transaction id.
+    const seen = new Map();
+    for (const r of live) {
+      for (const id of r.contributingTransactionIds) {
+        expect(seen.has(id)).toBe(false);
+        seen.set(id, r.id);
+      }
+    }
+  });
+
+  it('prune never deletes a CONFIRMED row or a merge target that is not re-detected this run', async () => {
+    const { tenantId: t2 } = await createIsolatedTenant({ suffix: 'subsdetect-guard' });
+    try {
+      const cat = await seedCategory(t2, 'Streaming', true);
+      // A CONFIRMED row and a merge-target row, both with NO matching transactions
+      // this run (so the detector emits nothing for them).
+      const confirmedHash = sha256Hex('confirmed-merchant');
+      const targetHash = sha256Hex('merge-target-merchant');
+      const tombstoneHash = sha256Hex('tombstone-merchant');
+      await prisma.recurringCharge.createMany({
+        data: [
+          {
+            tenantId: t2, descriptionHash: confirmedHash, chargeKey: confirmedHash,
+            merchantLabel: 'Confirmed', categoryId: cat.id, state: 'CONFIRMED',
+            cadence: 'MONTHLY', status: 'ACTIVE', amount: 5, currency: 'USD',
+            occurrenceCount: 3, contributingTransactionIds: [],
+          },
+          {
+            tenantId: t2, descriptionHash: targetHash, chargeKey: targetHash,
+            merchantLabel: 'Merge target', categoryId: cat.id, state: 'DETECTED',
+            cadence: 'MONTHLY', status: 'ACTIVE', amount: 7, currency: 'USD',
+            occurrenceCount: 2, contributingTransactionIds: [],
+          },
+          {
+            tenantId: t2, descriptionHash: tombstoneHash, chargeKey: targetHash,
+            merchantLabel: 'Folded in', categoryId: cat.id, state: 'DETECTED',
+            mergedIntoHash: targetHash, status: 'ACTIVE', currency: 'USD',
+            occurrenceCount: 0, contributingTransactionIds: [],
+          },
+        ],
+      });
+
+      await handleDetectTenant({ tenantId: t2, mode: 'incremental' });
+
+      const survivors = await prisma.recurringCharge.findMany({
+        where: { tenantId: t2 }, select: { descriptionHash: true, state: true },
+      });
+      const hashes = survivors.map((r) => r.descriptionHash).sort();
+      expect(hashes).toEqual([confirmedHash, targetHash, tombstoneHash].sort());
+    } finally {
+      await prisma.recurringCharge.deleteMany({ where: { tenantId: t2 } });
+      await teardownTenant(t2);
+    }
   });
 });

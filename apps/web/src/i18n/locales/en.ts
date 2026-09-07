@@ -2191,6 +2191,14 @@ const en = {
       unknownTarget: "another subscription",
       mergedCountHint_one: "{{count}} merged into another — manage",
       mergedCountHint_other: "{{count}} merged into others — manage",
+      targetMissing: "Merge target missing",
+      stale: "This merge isn't taking effect — try Unmerge and merge again.",
+      dismissBlocked: "Unmerge the rows folded into this one first.",
+    },
+    pager: {
+      prev: "Previous",
+      next: "Next",
+      pageOf: "Page {{page}} of {{total}}",
     },
   },
 };

@@ -31,7 +31,7 @@ import { cors } from '../../utils/cors.js';
 import { rateLimiters } from '../../utils/rateLimit.js';
 import { withAuth } from '../../utils/withAuth.js';
 import { produceEvent } from '../../utils/produceEvent.js';
-import { convertCurrency } from '../../utils/currencyConversion.js';
+import { batchFetchRates } from '../../utils/currencyConversion.js';
 import { hashMerchant } from '../../utils/merchantNormalize.js';
 import { getRefreshCooldownRemaining, armRefreshCooldown } from '../../utils/subscriptionCooldown.js';
 
@@ -40,6 +40,17 @@ const VIEWS = ['active', 'lapsed', 'all'];
 const CADENCE_DAYS = { WEEKLY: 7, MONTHLY: 30, QUARTERLY: 91, ANNUAL: 365 };
 // Mirrors SUBSCRIPTION_LAPSE_MULTIPLIER in the backend classificationConfig.js.
 const LAPSE_MULTIPLIER = 1.5;
+
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 100;
+// "Needs-review first, then confirmed": DETECTED < CONFIRMED < DISMISSED in the
+// enum, so `state: 'asc'` already yields that order. Used for the de-dupe backstop.
+const STATE_RANK = { CONFIRMED: 3, DISMISSED: 2, DETECTED: 1 };
+
+/** 'YYYY-MM-DD' bucket for an FX-rate lookup. */
+function dateBucket(d) {
+  return (d ? new Date(d) : new Date()).toISOString().slice(0, 10);
+}
 
 /**
  * ACTIVE while a charge landed within 1.5 × cadence of now; else LAPSED.
@@ -108,6 +119,20 @@ async function handleGet(req, res, tenantId) {
     return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid categoryId' });
   }
 
+  // Pagination — 1-based `page`, `limit` clamped to [1, MAX_PAGE_SIZE].
+  let page = 1;
+  let limit = DEFAULT_PAGE_SIZE;
+  if (req.query.page !== undefined) {
+    const p = parseInt(req.query.page, 10);
+    if (Number.isNaN(p)) return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid page' });
+    page = Math.max(1, p);
+  }
+  if (req.query.limit !== undefined) {
+    const l = parseInt(req.query.limit, 10);
+    if (Number.isNaN(l)) return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid limit' });
+    limit = Math.min(MAX_PAGE_SIZE, Math.max(1, l));
+  }
+
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { portfolioCurrency: true, subscriptionsFullScanAt: true },
@@ -124,29 +149,124 @@ async function handleGet(req, res, tenantId) {
     ...(categoryId && { categoryId }),
   };
 
-  const rows = await prisma.recurringCharge.findMany({
+  // DETECTED (needs review) first, then CONFIRMED, then DISMISSED; then
+  // ACTIVE before LAPSED; then most-recently-charged first.
+  const orderBy = [{ state: 'asc' }, { status: 'asc' }, { lastChargedAt: 'desc' }];
+
+  // Full filtered set (column-light) — drives the summary, FX and paging.
+  const allRows = await prisma.recurringCharge.findMany({
     where,
-    orderBy: [{ status: 'asc' }, { lastChargedAt: 'desc' }],
-    include: { category: { select: { id: true, name: true, icon: true, isRecurring: true } } },
+    orderBy,
+    select: {
+      id: true, descriptionHash: true, chargeKey: true, state: true, status: true,
+      cadence: true, amount: true, currency: true, lastChargedAt: true,
+      updatedAt: true, mergedIntoHash: true, contributingTransactionIds: true,
+    },
   });
 
-  // Resolve merge-target labels for any merged tombstones in the result.
-  const mergeTargetHashes = [...new Set(rows.filter((r) => r.mergedIntoHash).map((r) => r.mergedIntoHash))];
-  const mergeTargets = mergeTargetHashes.length
-    ? await prisma.recurringCharge.findMany({
-        where: { tenantId, descriptionHash: { in: mergeTargetHashes } },
-        select: { descriptionHash: true, merchantLabel: true },
-      })
-    : [];
-  const mergeLabelByHash = Object.fromEntries(mergeTargets.map((r) => [r.descriptionHash, r.merchantLabel]));
+  // Backstop de-dupe: with the chargeKey identity in place this should never
+  // fire, but if two non-tombstone rows ever share a contributing transaction
+  // id, keep only the most-decided one and log both.
+  const claimed = new Map(); // transactionId → kept row id
+  const hiddenIds = new Set();
+  for (const row of [...allRows].sort(
+    (a, b) => (STATE_RANK[b.state] - STATE_RANK[a.state]) || (a.id - b.id),
+  )) {
+    if (row.mergedIntoHash != null) continue;
+    const ids = row.contributingTransactionIds || [];
+    const clash = ids.find((id) => claimed.has(id));
+    if (clash != null) {
+      hiddenIds.add(row.id);
+      console.warn('[subscriptions] shared-transaction rows collapsed', {
+        keptRowId: claimed.get(clash), hiddenRowId: row.id, sharedTransactionId: clash,
+      });
+    } else {
+      for (const id of ids) claimed.set(id, row.id);
+    }
+  }
+  const visibleRows = allRows.filter((r) => !hiddenIds.has(r.id));
+  const total = visibleRows.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  // Category facet for the filter dropdown — spans every non-dismissed row
-  // regardless of the current view/category filter.
-  const facetGroups = await prisma.recurringCharge.groupBy({
-    by: ['categoryId'],
-    where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
-    _count: { _all: true },
-  });
+  // Parallel FX — resolve one rate map per distinct source currency, not per row.
+  const bucketsByCurrency = new Map(); // currency → Set<'YYYY-MM-DD'>
+  for (const r of visibleRows) {
+    if (r.amount == null || !r.currency || r.currency === displayCurrency) continue;
+    if (!bucketsByCurrency.has(r.currency)) bucketsByCurrency.set(r.currency, new Set());
+    bucketsByCurrency.get(r.currency).add(dateBucket(r.lastChargedAt));
+  }
+  const rateByCurrency = new Map();
+  await Promise.all(
+    [...bucketsByCurrency.entries()].map(async ([currency, dsSet]) => {
+      rateByCurrency.set(currency, await batchFetchRates(currency, displayCurrency, [...dsSet]));
+    }),
+  );
+  const convertRow = (row) => {
+    if (row.amount == null || !row.currency) {
+      return { amountInDisplayCurrency: null, monthlyAmount: null, fxUnavailable: false };
+    }
+    let rate = null;
+    if (row.currency === displayCurrency) {
+      rate = new Decimal(1);
+    } else {
+      const v = rateByCurrency.get(row.currency)?.get(dateBucket(row.lastChargedAt));
+      rate = v != null ? new Decimal(v) : null;
+    }
+    if (rate == null) return { amountInDisplayCurrency: null, monthlyAmount: null, fxUnavailable: true };
+    const conv = new Decimal(row.amount).times(rate);
+    return {
+      amountInDisplayCurrency: conv,
+      monthlyAmount: conv.times(monthlyFactor(row.cadence)),
+      fxUnavailable: false,
+    };
+  };
+
+  // Summary over the FULL filtered (visible) set.
+  let monthlyTotal = new Decimal(0);
+  let activeCount = 0;
+  let lapsedCount = 0;
+  let fxUnavailableCount = 0;
+  for (const row of visibleRows) {
+    const isTombstone = row.state === 'DISMISSED' || row.mergedIntoHash != null;
+    const { monthlyAmount, fxUnavailable } = convertRow(row);
+    if (!isTombstone && row.status === 'ACTIVE') activeCount += 1;
+    if (!isTombstone && row.status === 'LAPSED') lapsedCount += 1;
+    if (!isTombstone && fxUnavailable) fxUnavailableCount += 1;
+    if (!isTombstone && row.status === 'ACTIVE' && monthlyAmount != null) {
+      monthlyTotal = monthlyTotal.plus(monthlyAmount);
+    }
+  }
+
+  // View-independent facets / metadata.
+  const [
+    facetGroups,
+    mergeCandidateRows,
+    mergedCount,
+    lastDetectedAgg,
+    identityRows,
+    cooldownRemaining,
+  ] = await Promise.all([
+    prisma.recurringCharge.groupBy({
+      by: ['categoryId'],
+      where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
+      _count: { _all: true },
+    }),
+    prisma.recurringCharge.findMany({
+      where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
+      orderBy: [{ status: 'asc' }, { merchantLabel: 'asc' }],
+      include: { category: { select: { icon: true, name: true } } },
+    }),
+    prisma.recurringCharge.count({ where: { tenantId, mergedIntoHash: { not: null } } }),
+    prisma.recurringCharge.aggregate({ _max: { lastDetectedAt: true }, where: { tenantId } }),
+    prisma.recurringCharge.findMany({
+      where: { tenantId },
+      select: { descriptionHash: true, mergedIntoHash: true, merchantLabel: true },
+    }),
+    getRefreshCooldownRemaining(tenantId),
+  ]);
+
+  const lastDetectedAt = lastDetectedAgg._max.lastDetectedAt ?? null;
+
   const facetCategories = await prisma.category.findMany({
     where: { tenantId, id: { in: facetGroups.map((g) => g.categoryId) } },
     select: { id: true, name: true, icon: true },
@@ -156,14 +276,6 @@ async function handleGet(req, res, tenantId) {
     .map((c) => ({ id: c.id, name: c.name, icon: c.icon, count: facetCountById[c.id] ?? 0 }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Merge picker candidates — every non-dismissed, non-merged row for the tenant,
-  // independent of the current view/category filter, so a Lapsed row can still be
-  // merged into an Active/Confirmed one.
-  const mergeCandidateRows = await prisma.recurringCharge.findMany({
-    where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
-    orderBy: [{ status: 'asc' }, { merchantLabel: 'asc' }],
-    include: { category: { select: { icon: true, name: true } } },
-  });
   const mergeCandidates = mergeCandidateRows.map((r) => ({
     descriptionHash: r.descriptionHash,
     merchantLabel: r.merchantLabel,
@@ -173,48 +285,39 @@ async function handleGet(req, res, tenantId) {
     categoryName: r.category?.name ?? null,
   }));
 
-  // How many rows are folded away — so a non-"all" view can point the user to
-  // where the Unmerge action lives.
-  const mergedCount = await prisma.recurringCharge.count({
-    where: { tenantId, mergedIntoHash: { not: null } },
-  });
+  // Which descriptionHashes exist, which are the target of some merge, and their labels.
+  const allHashes = new Set(identityRows.map((r) => r.descriptionHash));
+  const mergeTargetHashes = new Set(
+    identityRows.filter((r) => r.mergedIntoHash).map((r) => r.mergedIntoHash),
+  );
+  const mergeLabelByHash = Object.fromEntries(identityRows.map((r) => [r.descriptionHash, r.merchantLabel]));
 
-  let monthlyTotal = new Decimal(0);
-  let activeCount = 0;
-  let lapsedCount = 0;
-  let fxUnavailableCount = 0;
-  let lastDetectedAt = null;
+  // Hydrate only the current page.
+  const pageRows = visibleRows.slice((page - 1) * limit, (page - 1) * limit + limit);
+  const pageIds = pageRows.map((r) => r.id);
+  const detailById = new Map();
+  if (pageIds.length) {
+    const detailRows = await prisma.recurringCharge.findMany({
+      where: { tenantId, id: { in: pageIds } },
+      include: { category: { select: { id: true, name: true, icon: true, isRecurring: true } } },
+    });
+    for (const r of detailRows) detailById.set(r.id, r);
+  }
 
   const items = [];
-  for (const row of rows) {
-    const isTombstone = row.state === 'DISMISSED' || row.mergedIntoHash != null;
-    if (!isTombstone && row.status === 'ACTIVE') activeCount += 1;
-    if (!isTombstone && row.status === 'LAPSED') lapsedCount += 1;
-    if (row.lastDetectedAt && (!lastDetectedAt || row.lastDetectedAt > lastDetectedAt)) {
-      lastDetectedAt = row.lastDetectedAt;
-    }
+  for (const lite of pageRows) {
+    const row = detailById.get(lite.id);
+    if (!row) continue;
+    const { amountInDisplayCurrency, monthlyAmount, fxUnavailable } = convertRow(row);
 
-    let amountInDisplayCurrency = null;
-    let monthlyAmount = null;
-    let fxUnavailable = false;
-    if (row.amount != null && row.currency) {
-      const converted = await convertCurrency(
-        row.amount,
-        row.currency,
-        displayCurrency,
-        row.lastChargedAt || new Date(),
-      );
-      if (converted == null) {
-        fxUnavailable = true;
-        if (!isTombstone) fxUnavailableCount += 1;
-      } else {
-        amountInDisplayCurrency = new Decimal(converted);
-        monthlyAmount = amountInDisplayCurrency.times(monthlyFactor(row.cadence));
-        // Totals count ACTIVE, non-tombstone rows only.
-        if (row.status === 'ACTIVE' && !isTombstone) {
-          monthlyTotal = monthlyTotal.plus(monthlyAmount);
-        }
-      }
+    const mergeTargetMissing = row.mergedIntoHash != null && !allHashes.has(row.mergedIntoHash);
+    const isMergeTarget = mergeTargetHashes.has(row.descriptionHash);
+    const mergeStale =
+      isMergeTarget && lastDetectedAt != null && new Date(row.updatedAt) < new Date(lastDetectedAt);
+    if (mergeStale) {
+      console.warn('[subscriptions] stale merge', {
+        targetId: row.id, targetHash: row.descriptionHash, lastDetectedAt,
+      });
     }
 
     items.push({
@@ -244,10 +347,10 @@ async function handleGet(req, res, tenantId) {
       contributingTransactionIds: row.contributingTransactionIds,
       mergedIntoHash: row.mergedIntoHash ?? null,
       mergedIntoLabel: row.mergedIntoHash ? (mergeLabelByHash[row.mergedIntoHash] ?? null) : null,
+      mergeTargetMissing,
+      mergeStale,
     });
   }
-
-  const cooldownRemaining = await getRefreshCooldownRemaining(tenantId);
 
   return res.status(StatusCodes.OK).json({
     displayCurrency,
@@ -265,6 +368,10 @@ async function handleGet(req, res, tenantId) {
       mergedCount,
     },
     items,
+    page,
+    limit,
+    total,
+    totalPages,
   });
 }
 
@@ -319,6 +426,9 @@ async function handleConfirm(req, res, tenantId) {
       create: {
         tenantId,
         descriptionHash: hash,
+        // Durable identity — a confirm-from-transaction row is a first-class row
+        // and must participate in chargeKey-based reconciliation / merge folding.
+        chargeKey: hash,
         merchantLabel: (txn.description || '').slice(0, 140),
         categoryId: txn.categoryId,
         state: 'CONFIRMED',
@@ -357,6 +467,20 @@ async function handleDismiss(req, res, tenantId) {
   if (!descriptionHash) {
     return res.status(StatusCodes.BAD_REQUEST).json({ error: 'dismiss requires descriptionHash' });
   }
+
+  // A merge target cannot be dismissed while rows are still folded into it —
+  // that would strand the tombstones pointing at a non-existent decision. The
+  // user must unmerge first. No cascade.
+  const dependents = await prisma.recurringCharge.count({
+    where: { tenantId, mergedIntoHash: descriptionHash },
+  });
+  if (dependents > 0) {
+    return res.status(StatusCodes.CONFLICT).json({
+      error: 'This subscription has other subscriptions merged into it. Unmerge them first.',
+      code: 'MERGE_TARGET_HAS_DEPENDENTS',
+    });
+  }
+
   const result = await prisma.recurringCharge.updateMany({
     where: { tenantId, descriptionHash },
     data: {
@@ -495,6 +619,11 @@ async function handleMerge(req, res, tenantId) {
     where: { tenantId_descriptionHash: { tenantId, descriptionHash: sourceDescriptionHash } },
     data: {
       mergedIntoHash: targetDescriptionHash,
+      // Repoint the durable identity to the target's, so the detector folds by
+      // stored chargeKey regardless of whether either row is bare, a band or a
+      // confirm-from-transaction row. `?? descriptionHash` covers a pre-migration
+      // target row that has no chargeKey yet.
+      chargeKey: target.chargeKey ?? target.descriptionHash,
       status: 'ACTIVE',
       nextExpectedAt: null,
       contributingTransactionIds: [],

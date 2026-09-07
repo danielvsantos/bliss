@@ -11,7 +11,8 @@ Plaid), decrypts descriptions in memory, groups by merchant, and persists one
 
 | Field | Notes |
 |---|---|
-| `descriptionHash` | SHA-256 of `normalizeMerchant(description)` — the merchant key. Not encrypted. |
+| `descriptionHash` | SHA-256 of `normalizeMerchant(description)` — the row's stable primary key within `(tenantId, descriptionHash)`. Not encrypted. |
+| `chargeKey` | `String?`. **Durable identity**, assigned once when the row is first created and never re-derived from the live descriptor. Bare merchant → `sha256("<merchantKey>")`; amount band → `sha256("<merchantKey>#<clusterKey(median)>")`. On a manual **merge** the source row's `chargeKey` is repointed to the target's `chargeKey`, so detection folds by stored identity rather than re-hashing. Nullable for rows created before the `chargeKey` migration — the detector falls back to `descriptionHash` for those (safety net, not a supported long-term path). |
 | `merchantLabel` | AES-256-GCM encrypted human-readable name (most recent contributing description, ≤140 chars). |
 | `categoryId` | Category of the most recent contributing transaction. |
 | `state` | `DETECTED` \| `CONFIRMED` \| `DISMISSED`. User decisions; the detector never overwrites this. |
@@ -87,11 +88,21 @@ sorted amount exceeds `max(5%, 2 units)`), it is **split into one
 * A merchant with < 6 occurrences, or whose charges all land in one band, is
   **untouched** — its row keeps the bare `sha256("<merchantKey>")` hash.
 
-The worker additionally **retires** (deletes, any state) the pre-clustering
-bare-merchant row for merchants that split this run — including a `CONFIRMED` /
-`DISMISSED` decision the user had applied to the old combined row. The merchant
-re-appears as fresh `DETECTED` per-band rows for review. Non-aggregator
-merchants and their decisions are never affected.
+Each band carries its own durable `chargeKey` (`sha256("<merchantKey>#<band>")`).
+Bands are **reconciled**, never retired one-directionally:
+
+* When a merchant that was split stops splitting (an odd-priced band ages out of
+  the window), the surviving charges resolve — by transaction-id overlap with the
+  decided band rows — onto the strongest-decided band row. The losing band rows
+  are deleted **inside the same persistence transaction**, with their state /
+  cadence lock / custom label promoted onto the winner. The `CONFIRMED` /
+  `DISMISSED` decision and any user lock are preserved; nothing is sent back for
+  re-review.
+* When a bare (unsplit) row starts splitting, each new band inherits the bare
+  row's decision by the same overlap match, and the bare row is reconciled away
+  once its transactions are absorbed.
+
+Non-aggregator merchants and their decisions are never touched.
 
 ### Learning loop
 
@@ -108,25 +119,37 @@ Subscriptions page (the merge icon in a row's action buttons):
 
 * `POST /api/subscriptions { action: 'merge', sourceDescriptionHash,
   targetDescriptionHash }` sets `sourceRow.mergedIntoHash = targetDescriptionHash`
-  — the target row's **own** hash, never a hash derived from its label, so a
-  renamed target keeps resolving — and enqueues an incremental rescan (no
-  cooldown). The source row becomes a tombstone.
-* Every detection run loads the alias map (`descriptionHash → mergedIntoHash`,
-  **chains resolved** so A→B→C folds straight to C, cycles broken). A merged
-  merchant's occurrences are removed from its own group and appended to the
-  target merchant's group **before** qualification. The combined group is
-  **never re-split by amount** — a merge is a deliberate "these are one
-  subscription" — and is `forced` (surfaces even if the combined series wouldn't
-  pass the interval gate). The target keeps its own `merchantLabel` /
-  `categoryId` even when the folded-in charges are newer.
-* If the target merchant has no charges of its own in the window, a row is still
-  synthesized from the folded-in charges plus the target row's stored metadata.
-* `CONFIRMED` / `DISMISSED` / `userCadenceLocked` / `mergedIntoHash != null` rows
-  are excluded from the "prior decisions" query — a merged row's own decisions
-  no longer apply to a standalone row. A `DISMISSED` target still suppresses the
-  synthesized row.
+  **and** `sourceRow.chargeKey = targetRow.chargeKey` — the durable identity is
+  repointed, so the fold is read from stored state on every subsequent run rather
+  than re-derived. Enqueues an incremental rescan (no cooldown). The source row
+  becomes a tombstone.
+* Every detection run loads **all** of the tenant's `RecurringCharge` rows once
+  and reconciles this run's transaction groups / amount bands to them **by
+  `chargeKey`**, with `contributingTransactionIds` overlap as a tiebreaker. A
+  group whose bare key, or one of whose bands' keys, matches a merged-away
+  tombstone's `descriptionHash` folds into that tombstone's target
+  (`chargeKey`-resolved; the legacy `mergedIntoHash` alias chain — A→B→C, cycles
+  broken — is still followed for rows whose `chargeKey` was never repointed).
+  A redirected group is **never re-split by amount** and is `forced` (surfaces
+  even if the combined series wouldn't pass the interval gate). The target keeps
+  its own `merchantLabel` / `categoryId` even when the folded-in charges are
+  newer.
+* If the target merchant has no charges of its own in the window, the fold still
+  produces one row from the folded-in charges plus the target row's stored
+  metadata (the source merchant's own transactions carry it).
+* Decisions (`CONFIRMED` / `DISMISSED` / `userCadenceLocked`) are keyed **by
+  `chargeKey`**, so a merge target and every row folded into it share one slot.
+  A `DISMISSED` target still suppresses the folded row.
+* The one-directional `legacyRetireHashes` mechanism is **replaced** by this
+  `chargeKey` reconciliation: when two or more decided rows resolve to one
+  identity in a run, the strongest-decided one (tie → lowest id) is the winner
+  and the losers are deleted with their decision promoted onto the winner.
 * `POST /api/subscriptions { action: 'unmerge', descriptionHash }` clears
   `mergedIntoHash` and rescans — the merchant is detected standalone again.
+* `POST /api/subscriptions { action: 'dismiss' }` on a row that still has other
+  rows merged into it is **blocked** with `409` and body
+  `{ code: 'MERGE_TARGET_HAS_DEPENDENTS' }` — the user must unmerge first. No
+  cascade, so a tombstone can never point at a `chargeKey` with no row.
 
 ### Rename
 
@@ -149,21 +172,40 @@ Queue: `subscription-detection` (concurrency 1, `lockDuration` 300s). Worker
 
 ### Persistence (`detect-tenant`)
 
-In one `prisma.$transaction`:
-1. `deleteMany` `state = 'DETECTED'` rows whose hash is no longer detected
-   (`CONFIRMED` / `DISMISSED` rows — and merge tombstones, `mergedIntoHash !=
-   null` — are retained).
-2. `deleteMany` the `legacyRetireHashes` (bare-merchant hashes of merchants that
-   split this run) — **any state**.
-3. `upsert` per `(tenantId, descriptionHash)` — **create** with `state:
-   'DETECTED'`; **update** merges detector fields only, never `state` /
-   `userCadenceLocked` / `userLabelLocked`, skips `cadence` when
-   `userCadenceLocked`, and skips `merchantLabel` when `userLabelLocked`.
+In one `prisma.$transaction`, in order:
+1. **Prune** — `deleteMany` `state = 'DETECTED'` rows whose `descriptionHash` is
+   no longer detected. Hardened so it can never delete a `CONFIRMED` /
+   `DISMISSED` row, a merge tombstone (`mergedIntoHash != null`), **or a merge
+   target** (a `descriptionHash` that some other row folds into).
+2. **Upsert** per `(tenantId, descriptionHash)` — **create** with `state:
+   'DETECTED'` and `chargeKey` stamped once (`row.chargeKey || descriptionHash`);
+   **update** merges detector fields only, never `state` / `userCadenceLocked` /
+   `userLabelLocked` / `chargeKey`, skips `cadence` when `userCadenceLocked`, and
+   skips `merchantLabel` when `userLabelLocked`.
+3. **Promote** — a brand-new split-band row that inherited a `CONFIRMED` decision
+   from the bare row it replaced is bumped to `CONFIRMED`.
+4. **Reconcile** — for each `(winner, loser)` the detector returned: update the
+   winner (promote state / carry a user lock) then delete the loser row. This is
+   explicitly distinct from prune — the decision is preserved on the winner.
 
 Then, for `mode: 'full'`, `tenant.update({ subscriptionsFullScanAt: now })`.
 
 Structured log line per run: `{ tenantId, mode, tierACount, tierBCount|skipped,
-detected, active, lapsed, pruned, retired, durationMs }`.
+detected, active, lapsed, pruned, reconciled, durationMs }`.
+
+## API: pagination
+
+`GET /api/subscriptions` accepts `page` (1-based, default 1) and `limit`
+(default 25, max 100). The response adds `page` / `limit` / `total` /
+`totalPages`; `items` is one page, ordered DETECTED → CONFIRMED → DISMISSED, then
+ACTIVE → LAPSED, then `lastChargedAt` desc. `summary`, `categories`,
+`mergeCandidates`, `lastDetectedAt` and `fullScanAt` are always computed over the
+**full** filtered set, not the page. Per-row FX conversion resolves one rate map
+per distinct source currency (`batchFetchRates`), run in parallel. Two markers on
+each item: `mergeTargetMissing` (this tombstone's target row is gone) and
+`mergeStale` (a merge target whose `updatedAt` predates the tenant's last
+`lastDetectedAt` — a guard-rail, logged at `warn`, that should never fire once
+`chargeKey` reconciliation is live).
 
 ## API status recompute on cadence edit
 

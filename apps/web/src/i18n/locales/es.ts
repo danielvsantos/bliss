@@ -2145,6 +2145,14 @@ const es = {
       unknownTarget: "otra suscripción",
       mergedCountHint_one: "{{count}} combinada con otra — gestionar",
       mergedCountHint_other: "{{count}} combinadas con otras — gestionar",
+      targetMissing: "Falta el destino de la combinación",
+      stale: "Esta combinación no está surtiendo efecto: prueba a deshacerla y combinar de nuevo.",
+      dismissBlocked: "Primero deshaz la combinación de las filas integradas en esta.",
+    },
+    pager: {
+      prev: "Anterior",
+      next: "Siguiente",
+      pageOf: "Página {{page}} de {{total}}",
     },
   },
 };

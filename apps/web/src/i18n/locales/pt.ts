@@ -2191,6 +2191,14 @@ const pt = {
       unknownTarget: "outra assinatura",
       mergedCountHint_one: "{{count}} unida a outra — gerenciar",
       mergedCountHint_other: "{{count}} unidas a outras — gerenciar",
+      targetMissing: "Destino da junção ausente",
+      stale: "Esta junção não está a ter efeito — tente desfazer e juntar novamente.",
+      dismissBlocked: "Primeiro desfaça a junção das linhas integradas nesta.",
+    },
+    pager: {
+      prev: "Anterior",
+      next: "Próxima",
+      pageOf: "Página {{page}} de {{total}}",
     },
   },
 };

@@ -118,6 +118,23 @@ function clusterKey(medianAmount) {
   return String(Math.max(1, Math.round(medianAmount)));
 }
 
+/** Priority used to pick a winner when two decided rows reconcile to one identity. */
+const STATE_PRIORITY = { CONFIRMED: 3, DISMISSED: 2, DETECTED: 1 };
+
+/**
+ * Durable identity key for a detection group or amount band. Extracted from the
+ * old inline formula so the API's "confirm from a transaction" path, the merge
+ * repoint, and the tests all derive it the same way.
+ *
+ *   bare merchant → sha256("<merchantKey>")
+ *   amount band   → sha256("<merchantKey>#<clusterKey(median)>")
+ */
+function runKeyFor(merchantKey, { isSplit = false, bandMedian = 0 } = {}) {
+  return isSplit
+    ? sha256Hex(`${merchantKey}#${clusterKey(bandMedian)}`)
+    : sha256Hex(merchantKey);
+}
+
 /**
  * Split a merchant's occurrences into amount bands.
  *
@@ -281,58 +298,155 @@ async function loadTransactionsBatched(where) {
  *
  * @param {string} tenantId
  * @param {{ mode?: 'incremental'|'full' }} [opts]
- * @returns {Promise<{ rows: object[], tierACount: number, tierBCount: number, tierBSkipped: boolean }>}
+ * @returns {Promise<{ rows: object[], reconciliations: object[], tierACount: number, tierBCount: number, tierBSkipped: boolean }>}
  */
 async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
   const now = new Date();
   const tierAStart = mode === 'full' ? monthsAgo(SUBSCRIPTION_FULL_SCAN_MONTHS) : monthsAgo(SUBSCRIPTION_INCREMENTAL_MONTHS);
   const tierBStart = monthsAgo(SUBSCRIPTION_INCREMENTAL_MONTHS);
 
-  // 1. Existing user decisions (merge tombstones excluded — a merged row's
-  //    Confirm/Dismiss/locked-cadence no longer applies to a standalone row).
-  const priorRows = await prisma.recurringCharge.findMany({
-    where: {
-      tenantId,
-      mergedIntoHash: null,
-      OR: [{ state: { in: ['CONFIRMED', 'DISMISSED'] } }, { userCadenceLocked: true }],
+  // 1. Load every existing row for this tenant once. Identity is the durable
+  //    `chargeKey`, falling back to `descriptionHash` for rows created before
+  //    the chargeKey migration (production is reset once this ships; the
+  //    fallback is a safety net for CI and self-hosters, not a supported path).
+  const existingRows = await prisma.recurringCharge.findMany({
+    where: { tenantId },
+    select: {
+      id: true,
+      descriptionHash: true,
+      chargeKey: true,
+      state: true,
+      cadence: true,
+      userCadenceLocked: true,
+      userLabelLocked: true,
+      mergedIntoHash: true,
+      merchantLabel: true,
+      categoryId: true,
+      currency: true,
+      contributingTransactionIds: true,
     },
-    select: { descriptionHash: true, state: true, cadence: true, userCadenceLocked: true },
   });
+
+  const idOf = (row) => row.chargeKey || row.descriptionHash;
+  const rowByDescriptionHash = new Map(existingRows.map((r) => [r.descriptionHash, r]));
+
+  // Alias chain: a tombstone's descriptionHash → its ultimate merge-target
+  // descriptionHash (chains resolved, cycles broken). Legacy fold path for rows
+  // whose `chargeKey` was never repointed.
+  const rawAlias = new Map(
+    existingRows.filter((r) => r.mergedIntoHash).map((r) => [r.descriptionHash, r.mergedIntoHash]),
+  );
+  const resolveAlias = (h, seen = new Set()) => {
+    if (!rawAlias.has(h) || seen.has(h)) return h;
+    seen.add(h);
+    return resolveAlias(rawAlias.get(h), seen);
+  };
+
+  // Authoritative (non-tombstone) row per identity key. Collisions resolve to
+  // the strongest state, then the lowest id.
+  const authoritativeByKey = new Map();
+  for (const row of existingRows) {
+    if (row.mergedIntoHash) continue;
+    const key = idOf(row);
+    const cur = authoritativeByKey.get(key);
+    if (
+      !cur ||
+      STATE_PRIORITY[row.state] > STATE_PRIORITY[cur.state] ||
+      (STATE_PRIORITY[row.state] === STATE_PRIORITY[cur.state] && row.id < cur.id)
+    ) {
+      authoritativeByKey.set(key, row);
+    }
+  }
+
+  /** Follow a tombstone to the row that should actually absorb its charges. */
+  const authoritativeFor = (row) => {
+    if (!row.mergedIntoHash) return row;
+    const byKey = authoritativeByKey.get(idOf(row));
+    if (byKey) return byKey;
+    const targetHash = resolveAlias(row.descriptionHash);
+    return rowByDescriptionHash.get(targetHash) || row;
+  };
+
+  // User decisions, keyed by identity (a merge target and its folded sources
+  // share a `chargeKey`, so a decision on any of them keys the same slot).
   const dismissed = new Set();
   const confirmed = new Set();
   const lockedCadence = new Map();
-  for (const r of priorRows) {
-    if (r.state === 'DISMISSED') dismissed.add(r.descriptionHash);
-    if (r.state === 'CONFIRMED') confirmed.add(r.descriptionHash);
-    if (r.userCadenceLocked && r.cadence) lockedCadence.set(r.descriptionHash, r.cadence);
+  for (const row of existingRows) {
+    if (row.mergedIntoHash) continue;
+    const key = idOf(row);
+    if (row.state === 'DISMISSED') dismissed.add(key);
+    if (row.state === 'CONFIRMED') confirmed.add(key);
+    if (row.userCadenceLocked && row.cadence) lockedCadence.set(key, row.cadence);
   }
 
-  // 1b. Manual merges — source row's descriptionHash → target row's
-  //     descriptionHash, chains resolved. (Both are plain row hashes, so a
-  //     renamed target still resolves — rename never touches descriptionHash.)
-  const aliasRows = await prisma.recurringCharge.findMany({
-    where: { tenantId, mergedIntoHash: { not: null } },
-    select: { descriptionHash: true, mergedIntoHash: true },
-  });
-  const aliasMap = new Map();
-  {
-    const raw = new Map(aliasRows.map((r) => [r.descriptionHash, r.mergedIntoHash]));
-    const resolve = (h, seen) => {
-      if (!raw.has(h) || seen.has(h)) return h;
-      seen.add(h);
-      return resolve(raw.get(h), seen);
-    };
-    for (const src of raw.keys()) aliasMap.set(src, resolve(src, new Set()));
+  // Overlap index: transaction id → the decided row that already owns it. Used
+  // as an identity tiebreaker so a re-created bare window (amount clustering
+  // stopped splitting a merchant) folds into the decided row that already holds
+  // those transactions instead of spawning a parallel row.
+  const txnToDecidedRow = new Map();
+  for (const row of existingRows) {
+    const decided =
+      row.mergedIntoHash != null || row.state === 'CONFIRMED' || row.state === 'DISMISSED';
+    if (!decided) continue;
+    const auth = authoritativeFor(row);
+    if (!auth || auth.mergedIntoHash) continue; // unresolved merge target — ignore
+    for (const txId of row.contributingTransactionIds || []) {
+      if (!txnToDecidedRow.has(txId)) txnToDecidedRow.set(txId, auth);
+    }
   }
-  // Target-row metadata, so a merge target with no charges this window still
-  // gets a row from the merged-in charges alone.
-  const aliasTargets = aliasMap.size
-    ? await prisma.recurringCharge.findMany({
-        where: { tenantId, descriptionHash: { in: [...new Set(aliasMap.values())] } },
-        select: { descriptionHash: true, merchantLabel: true, categoryId: true, cadence: true, currency: true },
-      })
-    : [];
-  const aliasTargetByHash = new Map(aliasTargets.map((r) => [r.descriptionHash, r]));
+
+  /**
+   * Resolve a run key (bare merchant or amount band) to the identity its output
+   * row should carry this run.
+   *
+   * @param {string} runKey
+   * @param {number[]} txnIds  the group/band's transaction ids
+   * @param {{ splitBand?: boolean, overlap?: boolean }} [opts]
+   * @returns {{ descriptionHash: string, chargeKey: string, row: object|null, losers: object[], promoteFrom: object|null }}
+   */
+  const resolveIdentity = (runKey, txnIds, { splitBand = false, overlap = true } = {}) => {
+    const direct = rowByDescriptionHash.get(runKey);
+    if (direct) {
+      const auth = authoritativeFor(direct);
+      if (auth && !auth.mergedIntoHash) {
+        return { descriptionHash: auth.descriptionHash, chargeKey: idOf(auth), row: auth, losers: [], promoteFrom: null };
+      }
+      // `direct` is a tombstone whose target no longer exists — fall through so
+      // the merchant re-detects standalone.
+    }
+    const byKey = authoritativeByKey.get(runKey);
+    if (byKey) {
+      return { descriptionHash: byKey.descriptionHash, chargeKey: idOf(byKey), row: byKey, losers: [], promoteFrom: null };
+    }
+    if (!overlap) {
+      return { descriptionHash: runKey, chargeKey: runKey, row: null, losers: [], promoteFrom: null };
+    }
+    // Transaction-overlap tiebreaker.
+    const owners = [];
+    const seen = new Set();
+    for (const txId of txnIds) {
+      const o = txnToDecidedRow.get(txId);
+      if (o && !seen.has(o.id)) { seen.add(o.id); owners.push(o); }
+    }
+    if (owners.length) {
+      owners.sort((a, b) => STATE_PRIORITY[b.state] - STATE_PRIORITY[a.state] || a.id - b.id);
+      const strongest = owners[0];
+      if (splitBand) {
+        // Keep the fresh per-band identity; promote the strongest prior decision
+        // onto it and retire the prior rows (their charges are re-homed per band).
+        return { descriptionHash: runKey, chargeKey: runKey, row: null, losers: owners, promoteFrom: strongest };
+      }
+      return {
+        descriptionHash: strongest.descriptionHash,
+        chargeKey: idOf(strongest),
+        row: strongest,
+        losers: owners.slice(1),
+        promoteFrom: null,
+      };
+    }
+    return { descriptionHash: runKey, chargeKey: runKey, row: null, losers: [], promoteFrom: null };
+  };
 
   // 2. Tier A load ----------------------------------------------------------
   const tierATxns = await loadTransactionsBatched({
@@ -369,160 +483,190 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     groups.get(key).push(txn);
   }
 
-  // 4b. Fold merged-away merchants into their target -------------------
-  const inboundByTargetHash = new Map(); // target row descriptionHash → occ[]
-  for (const [key, occ] of [...groups.entries()]) {
-    const target = aliasMap.get(sha256Hex(key));
-    if (!target) continue;
-    if (!inboundByTargetHash.has(target)) inboundByTargetHash.set(target, []);
-    inboundByTargetHash.get(target).push(...occ);
-    groups.delete(key); // never processed standalone again
-  }
+  // 4b. Resolve every merchant group (and, for a non-redirected split, every
+  //     amount band) to a durable identity, and accumulate the occurrences per
+  //     identity. Merged-away merchants and a re-created bare window collapse
+  //     into the same identity as the decided row that owns their charges.
+  const acc = new Map(); // chargeKey → { descriptionHash, chargeKey, occ, redirected, isSplitBand, metaRow, losers, promoteFrom }
 
-  // 5. Qualify + build rows (per merchant, then per amount band) --------
-  const rows = [];
-  const legacyRetireHashes = []; // bare merchant hashes whose single row is now split
-  const consumedInbound = new Set();
-  for (const [merchantKey, merchantOccRaw] of groups.entries()) {
-    const merchantHash = sha256Hex(merchantKey);
+  const addOcc = (identity, occ, { freshKey, isSplitBand = false } = {}) => {
+    let e = acc.get(identity.chargeKey);
+    if (!e) {
+      e = {
+        descriptionHash: identity.descriptionHash,
+        chargeKey: identity.chargeKey,
+        occ: [],
+        redirected: false,
+        isSplitBand,
+        metaRow: null,
+        losers: [],
+        promoteFrom: null,
+      };
+      acc.set(identity.chargeKey, e);
+    }
+    e.occ.push(...occ);
+    e.isSplitBand = e.isSplitBand || isSplitBand;
+    if (identity.promoteFrom && !e.promoteFrom) e.promoteFrom = identity.promoteFrom;
+    for (const l of identity.losers || []) e.losers.push(l);
+    // A row we folded into (identity resolved to an existing row that is not the
+    // fresh run key) contributes its label/category.
+    if (identity.row && identity.descriptionHash !== freshKey && !e.metaRow) e.metaRow = identity.row;
+    return e;
+  };
 
-    // Absorb any charges merged into this merchant.
-    const mergedIn = inboundByTargetHash.get(merchantHash) || [];
-    if (mergedIn.length) consumedInbound.add(merchantHash);
-    const merchantOcc = mergedIn.length ? [...merchantOccRaw, ...mergedIn] : merchantOccRaw;
+  for (const [merchantKey, groupOcc] of groups.entries()) {
+    const bareRunKey = sha256Hex(merchantKey);
 
-    // Dominant currency is picked per merchant; amount bands are computed within
-    // that currency's charges only.
-    const currency = dominantValue(merchantOcc.map((t) => t.currency));
-    const domOcc = merchantOcc.filter((t) => t.currency === currency);
+    // Redirect probe — stored identity only (a merge repoint, or an existing row
+    // with this exact key). NOT transaction overlap: overlap is applied per band
+    // below, so a still-split merchant is not collapsed by its own band rows.
+    const probe = resolveIdentity(bareRunKey, [], { overlap: false });
+    if (probe.chargeKey !== bareRunKey) {
+      // The whole merchant folds into an existing decided / merged row — a
+      // deliberate "these are one subscription", never re-split by amount.
+      const e = addOcc(probe, groupOcc, { freshKey: bareRunKey });
+      e.redirected = true;
+      if (probe.row && !e.metaRow) e.metaRow = probe.row;
+      continue;
+    }
 
-    // A merged row is a deliberate "these are one subscription" — don't re-split it.
-    const bands = mergedIn.length ? [domOcc] : clusterByAmount(domOcc);
+    // Cluster this merchant's dominant-currency charges by amount, then resolve
+    // each band's identity (overlap tiebreaker included).
+    const currency = dominantValue(groupOcc.map((t) => t.currency));
+    const domOcc = groupOcc.filter((t) => t.currency === currency);
+    const bands = clusterByAmount(domOcc);
     const isSplit = bands.length > 1;
-    if (isSplit) legacyRetireHashes.push(merchantHash);
 
     for (const band of bands) {
-      const occ = [...band].sort((a, b) => a.transaction_date - b.transaction_date);
-      const dates = occ.map((t) => t.transaction_date);
-      const nativeAmounts = occ.map((t) => toNumber(t.debit));
-      const med = median(nativeAmounts) || toNumber(occ[occ.length - 1].debit);
-
-      const hash = isSplit ? sha256Hex(`${merchantKey}#${clusterKey(med)}`) : merchantHash;
-      if (dismissed.has(hash)) continue; // tombstoned — never re-surface
-
-      const isConfirmed = confirmed.has(hash);
-      // A merged target is a deliberate "this is one subscription" — surface it
-      // even if the combined series wouldn't pass the interval gate on its own.
-      const forced = isConfirmed || mergedIn.length > 0;
-      const tierA = occ.some((t) => isCategoryRecurring(t.category));
-      const inferred = inferCadence(dates);
-
-      // Cadence resolution
-      let cadence = lockedCadence.get(hash) || null;
-      if (!cadence) {
-        if (tierA) {
-          cadence = occ.length >= 2 ? (inferred.cadence || 'MONTHLY') : 'MONTHLY';
-        } else {
-          cadence = inferred.cadence; // Tier B — must be a real bucket (below gate)
-        }
-      }
-
-      let detectionReason;
-      if (forced) {
-        detectionReason = isConfirmed ? 'USER_CONFIRMED' : (tierA ? 'CATEGORY_SIGNAL' : 'INTERVAL_HEURISTIC');
-      } else if (tierA) {
-        // A split band needs >= 2 occurrences to be a real recurring price — a
-        // lone large App Store purchase must not become a subscription.
-        if (isSplit && occ.length < 2) continue;
-        detectionReason = 'CATEGORY_SIGNAL';
-      } else {
-        // Tier B gate — applied per band
-        const regular =
-          occ.length >= SUBSCRIPTION_MIN_OCCURRENCES &&
-          inferred.gapCv <= SUBSCRIPTION_GAP_CV_MAX &&
-          (inferred.cadence === 'WEEKLY' || inferred.cadence === 'MONTHLY') &&
-          isAmountStable(nativeAmounts);
-        if (!regular) continue;
-        detectionReason = 'INTERVAL_HEURISTIC';
-      }
-
-      if (!cadence) cadence = 'MONTHLY'; // safety net for a confirmed single-occurrence merchant
-
-      const lastChargedAt = dates[dates.length - 1];
-      const recentIds = occ
-        .slice()
-        .sort((a, b) => b.transaction_date - a.transaction_date)
-        .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
-        .map((t) => t.id);
-      const mostRecent = occ[occ.length - 1];
-      // When charges have been merged in, the folded-in transactions are often
-      // the newest — but the user merged them into THIS row precisely because
-      // its descriptor is the good one. Keep the target row's own label.
-      const mergedMeta = mergedIn.length ? aliasTargetByHash.get(merchantHash) : null;
-      const label = (mergedMeta?.merchantLabel || mostRecent.description || '').slice(0, 140);
-
-      rows.push({
-        descriptionHash: hash,
-        merchantLabel: label,
-        categoryId: mergedMeta?.categoryId ?? mostRecent.categoryId,
-        cadence,
-        amount: new Decimal(med),
-        currency,
-        occurrenceCount: occ.length,
-        firstChargedAt: dates[0],
-        lastChargedAt,
-        nextExpectedAt: computeNextExpected(lastChargedAt, cadence),
-        status: computeStatus(lastChargedAt, cadence, now),
-        detectionReason,
-        contributingTransactionIds: recentIds,
-        lastDetectedAt: now,
-        _isConfirmed: isConfirmed,
-      });
+      const bandMedian = median(band.map((t) => toNumber(t.debit))) || toNumber(band[band.length - 1].debit);
+      const freshKey = isSplit ? runKeyFor(merchantKey, { isSplit: true, bandMedian }) : bareRunKey;
+      const bandIdentity = resolveIdentity(freshKey, band.map((t) => t.id), { splitBand: isSplit });
+      const e = addOcc(bandIdentity, band, { freshKey, isSplitBand: isSplit });
+      // A non-split band that resolved (via overlap) onto an existing decided row
+      // is a deliberate collapse — treat it as "one subscription".
+      if (!isSplit && bandIdentity.chargeKey !== freshKey) e.redirected = true;
     }
   }
 
-  // 5b. Merge targets that had no charges of their own this window still get a
-  //     row, built from the merged-in charges + the target row's metadata.
-  for (const [targetHash, mergedIn] of inboundByTargetHash.entries()) {
-    if (consumedInbound.has(targetHash) || dismissed.has(targetHash)) continue;
-    const occ = [...mergedIn].sort((a, b) => a.transaction_date - b.transaction_date);
+  // 5. Qualify + build one row per identity. ---------------------------
+  const rows = [];
+  const reconById = new Map(); // loserId → reconciliation entry
+
+  const recordLosers = (winnerDescriptionHash, winnerRow, losers, promoteFrom) => {
+    const baselineState = promoteFrom?.state || winnerRow?.state || 'DETECTED';
+    for (const loser of losers) {
+      if (winnerRow && loser.id === winnerRow.id) continue;
+      if (reconById.has(loser.id)) continue;
+      reconById.set(loser.id, {
+        winnerDescriptionHash,
+        loserId: loser.id,
+        loserDescriptionHash: loser.descriptionHash,
+        promoteState:
+          STATE_PRIORITY[loser.state] > STATE_PRIORITY[baselineState] ? loser.state : null,
+        carryCadence:
+          loser.userCadenceLocked && loser.cadence && !winnerRow?.userCadenceLocked
+            ? loser.cadence : null,
+        carryLabel:
+          loser.userLabelLocked && loser.merchantLabel && !winnerRow?.userLabelLocked
+            ? loser.merchantLabel : null,
+      });
+    }
+  };
+
+  for (const e of acc.values()) {
+    const currency = dominantValue(e.occ.map((t) => t.currency));
+    const occ = e.occ
+      .filter((t) => t.currency === currency)
+      .sort((a, b) => a.transaction_date - b.transaction_date);
     if (!occ.length) continue;
+
     const dates = occ.map((t) => t.transaction_date);
-    const meta = aliasTargetByHash.get(targetHash);
-    const currency = meta?.currency || dominantValue(occ.map((t) => t.currency));
-    const amounts = occ.filter((t) => t.currency === currency).map((t) => toNumber(t.debit));
+    const nativeAmounts = occ.map((t) => toNumber(t.debit));
+    const med = median(nativeAmounts) || toNumber(occ[occ.length - 1].debit);
+
+    const key = e.chargeKey;
+    const promoteConfirmed = e.promoteFrom?.state === 'CONFIRMED';
+    const promoteDismissed = e.promoteFrom?.state === 'DISMISSED' && !promoteConfirmed;
+
+    if (dismissed.has(key) || promoteDismissed) continue; // tombstoned — never re-surface
+
+    const isConfirmed = confirmed.has(key) || promoteConfirmed;
+    // A redirected identity or a promoted decision is a deliberate "this is one
+    // subscription" — surface it even if the series wouldn't pass the gate.
+    const forced = isConfirmed || e.redirected;
+    const tierA = occ.some((t) => isCategoryRecurring(t.category));
     const inferred = inferCadence(dates);
-    const cadence = lockedCadence.get(targetHash)
-      || meta?.cadence
-      || inferred.cadence
-      || 'MONTHLY';
+
+    // Cadence resolution
+    let cadence = lockedCadence.get(key) || null;
+    if (!cadence) {
+      if (tierA) {
+        cadence = occ.length >= 2 ? (inferred.cadence || 'MONTHLY') : 'MONTHLY';
+      } else {
+        cadence = inferred.cadence; // Tier B — must be a real bucket (below gate)
+      }
+    }
+
+    let detectionReason;
+    if (forced) {
+      detectionReason = isConfirmed ? 'USER_CONFIRMED' : (tierA ? 'CATEGORY_SIGNAL' : 'INTERVAL_HEURISTIC');
+    } else if (tierA) {
+      // A split band needs >= 2 occurrences to be a real recurring price — a
+      // lone large App Store purchase must not become a subscription.
+      if (e.isSplitBand && occ.length < 2) continue;
+      detectionReason = 'CATEGORY_SIGNAL';
+    } else {
+      // Tier B gate
+      const regular =
+        occ.length >= SUBSCRIPTION_MIN_OCCURRENCES &&
+        inferred.gapCv <= SUBSCRIPTION_GAP_CV_MAX &&
+        (inferred.cadence === 'WEEKLY' || inferred.cadence === 'MONTHLY') &&
+        isAmountStable(nativeAmounts);
+      if (!regular) continue;
+      detectionReason = 'INTERVAL_HEURISTIC';
+    }
+
+    if (!cadence) cadence = 'MONTHLY'; // safety net for a confirmed single-occurrence merchant
+
     const lastChargedAt = dates[dates.length - 1];
+    const recentIds = occ
+      .slice()
+      .sort((a, b) => b.transaction_date - a.transaction_date)
+      .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
+      .map((t) => t.id);
+    const mostRecent = occ[occ.length - 1];
+    // When this identity folded into an existing row, the user picked THAT row
+    // precisely because its descriptor is the good one — keep its label/category.
+    // A brand-new row refreshes them from the latest bank descriptor.
+    const metaRow = e.metaRow;
+    const label = ((metaRow && metaRow.merchantLabel) || mostRecent.description || '').slice(0, 140);
+
     rows.push({
-      descriptionHash: targetHash,
-      merchantLabel: (meta?.merchantLabel || occ[occ.length - 1].description || '').slice(0, 140),
-      categoryId: meta?.categoryId ?? occ[occ.length - 1].categoryId,
+      descriptionHash: e.descriptionHash,
+      chargeKey: e.chargeKey,
+      merchantLabel: label,
+      categoryId: (metaRow && metaRow.categoryId != null) ? metaRow.categoryId : mostRecent.categoryId,
       cadence,
-      amount: new Decimal(median(amounts) || toNumber(occ[occ.length - 1].debit)),
+      amount: new Decimal(med),
       currency,
       occurrenceCount: occ.length,
       firstChargedAt: dates[0],
       lastChargedAt,
       nextExpectedAt: computeNextExpected(lastChargedAt, cadence),
       status: computeStatus(lastChargedAt, cadence, now),
-      detectionReason: confirmed.has(targetHash) ? 'USER_CONFIRMED' : 'INTERVAL_HEURISTIC',
-      contributingTransactionIds: occ
-        .slice()
-        .sort((a, b) => b.transaction_date - a.transaction_date)
-        .slice(0, SUBSCRIPTION_MAX_CONTRIBUTING_IDS)
-        .map((t) => t.id),
+      detectionReason,
+      contributingTransactionIds: recentIds,
       lastDetectedAt: now,
-      _isConfirmed: confirmed.has(targetHash),
+      _isConfirmed: isConfirmed,
+      _promoteState: promoteConfirmed ? 'CONFIRMED' : null,
     });
+
+    recordLosers(e.descriptionHash, e.metaRow, e.losers, e.promoteFrom);
   }
 
   return {
     rows,
-    legacyRetireHashes,
+    reconciliations: [...reconById.values()],
     tierACount: tierATxns.length,
     tierBCount: tierBTxns.length,
     tierBSkipped,
@@ -534,6 +678,7 @@ module.exports = {
   normalizeMerchant,
   hashMerchant,
   sha256Hex,
+  runKeyFor,
   clusterByAmount,
   clusterKey,
   median,

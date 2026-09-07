@@ -1,20 +1,34 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { SubscriptionsResponse, SubscriptionsView, RecurringCadence } from '@/types/api';
 
 export const subscriptionKeys = {
   all: ['subscriptions'] as const,
-  list: (view: SubscriptionsView, categoryId: number | null) =>
-    [...subscriptionKeys.all, 'list', view, categoryId] as const,
+  list: (view: SubscriptionsView, categoryId: number | null, page: number) =>
+    [...subscriptionKeys.all, 'list', view, categoryId, page] as const,
 };
 
-export function useSubscriptions(opts?: { view?: SubscriptionsView; categoryId?: number | null }) {
+export function useSubscriptions(opts?: {
+  view?: SubscriptionsView;
+  categoryId?: number | null;
+  page?: number;
+  limit?: number;
+}) {
   const view: SubscriptionsView = opts?.view ?? 'active';
   const categoryId = opts?.categoryId ?? null;
+  const page = opts?.page ?? 1;
+  const limit = opts?.limit;
   return useQuery<SubscriptionsResponse>({
-    queryKey: subscriptionKeys.list(view, categoryId),
-    queryFn: () => api.getSubscriptions({ view, ...(categoryId ? { categoryId } : {}) }),
+    queryKey: subscriptionKeys.list(view, categoryId, page),
+    queryFn: () =>
+      api.getSubscriptions({
+        view,
+        page,
+        ...(categoryId ? { categoryId } : {}),
+        ...(limit ? { limit } : {}),
+      }),
     staleTime: 1000 * 30,
+    placeholderData: keepPreviousData,
   });
 }
 
