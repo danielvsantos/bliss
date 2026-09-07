@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { PlusIcon, Landmark, ChevronLeft } from 'lucide-react';
+import { AxiosError } from 'axios';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -34,6 +35,9 @@ export default function AccountsPage() {
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<
+    { reason: 'HAS_TRANSACTIONS' | 'PLAID_CONNECTED' | 'UNKNOWN'; count?: number } | null
+  >(null);
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
 
@@ -72,6 +76,7 @@ export default function AccountsPage() {
   const handleDeleteConfirm = async () => {
     if (!selectedAccount) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       await api.deleteAccount(selectedAccount.id);
       toast({
@@ -83,8 +88,22 @@ export default function AccountsPage() {
       refetch();
       // Deleting an account changes portfolio composition.
       invalidatePortfolioQueries(queryClient);
-    } catch {
-      toast({ title: t('accountsPage.deleteFailed'), variant: 'destructive' });
+    } catch (err) {
+      const ax = err as AxiosError<{ reason?: string; transactionCount?: number }>;
+      if (ax?.response?.status === 409) {
+        // Keep the dialog open and show the specific reason + remedy inline.
+        const data = ax.response.data ?? {};
+        if (data.reason === 'HAS_TRANSACTIONS') {
+          setDeleteError({ reason: 'HAS_TRANSACTIONS', count: data.transactionCount });
+        } else if (data.reason === 'PLAID_CONNECTED') {
+          setDeleteError({ reason: 'PLAID_CONNECTED' });
+        } else {
+          setDeleteError({ reason: 'UNKNOWN' });
+        }
+      } else {
+        setDeleteError({ reason: 'UNKNOWN' });
+        toast({ title: t('accountsPage.deleteFailed'), variant: 'destructive' });
+      }
     } finally {
       setIsDeleting(false);
     }
@@ -145,6 +164,10 @@ export default function AccountsPage() {
                   account={selectedAccount}
                   onEdit={handleEdit}
                   onRefetch={refetch}
+                  onDelete={() => {
+                    setDeleteError(null);
+                    setShowDeleteConfirm(true);
+                  }}
                 />
               </>
             ) : (
@@ -171,7 +194,13 @@ export default function AccountsPage() {
       />
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <Dialog
+        open={showDeleteConfirm}
+        onOpenChange={(open) => {
+          setShowDeleteConfirm(open);
+          if (!open) setDeleteError(null);
+        }}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>{t('accountsPage.deleteTitle')}</DialogTitle>
@@ -179,6 +208,17 @@ export default function AccountsPage() {
               {t('accountsPage.deleteConfirm', { name: selectedAccount?.accountName })}
             </DialogDescription>
           </DialogHeader>
+
+          {deleteError && (
+            <p className="text-sm text-destructive">
+              {deleteError.reason === 'HAS_TRANSACTIONS'
+                ? t('accountsPage.deleteBlockedTransactions', { count: deleteError.count ?? 0 })
+                : deleteError.reason === 'PLAID_CONNECTED'
+                  ? t('accountsPage.deleteBlockedPlaid')
+                  : t('accountsPage.deleteUnknownError')}
+            </p>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
               {t('common.cancel')}
@@ -186,7 +226,7 @@ export default function AccountsPage() {
             <Button
               variant="destructive"
               onClick={handleDeleteConfirm}
-              disabled={isDeleting}
+              disabled={isDeleting || deleteError?.reason === 'HAS_TRANSACTIONS' || deleteError?.reason === 'PLAID_CONNECTED'}
             >
               {isDeleting ? t('ui.deleting') : t('common.delete')}
             </Button>

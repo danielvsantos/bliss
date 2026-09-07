@@ -57,9 +57,10 @@ Shows the full detail of the selected account, including:
 - Account name, bank name, masked account number, currency, country.
 - **Plaid status card** — connection health, last sync timestamp, `consentExpiration` warning.
 - **Actions card** — contextual action buttons:
-  - Plaid accounts: "Force Re-sync", "Rotate Token", "Disconnect"
-  - All accounts: "Edit", "Delete"
+  - Plaid accounts: "Force Re-sync", "Rotate Token", "Pause Sync" (disconnect)
+  - Header: "Edit"
 - **Sync Logs card** — paginated log of recent Plaid sync events (type, status, counts, timestamp).
+- **Danger Zone card** — a bottom card (`border-destructive/30`) holding the destructive **Delete Account** button, visually separated from the Plaid sync actions so "Delete" is not mistaken for "Disconnect".
 - **Linked accounts** — list of Plaid sub-accounts under the same institution.
 
 ### Adding an Account
@@ -72,7 +73,17 @@ Two entry points:
 
 ### Deleting an Account
 
-Triggered from the detail panel. A confirmation dialog is shown. The delete operation calls `api.deleteAccount(id)`. The API enforces that an account with linked transactions cannot be deleted — the error message is surfaced to the user via toast.
+Exposed **only** from the detail panel's **Danger Zone** card (there is no list-row delete affordance). The button uses the `destructive` design token; no raw Tailwind colors.
+
+- **Plaid hard-block (frontend).** For a Plaid-linked account that is not disconnected (`status !== 'disconnected'`), the Delete button is rendered **disabled** with helper text pointing the user at the existing **Pause Sync** (disconnect) action in the Actions card. Once the connection is disconnected (`PlaidItem.status === 'REVOKED'`), Delete is enabled.
+- **Confirmation dialog.** Activating Delete opens a confirmation `<Dialog>` naming the account and stating the action is permanent. Primary button is `destructive`; Cancel / dismiss sends no request.
+- **On confirm** the UI calls `api.deleteAccount(id)`. On `204`: success toast, selection cleared, account list refetched, and portfolio queries invalidated (`invalidatePortfolioQueries`) — no full page reload. The detail pane returns to the "select an account" empty state.
+- **Structured `409` handling.** On `409` the dialog **stays open** and renders a specific, translated reason inline (`text-destructive`), and the confirm button is disabled so the user cancels knowingly:
+  - `reason: 'HAS_TRANSACTIONS'` → `accountsPage.deleteBlockedTransactions` with the `transactionCount` (i18next plural) — the account has N transactions that must be removed or reassigned first.
+  - `reason: 'PLAID_CONNECTED'` → `accountsPage.deleteBlockedPlaid` — disconnect the bank first.
+  - Any other error → `accountsPage.deleteUnknownError` plus the generic `accountsPage.deleteFailed` toast.
+- **i18n.** All strings (`deleteAction`, `dangerZone`, `deleteConfirm`, `deleteBlocked*`, `deleteUnknownError`, `deleteSuccess*`) exist in all five locales (en/es/fr/pt/it).
+- **Mobile.** The Danger Zone card and dialog render in the mobile master-detail layout (detail view shown, list hidden).
 
 ### Key Hooks
 
