@@ -21,6 +21,7 @@ import {
   Landmark,
   ShieldCheck,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -37,9 +38,10 @@ interface AccountDetailPanelProps {
   account: EnrichedAccount;
   onEdit: () => void;
   onRefetch: () => void;
+  onDelete: () => void;
 }
 
-export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetailPanelProps) {
+export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: AccountDetailPanelProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
@@ -51,6 +53,11 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
   const isPlaid = account.plaidItem !== null;
   const isDisconnected = account.status === 'disconnected';
   const plaidItemId = account.plaidItem?.id ?? null;
+
+  // A Plaid-linked account can only be deleted once its bank connection has been
+  // disconnected (REVOKED) — otherwise the next sync recreates it. Manual
+  // accounts can always be deleted.
+  const canDelete = !isPlaid || isDisconnected;
 
   const handleResync = () => {
     if (!plaidItemId) return;
@@ -269,6 +276,30 @@ export function AccountDetailPanel({ account, onEdit, onRefetch }: AccountDetail
 
       {/* Sync Logs — hidden when disconnected */}
       {isPlaid && !isDisconnected && <SyncLogsTable plaidItemId={plaidItemId} />}
+
+      {/* Danger zone — permanent account deletion */}
+      <Card className="border-destructive/30">
+        <CardContent className="pt-4 pb-3 space-y-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
+            {t('accountsPage.dangerZone')}
+          </span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={onDelete}
+            disabled={!canDelete}
+            className="justify-start"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-2" />
+            {t('accountsPage.deleteAction')}
+          </Button>
+          {!canDelete && (
+            <p className="text-xs text-muted-foreground">
+              {t('accountsPage.deleteBlockedPlaidHint')}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Disconnect Confirmation Dialog */}
       <Dialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>

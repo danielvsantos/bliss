@@ -14,7 +14,10 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 - **`GET /api/accounts?id={accountId}`**: Retrieves a single account by ID with full includes (owners, country, currency, bank). Returns `404` if the account is not found or does not belong to the tenant.
 - **`POST /api/accounts`**: Creates a new account. Performs extensive validation to ensure that the specified bank, currency, country, and owners are all valid and associated with the tenant.
 - **`PUT /api/accounts?id={accountId}`**: Updates an existing account. Includes pre-transaction validation to verify any changed fields and handles the addition and removal of account owners.
-- **`DELETE /api/accounts?id={accountId}`**: Deletes an account. Returns `409 Conflict` if the account has associated transactions (with a count of linked transactions in the response). Returns `204 No Content` on successful deletion.
+- **`DELETE /api/accounts?id={accountId}`**: Deletes an account. Tenant-scoped (`404` when the account belongs to another tenant or does not exist), rate-limited, and transactional. Returns `204 No Content` on success, `400` when `id` is missing, and `409 Conflict` with a machine-readable body in two cases:
+  - **`{ error, reason: "PLAID_CONNECTED", details }`** — the account is linked to a `PlaidItem` whose `status` is not `REVOKED`. The bank connection must be disconnected first (`POST /api/plaid/disconnect`), otherwise the next sync would recreate the account. This guard is checked **before** the transaction guard, so a connected Plaid account that also has transactions reports `PLAID_CONNECTED` first.
+  - **`{ error, reason: "HAS_TRANSACTIONS", transactionCount, details }`** — the account has `transactionCount` linked `Transaction` rows. They must be removed or reassigned first (v1 has no cascade/reassign flow).
+  On success the `$transaction` deletes the account's `AccountOwner` rows, deletes `PlaidTransaction` rows scoped to `(plaidItemId, plaidAccountId)` for a disconnected Plaid account (they have no FK to `Account` and would otherwise be orphaned), and deletes the `Account`. `PortfolioItem.accountId` is set to `null` automatically via `onDelete: SetNull` — holdings survive, unlinked. The `PlaidItem` row is left intact (sibling sub-accounts may still reference it).
 
 ### Data Model (`Account`)
 
@@ -40,7 +43,10 @@ The Accounts API, located at `pages/api/accounts.js`, provides full CRUD functio
 - **Authorization**: All queries are strictly scoped to the `tenantId` of the authenticated user.
 - **Rate Limiting**: The endpoint uses a per-route rate limiter (`rateLimiters.accounts`).
 - **Validation**: `POST` and `PUT` endpoints validate that all associated entities (banks, currencies, countries, owners) belong to the current tenant.
-- **Deletion Protection**: An account cannot be deleted if it has any linked transactions. DELETE returns `409 Conflict` with a transaction count, or `204 No Content` on success.
+- **Deletion Protection**: `DELETE` is guarded in two ways and returns a structured `409` body (`reason` field) so the frontend can render specific guidance:
+  - A **Plaid-linked** account whose `PlaidItem.status !== "REVOKED"` cannot be deleted (`reason: "PLAID_CONNECTED"`). The user must disconnect the bank connection first; deleting the `Account` row while the item is live would let the next `plaidSyncWorker` run recreate it.
+  - An account with **linked transactions** cannot be deleted (`reason: "HAS_TRANSACTIONS"`, `transactionCount`).
+  On success (`204`), the delete runs in a single Prisma `$transaction`: `AccountOwner` rows removed, orphan-prone `PlaidTransaction` rows for a disconnected Plaid account purged by `(plaidItemId, plaidAccountId)`, then the `Account`. `PortfolioItem` rows are retained with `accountId = null` (`onDelete: SetNull`).
 
 ---
 

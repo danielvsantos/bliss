@@ -401,11 +401,31 @@ async function handleDelete(req, res, user) {
 
   const accountId = parseInt(id, 10);
   const existingAccount = await prisma.account.findUnique({
-    where: { id: accountId }
+    where: { id: accountId },
+    select: {
+      id: true,
+      tenantId: true,
+      plaidItemId: true,
+      plaidAccountId: true,
+      plaidItem: { select: { status: true } },
+    },
   });
 
   if (!existingAccount || existingAccount.tenantId !== tenantId) {
     res.status(StatusCodes.NOT_FOUND).json({ error: 'Account not found in this tenant' });
+    return;
+  }
+
+  // Plaid guard — a still-connected bank link must be disconnected first, otherwise
+  // the next plaidSyncWorker run is free to recreate the deleted account.
+  // Checked before the transaction guard so a connected Plaid account with
+  // transactions is told to disconnect first (the required first step).
+  if (existingAccount.plaidItemId && existingAccount.plaidItem?.status !== 'REVOKED') {
+    res.status(StatusCodes.CONFLICT).json({
+      error: 'Cannot delete a connected bank account',
+      reason: 'PLAID_CONNECTED',
+      details: 'Disconnect this bank connection before deleting the account.',
+    });
     return;
   }
 
@@ -417,20 +437,35 @@ async function handleDelete(req, res, user) {
   if (transactionCount > 0) {
     res.status(StatusCodes.CONFLICT).json({
       error: 'Cannot delete account with transactions',
+      reason: 'HAS_TRANSACTIONS',
+      transactionCount,
       details: `Account has ${transactionCount} associated transaction(s). Please delete them first or re-assign them.`
     });
     return;
   }
 
-  // Delete account and create audit log in a transaction
-  await prisma.$transaction(async (prisma) => {
-    // Delete all account owners first
-    await prisma.accountOwner.deleteMany({
+  // Delete account (and clean up any orphan Plaid rows) in a transaction.
+  await prisma.$transaction(async (tx) => {
+    // A disconnected (REVOKED) Plaid account leaves PlaidTransaction rows behind —
+    // PlaidTransaction has no FK to Account, so nothing cascades. Remove the rows
+    // scoped to this account's Plaid identity before deleting the account.
+    if (existingAccount.plaidItemId && existingAccount.plaidAccountId) {
+      await tx.plaidTransaction.deleteMany({
+        where: {
+          plaidItemId: existingAccount.plaidItemId,
+          plaidAccountId: existingAccount.plaidAccountId,
+        },
+      });
+    }
+
+    // Delete all account owners first (AccountOwner has no onDelete cascade)
+    await tx.accountOwner.deleteMany({
       where: { accountId }
     });
 
-    // Delete the account
-    await prisma.account.delete({
+    // Delete the account. PortfolioItem.accountId is set to null automatically
+    // by the schema's onDelete: SetNull — holdings survive, unlinked.
+    await tx.account.delete({
       where: { id: accountId }
     });
 

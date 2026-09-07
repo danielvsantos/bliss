@@ -33,6 +33,7 @@ const { mockPrisma } = vi.hoisted(() => ({
     user: { findMany: vi.fn() },
     accountOwner: { deleteMany: vi.fn(), createMany: vi.fn() },
     transaction: { count: vi.fn() },
+    plaidTransaction: { deleteMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -240,6 +241,90 @@ describe('DELETE /api/accounts', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(404);
+  });
+
+  it('returns 404 when the account belongs to another tenant', async () => {
+    mockPrisma.account.findUnique.mockResolvedValue({ id: 5, tenantId: 'other-tenant', plaidItemId: null });
+
+    const req = makeReq({ method: 'DELETE', query: { id: '5' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(404);
+    expect(mockPrisma.transaction.count).not.toHaveBeenCalled();
+  });
+
+  it('deletes a clean manual account and returns 204', async () => {
+    mockPrisma.account.findUnique.mockResolvedValue({
+      id: 5, tenantId: 'tenant-abc', plaidItemId: null, plaidAccountId: null, plaidItem: null,
+    });
+    mockPrisma.transaction.count.mockResolvedValue(0);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    const req = makeReq({ method: 'DELETE', query: { id: '5' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(204);
+    expect(mockPrisma.accountOwner.deleteMany).toHaveBeenCalledWith({ where: { accountId: 5 } });
+    expect(mockPrisma.account.delete).toHaveBeenCalledWith({ where: { id: 5 } });
+    expect(mockPrisma.plaidTransaction.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('returns structured 409 HAS_TRANSACTIONS when the account has transactions', async () => {
+    mockPrisma.account.findUnique.mockResolvedValue({
+      id: 5, tenantId: 'tenant-abc', plaidItemId: null, plaidAccountId: null, plaidItem: null,
+    });
+    mockPrisma.transaction.count.mockResolvedValue(3);
+
+    const req = makeReq({ method: 'DELETE', query: { id: '5' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(409);
+    expect(res._body.reason).toBe('HAS_TRANSACTIONS');
+    expect(res._body.transactionCount).toBe(3);
+    expect(mockPrisma.account.delete).not.toHaveBeenCalled();
+  });
+
+  it('returns structured 409 PLAID_CONNECTED when the Plaid item is still active', async () => {
+    mockPrisma.account.findUnique.mockResolvedValue({
+      id: 5, tenantId: 'tenant-abc', plaidItemId: 'pi_1', plaidAccountId: 'acc_x',
+      plaidItem: { status: 'ACTIVE' },
+    });
+
+    const req = makeReq({ method: 'DELETE', query: { id: '5' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(409);
+    expect(res._body.reason).toBe('PLAID_CONNECTED');
+    expect(mockPrisma.transaction.count).not.toHaveBeenCalled();
+    expect(mockPrisma.account.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes a disconnected (REVOKED) Plaid account and cleans up its PlaidTransaction rows', async () => {
+    mockPrisma.account.findUnique.mockResolvedValue({
+      id: 5, tenantId: 'tenant-abc', plaidItemId: 'pi_1', plaidAccountId: 'acc_x',
+      plaidItem: { status: 'REVOKED' },
+    });
+    mockPrisma.transaction.count.mockResolvedValue(0);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    const req = makeReq({ method: 'DELETE', query: { id: '5' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(204);
+    expect(mockPrisma.plaidTransaction.deleteMany).toHaveBeenCalledWith({
+      where: { plaidItemId: 'pi_1', plaidAccountId: 'acc_x' },
+    });
+    expect(mockPrisma.account.delete).toHaveBeenCalledWith({ where: { id: 5 } });
   });
 });
 
