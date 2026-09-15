@@ -2073,6 +2073,12 @@ const it = {
   "Sign In": "Accedi",
   "Sign Up": "Registrati",
   "Sign in with Google": "Accedi con Google",
+
+  // Auth rejection messages (task #71 — identity hygiene)
+  "An account with this email already exists. Sign in with your password instead.": "Esiste già un account con questa email. Accedi con la tua password.",
+  "Your Google account's email address is not verified. Verify it with Google, then try again.": "L'indirizzo email del tuo account Google non è verificato. Verificalo con Google e riprova.",
+  "Sign-in with Google failed. Please try again.": "Accesso con Google non riuscito. Riprova.",
+  "We could not sign you in automatically. Please try signing in with your password.": "Non siamo riusciti ad accedere automaticamente. Prova ad accedere con la tua password.",
   "Sign up with Google": "Registrati con Google",
   "or continue with email": "o continua con l'email",
   "Email address": "Indirizzo email",

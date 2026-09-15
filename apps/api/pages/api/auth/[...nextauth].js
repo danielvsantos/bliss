@@ -54,6 +54,10 @@ const nextAuthHandler = NextAuth({
                     email: profile.email,
                     image: profile.picture,
                     googleId: profile.sub,
+                    // Carried through so findOrCreateGoogleUser can reject an
+                    // unverified address. Without this the claim is dropped
+                    // here and never reaches the check.
+                    emailVerified: profile.email_verified === true,
                 };
             },
         })] : []),
@@ -102,17 +106,33 @@ const nextAuthHandler = NextAuth({
     callbacks: {
         async signIn({ user, account, profile }) {
             if (account.provider === 'google') {
-                const { user: googleUser, isNew } = await AuthService.findOrCreateGoogleUser({
-                    email: profile.email,
-                    name: profile.name,
-                    googleId: profile.sub,
-                });
+                try {
+                    const { user: googleUser, isNew } = await AuthService.findOrCreateGoogleUser({
+                        email: profile.email,
+                        name: profile.name,
+                        googleId: profile.sub,
+                        emailVerified: profile.email_verified === true,
+                    });
 
-                // Update user object with tenant info and new-user flag
-                user.id = googleUser.id;
-                user.tenantId = googleUser.tenantId;
-                user.isNew = isNew;
-                return true;
+                    // Update user object with tenant info and new-user flag
+                    user.id = googleUser.id;
+                    user.tenantId = googleUser.tenantId;
+                    user.isNew = isNew;
+                    return true;
+                } catch (error) {
+                    // Returning a URL string from signIn redirects the browser
+                    // there. Each rejection reason gets its own code so the
+                    // auth page can say what actually went wrong — "sign in
+                    // with your password" is only actionable if the user is
+                    // told that is the problem.
+                    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+                    const code = error?.code === AuthService.GOOGLE_ACCOUNT_EXISTS
+                        ? 'google_account_exists'
+                        : error?.code === AuthService.GOOGLE_EMAIL_UNVERIFIED
+                            ? 'google_email_unverified'
+                            : 'oauth_failed';
+                    return `${frontendUrl}/auth?error=${code}`;
+                }
             }
             return true;
         },

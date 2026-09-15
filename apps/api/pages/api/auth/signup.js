@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { DEFAULT_CATEGORIES } from '../../../lib/defaultCategories.js';
 import { setAuthCookie } from '../../../utils/cookieUtils.js';
+import { normalizeEmail } from '../../../utils/normalizeEmail.js';
 
 const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -47,16 +48,45 @@ export default async function handler(req, res) {
   // --- End Validation ---
 
   try {
+    // Canonical form for validation, the existence check, and the eventual
+    // write. Normalizing BEFORE the format check matters: the regex rejects
+    // surrounding whitespace, so a pasted "  a@b.com " would otherwise be
+    // reported as malformed even though it is a perfectly valid address.
+    //
+    // User.email is deterministically encrypted, so `A@x.com` and `a@x.com`
+    // produce different ciphertexts and would otherwise both be creatable.
+    const normalizedEmail = normalizeEmail(email);
+
     // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
       return;
     }
 
-    // Check if user already exists - use the encrypted email search
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Check if user already exists - use the encrypted email search.
+    //
+    // A duplicate does NOT get a distinguishing response. Signup is public on
+    // production by design (friends can join), so a 409 saying "User with this
+    // email already exists" turned the endpoint into an account-existence
+    // oracle for any address an attacker cared to try. The response below
+    // matches the success shape and status; nothing is created.
+    //
+    // Residual, accepted: no auth cookie is set on this path, so a determined
+    // attacker can still distinguish the two cases by the absence of
+    // Set-Cookie. Closing that would require either issuing a session for an
+    // account that does not exist or removing the auto-login from signup
+    // entirely. Recorded here so it is a decision rather than an oversight.
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existingUser) {
-      res.status(StatusCodes.CONFLICT).json({ error: 'User with this email already exists' });
+      res.status(StatusCodes.CREATED).json({
+        message: 'Signup successful',
+        user: {
+          id: null,
+          email: normalizedEmail,
+          name: name ?? null,
+          tenant: { id: null, name: tenantName },
+        },
+      });
       return;
     }
 
@@ -141,7 +171,7 @@ export default async function handler(req, res) {
       // Then create the user using the AuthService.
       // The first user in a new tenant is always the owner — grant admin role.
       const user = await AuthService.createUser({
-        email,
+        email: normalizedEmail,
         password,
         name,
         tenantId: tenant.id,

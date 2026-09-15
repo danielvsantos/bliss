@@ -221,3 +221,44 @@ procedures, verification steps, and rollback paths — especially before
 touching `ENCRYPTION_SECRET`, which is the one secret whose failure mode is
 irreversible.
 
+
+All four application secrets have a **32-character minimum**, enforced at
+startup. In production the API and backend refuse to boot when one is shorter;
+in development it is a warning. `scripts/setup.sh` generates 48/48/48/32, so a
+generated `.env` always passes. Check before rotating by hand:
+`openssl rand -base64 48`.
+
+## Normalizing stored email addresses
+
+One-off migration, and a no-op on any instance created after the change that
+introduced it. Bliss lowercases every email on write and lookup; this script
+brings pre-existing rows into the same canonical form.
+
+```bash
+cd apps/api
+
+# 1. Dry run — this is the DEFAULT. Nothing is written.
+node scripts/normalize-user-emails.mjs
+
+# 2. Only if step 1 reports rows needing change, and only after a pg_dump:
+node scripts/normalize-user-emails.mjs --apply
+```
+
+**Why there is a script at all, rather than a SQL `UPDATE`.** `User.email` is
+stored with searchable (deterministic) encryption: its salt and IV are derived
+from a SHA-256 of the plaintext, so the ciphertext is a pure function of the
+exact plaintext bytes. A SQL `LOWER()` would lowercase the base64 *ciphertext*
+and corrupt every row beyond recovery. The script decrypts, lowercases and
+re-encrypts each row individually.
+
+**What it refuses to do:**
+
+| Situation | Behaviour |
+|---|---|
+| Two rows differ only in case (e.g. `A@x.com` and `a@x.com`) | Reports both and exits non-zero, having written **nothing**. `User.email` is `UNIQUE`, so lowercasing them would violate the index — and a half-applied migration is worse than none. Resolve the duplicate accounts, then re-run. |
+| A row cannot be decrypted with the current `ENCRYPTION_SECRET` | Aborts before any write and names the row ids. |
+| `ENCRYPTION_SECRET_PREVIOUS` is set | Refuses to run. That means a key rotation is still in flight; finish it first (see [Key Rotation](/docs/guides/key-rotation)), because this script re-encrypts under `ENCRYPTION_SECRET` only. |
+
+Idempotent — a second run reports zero rows needing change. Take a verified
+`pg_dump` before using `--apply`, as with any migration that rewrites
+ciphertext.

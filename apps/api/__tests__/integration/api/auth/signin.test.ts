@@ -234,6 +234,50 @@ describe('POST /api/auth/signin', () => {
     expect(setAuthCookie).toHaveBeenCalled();
   });
 
+  // A deliberately mixed-case fixture. User.email is deterministically
+  // encrypted, so the ciphertext derives from the exact plaintext bytes —
+  // without normalization at this call site, a user who types their address
+  // with different capitalisation than they registered with simply cannot log
+  // in. A suite written entirely in lowercase would never catch it.
+  it('normalizes a mixed-case email before looking the user up', async () => {
+    mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
+    mockVerifyAndUpgrade.mockResolvedValueOnce(true);
+
+    const req = makeReq({ body: { email: '  TeSt@ExAmPle.COM  ', password: 'correct-password' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { email: 'test@example.com' } }),
+    );
+  });
+
+  // The format regex rejects surrounding whitespace, so normalizing after
+  // validating would report a pasted address as malformed.
+  it('accepts a padded email rather than rejecting it as malformed', async () => {
+    mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
+    mockVerifyAndUpgrade.mockResolvedValueOnce(true);
+
+    const req = makeReq({ body: { email: ' test@example.com ', password: 'correct-password' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+  });
+
+  it('still rejects a genuinely malformed email', async () => {
+    const req = makeReq({ body: { email: 'not an email', password: 'x' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body).toEqual({ error: 'Invalid email format' });
+  });
+
   it('returns 401 for an OAuth-only account with no password hash', async () => {
     mockPrisma.user.findFirst.mockResolvedValueOnce({
       ...TEST_USER,

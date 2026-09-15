@@ -60,3 +60,33 @@ describe('i18n parity — task #69 subscription keys', () => {
     }
   });
 });
+
+// Keys introduced by task #71 (security remediation — identity hygiene).
+//
+// These are flat, natural-language keys (the convention used throughout the
+// auth page), so `resolve` would treat the dots in them as nesting. They are
+// looked up directly instead.
+const AUTH_ERROR_KEYS = [
+  "An account with this email already exists. Sign in with your password instead.",
+  "Your Google account's email address is not verified. Verify it with Google, then try again.",
+  'Sign-in with Google failed. Please try again.',
+  'We could not sign you in automatically. Please try signing in with your password.',
+];
+
+describe('i18n parity — task #71 auth rejection messages', () => {
+  for (const key of AUTH_ERROR_KEYS) {
+    it(`"${key.slice(0, 40)}…" is a non-empty string in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = dict[key];
+        expect(typeof v, `${lang}`).toBe('string');
+        expect((v as string).trim().length, `${lang}`).toBeGreaterThan(0);
+      }
+    });
+
+    it(`"${key.slice(0, 40)}…" is actually translated in es/fr/pt/it`, () => {
+      for (const lang of NON_EN) {
+        expect(LOCALES[lang][key], `${lang}`).not.toBe(en[key as keyof typeof en]);
+      }
+    });
+  }
+});

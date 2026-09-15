@@ -137,4 +137,66 @@ describe('AuthPage', () => {
       expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
     });
   });
+  // The API redirects here with ?error=<code> when a Google sign-in is
+  // rejected. Before this, the param was written by the callback page but
+  // never read, so every OAuth rejection arrived as silence — including "an
+  // account with this email already exists, use your password", which is only
+  // actionable if the user is actually told.
+  describe('OAuth rejection banner (?error=)', () => {
+    const setSearch = (search: string) => {
+      window.history.replaceState({}, '', `/auth${search}`);
+    };
+
+    beforeEach(() => {
+      setSearch('');
+    });
+
+    it('renders nothing when there is no error param', () => {
+      renderAuthPage();
+      expect(screen.queryByTestId('oauth-error')).not.toBeInTheDocument();
+    });
+
+    it.each([
+      [
+        'google_account_exists',
+        'An account with this email already exists. Sign in with your password instead.',
+      ],
+      [
+        'google_email_unverified',
+        "Your Google account's email address is not verified. Verify it with Google, then try again.",
+      ],
+      ['oauth_failed', 'Sign-in with Google failed. Please try again.'],
+    ])('maps ?error=%s to its own message', (code, expected) => {
+      setSearch(`?error=${code}`);
+      renderAuthPage();
+
+      expect(screen.getByTestId('oauth-error')).toHaveTextContent(expected);
+    });
+
+    it('falls back to the generic message for an unrecognised code', () => {
+      setSearch('?error=something_unexpected');
+      renderAuthPage();
+
+      expect(screen.getByTestId('oauth-error')).toHaveTextContent(
+        'Sign-in with Google failed. Please try again.',
+      );
+    });
+
+    // AuthCard is mounted from two layouts and useIsDesktop resolves after the
+    // first paint, so the initial card unmounts and a fresh one takes its
+    // place. The message must survive that swap — an effect that consumed the
+    // param would clear it on the first card and leave the second with
+    // nothing, hiding the message on exactly the render the user sees.
+    it('keeps showing the message after the layout swap remounts the card', async () => {
+      setSearch('?error=google_account_exists');
+      renderAuthPage();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('oauth-error')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('oauth-error')).toHaveTextContent(
+        'An account with this email already exists. Sign in with your password instead.',
+      );
+    });
+  });
 });

@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { setAuthCookie } from '../../../utils/cookieUtils.js';
+import { normalizeEmail } from '../../../utils/normalizeEmail.js';
 
 const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -44,15 +45,22 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Normalize BEFORE validating: the regex rejects surrounding whitespace,
+    // so a pasted "  a@b.com " would otherwise be reported as malformed.
+    // Also required for the lookup itself — User.email is deterministically
+    // encrypted, so the ciphertext derives from the exact plaintext and a
+    // mixed-case address would simply not match the stored row.
+    const normalizedEmail = normalizeEmail(email);
+
     // Validate email format
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
       return;
     }
 
-    // Find user by email - encryption handled by Prisma middleware
+    // Find user by email - encryption handled by Prisma middleware.
     const user = await prisma.user.findFirst({
-      where: { email },
+      where: { email: normalizedEmail },
       include: {
         tenant: true
       }

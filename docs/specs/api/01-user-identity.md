@@ -10,12 +10,22 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 
 ### Responsibilities:
 - **Request Validation**: Performs comprehensive validation on the request body, checking for the presence and format of `email`, `password`, and `tenantName`.
-- **Conflict Resolution**: Checks if a user with the provided email already exists to prevent duplicate accounts.
+- **Conflict Resolution**: Checks if a user with the provided email already exists to prevent duplicate accounts. The duplicate response is deliberately **non-confirming** — see "Account-existence disclosure" below.
 - **Relational Data Validation**: If `countries`, `currencies`, or `bankIds` are provided, it validates that all provided IDs exist in the database.
 - **Transactional Creation**: It uses a Prisma `$transaction` to ensure that the creation of a new `Tenant`, the associated `User`, and all relational records (like `TenantCountry`, `TenantCurrency`, `TenantBank`) are created atomically. If any step fails, the entire transaction is rolled back.
 - **Password Hashing**: It calls out to an `AuthService` to hash the user's password before storing it in the database.
 - **Token Generation**: Generates and signs a new JWT with `user.id`, `user.email`, `tenant.id`, and a `jti: uuidv4()` claim.
 - **Cookie Issuance**: Calls `utils/cookieUtils.js → setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie. The token is **not** included in the response body.
+
+### Account-existence disclosure
+
+Signup previously returned `409 Conflict` with `"User with this email already exists"`. Because signup is public on production by design (friends can join), that turned the endpoint into an account-existence oracle for any address an attacker cared to try.
+
+A duplicate now returns the **same status and body shape as a successful signup** (`201`, `{ message: "Signup successful", user: { ... } }`) and creates nothing.
+
+**Residual, accepted risk:** no auth cookie is set on that path, so a determined attacker can still distinguish the two cases by the absence of `Set-Cookie`. Closing it completely would mean either issuing a session for an account that does not exist, or removing auto-login from signup entirely. Recorded here so it is a decision, not an oversight.
+
+**Client handling.** `AuthContext.signUp` checks whether a session actually materialised after the 2xx and, when it did not, surfaces "We could not sign you in automatically. Please try signing in with your password." That message is intentionally generic: it reads identically whether the address was taken or something else went wrong, so it does not reintroduce the oracle it exists to close. Without it the user would land on a protected page unauthenticated and be bounced with no explanation.
 
 ### Security & Encryption
 - **Password Hashing**: User passwords are not stored directly. They are hashed with **scrypt** (`N=2^17, r=8, p=1`) and a unique 16-byte random salt per user, via `services/password.js` behind `AuthService`. See §1.2 for the storage format and the migration from the previous PBKDF2 scheme.
@@ -23,7 +33,7 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 
 ### Data Flow & Logic:
 1.  Receives a `POST` request with user and tenant data.
-2.  Performs a series of validation checks. Fails with `400 Bad Request` or `409 Conflict` if validation fails.
+2.  Performs a series of validation checks. Fails with `400 Bad Request` on malformed input. A duplicate email does **not** produce a distinguishing response — see "Account-existence disclosure" below.
 3.  Initiates a `prisma.$transaction`.
 4.  **`Tenant` Creation**: A new `Tenant` record is created with the `tenantName`, a default `plan` of 'FREE', and `plaidHistoryDays` set from the `PLAID_HISTORY_DAYS` environment variable (defaults to `1` if not set). This controls how many days of historical transactions are fetched on initial Plaid sync.
 5.  **`User` Creation**: A new `User` is created.
@@ -101,11 +111,55 @@ WHERE "passwordHash" IS NOT NULL AND "passwordHash" NOT LIKE '$scrypt$%';
 - **`verifyPassword(password, hash, salt)`** — detects the format and verifies against either. Returns `false` (never throws) for malformed, absent or mismatched-length input.
 - **`verifyAndUpgrade(user, plaintext)`** — verifies, then rehashes to scrypt if the stored hash is legacy. Called from both credential paths (`signin.js` and the NextAuth `CredentialsProvider`). Two call sites, one implementation: a divergence here would mean one login path never upgrades.
 - **`needsRehash(storedHash)`** — `true` only for a non-scrypt, non-empty hash.
-- **`findOrCreateGoogleUser({ email, name, googleId })`**:
+- **`findOrCreateGoogleUser({ email, name, googleId, emailVerified })`**:
     - Returns `{ user, isNew }` (not just the user object).
     - `isNew: true` when a brand-new `Tenant` + `User` pair are created (first-time Google sign-in with an unknown email).
-    - `isNew: false` when the user already exists (returning Google user) or when an existing email-based account is being linked to Google for the first time (the user record is updated with `provider: 'google'` and `providerId: googleId`).
+    - `isNew: false` for a returning Google user.
     - The `isNew` flag is used downstream to route the user to `/onboarding` (new) or `/` (returning) after the OAuth flow completes.
+    - **Throws** with `.code` set to one of two constants — see "Google sign-in restrictions" below.
+
+### Google sign-in restrictions
+
+Two rules, both of which close account-takeover paths rather than adding friction for its own sake.
+
+**1. `email_verified` must be `true`** (`AuthService.GOOGLE_EMAIL_UNVERIFIED`).
+
+The check is `emailVerified !== true` — a strict identity test, so a truthy-but-not-boolean claim (the string `"true"`, the number `1`) does not pass. Without it, anyone able to present a Google profile carrying a victim's address could claim that address. `profile()` in `[...nextauth].js` carries `profile.email_verified` through explicitly; before this it was dropped there and never reached the check.
+
+**2. A Google sign-in whose email matches a non-Google account is rejected** (`AuthService.GOOGLE_ACCOUNT_EXISTS`).
+
+The previous behaviour absorbed any matching account — `if (existingUser.provider !== 'google')` then `update({ provider: 'google', providerId })`. That meant a Google identity that had never proved control of a password account silently took it over.
+
+The rejection leaves the row **completely untouched**: no provider conversion, no write of any kind. The account remains reachable by its owner with their password, and the message says exactly that, because "sign in with your password" is only actionable if the user is told it is the problem.
+
+Deliberately **no account-linking UI**. Letting a user *deliberately* link an existing password account to Google is a separate feature with its own authentication requirements; it is out of scope here.
+
+**Surfacing the rejection.** The `signIn` callback catches both and returns a redirect URL with a distinct code per reason:
+
+| Thrown code | Redirect | Auth-page message |
+|---|---|---|
+| `GOOGLE_ACCOUNT_EXISTS` | `?error=google_account_exists` | "An account with this email already exists. Sign in with your password instead." |
+| `GOOGLE_EMAIL_UNVERIFIED` | `?error=google_email_unverified` | "Your Google account's email address is not verified…" |
+| anything else | `?error=oauth_failed` | "Sign-in with Google failed. Please try again." |
+
+`apps/web/src/pages/auth/index.tsx` reads `?error=` and renders the mapped message, translated across all five locales. This was not previously possible: `auth/callback.tsx` wrote the param but the auth page never read it, so every OAuth failure arrived as silence.
+
+The param is read **during render**, not in an effect. `AuthCard` is mounted from two layouts and `useIsDesktop` resolves after the first paint, so the initial card unmounts and a fresh one replaces it — an effect that consumed the param would clear it on the first card and leave the second with nothing to show.
+
+### Email normalization
+
+Every read and write of `User.email` passes through `utils/normalizeEmail.js`: `trim()` then `toLowerCase()`. Deliberately **not** full RFC normalization — no dot stripping, no plus-tag removal, because those change identity semantics (`a.b@x.com` and `ab@x.com` are the same mailbox at Gmail and different mailboxes almost everywhere else).
+
+This matters more here than in most codebases because `User.email` is `{ searchable: true }` — deterministic encryption whose salt and IV derive from a SHA-256 of the plaintext. The ciphertext is a pure function of the exact plaintext bytes, so `A@x.com` and `a@x.com` produce entirely different ciphertexts and never match each other in a `WHERE` clause.
+
+Consequence: **missing one call site produces a login that works for some users and not others** — a data-dependent failure invisible to fixtures written in lowercase. The closed set is `signup.js`, `signin.js`, and three `AuthService` methods (`findUserByEmail`, `createUser`, `findOrCreateGoogleUser`, the last via the first two).
+
+**Migration for existing rows:** `apps/api/scripts/normalize-user-emails.mjs`. A SQL `LOWER()` would lowercase the base64 *ciphertext* and corrupt every row beyond recovery, so the script decrypts, lowercases and re-encrypts each row with its own self-contained crypto helpers, the same way `rotate-encryption-key.mjs` does.
+
+- **Dry run is the default**; `--apply` is the opt-in. This inverts the rotation script's convention on purpose, because a collision here is destructive.
+- **Pre-flight duplicate check.** `User.email` is `@unique`, so two rows differing only in case would collide the moment both are lowercased. The script reports them and exits non-zero having written nothing, rather than applying a partial migration and failing halfway.
+- Aborts if any row fails to decrypt with the current key, and refuses to run while `ENCRYPTION_SECRET_PREVIOUS` is set (an in-flight rotation).
+- Idempotent: a second run reports zero rows needing change.
 
 ### Role Assignment:
 - **`createUser(data, role = 'member')`**: Accepts an optional `role` parameter (default `'member'`). `signup.js` passes `role: 'admin'` since signup always creates a tenant owner. Users created via `POST /api/users` can be assigned any role (`'admin'`, `'member'`, or `'viewer'`), defaulting to `'member'`.

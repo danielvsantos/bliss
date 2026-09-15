@@ -465,17 +465,75 @@ function useDemoMode(): boolean {
   return isDemo;
 }
 
+/**
+ * Maps a `?error=` code from the OAuth callback to an i18n key.
+ *
+ * The API redirects here with a distinct code per rejection reason. Before
+ * this, the param was written by the callback page but never read, so every
+ * OAuth failure — including "an account with this email already exists, use
+ * your password" — arrived as silence.
+ */
+const OAUTH_ERROR_KEYS: Record<string, string> = {
+  google_account_exists:
+    "An account with this email already exists. Sign in with your password instead.",
+  google_email_unverified:
+    "Your Google account's email address is not verified. Verify it with Google, then try again.",
+  oauth_failed: "Sign-in with Google failed. Please try again.",
+  // NextAuth's own generic codes, in case it redirects here directly.
+  OAuthCallback: "Sign-in with Google failed. Please try again.",
+  AccessDenied: "Sign-in with Google failed. Please try again.",
+};
+
+/**
+ * Read during render rather than in an effect, and deliberately without
+ * clearing the query param.
+ *
+ * AuthCard is mounted from two different layouts (desktop and mobile) and
+ * `useIsDesktop` resolves its real value *after* the first paint — so the
+ * initial card unmounts and a fresh one mounts in its place. An effect that
+ * consumed the param would fire on the first card, clear the URL, and leave
+ * the replacement card with nothing to show: the message would vanish on
+ * exactly the render the user sees.
+ */
+function useOAuthError(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const code = new URLSearchParams(window.location.search).get("error");
+  if (!code) return null;
+
+  return OAUTH_ERROR_KEYS[code] ?? OAUTH_ERROR_KEYS.oauth_failed;
+}
+
 function AuthCard() {
   const { t } = useTranslation();
   const { signInWithGoogle, googleOAuthEnabled } = useAuth();
   const [tab, setTab] = useState("signin");
   const isDemo = useDemoMode();
+  const oauthError = useOAuthError();
 
   return (
     <Card
       className="w-full border"
       style={{ maxWidth: 420, padding: "28px 32px 32px", gap: 0 }}
     >
+      {/* OAuth rejection banner */}
+      {oauthError && (
+        <div
+          role="alert"
+          data-testid="oauth-error"
+          className="text-center rounded-lg bg-destructive/10 text-destructive border border-destructive/20"
+          style={{
+            padding: "12px 16px",
+            marginBottom: 16,
+            fontSize: "0.8125rem",
+            fontWeight: 500,
+            lineHeight: 1.6,
+          }}
+        >
+          {t(oauthError)}
+        </div>
+      )}
+
       {/* Demo mode banner */}
       {isDemo && (
         <div

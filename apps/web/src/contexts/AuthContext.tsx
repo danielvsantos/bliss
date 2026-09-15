@@ -45,6 +45,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
   }, []);
 
+  // Returns the resolved user (or null) so callers can tell whether a session
+  // was actually established, not just whether the request threw.
   const checkSession = async () => {
     try {
       setLoading(true);
@@ -55,9 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session.user.tenant?.id) {
           await updateTenantMetaFromAPI(session.user.tenant.id);
         }
-      } else {
-        setUser(null);
+        return session.user;
       }
+      setUser(null);
+      return null;
     } catch (error: unknown) {
       // A 401 is expected when the user is not logged in — not worth logging.
       const status = (error as { response?: { status?: number } })?.response?.status;
@@ -65,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Session check failed:', error);
       }
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -79,16 +83,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currencies: data.currencies || ['USD'],
         bankIds: data.bankIds || []
       });
-      // Cookie is set server-side; verify the session immediately after signup
-      await checkSession();
+      // Cookie is set server-side; verify the session immediately after signup.
+      const sessionUser = await checkSession();
       if (!data.password) {
         await signInWithGoogle();
+        return response;
       }
+
+      // No session despite a 2xx. The API deliberately returns the success
+      // shape for an email that is already registered, so that signup cannot
+      // be used to probe which addresses have accounts — the only visible
+      // difference is that no auth cookie was set. This message is therefore
+      // intentionally generic: it must read the same whether the address was
+      // taken or something else went wrong, or it would reintroduce the
+      // oracle it exists to close.
+      if (!sessionUser) {
+        throw new Error(
+          'We could not sign you in automatically. Please try signing in with your password.'
+        );
+      }
+
       return response;
     } catch (error) {
       const axiosError = error as AxiosError<APIErrorResponse>;
       const errorMessage = axiosError.response?.data?.message
         || axiosError.response?.data?.error
+        // An Error we threw ourselves (the no-session branch above) has no
+        // axios response, so without this it would be flattened into the
+        // generic fallback and its specific guidance lost.
+        || (error instanceof Error ? error.message : undefined)
         || 'Failed to create account. Please try again.';
       setError(errorMessage);
       setUser(null);
