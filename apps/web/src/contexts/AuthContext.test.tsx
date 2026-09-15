@@ -115,4 +115,85 @@ describe('useAuth', () => {
 
     expect(result.current.user).toBeNull();
   });
+  // The API returns the success shape for an email that is already registered,
+  // so that signup cannot be used to probe which addresses have accounts. The
+  // only visible difference is that no auth cookie is set — so the client has
+  // to notice the missing session and say something, or the user is silently
+  // dropped on an unauthenticated page.
+  describe('signUp when no session is established', () => {
+    const SIGNUP_DATA = {
+      email: 'taken@example.com',
+      password: 'password123',
+      name: 'T',
+      tenantName: 'T',
+    };
+
+    it('throws a generic message when the API returns 2xx but no session follows', async () => {
+      vi.mocked(api.getSession).mockResolvedValue({ user: null });
+      vi.mocked(api.signup).mockResolvedValueOnce({
+        message: 'Signup successful',
+        user: { id: null, email: 'taken@example.com', name: 'T', tenant: { id: null, name: 'T' } },
+      } as unknown as Awaited<ReturnType<typeof api.signup>>);
+
+      const { wrapper } = createWrapper();
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      // Catch inside act(): letting the rejection escape act() surfaces as an
+      // unhandled rejection in React's test scheduler rather than a clean
+      // assertion failure.
+      let thrown: Error | null = null;
+      await act(async () => {
+        await result.current.signUp(SIGNUP_DATA).catch((e: Error) => {
+          thrown = e;
+        });
+      });
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect(thrown!.message).toMatch(/could not sign you in automatically/i);
+      expect(result.current.user).toBeNull();
+    });
+
+    // If the message named the cause, it would reintroduce the oracle it
+    // exists to close.
+    it('does not reveal that the email is already registered', async () => {
+      vi.mocked(api.getSession).mockResolvedValue({ user: null });
+      vi.mocked(api.signup).mockResolvedValueOnce({
+        message: 'Signup successful',
+        user: { id: null, email: 'taken@example.com', name: 'T', tenant: { id: null, name: 'T' } },
+      } as unknown as Awaited<ReturnType<typeof api.signup>>);
+
+      const { wrapper } = createWrapper();
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let message = '';
+      await act(async () => {
+        await result.current.signUp(SIGNUP_DATA).catch((e: Error) => {
+          message = e.message;
+        });
+      });
+
+      expect(message).not.toMatch(/already|exists|registered|taken|duplicate/i);
+    });
+
+    it('returns normally when a session IS established', async () => {
+      const mockUser: User = { id: '1', email: 'new@example.com', name: 'N' };
+      vi.mocked(api.getSession).mockResolvedValue({ user: mockUser });
+      vi.mocked(api.signup).mockResolvedValueOnce({
+        message: 'Signup successful',
+        user: mockUser,
+      } as unknown as Awaited<ReturnType<typeof api.signup>>);
+
+      const { wrapper } = createWrapper();
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      await act(async () => {
+        await result.current.signUp({ ...SIGNUP_DATA, email: 'new@example.com' });
+      });
+
+      await waitFor(() => expect(result.current.user).toEqual(mockUser));
+    });
+  });
 });

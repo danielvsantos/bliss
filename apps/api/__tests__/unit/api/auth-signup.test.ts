@@ -96,7 +96,9 @@ describe('POST /api/auth/signup validation', () => {
     expect(res._body.error).toMatch(/invalid email format/i);
   });
 
-  it('returns 409 when email already exists', async () => {
+  // Signup is public on production by design, so a 409 saying "User with this
+  // email already exists" turned the endpoint into an account-existence oracle.
+  it('does not confirm account existence when the email is already registered', async () => {
     mockPrisma.user.findUnique.mockResolvedValue({ id: 'existing' });
 
     const req = makeReq({ body: { email: 'test@test.com', password: 'password123', tenantName: 'My Tenant' } });
@@ -104,7 +106,22 @@ describe('POST /api/auth/signup validation', () => {
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
-    expect(res._status).toBe(409);
+    expect(res._status).toBe(201);
+    expect(res._body).toMatchObject({ message: 'Signup successful' });
+    expect(JSON.stringify(res._body)).not.toMatch(/already exists|registered|taken|conflict/i);
+    // Nothing was created.
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('looks up the duplicate using the normalized (lowercased) email', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ id: 'existing' });
+
+    const req = makeReq({ body: { email: '  Test@TEST.com  ', password: 'password123', tenantName: 'My Tenant' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'test@test.com' } });
   });
 
   it('returns 405 for GET', async () => {

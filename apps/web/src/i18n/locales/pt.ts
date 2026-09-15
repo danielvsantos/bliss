@@ -2073,6 +2073,12 @@ const pt = {
   "Sign In": "Entrar",
   "Sign Up": "Cadastrar",
   "Sign in with Google": "Entrar com Google",
+
+  // Auth rejection messages (task #71 — identity hygiene)
+  "An account with this email already exists. Sign in with your password instead.": "Já existe uma conta com este e-mail. Inicie sessão com a sua palavra-passe.",
+  "Your Google account's email address is not verified. Verify it with Google, then try again.": "O endereço de e-mail da sua conta Google não está verificado. Verifique-o junto da Google e tente novamente.",
+  "Sign-in with Google failed. Please try again.": "Não foi possível iniciar sessão com a Google. Tente novamente.",
+  "We could not sign you in automatically. Please try signing in with your password.": "Não conseguimos iniciar a sua sessão automaticamente. Tente iniciar sessão com a sua palavra-passe.",
   "Sign up with Google": "Cadastrar com Google",
   "or continue with email": "ou continue com e-mail",
   "Email address": "Endereço de e-mail",

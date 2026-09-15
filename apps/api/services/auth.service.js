@@ -1,6 +1,7 @@
 import prisma from '../prisma/prisma';
 import { DEFAULT_CATEGORIES } from '../lib/defaultCategories.js';
 import { hashPassword, verifyPassword, needsRehash } from './password.js';
+import { normalizeEmail } from '../utils/normalizeEmail.js';
 
 export class AuthService {
   /**
@@ -65,8 +66,11 @@ export class AuthService {
   }
 
   static async findUserByEmail(email) {
+    // User.email is deterministically encrypted, so the ciphertext derives from
+    // the exact plaintext bytes. Lookups must use the same canonical form the
+    // row was written with, or a mixed-case address simply will not be found.
     return prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizeEmail(email) },
       select: {
         id: true,
         email: true,
@@ -92,7 +96,7 @@ export class AuthService {
 
     return tx.user.create({
       data: {
-        email,
+        email: normalizeEmail(email),
         name,
         tenantId,
         passwordHash,
@@ -106,20 +110,53 @@ export class AuthService {
     });
   }
 
-  static async findOrCreateGoogleUser({ email, name, googleId }) {
+  /**
+   * Error codes thrown by findOrCreateGoogleUser. The NextAuth signIn callback
+   * maps each to a distinct `?error=` code so the auth page can explain what
+   * happened instead of showing a generic failure.
+   */
+  static GOOGLE_EMAIL_UNVERIFIED = 'GOOGLE_EMAIL_UNVERIFIED';
+  static GOOGLE_ACCOUNT_EXISTS = 'GOOGLE_ACCOUNT_EXISTS';
+
+  /**
+   * Sign in with Google: return the existing Google-linked user, or create a
+   * brand-new Tenant + User.
+   *
+   * Two things this deliberately does NOT do:
+   *
+   * 1. It does not trust an unverified email. Google returns `email_verified`
+   *    on the profile; without checking it, anyone able to present a Google
+   *    profile carrying a victim's address could claim that address.
+   * 2. It does not implicitly convert an existing credentials account to a
+   *    Google account. The previous behaviour was to absorb any account whose
+   *    email matched — meaning a Google identity that had never proved control
+   *    of that account took it over. Linking an existing password account to
+   *    Google is a deliberate, authenticated action and is out of scope here;
+   *    until it exists, this path rejects and the row is left untouched.
+   *
+   * @param {{ email: string, name: string, googleId: string, emailVerified: boolean }} profile
+   * @returns {Promise<{ user: object, isNew: boolean }>}
+   * @throws {Error} with `.code` set to one of the constants above.
+   */
+  static async findOrCreateGoogleUser({ email, name, googleId, emailVerified }) {
+    if (emailVerified !== true) {
+      const err = new Error('Google account email is not verified');
+      err.code = AuthService.GOOGLE_EMAIL_UNVERIFIED;
+      throw err;
+    }
+
     const existingUser = await this.findUserByEmail(email);
 
     if (existingUser) {
-      // If user exists but doesn't have Google provider, link their account
       if (existingUser.provider !== 'google') {
-        const user = await prisma.user.update({
-          where: { id: existingUser.id },
-          data: {
-            provider: 'google',
-            providerId: googleId,
-          },
-        });
-        return { user, isNew: false };
+        // Reject WITHOUT touching the row. The account is reachable by its
+        // owner with their password; nothing about this request proves the
+        // Google identity is that owner.
+        const err = new Error(
+          'An account with this email already exists. Sign in with your password instead.'
+        );
+        err.code = AuthService.GOOGLE_ACCOUNT_EXISTS;
+        throw err;
       }
       return { user: existingUser, isNew: false };
     }
