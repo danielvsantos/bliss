@@ -4,7 +4,7 @@ jest.mock('../../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
-const { validateLlmConfig, validateEnv } = require('../../../utils/validateEnv');
+const { validateLlmConfig, validateEnv, MIN_SECRET_LENGTH } = require('../../../utils/validateEnv');
 const logger = require('../../../utils/logger');
 
 const PROVIDER_ENV_KEYS = [
@@ -185,8 +185,10 @@ const CRITICAL_ENV_KEYS = [
 function setMinimalValidEnv() {
   process.env.DATABASE_URL = 'postgres://localhost/bliss';
   process.env.REDIS_URL = 'redis://localhost:6379';
-  process.env.INTERNAL_API_KEY = 'test-api-key-123';
-  process.env.ENCRYPTION_SECRET = 'test-encryption-secret';
+  // Both secrets are >= MIN_SECRET_LENGTH — the length floor is an error, so
+  // shorter fixtures would make every unrelated assertion below fail.
+  process.env.INTERNAL_API_KEY = 'test-api-key-123-padded-to-32-ch';
+  process.env.ENCRYPTION_SECRET = 'test-encryption-secret-32-chars!';
   process.env.GEMINI_API_KEY = 'test-gemini-key';
   process.env.LLM_PROVIDER = 'gemini';
   process.env.TWELVE_DATA_API_KEY = 'test-twelve-key';
@@ -382,6 +384,44 @@ describe('validateEnv()', () => {
     it('does not throw when required vars are missing (non-production mode)', () => {
       delete process.env.DATABASE_URL;
       expect(() => validateEnv()).not.toThrow();
+    });
+  });
+
+  describe('secret strength (minimum length)', () => {
+    it.each(['INTERNAL_API_KEY', 'ENCRYPTION_SECRET'])(
+      'throws in production when %s is shorter than the minimum',
+      (key) => {
+        process.env.NODE_ENV = 'production';
+        process.env[key] = 'too-short';
+        expect(() => validateEnv()).toThrow(
+          new RegExp(`${key} must be at least ${MIN_SECRET_LENGTH} characters`)
+        );
+      }
+    );
+
+    it('warns instead of throwing in development', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.INTERNAL_API_KEY = 'too-short';
+      expect(() => validateEnv()).not.toThrow();
+      const warnCalls = logger.warn.mock.calls.map(args => args[0]);
+      expect(warnCalls.some(m => m.includes('INTERNAL_API_KEY must be at least'))).toBe(true);
+    });
+
+    it('accepts a secret exactly at the minimum length', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.INTERNAL_API_KEY = 'x'.repeat(MIN_SECRET_LENGTH);
+      expect(() => validateEnv()).not.toThrow();
+    });
+
+    it('reports the missing-var error, not a length error, when a secret is absent', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.ENCRYPTION_SECRET;
+      expect(() => validateEnv()).toThrow('ENCRYPTION_SECRET is required');
+      try {
+        validateEnv();
+      } catch (e) {
+        expect(e.message).not.toContain('ENCRYPTION_SECRET must be at least');
+      }
     });
   });
 });

@@ -179,6 +179,33 @@ Both unit and integration tests run with `npm test` (Jest picks up all `*.test.j
 
 ## 13.4 Error Logging Strategy (Sentry)
 
+### Event Scrubbing (`beforeSend`)
+
+`Sentry.init()` in `src/app.js` installs a `beforeSend` hook from `@bliss/shared/sentry`, re-exported through `src/utils/sentryScrub.js`. It is the same implementation the API layer uses; see [`docs/specs/api/13-automated-testing-and-error-logging.md`](../api/13-automated-testing-and-error-logging.md) §13.4 for the full denylist and rationale.
+
+```js
+// src/app.js — line 1, before anything else
+const Sentry = require('@sentry/node');
+const { scrubEvent } = require('./utils/sentryScrub');
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+  integrations: [Sentry.prismaIntegration()],
+  beforeSend: scrubEvent,
+});
+```
+
+Two reasons this matters more in the backend than anywhere else:
+
+- Workers are where the axios calls live. An LLM-provider or Twelve Data failure arrives as an `AxiosError` whose `config.data` holds the transaction descriptions that were sent and whose `config.headers` holds the provider API key.
+- Field encryption is Prisma middleware, so a raw Prisma error in a worker carries **decrypted** descriptions and account numbers.
+
+`scrubEvent` deletes those envelopes and redacts denylisted keys, while leaving `exception.values[].value` and `.stacktrace` untouched — the issue stays debuggable. It never returns `null`: a `beforeSend` that throws or returns null drops every event silently, so its body is wrapped in a `try/catch` that returns the original event.
+
+The module is required on line 1 of `app.js`, before `validateEnv()`. It therefore has **zero imports** by design — requiring `encryption.js` from it would throw at import time whenever `ENCRYPTION_SECRET` is unset.
+
 ### The Problem with Express-Only Sentry
 
 `Sentry.setupExpressErrorHandler(app)` captures errors that flow through the Express middleware chain — i.e. exceptions thrown inside route handlers. BullMQ workers run in a completely separate process (or at least outside the Express request cycle). Worker failures are reported to BullMQ's internal event system, not to Express. As a result, no worker error would ever reach the Express Sentry handler.

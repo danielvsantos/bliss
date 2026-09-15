@@ -2,6 +2,7 @@ import { withSentryConfig } from '@sentry/nextjs';
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { buildSecurityHeaders } from './utils/securityHeaders.js';
 
 // Load environment variables from monorepo root .env
 // (Next.js only auto-loads from the app directory; this ensures the unified root .env is used)
@@ -11,7 +12,14 @@ config({ path: resolve(__dirname, '../../.env') });
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: process.env.VERCEL ? undefined : 'standalone',
+  output: 'standalone',
+
+  // Security headers for every response. HSTS is gated on an HTTPS
+  // NEXTAUTH_URL inside buildSecurityHeaders — see utils/securityHeaders.js.
+  async headers() {
+    return [{ source: '/(.*)', headers: buildSecurityHeaders() }];
+  },
+
   // Packages that use native Node.js modules or dynamic require() patterns
   // that webpack cannot bundle. Resolved from node_modules at runtime instead.
   // - @google-cloud/storage: uses native Node.js modules

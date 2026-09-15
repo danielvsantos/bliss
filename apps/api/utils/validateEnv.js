@@ -1,5 +1,25 @@
 const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 
+// Minimum length for the four secrets that guard everything else. Length only —
+// no entropy heuristic, which produces false negatives on legitimately random
+// strings and would be a boot-time landmine on a running instance.
+// scripts/setup.sh generates 48/48/48/32, so real installs pass.
+// Keep in sync with apps/backend/src/utils/validateEnv.js.
+export const MIN_SECRET_LENGTH = 32;
+
+/**
+ * Push a length error/warning for a secret that is present but too short.
+ * Missing values are reported separately by the caller.
+ */
+function checkSecretLength(name, value, errors) {
+  if (value && value.length < MIN_SECRET_LENGTH) {
+    errors.push(
+      `${name} must be at least ${MIN_SECRET_LENGTH} characters (got ${value.length}). ` +
+        'Generate one with: openssl rand -base64 48'
+    );
+  }
+}
+
 /**
  * Validates required environment variables at startup.
  * In production: throws on missing critical vars.
@@ -34,9 +54,16 @@ export function validateEnv() {
     errors.push('INTERNAL_API_KEY must not use a default value in production');
   }
 
-  if (!process.env.NEXTAUTH_SECRET) {
+  const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+  if (!nextAuthSecret) {
     errors.push('NEXTAUTH_SECRET is required');
   }
+
+  // ─── Secret strength ─────────────────────────────────────────────────────
+  checkSecretLength('ENCRYPTION_SECRET', encryptionSecret, errors);
+  checkSecretLength('JWT_SECRET_CURRENT', jwtSecret, errors);
+  checkSecretLength('NEXTAUTH_SECRET', nextAuthSecret, errors);
+  checkSecretLength('INTERNAL_API_KEY', apiKey, errors);
 
   // ─── Optional (warn if missing) ──────────────────────────────────────────
   if (!process.env.BACKEND_URL) {

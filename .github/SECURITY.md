@@ -55,5 +55,6 @@ Bliss is designed with security in mind:
 
 - **Encryption at rest**: Transaction descriptions, account numbers, and Plaid access tokens are encrypted with AES-256-GCM via Prisma middleware
 - **Multi-tenant isolation**: Every database query includes `tenantId` for strict query-level isolation
-- **No telemetry**: No data leaves your infrastructure
-- **Secret management**: All secrets are generated via `setup.sh` and stored in a local `.env` file
+- **No analytics telemetry**: Bliss ships no usage analytics and makes no outbound call about how you use it. Error reporting is the one exception, and it is opt-in — see below.
+- **Error reporting (opt-in)**: Bliss integrates with Sentry. With `SENTRY_DSN` unset — the default — the SDK is inert and nothing leaves your infrastructure. When you set `SENTRY_DSN`, exception events (message, stack trace, runtime metadata) are sent to the Sentry instance you configure. Those events pass through a scrubbing hook (`packages/shared/src/sentryScrub.js`) that removes HTTP client envelopes (`config`/`request`/`response`/`headers`) and denylisted keys such as `description`, `accountNumber`, `accessToken`, `authorization` and `x-api-key` before transmission. This matters because field encryption is Prisma middleware: a raw Prisma error carries *decrypted* values, so the hook — not the encryption layer — is what keeps them out of your error tracker. `sendDefaultPii` is left `false`.
+- **Secret management**: All secrets are generated via `setup.sh` and stored in a local `.env` file. `ENCRYPTION_SECRET`, `JWT_SECRET_CURRENT`, `NEXTAUTH_SECRET` and `INTERNAL_API_KEY` must each be at least 32 characters; the API and backend refuse to boot in production otherwise.

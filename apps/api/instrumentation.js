@@ -12,11 +12,16 @@ export async function register() {
 
     // Sentry must be initialized before OTEL so it can instrument spans
     const { init, prismaIntegration } = await import('@sentry/nextjs');
+    const { scrubEvent } = await import('./utils/sentryScrub.js');
     init({
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV,
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
       integrations: [prismaIntegration()],
+      // Strips HTTP client envelopes (axios `config.data`/`config.headers`) and
+      // denylisted keys — Prisma errors embed *decrypted* transaction fields
+      // because encryption is middleware. See packages/shared/src/sentryScrub.js.
+      beforeSend: scrubEvent,
     });
 
     // OpenTelemetry — only active when a collector endpoint is configured
@@ -35,9 +40,11 @@ export async function register() {
 
   if (process.env.NEXT_RUNTIME === 'edge') {
     const { init } = await import('@sentry/nextjs');
+    const { scrubEvent } = await import('./utils/sentryScrub.js');
     init({
       dsn: process.env.SENTRY_DSN,
       tracesSampleRate: 0.2,
+      beforeSend: scrubEvent,
     });
   }
 }
