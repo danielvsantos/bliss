@@ -1,0 +1,74 @@
+# Standing guard so the next critical advisory surfaces without anyone
+# remembering to look. Target: time-to-detection <= 7 days.
+#
+# Six ecosystems: the workspace root (which owns the pnpm overrides and the
+# shared toolchain) plus each of the four apps, plus GitHub Actions.
+# packages/shared declares only tsup and an optional peer, so it rides on the
+# root entry rather than getting one of its own.
+#
+# Minor and patch updates are grouped per ecosystem to keep PR volume
+# reviewable — an ungrouped config on a monorepo this size produces enough
+# noise that the PRs stop being read, which is the same as not having it.
+# Majors are deliberately left ungrouped: each one needs its own review.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      root-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      api-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      web-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/docs
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      docs-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      actions-all:
+        update-types: [minor, patch]

@@ -1,0 +1,66 @@
+# Blocks a new critical or high advisory in a PRODUCTION dependency path at PR
+# time, and sweeps weekly so an advisory published against an unchanged tree
+# still surfaces within 7 days.
+#
+# Deliberately scoped to --prod and --audit-level=high. Moderate and low
+# advisories must NOT fail the build: at the time of writing the tree carries
+# 56 moderate and 15 low, almost all in the docs site's transitive tree. A gate
+# that fires on those is a gate that gets muted within two weeks, and then the
+# critical it was built for goes through unnoticed.
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 07:00 UTC — before the week's Dependabot PRs land.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: pnpm audit (production paths)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      # --frozen-lockfile so the audit reflects exactly what would deploy.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ─── Allowlist ───────────────────────────────────────────────────────
+      # Empty as of the security-remediation sprint: `pnpm audit --prod
+      # --audit-level=high` reports 0 critical / 0 high. Every advisory that
+      # existed was cleared, either by bumping a direct dependency or by a
+      # pinned `pnpm.overrides` entry in the root package.json (see the
+      # "//overrides" note there).
+      #
+      # To add an entry when an advisory genuinely cannot be fixed, append to
+      # the command below and record WHY on the same line. An entry without a
+      # justification should not survive review.
+      #
+      #   --ignore GHSA-xxxx-xxxx-xxxx  # <package>: build-time only, not in
+      #                                 # any runtime path. Re-check <date>.
+      #
+      # "It's noisy" is not a justification. "Not reachable from a runtime
+      # code path, verified by <how>" is.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+
+      # Advisory: non-blocking visibility into what is accumulating below the
+      # gate, so moderates are not invisible just because they do not fail.
+      - name: Full advisory report (informational — never fails the build)
+        if: always()
+        run: pnpm audit --prod || true
