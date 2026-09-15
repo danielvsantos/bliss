@@ -228,6 +228,34 @@ describe('PUT /api/auth/change-password', () => {
     });
   });
 
+  // AuthService.hashPassword now returns `salt: null` — the scrypt salt lives
+  // inside the PHC string. The handler must persist that null rather than
+  // leaving a stale legacy salt in the column, or the row ends up in a state
+  // no format check describes.
+  it('persists a null passwordSalt when the hasher returns one', async () => {
+    mockPrisma.user.findUnique.mockResolvedValueOnce(CREDENTIAL_USER);
+    mockVerifyPassword.mockResolvedValueOnce(true);
+    mockHashPassword.mockResolvedValueOnce({
+      hash: '$scrypt$N=131072,r=8,p=1$c2FsdA==$aGFzaA==',
+      salt: null,
+    });
+    mockPrisma.user.update.mockResolvedValueOnce({});
+
+    const req = makeReq({ body: VALID_BODY });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: {
+        passwordHash: '$scrypt$N=131072,r=8,p=1$c2FsdA==$aGFzaA==',
+        passwordSalt: null,
+      },
+    });
+  });
+
   it('returns 500 on unexpected error and captures in Sentry', async () => {
     mockPrisma.user.findUnique.mockRejectedValueOnce(new Error('DB connection failed'));
 

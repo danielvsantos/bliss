@@ -63,18 +63,18 @@ export default async function handler(req, res) {
       return;
     }
 
-    // OAuth-only accounts have no password set — reject gracefully instead of crashing
-    if (!user.passwordHash || !user.passwordSalt) {
+    // OAuth-only accounts have no password set — reject gracefully instead of
+    // crashing. Note: only passwordHash is checked. passwordSalt is null for
+    // every scrypt-format row, so requiring it here would lock out every user
+    // the moment their hash is upgraded.
+    if (!user.passwordHash) {
       res.status(StatusCodes.UNAUTHORIZED).json({ error: 'Invalid credentials' });
       return;
     }
 
-    // Verify password using AuthService
-    const isValidPassword = await AuthService.verifyPassword(
-      password,
-      user.passwordHash,
-      user.passwordSalt
-    );
+    // Verifies against both storage formats and transparently upgrades a
+    // legacy PBKDF2-1,000 hash to scrypt on success.
+    const isValidPassword = await AuthService.verifyAndUpgrade(user, password);
 
     if (!isValidPassword) {
       res.status(StatusCodes.UNAUTHORIZED).json({ error: 'Invalid credentials' });

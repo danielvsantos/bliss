@@ -70,15 +70,16 @@ const nextAuthHandler = NextAuth({
 
                 const user = await AuthService.findUserByEmail(credentials.email);
 
-                if (!user || !user.passwordHash || !user.passwordSalt) {
+                // passwordSalt is null for every scrypt-format row, so only
+                // passwordHash may be required here.
+                if (!user || !user.passwordHash) {
                     throw new Error('Invalid email or password');
                 }
 
-                const isValid = await AuthService.verifyPassword(
-                    credentials.password,
-                    user.passwordHash,
-                    user.passwordSalt
-                );
+                // Same rehash-on-login path as pages/api/auth/signin.js. Two
+                // call sites, one implementation — a divergence here would
+                // mean NextAuth logins never upgrade their hash.
+                const isValid = await AuthService.verifyAndUpgrade(user, credentials.password);
 
                 if (!isValid) {
                     throw new Error('Invalid email or password');

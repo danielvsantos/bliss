@@ -125,11 +125,15 @@ describe('POST /api/users — user creation with password', () => {
     });
     expect(dbUser).not.toBeNull();
     expect(dbUser!.provider).toBe('credentials');
-    expect(dbUser!.passwordHash).toBeTruthy();
-    expect(dbUser!.passwordSalt).toBeTruthy();
+    // New rows are scrypt: the salt lives inside the PHC string in
+    // passwordHash, so the separate passwordSalt column is null. It stays
+    // populated only for legacy PBKDF2 rows that have not logged in since the
+    // upgrade.
+    expect(dbUser!.passwordHash).toMatch(/^\$scrypt\$/);
+    expect(dbUser!.passwordSalt).toBeNull();
 
     // Verify password actually matches
-    const isValid = await AuthService.verifyPassword('testpass123', dbUser!.passwordHash!, dbUser!.passwordSalt!);
+    const isValid = await AuthService.verifyPassword('testpass123', dbUser!.passwordHash!, dbUser!.passwordSalt);
     expect(isValid).toBe(true);
   });
 
