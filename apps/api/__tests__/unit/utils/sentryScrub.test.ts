@@ -45,20 +45,86 @@ describe('scrubEvent', () => {
       expect(JSON.stringify(event)).not.toContain('sk-live-abc123');
     });
 
-    it('strips top-level config / request / response / headers containers', () => {
+    it('strips top-level config / response / headers containers', () => {
       const event = scrubEvent({
         config: { data: 'secret-body' },
-        request: { data: 'secret-body' },
         response: { data: 'secret-body' },
         headers: { authorization: 'Bearer x' },
         message: 'boom',
       } as any);
 
       expect(event.config).toBeUndefined();
-      expect(event.request).toBeUndefined();
       expect(event.response).toBeUndefined();
       expect(event.headers).toBeUndefined();
       expect(event.message).toBe('boom');
+    });
+
+    // A nested `request` is an axios error's own property and must go.
+    it('redacts a request envelope nested inside the event tree', () => {
+      const event = scrubEvent({
+        extra: {
+          err: { request: { _header: 'GET / HTTP/1.1\r\nx-api-key: secret-key' } },
+        },
+      } as any);
+
+      expect((event as any).extra.err.request).toBe('[redacted]');
+      expect(JSON.stringify(event)).not.toContain('secret-key');
+    });
+  });
+
+  // Sentry's top-level `request` is its own Request context — url, method,
+  // headers, cookies, data — NOT an error's leaked property. Deleting it
+  // wholesale threw away which endpoint was called, which is exactly the
+  // over-scrubbing this hook is supposed to avoid.
+  describe('sanitizes rather than deletes the top-level request context', () => {
+    it('keeps the path and method', () => {
+      const event = scrubEvent({
+        request: { url: 'https://api.example.com/api/transactions', method: 'POST' },
+      } as any);
+
+      expect((event as any).request).toEqual({
+        url: 'https://api.example.com/api/transactions',
+        method: 'POST',
+      });
+    });
+
+    it('drops headers, cookies, data and env', () => {
+      const event = scrubEvent({
+        request: {
+          url: '/api/transactions',
+          method: 'POST',
+          headers: { 'x-api-key': 'secret-key', cookie: 'token=abc' },
+          cookies: { token: 'abc' },
+          data: { description: 'TESCO STORES 3421' },
+          env: { SERVER_NAME: 'api-1' },
+        },
+      } as any);
+
+      const request = (event as any).request;
+      expect(request).toEqual({ url: '/api/transactions', method: 'POST' });
+      expect(JSON.stringify(event)).not.toContain('secret-key');
+      expect(JSON.stringify(event)).not.toContain('TESCO STORES');
+    });
+
+    // Bliss list endpoints accept search and filter params, which can echo the
+    // plaintext of fields that are encrypted at rest.
+    it('strips the query string from the url', () => {
+      const event = scrubEvent({
+        request: {
+          url: '/api/transactions?search=TESCO%20STORES&page=2',
+          method: 'GET',
+          query_string: 'search=TESCO%20STORES&page=2',
+        },
+      } as any);
+
+      expect((event as any).request.url).toBe('/api/transactions');
+      expect((event as any).request.query_string).toBeUndefined();
+      expect(JSON.stringify(event)).not.toContain('TESCO');
+    });
+
+    it('handles a request context with no url or method', () => {
+      const event = scrubEvent({ request: { headers: { cookie: 'x' } } } as any);
+      expect((event as any).request).toEqual({});
     });
 
     it('redacts denylisted keys nested deep inside extra', () => {

@@ -62,11 +62,56 @@ const DENYLISTED_KEYS = new Set([
 ]);
 
 /**
- * Sub-objects removed wholesale rather than key-by-key. These are the HTTP
- * client envelopes — every one of their fields is either a credential, a
- * request body, or noise.
+ * Sub-objects removed wholesale rather than key-by-key, wherever they appear
+ * NESTED in the event tree. These are the HTTP client envelopes — every one of
+ * their fields is either a credential, a request body, or noise. An axios
+ * error's `config` and `request` land here, inside `mechanism.data`.
+ *
+ * Note the deliberate asymmetry with the event ROOT: a Sentry event has its own
+ * top-level `request` field, which is a completely different thing (the Request
+ * interface — url, method, headers, cookies, data). Deleting that wholesale
+ * threw away which endpoint was being called, which is genuinely useful and was
+ * never what this hook is for. It is sanitized instead — see sanitizeRequest.
  */
 const DENYLISTED_CONTAINERS = new Set(['config', 'request', 'response', 'headers']);
+
+/**
+ * Containers removed wholesale at the event root. `request` is excluded
+ * on purpose (see above); the rest are not part of Sentry's event schema, so
+ * their presence at the root means an error object leaked its own properties up.
+ */
+const ROOT_CONTAINERS_TO_DELETE = ['config', 'response', 'headers'];
+
+/**
+ * Reduce Sentry's top-level Request context to the parts that help debugging
+ * without carrying anything sensitive.
+ *
+ * Kept: `method`, and `url` with any query string removed.
+ * Dropped: `headers` and `cookies` (session tokens, x-api-key, authorization),
+ *   `data` (request bodies — transaction payloads), `env`, and `query_string`.
+ *
+ * The query string goes because Bliss's list endpoints accept search and filter
+ * parameters, which can echo the plaintext of fields that are encrypted at rest.
+ * The path alone answers "which endpoint" without that risk.
+ *
+ * @param {unknown} request
+ * @returns {object|undefined}
+ */
+function sanitizeRequest(request) {
+  if (!request || typeof request !== 'object') return undefined;
+
+  const sanitized = {};
+
+  if (typeof request.url === 'string') {
+    const [pathOnly] = request.url.split('?');
+    sanitized.url = pathOnly;
+  }
+  if (typeof request.method === 'string') {
+    sanitized.method = request.method;
+  }
+
+  return sanitized;
+}
 
 /** Strings longer than this are truncated. Stack frames are unaffected. */
 const MAX_STRING_LENGTH = 2048;
@@ -144,9 +189,13 @@ export function scrubEvent(event, _hint) {
     const seen = new WeakSet();
 
     // Axios/fetch envelopes hang off the top level on some integrations.
-    for (const container of DENYLISTED_CONTAINERS) {
+    // `request` is handled separately below — it is Sentry's own Request
+    // context there, not an error's leaked property.
+    for (const container of ROOT_CONTAINERS_TO_DELETE) {
       if (container in event) delete event[container];
     }
+
+    if (event.request) event.request = sanitizeRequest(event.request);
 
     if (event.extra) event.extra = scrubValue(event.extra, seen, 0);
     if (event.contexts) event.contexts = scrubValue(event.contexts, seen, 0);
