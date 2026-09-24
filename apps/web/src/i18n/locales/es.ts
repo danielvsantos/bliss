@@ -285,6 +285,9 @@ const es = {
           detailedList: "Lista detallada"
         },
         topCategories: "Principales categorías de gasto",
+        trendChart: {
+          movingAverageSuffix: " (prom. 3 meses)"
+        },
         comingSoon: {
           trends: "La vista de tendencias mensuales estará disponible pronto.",
           details: "La vista detallada de gastos estará disponible pronto."

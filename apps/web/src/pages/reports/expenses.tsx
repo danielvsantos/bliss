@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { format, differenceInMonths } from "date-fns";
@@ -50,6 +50,7 @@ import {
 } from "recharts";
 import { ExpenseTransactionList } from "@/components/entities/expense-transaction-list";
 import { translateCategoryType, translateCategoryGroup } from "@/lib/category-i18n";
+import { TREND_MOVING_AVERAGE_WINDOW, movingAverageKey, computeTrendMovingAverages } from "@/lib/trend-utils";
 import { MobileFilterDrawer } from "@/components/ui/mobile-filter-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -216,6 +217,11 @@ export default function ExpenseTrackingPage() {
     });
     return Object.values(trendData).sort((a, b) => (a.name as string).localeCompare(b.name as string));
   }, [analyticsData, selectedGroupsForTrend, selectedCategoryType]);
+
+  const trendChartDataWithAverages = useMemo(
+    () => computeTrendMovingAverages(trendChartData, selectedGroupsForTrend),
+    [trendChartData, selectedGroupsForTrend]
+  );
 
   const monthsDifference = useMemo(() => {
     if (!startDate || !endDate) return 1;
@@ -637,14 +643,17 @@ export default function ExpenseTrackingPage() {
                     <div className="h-[400px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
-                          data={trendChartData}
+                          data={trendChartDataWithAverages}
                           margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                         >
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="name" />
                           <YAxis />
+                          {/* Recharts' Tooltip filters out payload entries with a null/undefined
+                              value by default (filterNull), which is what hides the moving-average
+                              row for the first months where it isn't yet computed. */}
                           <Tooltip
-                            formatter={(value: number) => formatCurrency(value, selectedCurrency)}
+                            formatter={(value: number, name: string) => [formatCurrency(value, selectedCurrency), name]}
                             contentStyle={{
                               backgroundColor: "hsl(var(--popover))",
                               border: "1px solid hsl(var(--border))",
@@ -652,15 +661,36 @@ export default function ExpenseTrackingPage() {
                             }}
                           />
                           <RechartsLegend />
-                          {selectedGroupsForTrend.map((group, index) => (
-                            <Line
-                              key={group}
-                              type="monotone"
-                              dataKey={group}
-                              stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                              strokeWidth={2}
-                            />
-                          ))}
+                          {selectedGroupsForTrend.map((group, index) => {
+                            const color = CHART_COLORS[index % CHART_COLORS.length];
+                            const groupLabel = translateCategoryGroup(t, group);
+                            const hasMovingAverage = trendChartData.length >= TREND_MOVING_AVERAGE_WINDOW;
+                            return (
+                              <Fragment key={group}>
+                                <Line
+                                  type="monotone"
+                                  dataKey={group}
+                                  name={groupLabel}
+                                  stroke={color}
+                                  strokeWidth={hasMovingAverage ? 1.5 : 2}
+                                  strokeOpacity={hasMovingAverage ? 0.45 : 1}
+                                  dot={{ r: 2, strokeOpacity: hasMovingAverage ? 0.45 : 1, fillOpacity: hasMovingAverage ? 0.45 : 1 }}
+                                />
+                                {hasMovingAverage && (
+                                  <Line
+                                    type="monotone"
+                                    dataKey={movingAverageKey(group)}
+                                    name={`${groupLabel}${t('pages.expenses.breakdown.trendChart.movingAverageSuffix')}`}
+                                    stroke={color}
+                                    strokeWidth={2}
+                                    strokeDasharray="6 4"
+                                    dot={false}
+                                    connectNulls={false}
+                                  />
+                                )}
+                              </Fragment>
+                            );
+                          })}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
