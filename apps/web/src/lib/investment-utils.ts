@@ -47,6 +47,11 @@ export function itemNeedsEnrichment(
 ): boolean {
   // Server already flagged this item
   if (item.requiresEnrichment) return true;
+  // Row already carries enrichment data (e.g. native-adapter CSV imports that
+  // supply ticker/quantity/price directly) — nothing left to fill in, so the
+  // category-based fallback below would otherwise block Approve for no reason.
+  const row = item.originalImportRow;
+  if (row && row.ticker && row.assetQuantity != null && row.assetPrice != null) return false;
   // Category-based check (covers UI category changes before backend sync)
   if (!item.categoryId) return false;
   const cat = categoriesMap.get(item.categoryId);
