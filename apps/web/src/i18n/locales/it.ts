@@ -300,7 +300,7 @@ const it = {
         },
         topCategories: "Categorie di spesa principali",
         trendChart: {
-          movingAverageSuffix: " (media 3 mesi)"
+          movingAverageSuffix: " (media 6 mesi)"
         },
         comingSoon: {
           trends: "La vista delle tendenze mensili sar\u00E0 disponibile a breve.",

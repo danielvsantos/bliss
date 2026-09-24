@@ -1,4 +1,4 @@
-export const TREND_MOVING_AVERAGE_WINDOW = 3;
+export const TREND_MOVING_AVERAGE_WINDOW = 6;
 
 export const movingAverageKey = (group: string) => `${group}__avg`;
 
