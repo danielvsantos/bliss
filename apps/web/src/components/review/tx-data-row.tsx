@@ -106,14 +106,25 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, onRetry, disabled 
 
   const showActions = !isPromoted && !isSkipped;
 
-  const needsEnrichment = item.requiresEnrichment && item.enrichmentType === 'INVESTMENT';
-  const approveIcon = needsEnrichment ? <ArrowRight className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />;
-  const approveIconMobile = needsEnrichment ? <ArrowRight className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />;
-  const approveColor = needsEnrichment
+  // Approving these routes to the drawer instead of confirming directly — see
+  // itemNeedsReview() in investment-utils.ts, the single source of truth both
+  // this icon and the page-level onApprove handlers are driven by.
+  const needsReview = item.status === 'needs-enrichment' || item.status === 'needs-account';
+  const approveIcon = needsReview ? <ArrowRight className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />;
+  const approveIconMobile = needsReview ? <ArrowRight className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />;
+  const approveColor = needsReview
     ? 'text-warning hover:text-warning hover:bg-warning/10'
     : 'text-positive hover:text-positive hover:bg-positive/10';
-  const approveTitle = needsEnrichment ? 'Open drawer (enrichment required)' : 'Approve (Y)';
-  const approveTitleMobile = needsEnrichment ? 'Open drawer (enrichment required)' : 'Approve';
+  const approveTitle = item.status === 'needs-account'
+    ? 'Open drawer (account required)'
+    : item.status === 'needs-enrichment'
+      ? 'Open drawer (enrichment required)'
+      : 'Approve (Y)';
+  const approveTitleMobile = item.status === 'needs-account'
+    ? 'Open drawer (account required)'
+    : item.status === 'needs-enrichment'
+      ? 'Open drawer (enrichment required)'
+      : 'Approve';
 
   return (
     <>

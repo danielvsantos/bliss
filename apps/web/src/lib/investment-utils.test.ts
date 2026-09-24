@@ -3,8 +3,10 @@ import {
   isMandatoryEnrichmentCategory,
   isInvestmentCategory,
   itemNeedsEnrichment,
+  itemNeedsAccount,
+  itemNeedsReview,
 } from './investment-utils';
-import type { Category } from '@/types/api';
+import type { Category, StagedImportRow } from '@/types/api';
 import type { ReviewItem } from '@/components/review/types';
 
 function makeCategory(overrides: Partial<Category> = {}): Category {
@@ -42,6 +44,19 @@ const BASE_REVIEW_ITEM: ReviewItem = {
 
 function makeReviewItem(overrides: Partial<ReviewItem> = {}): ReviewItem {
   return Object.assign({}, BASE_REVIEW_ITEM, overrides);
+}
+
+function makeImportRow(overrides: Partial<StagedImportRow> = {}): StagedImportRow {
+  return Object.assign(
+    {
+      id: 'row-1',
+      stagedImportId: 'si-1',
+      rowNumber: 1,
+      rawData: {},
+      status: 'PENDING' as const,
+    },
+    overrides,
+  );
 }
 
 describe('isMandatoryEnrichmentCategory', () => {
@@ -125,5 +140,105 @@ describe('itemNeedsEnrichment', () => {
     const map = new Map<number, Category>([[1, cat]]);
     const item = makeReviewItem({ requiresEnrichment: false, categoryId: 1 });
     expect(itemNeedsEnrichment(item, map)).toBe(false);
+  });
+
+  // Regression: native-adapter CSV imports (Bliss Native CSV) supply
+  // ticker/quantity/price directly and the backend already clears
+  // requiresEnrichment for them — the category-based fallback used to ignore
+  // that and block Approve anyway whenever the resolved category was a
+  // mandatory-enrichment type (e.g. API_STOCK).
+  it('returns false when the row already carries ticker/quantity/price, even for a mandatory category', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({ ticker: 'AAPL', assetQuantity: 10, assetPrice: 150.25 }),
+    });
+    expect(itemNeedsEnrichment(item, map)).toBe(false);
+  });
+
+  it('returns true for a mandatory category when the row has no import data (e.g. Plaid source)', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({ requiresEnrichment: false, categoryId: 1, source: 'plaid' });
+    expect(itemNeedsEnrichment(item, map)).toBe(true);
+  });
+
+  it('returns true when the row is missing quantity even though ticker is present', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({ ticker: 'AAPL', assetQuantity: null, assetPrice: 150.25 }),
+    });
+    expect(itemNeedsEnrichment(item, map)).toBe(true);
+  });
+});
+
+describe('itemNeedsAccount', () => {
+  it('returns true for an import row with no accountId', () => {
+    const item = makeReviewItem({
+      source: 'import',
+      originalImportRow: makeImportRow({ accountId: null }),
+    });
+    expect(itemNeedsAccount(item)).toBe(true);
+  });
+
+  it('returns false for an import row with an accountId', () => {
+    const item = makeReviewItem({
+      source: 'import',
+      originalImportRow: makeImportRow({ accountId: 42 }),
+    });
+    expect(itemNeedsAccount(item)).toBe(false);
+  });
+
+  it('returns false for a Plaid-sourced item (always has an account)', () => {
+    const item = makeReviewItem({ source: 'plaid' });
+    expect(itemNeedsAccount(item)).toBe(false);
+  });
+});
+
+describe('itemNeedsReview', () => {
+  it('returns true when the account is missing, even if enrichment is not needed', () => {
+    const cat = makeCategory({ processingHint: 'MANUAL' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      source: 'import',
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({ accountId: null }),
+    });
+    expect(itemNeedsReview(item, map)).toBe(true);
+  });
+
+  it('returns true when enrichment is missing, even if the account is present', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      source: 'import',
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({ accountId: 42 }),
+    });
+    expect(itemNeedsReview(item, map)).toBe(true);
+  });
+
+  it('returns false when both the account and any required enrichment are present', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      source: 'import',
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({
+        accountId: 42,
+        ticker: 'AAPL',
+        assetQuantity: 10,
+        assetPrice: 150.25,
+      }),
+    });
+    expect(itemNeedsReview(item, map)).toBe(false);
   });
 });

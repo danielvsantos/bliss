@@ -20,6 +20,7 @@ import { withAuth } from '../../../../utils/withAuth.js';
  * Excluded rows (skipped silently — must be reviewed individually via the drawer):
  * - status NOT IN ('PENDING','ERROR','STAGED')  // CONFIRMED, SKIPPED, DUPLICATE, POTENTIAL_DUPLICATE
  * - requiresEnrichment === true                 // investments missing ticker/qty/price
+ * - accountId IS NULL                           // native-adapter rows with an unresolved account
  *
  * Returns: { confirmed: number }
  */
@@ -79,6 +80,11 @@ export default withAuth(async function handler(req, res) {
         // approved one-by-one via the drawer; bulk-approving would silently
         // commit re-imported transactions the user never examined.
         requiresEnrichment: { not: true },
+        // Native-adapter rows resolve accountId per row from the sheet and can
+        // come back unresolved. accountId is required to create a Transaction,
+        // so these must also go through the drawer one-by-one to get an account
+        // assigned — bulk-approving them would strand them at commit time.
+        accountId: { not: null },
         ...categoryClause,
       },
       data: { status: 'CONFIRMED' },

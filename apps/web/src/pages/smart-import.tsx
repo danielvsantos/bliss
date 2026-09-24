@@ -62,7 +62,7 @@ import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { translateCategoryName } from '@/lib/category-i18n';
 import { previewRow, inferDateFormat } from '@/lib/adapter-preview';
 import type { AmountStrategy } from '@/lib/adapter-preview';
-import { itemNeedsEnrichment } from '@/lib/investment-utils';
+import { itemNeedsReview } from '@/lib/investment-utils';
 import type { ImportAdapter, DetectAdapterResult, StagedImportRow, Account, Category, CreateAdapterRequest, SeedItem } from '@/types/api';
 import { TxDataRow } from '@/components/review/tx-data-row';
 import { GroupCard } from '@/components/review/group-card';
@@ -129,6 +129,11 @@ function toReviewItem(
     status = 'duplicate';
   else if (row.status === 'POTENTIAL_DUPLICATE')
     status = 'potential-duplicate';
+  else if (!row.accountId)
+    // Native-adapter rows resolve accountId per row from the sheet — it can
+    // come back unresolved. Transaction.accountId is required, so this row
+    // can't be committed until the user assigns one via the drawer.
+    status = 'needs-account';
   else if ((row as StagedImportRow & { requiresEnrichment?: boolean }).requiresEnrichment)
     status = 'needs-enrichment';
   else if (!row.confidence || (row.confidence ?? 0) < 0.5)
@@ -564,19 +569,15 @@ export default function SmartImportPage() {
 
   const handleRowStatusChange = useCallback(
     (rowId: string, newStatus: string) => {
-      // Prevent confirming rows that need mandatory enrichment — redirect to drawer
+      // Prevent confirming rows that need mandatory enrichment or an account
+      // assigned — redirect to the drawer instead. Uses the same shared
+      // predicate as the Transaction Review page (itemNeedsReview) rather
+      // than a page-local copy, so the two pages can't drift out of sync.
       if (newStatus === 'CONFIRMED') {
         const row = rows.find((r) => r.id === rowId);
-        if (row?.requiresEnrichment) {
+        if (row) {
           const item = toReviewItem(row, categoriesMap, accountsMap);
-          setDrawerItem(item);
-          return;
-        }
-        // Also check category dynamically (covers UI category changes before backend sync)
-        if (row?.suggestedCategoryId) {
-          const cat = categoriesMap.get(row.suggestedCategoryId);
-          if (cat && cat.type === 'Investments' && ['API_STOCK', 'API_CRYPTO', 'API_FUND'].includes(cat.processingHint ?? '')) {
-            const item = toReviewItem(row, categoriesMap, accountsMap);
+          if (itemNeedsReview(item, categoriesMap)) {
             setDrawerItem(item);
             return;
           }
@@ -598,7 +599,7 @@ export default function SmartImportPage() {
                     r.status !== 'CONFIRMED' &&
                     r.status !== 'SKIPPED' &&
                     r.status !== 'DUPLICATE' &&
-                    !r.requiresEnrichment,
+                    !itemNeedsReview(toReviewItem(r, categoriesMap, accountsMap), categoriesMap),
                 );
                 if (similar.length > 0) {
                   const catName = confirmedRow.suggestedCategory?.name ??

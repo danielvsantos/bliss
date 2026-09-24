@@ -251,4 +251,75 @@ describe('SmartImportPage', () => {
     const [{ data }] = updateRowMutate.mock.calls[0];
     expect(data.tags).toEqual(['Japan 2026']);
   });
+
+  // Regression: this page used to gate Approve with its own inline copy of
+  // the enrichment check (never checking accountId at all), independent from
+  // Transaction Review's. A native-adapter row with no resolved account was
+  // confirmed directly here — stranding it at commit time (accountId is a
+  // required column). Both pages must now share the same itemNeedsReview
+  // gate, which also covers the missing-account case.
+  it('routes Approve to the drawer instead of confirming when the import row has no account', async () => {
+    const updateRowMutate = vi.fn();
+    vi.mocked(UseImports.useUpdateImportRow).mockReturnValue(
+      mockMutationResult({ mutate: updateRowMutate }),
+    );
+    vi.mocked(UseImports.useAdapters).mockReturnValue(
+      mockQueryResult([{ id: 100, name: 'Bliss Native', matchSignature: { isNative: true } }]),
+    );
+    detectAdapterMock.mockImplementation((_file, opts) => {
+      opts.onSuccess({ headers: [], sampleData: [], adapter: { id: 100 } });
+    });
+    uploadMock.mockImplementation((_vars, opts) => {
+      opts.onSuccess({ stagedImportId: 'imp-1' });
+    });
+    vi.mocked(UseImports.useStagedImport).mockReturnValue(
+      mockQueryResult({
+        import: { status: 'READY', totalRows: 1, seedReady: false },
+        rows: [
+          {
+            id: 'row-1',
+            stagedImportId: 'imp-1',
+            rowNumber: 1,
+            rawData: {},
+            transactionDate: '2025-05-01',
+            description: 'Coffee Shop',
+            debit: 8,
+            credit: 0,
+            currency: 'USD',
+            accountId: null,
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'Food' },
+            confidence: 0.95,
+            classificationSource: 'USER_OVERRIDE',
+            status: 'PENDING',
+            requiresEnrichment: false,
+          },
+        ],
+        categorySummary: [{ categoryId: 10, count: 1, category: { id: 10, name: 'Food' } }],
+        pagination: { page: 1, limit: 50, total: 1, totalPages: 1 },
+      }),
+    );
+
+    renderPage();
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['csvdata'], 'test.csv', { type: 'text/csv' });
+    Object.defineProperty(input, 'files', { value: [file] });
+    fireEvent.change(input);
+
+    await waitFor(() => expect(detectAdapterMock).toHaveBeenCalledTimes(1));
+
+    const uploadButton = await screen.findByRole('button', { name: 'smartImport.uploadAndProcess' });
+    fireEvent.click(uploadButton);
+
+    const flatViewButton = await screen.findByRole('button', { name: /smartImport\.review\.flat/ });
+    fireEvent.click(flatViewButton);
+
+    // Desktop and mobile row layouts both render (CSS-hidden per breakpoint),
+    // so the title text appears twice — either one exercises the same handler.
+    fireEvent.click(screen.getAllByTitle('Open drawer (account required)')[0]);
+
+    expect(updateRowMutate).not.toHaveBeenCalled();
+    expect(screen.getAllByText('review.account').length).toBeGreaterThan(0);
+  });
 });

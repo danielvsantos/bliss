@@ -135,6 +135,24 @@ describe('POST /api/imports/[id]/bulk-confirm', () => {
     expect(res._body.error).toMatch(/invalid categoryid/i);
   });
 
+  it('excludes rows with an unresolved account from the confirm predicate', async () => {
+    mockPrisma.stagedImport.findFirst.mockResolvedValue({ id: 'import-1', status: 'PROCESSING' });
+    mockPrisma.stagedImportRow.updateMany.mockResolvedValue({ count: 2 });
+
+    const req = makeReq({ query: { id: 'import-1' }, body: {} });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const [{ where }] = mockPrisma.stagedImportRow.updateMany.mock.calls[0];
+    // Native-adapter rows with an unresolved account (accountId: null) must
+    // stay excluded from "Approve All" — bulk-confirming them would strand
+    // them at commit time since Transaction.accountId is required.
+    expect(where.accountId).toEqual({ not: null });
+    expect(where.requiresEnrichment).toEqual({ not: true });
+  });
+
   it('returns 405 for GET', async () => {
     const req = makeReq({ method: 'GET', query: { id: 'import-1' } });
     const res = makeRes();

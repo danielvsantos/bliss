@@ -40,7 +40,8 @@ import {
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { translateCategoryName } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
-import { itemNeedsEnrichment } from '@/lib/investment-utils';
+import { itemNeedsEnrichment, itemNeedsReview } from '@/lib/investment-utils';
+import { commitTransitionKind } from '@/lib/import-commit-status';
 import type { PlaidTransaction, Category, StagedImportRow } from '@/types/api';
 
 // ─── New review components ───────────────────────────────────────────
@@ -126,6 +127,11 @@ function importRowToReviewItem(
     status = 'duplicate';
   } else if (row.status === 'POTENTIAL_DUPLICATE') {
     status = 'potential-duplicate';
+  } else if (!row.accountId) {
+    // Native-adapter rows resolve accountId per row from the sheet — it can
+    // come back unresolved. Transaction.accountId is required, so this row
+    // can't be committed until the user assigns one via the drawer.
+    status = 'needs-account';
   } else if (row.requiresEnrichment) {
     status = 'needs-enrichment';
   } else if (row.confidence != null && row.confidence < reviewThreshold) {
@@ -234,7 +240,7 @@ export default function TransactionReviewPage() {
   const [selectedImportId, setSelectedImportId] = useState<string | null>(importIdParam);
   const [importPage, setImportPage] = useState(1);
   const [importCategoryFilter, setImportCategoryFilter] = useState<number | 'uncategorized' | null>(null);
-  const { data: stagedData, isLoading: stagedLoading } = useStagedImport(
+  const { data: stagedData, isLoading: stagedLoading, dataUpdatedAt: stagedDataUpdatedAt } = useStagedImport(
     selectedImportId,
     {
       page: importPage,
@@ -302,38 +308,67 @@ export default function TransactionReviewPage() {
   }, [stagedLoading]);
 
   // ── Detect COMMITTING → COMMITTED/READY transition ──
+  // Decision logic lives in commitTransitionKind() above (unit-tested there);
+  // this effect just runs the resulting side effects. commitInFlightRef is
+  // set by handleCommitImport's onSuccess — see commitTransitionKind's
+  // docstring for why it's needed alongside the observed-status check.
+  //
+  // Depends on `stagedDataUpdatedAt` (not just importInfo?.status/errorDetails)
+  // because TanStack Query's structural sharing (default in v5) reuses the
+  // SAME object reference across fetches when the new data is deep-equal to
+  // the cached data. A row that can never actually commit (e.g. stuck needing
+  // enrichment) returns an IDENTICAL commitResult on every retry — {0
+  // created, 1 remaining} every time — so importInfo/importInfo.errorDetails
+  // never change reference and this effect would otherwise never re-run past
+  // the first observation. dataUpdatedAt is a plain timestamp React Query
+  // bumps on every successful fetch regardless of structural sharing, so it
+  // reliably re-triggers this effect on every poll/refetch.
   const prevImportStatusRef = useRef<string | undefined>();
+  const commitInFlightRef = useRef<boolean>(false);
   useEffect(() => {
     const prevStatus = prevImportStatusRef.current;
     prevImportStatusRef.current = importInfo?.status;
 
-    if (!importInfo?.status || !prevStatus) return;
+    const kind = commitTransitionKind(prevStatus, importInfo?.status, commitInFlightRef.current);
+    if (!kind) return;
 
-    const wasCommitting = prevStatus === 'COMMITTING';
-    if (!wasCommitting) return;
-
-    const errorDetails = importInfo.errorDetails as
-      | { commitResult?: { transactionCount: number; remaining: number } }
+    const errorDetails = importInfo?.errorDetails as
+      | { commitResult?: { transactionCount: number; updateCount?: number; remaining: number } }
       | null;
     const result = errorDetails?.commitResult;
 
-    if (importInfo.status === 'COMMITTED') {
+    if (kind === 'committed') {
+      // COMMITTED is terminal — always fire, even if commitResult somehow
+      // isn't populated (defensive; toast just shows 0 counts in that case).
+      commitInFlightRef.current = false;
+      const parts = [];
+      if (result?.transactionCount) parts.push(`${result.transactionCount} created`);
+      if (result?.updateCount) parts.push(`${result.updateCount} updated`);
       toast({
         title: 'Import committed',
-        description: `${result?.transactionCount ?? 0} transactions created.`,
+        description: parts.length > 0 ? `${parts.join(', ')}.` : 'Done.',
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       // Import is fully committed — deselect it and refresh pending list
       queryClient.invalidateQueries({ queryKey: ['imports', 'pending'] });
       setSelectedImportId(null);
-    } else if (importInfo.status === 'READY' && result) {
+    } else if (kind === 'partial' && result) {
+      // READY can be reached for reasons other than a just-finished commit
+      // (e.g. it's the initial "ready to commit" state). Only treat it as a
+      // completion if a commitResult is actually attached; otherwise leave
+      // commitInFlightRef set so the next poll gets another chance to see it.
+      commitInFlightRef.current = false;
+      const parts = [];
+      if (result.transactionCount) parts.push(`${result.transactionCount} created`);
+      if (result.updateCount) parts.push(`${result.updateCount} updated`);
       toast({
         title: 'Partial commit complete',
-        description: `${result.transactionCount} transactions created. ${result.remaining} rows remaining.`,
+        description: `${parts.join(', ') || 'No rows committed'}. ${result.remaining} row(s) remaining.`,
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
-  }, [importInfo?.status, importInfo?.errorDetails, toast, queryClient]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- importInfo?.status/errorDetails intentionally omitted: stagedDataUpdatedAt is the reliable re-trigger (see docstring above); adding them back would just be redundant since they're read from the same importInfo snapshot captured inside the effect body.
+  }, [stagedDataUpdatedAt, toast, queryClient]);
 
   // ── Metadata ──
   const { data: categories = [] } = useCategories();
@@ -483,7 +518,7 @@ export default function TransactionReviewPage() {
       ),
     );
 
-    // Import matches: PENDING or POTENTIAL_DUPLICATE, non-enrichment
+    // Import matches: PENDING or POTENTIAL_DUPLICATE, ready to confirm as-is
     matches.push(
       ...importReviewItems.filter(
         (i) =>
@@ -496,7 +531,7 @@ export default function TransactionReviewPage() {
           // user must explicitly override each one via the drawer to commit it,
           // otherwise re-imported transactions would silently re-land.
           i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-          !itemNeedsEnrichment(i, categoriesMap),
+          !itemNeedsReview(i, categoriesMap),
       ),
     );
 
@@ -627,7 +662,8 @@ export default function TransactionReviewPage() {
           variant: 'destructive',
         });
       }
-      // Import group confirm — exclude items that need enrichment
+      // Import group confirm — exclude items that need the drawer first
+      // (investment enrichment or an unresolved account)
       const importItems = items.filter(
         (i) =>
           i.source === 'import' &&
@@ -638,9 +674,9 @@ export default function TransactionReviewPage() {
           // user must explicitly override each one via the drawer to commit it,
           // otherwise re-imported transactions would silently re-land.
           i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-          !itemNeedsEnrichment(i, categoriesMap),
+          !itemNeedsReview(i, categoriesMap),
       );
-      const importEnrichmentSkipped = items.filter(
+      const importReviewSkipped = items.filter(
         (i) =>
           i.source === 'import' &&
           i.promotionStatus !== 'CONFIRMED' &&
@@ -650,7 +686,7 @@ export default function TransactionReviewPage() {
           // user must explicitly override each one via the drawer to commit it,
           // otherwise re-imported transactions would silently re-land.
           i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-          itemNeedsEnrichment(i, categoriesMap),
+          itemNeedsReview(i, categoriesMap),
       ).length;
       for (const item of importItems) {
         handleImportRowStatus(item.originalImportRow!, 'CONFIRMED');
@@ -660,14 +696,14 @@ export default function TransactionReviewPage() {
         // refetched grouped view reflects the drained category. See
         // `clearStaleCategoryFilters` docstring.
         clearStaleCategoryFilters();
-        const desc = importEnrichmentSkipped > 0
-          ? `${importItems.length} row(s) confirmed. ${importEnrichmentSkipped} investment row(s) need enrichment first.`
+        const desc = importReviewSkipped > 0
+          ? `${importItems.length} row(s) confirmed. ${importReviewSkipped} row(s) need attention first (enrichment or account).`
           : `${importItems.length} row(s) confirmed for commit.`;
         toast({ title: desc });
-      } else if (importEnrichmentSkipped > 0) {
+      } else if (importReviewSkipped > 0) {
         toast({
-          title: `${importEnrichmentSkipped} investment row(s) need enrichment data`,
-          description: 'Open each row to provide ticker, quantity, and price.',
+          title: `${importReviewSkipped} row(s) need attention before they can be confirmed`,
+          description: 'Open each row to provide the missing ticker/quantity/price or account.',
           variant: 'destructive',
         });
       }
@@ -735,16 +771,31 @@ export default function TransactionReviewPage() {
         { id: importId },
         {
           onSuccess: () => {
+            // Signal to the status-transition effect above that a commit is
+            // running, so it can show the completion toast when we next see
+            // a commitResult — even if we never observe the intermediate
+            // COMMITTING state via polling (fast commits finish before the
+            // 2s polling interval fires). See that effect's docstring.
+            commitInFlightRef.current = true;
+            // Invalidate the staged-import query so TanStack Query refetches
+            // immediately — the refetch picks up the new COMMITTING status
+            // and re-enables polling until the job completes.
+            queryClient.invalidateQueries({ queryKey: ['imports', 'staged', importId] });
             toast({
               title: 'Commit started',
               description: 'Your transactions are being committed in the background...',
             });
           },
-          onError: () => toast({ title: 'Failed to commit', variant: 'destructive' }),
+          onError: () => {
+            // Safety: clear the ref so a subsequent poll doesn't fire a
+            // stale transition from a failed attempt.
+            commitInFlightRef.current = false;
+            toast({ title: 'Failed to commit', variant: 'destructive' });
+          },
         },
       );
     },
-    [commitImport, toast],
+    [commitImport, toast, queryClient],
   );
 
   const handleCancelImport = useCallback(
@@ -763,8 +814,8 @@ export default function TransactionReviewPage() {
   // ── Approve / Skip via ReviewItem ──
   const handleItemApprove = useCallback(
     (item: ReviewItem) => {
-      // Investment items that need mandatory enrichment MUST go through the drawer
-      if (itemNeedsEnrichment(item, categoriesMap)) {
+      // Items missing investment enrichment or an account MUST go through the drawer
+      if (itemNeedsReview(item, categoriesMap)) {
         setSelectedItem(item);
         return;
       }
@@ -913,7 +964,7 @@ export default function TransactionReviewPage() {
                 i.id !== item.id &&
                 i.description === item.description &&
                 i.promotionStatus === 'CLASSIFIED' &&
-                !i.requiresEnrichment,
+                !itemNeedsEnrichment(i, categoriesMap),
             )
           : [];
         const otherImport = importReviewItems.filter(
@@ -923,7 +974,7 @@ export default function TransactionReviewPage() {
             i.promotionStatus !== 'CONFIRMED' &&
             i.promotionStatus !== 'SKIPPED' &&
             i.promotionStatus !== 'DUPLICATE' &&
-            !itemNeedsEnrichment(i, categoriesMap),
+            !itemNeedsReview(i, categoriesMap),
         );
         if (otherPlaid.length + otherImport.length > 0) {
           setPendingDrawerSave(data);

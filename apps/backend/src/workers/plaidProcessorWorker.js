@@ -14,10 +14,13 @@ const {
     DEFAULT_REVIEW_THRESHOLD,
     TOP_N_SEEDS,
     PHASE2_CONCURRENCY,
+    MANDATORY_ENRICHMENT_HINTS,
 } = require('../config/classificationConfig');
 
-// processingHints that indicate an investment transaction requiring enrichment
-const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND', 'MANUAL']);
+// processingHints that indicate an investment transaction requiring enrichment.
+// MANUAL is deliberately excluded — see the comment on MANDATORY_ENRICHMENT_HINTS
+// in classificationConfig.js.
+const INVESTMENT_HINTS = new Set(MANDATORY_ENRICHMENT_HINTS);
 
 const QUEUE_NAME = 'plaid-processing';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';

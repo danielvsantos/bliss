@@ -345,6 +345,65 @@ describe('TransactionReviewPage', () => {
     expect(data.tags).toEqual(['Japan 2026']);
   });
 
+  // Regression: a native-adapter CSV row with no resolved accountId used to be
+  // indistinguishable from a normal "ai-approved" row and clicking Approve
+  // would confirm it directly — stranding it at commit time (accountId is a
+  // required column). It must now route to the drawer instead, same as a row
+  // missing investment enrichment.
+  it('routes Approve to the drawer instead of confirming when the import row has no account', () => {
+    const updateRowMutate = vi.fn();
+    vi.mocked(UseImports.useUpdateImportRow).mockReturnValue(
+      mockMutationResult({ mutate: updateRowMutate }),
+    );
+    vi.mocked(UseImports.usePendingImports).mockReturnValue(
+      mockQueryResult({ imports: [{ id: 'imp-1', fileName: 'march.csv', pendingRowCount: 1 }] }),
+    );
+    vi.mocked(UseImports.useStagedImport).mockReturnValue(
+      mockQueryResult({
+        import: { id: 'imp-1', fileName: 'march.csv' },
+        rows: [
+          {
+            id: 'row-1',
+            stagedImportId: 'imp-1',
+            rowNumber: 1,
+            rawData: {},
+            transactionDate: '2025-05-01',
+            description: 'Coffee Shop',
+            debit: 8,
+            credit: 0,
+            currency: 'USD',
+            accountId: null,
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'Groceries' },
+            confidence: 0.95,
+            classificationSource: 'USER_OVERRIDE',
+            status: 'PENDING',
+            requiresEnrichment: false,
+          },
+        ],
+        categorySummary: [{ categoryId: 10, count: 1, category: { id: 10, name: 'Groceries' } }],
+        pagination: { page: 1, limit: 50, total: 1 },
+      }),
+    );
+    vi.mocked(UseMetadata.useAccounts).mockReturnValue(
+      mockQueryResult([{ id: 42, name: 'Checking' }]),
+    );
+
+    renderPage('?source=imports');
+
+    // Default view is grouped (rows hidden until a category is expanded);
+    // switch to flat so the row's Approve button is directly clickable.
+    fireEvent.click(screen.getByText('Grouped'));
+    // Desktop and mobile row layouts both render (CSS-hidden per breakpoint),
+    // so the title text appears twice — either one exercises the same handler.
+    fireEvent.click(screen.getAllByTitle('Open drawer (account required)')[0]);
+
+    // Confirming was skipped — the drawer opened instead, with its account
+    // selector visible so the user can assign one.
+    expect(updateRowMutate).not.toHaveBeenCalled();
+    expect(screen.getAllByText('review.account').length).toBeGreaterThan(0);
+  });
+
   // ─── FAILED transactions — visibility & retry ────────────────────────────
 
   const FAILED_TX = {
