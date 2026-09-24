@@ -458,6 +458,43 @@ describe('commitWorker — processCommitJob', () => {
     expect(Sentry.captureException).toHaveBeenCalled();
   });
 
+  it('does not overwrite status or page Sentry on a non-final retry attempt', async () => {
+    prisma.stagedImport.findFirst.mockRejectedValueOnce(new Error('Prisma Accelerate cold start'));
+
+    // attemptsMade: 0 with attempts: 2 → this is the first of two allowed
+    // attempts, so BullMQ will retry. The StagedImport must stay COMMITTING
+    // so the retry's own guard check passes instead of failing with a
+    // misleading "status is ERROR, expected COMMITTING" error.
+    const job = makeJob();
+    job.opts = { attempts: 2 };
+    job.attemptsMade = 0;
+
+    await expect(processCommitJob(job)).rejects.toThrow('Prisma Accelerate cold start');
+
+    expect(prisma.stagedImport.update).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('sets status to ERROR and pages Sentry once retries are exhausted', async () => {
+    prisma.stagedImport.findFirst.mockRejectedValueOnce(new Error('Prisma Accelerate cold start'));
+
+    const job = makeJob();
+    job.opts = { attempts: 2 };
+    job.attemptsMade = 1; // second (final) attempt
+
+    await expect(processCommitJob(job)).rejects.toThrow('Prisma Accelerate cold start');
+
+    expect(prisma.stagedImport.update).toHaveBeenCalledWith({
+      where: { id: 'si-1' },
+      data: {
+        status: 'ERROR',
+        progress: 0,
+        errorDetails: { message: 'Prisma Accelerate cold start' },
+      },
+    });
+    expect(Sentry.captureException).toHaveBeenCalled();
+  });
+
   // ─── Tag linking ────────────────────────────────────────────────────────
 
   it('links tags to created transactions', async () => {
