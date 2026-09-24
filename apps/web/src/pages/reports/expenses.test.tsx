@@ -152,10 +152,13 @@ describe('ExpenseTrackingPage - Monthly Trends moving average', () => {
     await user.click(item);
   };
 
-  it('renders both the de-emphasized raw line and the emphasized dashed average line once >=3 months of data exist', async () => {
+  it('renders both the de-emphasized raw line and the emphasized dashed average line once >=6 months of data exist', async () => {
     vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(
       mockQueryResult(
-        buildAnalyticsData(['2023-01', '2023-02', '2023-03', '2023-04'], { 'Dining Out': [300, 1700, 400, 900] })
+        buildAnalyticsData(
+          ['2023-01', '2023-02', '2023-03', '2023-04', '2023-05', '2023-06'],
+          { 'Dining Out': [300, 1700, 400, 900, 1200, 350] }
+        )
       ),
     );
 
@@ -180,9 +183,14 @@ describe('ExpenseTrackingPage - Monthly Trends moving average', () => {
     expect(rawLine?.dataset.stroke).toBe(avgLine?.dataset.stroke);
   });
 
-  it('renders only the raw line when fewer than 3 months of data exist for the selected group', async () => {
+  it('renders only the raw line when fewer than 6 months of data exist for the selected group', async () => {
     vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(
-      mockQueryResult(buildAnalyticsData(['2023-01', '2023-02'], { 'Dining Out': [300, 400] })),
+      mockQueryResult(
+        buildAnalyticsData(
+          ['2023-01', '2023-02', '2023-03', '2023-04', '2023-05'],
+          { 'Dining Out': [300, 400, 250, 500, 350] }
+        )
+      ),
     );
 
     const { user } = renderPage();
@@ -206,8 +214,11 @@ describe('ExpenseTrackingPage - Monthly Trends moving average', () => {
     vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(
       mockQueryResult(
         buildAnalyticsData(
-          ['2023-01', '2023-02', '2023-03', '2023-04'],
-          { 'Dining Out': [300, 1700, 400, 900], Groceries: [200, 250, 300, 210] }
+          ['2023-01', '2023-02', '2023-03', '2023-04', '2023-05', '2023-06'],
+          {
+            'Dining Out': [300, 1700, 400, 900, 1200, 350],
+            Groceries: [200, 250, 300, 210, 240, 260],
+          }
         ),
       ),
     );
