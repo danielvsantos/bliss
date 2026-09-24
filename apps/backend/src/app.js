@@ -57,6 +57,9 @@ app.use('/api/admin/rebuild', require('./routes/rebuild'));
 app.use('/api/ticker', require('./routes/ticker'));
 app.use('/api/security-master', require('./routes/securityMaster'));
 app.use('/api/insights', require('./routes/insights'));
+// Authenticated on purpose — version strings are information disclosure and
+// must not sit on the unauthenticated /health endpoints. See routes/runtime.js.
+app.use('/api/runtime', require('./routes/runtime'));
 
 // Health Check Endpoint — pings Redis to detect degraded state
 app.get('/health', async (req, res) => {
