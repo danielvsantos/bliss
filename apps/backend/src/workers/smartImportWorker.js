@@ -130,6 +130,27 @@ function applyClassificationToRowData(rowData, result, autoPromoteThreshold, cat
     return false;
 }
 
+/**
+ * Compute requiresEnrichment/enrichmentType on a native-adapter rowData object
+ * in-place. Mirrors applyClassificationToRowData's investment check for the
+ * AI-classification path — the native adapter resolves category directly from
+ * a CSV column instead of calling classify(), so nothing else validates that
+ * an investment-category row actually carries ticker/quantity/price before
+ * it's eligible to auto-confirm. rowData.ticker/assetQuantity/assetPrice must
+ * already be set before calling this.
+ *
+ * @returns {boolean} true when the row requires enrichment (blocks auto-confirm)
+ */
+function applyNativeInvestmentCheck(rowData, category) {
+    const isInvestmentCategory = category &&
+        category.type === 'Investments' &&
+        INVESTMENT_HINTS.has(category.processingHint);
+    rowData.requiresEnrichment = !!isInvestmentCategory &&
+        (!rowData.ticker || rowData.assetQuantity == null || rowData.assetPrice == null);
+    if (isInvestmentCategory) rowData.enrichmentType = 'INVESTMENT';
+    return rowData.requiresEnrichment;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // UPDATE DIFF COMPUTATION (CSV round-trip)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -529,6 +550,7 @@ const processSmartImportJob = async (job) => {
                 // Native adapter: resolve account + category from CSV columns
                 const resolvedAccountId  = resolveId(row.account,   accountNameToId, accountIdSet)  ?? accountId;
                 const resolvedCategoryId = resolveId(row.category, categoryNameToId, categoryIdSet);
+                const resolvedCategory   = resolvedCategoryId ? categoryById.get(resolvedCategoryId) : null;
 
                 rowData.accountId            = resolvedAccountId;
                 rowData.suggestedCategoryId  = resolvedCategoryId;
@@ -540,7 +562,10 @@ const processSmartImportJob = async (job) => {
                 rowData.ticker               = row.ticker && /[a-zA-Z]/.test(String(row.ticker).trim()) ? String(row.ticker).trim() : null;
                 rowData.assetQuantity        = row.assetQuantity || null;
                 rowData.assetPrice           = row.assetPrice    || null;
-                rowData.requiresEnrichment   = false;
+
+                // Without this, e.g. a "Stocks" row with no ticker/qty/price on the sheet
+                // was silently auto-confirmed and committed with no enrichment data.
+                applyNativeInvestmentCheck(rowData, resolvedCategory);
 
                 // Per-row duplicate detection for native adapter
                 if (resolvedAccountId) {
@@ -567,7 +592,7 @@ const processSmartImportJob = async (job) => {
                     }
                 }
 
-                if (resolvedCategoryId && resolvedAccountId && rowData.status === 'PENDING') {
+                if (resolvedCategoryId && resolvedAccountId && !rowData.requiresEnrichment && rowData.status === 'PENDING') {
                     rowData.status = 'CONFIRMED';
                 } else if (!resolvedCategoryId || !resolvedAccountId) {
                     const missing = [];
@@ -575,6 +600,9 @@ const processSmartImportJob = async (job) => {
                     if (!resolvedCategoryId) missing.push('category');
                     rowData.errorMessage = `Could not resolve ${missing.join(' or ')} from CSV value`;
                 }
+                // requiresEnrichment rows with a resolved category/account stay PENDING
+                // (no errorMessage — this isn't an error, just needs the drawer) so the
+                // Review page's needs-enrichment gating and status badge apply to them.
             } else if (row.description) {
                 // AI rows: collect for Phase 1/2 (do NOT classify here)
                 aiEntries.push({ rowData, description: row.description });
@@ -992,6 +1020,7 @@ module.exports = {
     computeTransactionHash,
     // Exported for testing
     applyClassificationToRowData,
+    applyNativeInvestmentCheck,
     applyDuplicateStatus,
     computeUpdateDiff,
     buildAiFrequencyMap,

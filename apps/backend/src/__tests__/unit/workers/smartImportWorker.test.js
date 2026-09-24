@@ -57,6 +57,7 @@ jest.mock('../../../queues/smartImportQueue', () => ({
 
 const {
   applyClassificationToRowData,
+  applyNativeInvestmentCheck,
   applyDuplicateStatus,
   computeUpdateDiff,
   buildAiFrequencyMap,
@@ -161,6 +162,61 @@ describe('smartImportWorker — helper functions', () => {
       applyClassificationToRowData(rowData, result, 0.90, categoryById);
 
       expect(rowData.category).toBe('Food & Drink');
+    });
+  });
+
+  // ─── applyNativeInvestmentCheck ────────────────────────────────────────────
+  // Regression: native-adapter (Bliss Native CSV) rows resolve category
+  // directly from a CSV column, bypassing applyClassificationToRowData
+  // entirely. Before this check existed, requiresEnrichment was hardcoded to
+  // false for every native-adapter row, so an investment-category row with no
+  // ticker/quantity/price (e.g. "Stocks" with blank enrichment columns) was
+  // silently auto-confirmed and committed as a Transaction with no asset data.
+
+  describe('applyNativeInvestmentCheck', () => {
+    const stocksCategory = { id: 20, name: 'Stocks', type: 'Investments', processingHint: 'API_STOCK' };
+    const groceriesCategory = { id: 10, name: 'Groceries', type: 'Essentials', processingHint: null };
+
+    it('requires enrichment for an investment category with no ticker/quantity/price', () => {
+      const rowData = { ticker: null, assetQuantity: null, assetPrice: null };
+
+      const result = applyNativeInvestmentCheck(rowData, stocksCategory);
+
+      expect(result).toBe(true);
+      expect(rowData.requiresEnrichment).toBe(true);
+      expect(rowData.enrichmentType).toBe('INVESTMENT');
+    });
+
+    it('does not require enrichment for an investment category that already has ticker/quantity/price', () => {
+      const rowData = { ticker: 'GOOG', assetQuantity: 1, assetPrice: 100 };
+
+      const result = applyNativeInvestmentCheck(rowData, stocksCategory);
+
+      expect(result).toBe(false);
+      expect(rowData.requiresEnrichment).toBe(false);
+      expect(rowData.enrichmentType).toBe('INVESTMENT');
+    });
+
+    it('requires enrichment when only some of ticker/quantity/price are present', () => {
+      const rowData = { ticker: 'GOOG', assetQuantity: null, assetPrice: 100 };
+
+      expect(applyNativeInvestmentCheck(rowData, stocksCategory)).toBe(true);
+    });
+
+    it('does not require enrichment for a non-investment category', () => {
+      const rowData = { ticker: null, assetQuantity: null, assetPrice: null };
+
+      const result = applyNativeInvestmentCheck(rowData, groceriesCategory);
+
+      expect(result).toBe(false);
+      expect(rowData.requiresEnrichment).toBe(false);
+      expect(rowData.enrichmentType).toBeUndefined();
+    });
+
+    it('does not require enrichment when the category is null (unresolved)', () => {
+      const rowData = { ticker: null, assetQuantity: null, assetPrice: null };
+
+      expect(applyNativeInvestmentCheck(rowData, null)).toBe(false);
     });
   });
 
