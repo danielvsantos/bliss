@@ -299,6 +299,9 @@ const en = {
           detailedList: "Detailed List"
         },
         topCategories: "Top Expense Categories",
+        trendChart: {
+          movingAverageSuffix: " (3-mo avg)"
+        },
         comingSoon: {
           trends: "Monthly trend view will be available soon.",
           details: "Detailed expense list view will be available soon."

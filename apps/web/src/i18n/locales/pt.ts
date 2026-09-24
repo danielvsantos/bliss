@@ -299,6 +299,9 @@ const pt = {
           detailedList: "Lista Detalhada"
         },
         topCategories: "Principais Categorias de Despesa",
+        trendChart: {
+          movingAverageSuffix: " (média de 3 meses)"
+        },
         comingSoon: {
           trends: "A visualização de tendências mensais estará disponível em breve.",
           details: "A lista detalhada de despesas estará disponível em breve."
