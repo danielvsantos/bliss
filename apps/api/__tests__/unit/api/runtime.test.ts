@@ -133,6 +133,26 @@ describe('GET /api/runtime', () => {
       const deps = res._body!.services.api.dependencies;
       expect(deps.sharp).toMatch(/^\d+\.\d+\.\d+/);
       expect(deps.postcss).toMatch(/^\d+\.\d+\.\d+/);
+      // nanoid sits a level deeper (postcss -> nanoid) and is the one the
+      // first deployed build reported as null.
+      expect(deps.nanoid).toMatch(/^\d+\.\d+\.\d+/);
+    });
+
+    // null has to mean "genuinely not installed", not "the lookup failed" —
+    // otherwise a vulnerable version and an absent one look identical, which
+    // would make the report worse than useless for the packages that carried
+    // advisories.
+    it('resolves every tracked package present in this tree', async () => {
+      stubFetch({ '/api/runtime': { body: {} }, '/version.json': { body: {} } });
+
+      const res = makeRes();
+      await handler(makeReq(), res);
+
+      const unresolved = Object.entries(res._body!.services.api.dependencies)
+        .filter(([, v]) => v === null)
+        .map(([name]) => name);
+
+      expect(unresolved).toEqual([]);
     });
 
     it('lifts the worker heartbeat out of the backend payload', async () => {

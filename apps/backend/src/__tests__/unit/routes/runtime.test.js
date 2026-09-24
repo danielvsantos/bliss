@@ -149,6 +149,17 @@ describe('GET /api/runtime', () => {
       if (gotMajor === major) expect(gotMinor).toBeGreaterThanOrEqual(minor);
     });
 
+        // null has to mean "genuinely not installed", not "the lookup failed" —
+    // otherwise a vulnerable version and an absent one look identical. ws was
+    // the one the first deployed build reported as null.
+    it('resolves ws, which is only reachable through its optional peer parent', async () => {
+      const res = await request(makeApp())
+        .get('/api/runtime')
+        .set('x-api-key', API_KEY);
+
+      expect(res.body.dependencies.ws).toMatch(/^\d+\.\d+\.\d+/);
+    });
+
     it('resolves a package whose exports map blocks deep package.json imports', async () => {
       // openai reports ERR_PACKAGE_PATH_NOT_EXPORTED for
       // require('openai/package.json'), which looks nothing like a missing

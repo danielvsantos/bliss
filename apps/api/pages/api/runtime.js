@@ -54,39 +54,93 @@ const TRACKED_PACKAGES = [
   { name: 'form-data', via: 'axios' },
 ];
 
+const fs = require('fs');
+const path = require('path');
+
+/** Walk up from a resolved file to the owning package's manifest. */
+function manifestVersionFrom(entryPath, name) {
+  let dir = path.dirname(entryPath);
+
+  for (let depth = 0; depth < 12; depth += 1) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+      if (pkg.name === name) return pkg.version ?? null;
+    } catch {
+      // Keep walking.
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/** Look for `<base>/../node_modules/<name>/package.json`, walking upward. */
+function manifestFromNodeModules(base, name) {
+  let dir = base;
+
+  for (let depth = 0; depth < 12; depth += 1) {
+    try {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(dir, 'node_modules', name, 'package.json'), 'utf8'),
+      );
+      if (pkg.name === name) return pkg.version ?? null;
+    } catch {
+      // Not here — keep walking up.
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 /**
  * Resolve an installed package's version.
  *
- * Walks up from the resolved entry rather than reading `<pkg>/package.json`
- * directly, because any package whose `exports` map omits `./package.json`
- * rejects that deep import outright with ERR_PACKAGE_PATH_NOT_EXPORTED — which
- * resembles nothing like a missing install. `via` handles pnpm's isolated
- * layout, where a transitive is installed but unresolvable from the app root.
+ * Tries several bases before giving up, so that **null means the package is
+ * genuinely not installed in this image** rather than "the lookup failed".
+ * That distinction matters more here than anywhere: `sharp`, `postcss` and
+ * `nanoid` all carried advisories, and a null that might mean either thing
+ * would make a vulnerable version and an absent one look identical.
+ *
+ * Several bases are needed because Next's standalone output prunes and
+ * restructures node_modules by static tracing, so a package reachable through
+ * its `via` parent in the dev tree may only be reachable from the service root
+ * once deployed.
+ *
+ * The final filesystem sweep catches packages `require.resolve` cannot reach at
+ * all — one whose `exports` map declares no usable CJS entry still has a
+ * manifest on disk.
  */
 function resolveVersion(name, via) {
-  try {
-    const paths = via ? [require.resolve(via).replace(/[\\/][^\\/]*$/, '')] : undefined;
-    const entry = require.resolve(name, paths ? { paths } : undefined);
+  const bases = [];
 
-    const fs = require('fs');
-    const path = require('path');
-    let dir = path.dirname(entry);
-
-    for (let depth = 0; depth < 12; depth += 1) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-        if (pkg.name === name) return pkg.version ?? null;
-      } catch {
-        // Keep walking.
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
+  if (via) {
+    try {
+      bases.push(path.dirname(require.resolve(via)));
+    } catch {
+      // Parent not installed; the other bases may still find the child.
     }
-    return null;
-  } catch {
-    return null;
   }
+  bases.push(process.cwd());
+
+  for (const base of bases) {
+    try {
+      const entry = require.resolve(name, { paths: [base] });
+      const version = manifestVersionFrom(entry, name);
+      if (version) return version;
+    } catch {
+      // Try the next base.
+    }
+  }
+
+  for (const base of bases) {
+    const version = manifestFromNodeModules(base, name);
+    if (version) return version;
+  }
+
+  return null;
 }
 
 let cachedDependencies = null;

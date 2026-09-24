@@ -81,26 +81,103 @@ function manifestVersionFrom(entryPath, name) {
 }
 
 /**
+ * Directories to attempt resolution from, most specific first.
+ *
+ * More than one is necessary because the deployed image is not shaped like the
+ * dev tree. Next's standalone output and a production-only pnpm install both
+ * prune and restructure node_modules, so a package that resolves through its
+ * `via` parent locally may only be reachable from the service root once
+ * deployed — or vice versa.
+ *
+ * @param {string} [via]
+ * @returns {string[]}
+ */
+function candidateBases(via) {
+  const bases = [];
+
+  if (via) {
+    try {
+      // The parent's ENTRY, not its package.json — the latter is blocked by
+      // some packages' exports maps.
+      bases.push(path.dirname(require.resolve(via)));
+    } catch {
+      // Parent itself not installed; the other bases may still find the child.
+    }
+  }
+
+  bases.push(__dirname);
+  bases.push(process.cwd());
+
+  return bases;
+}
+
+/**
+ * Look for `<base>/**\/node_modules/<name>/package.json`, walking upward.
+ *
+ * The last resort, for packages that `require.resolve` cannot reach at all:
+ * one whose `exports` map declares no usable CJS entry still has a manifest on
+ * disk, and reading it directly is the only way to see the version.
+ *
+ * @returns {string|null}
+ */
+function manifestFromNodeModules(base, name) {
+  let dir = base;
+
+  for (let depth = 0; depth < 12; depth += 1) {
+    try {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(dir, 'node_modules', name, 'package.json'), 'utf8'),
+      );
+      if (pkg.name === name) return pkg.version ?? null;
+    } catch {
+      // Not here — keep walking up.
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return null;
+}
+
+/**
  * Resolve an installed package's version.
  *
- * Guarded individually: a package missing from this service's tree must report
- * null rather than throwing, or the diagnostic breaks exactly when something is
- * wrong enough to need it.
+ * Tries every base before giving up, so that **null means the package is
+ * genuinely not installed in this image** rather than "the lookup failed".
+ * That distinction is the whole point here: these are packages that carried
+ * advisories, and a null that might mean either thing would make the report
+ * worse than useless — a vulnerable version and an absent one would look
+ * identical.
+ *
+ * Never throws. A package missing from this service's tree must report null
+ * rather than break the diagnostic exactly when something is wrong enough to
+ * need it.
  *
  * @param {string} name
  * @param {string} [via]
  * @returns {string|null}
  */
 function resolveVersion(name, via) {
-  try {
-    // Resolve the parent's ENTRY, not its package.json — the latter is blocked
-    // by some packages' exports maps.
-    const paths = via ? [path.dirname(require.resolve(via))] : undefined;
-    const entry = require.resolve(name, paths ? { paths } : undefined);
-    return manifestVersionFrom(entry, name);
-  } catch {
-    return null;
+  const bases = candidateBases(via);
+
+  for (const base of bases) {
+    try {
+      const entry = require.resolve(name, { paths: [base] });
+      const version = manifestVersionFrom(entry, name);
+      if (version) return version;
+    } catch {
+      // Try the next base.
+    }
   }
+
+  for (const base of bases) {
+    const version = manifestFromNodeModules(base, name);
+    if (version) return version;
+  }
+
+  return null;
 }
 
 /**
