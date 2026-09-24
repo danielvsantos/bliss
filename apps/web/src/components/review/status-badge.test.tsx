@@ -12,6 +12,7 @@ describe('StatusBadge', () => {
     'ai-approved',
     'new-merchant',
     'needs-enrichment',
+    'needs-account',
     'low-confidence',
     'duplicate',
     'potential-duplicate',
@@ -48,6 +49,11 @@ describe('StatusBadge', () => {
 
   it('renders needs-enrichment with warning color', () => {
     render(<StatusBadge status="needs-enrichment" />);
+    expect(screen.getByText('review.actionNeeded')).toHaveClass('text-warning');
+  });
+
+  it('renders needs-account with warning color', () => {
+    render(<StatusBadge status="needs-account" />);
     expect(screen.getByText('review.actionNeeded')).toHaveClass('text-warning');
   });
 

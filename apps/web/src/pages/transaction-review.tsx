@@ -40,7 +40,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { translateCategoryName } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
-import { itemNeedsEnrichment } from '@/lib/investment-utils';
+import { itemNeedsEnrichment, itemNeedsReview } from '@/lib/investment-utils';
 import type { PlaidTransaction, Category, StagedImportRow } from '@/types/api';
 
 // ─── New review components ───────────────────────────────────────────
@@ -126,6 +126,11 @@ function importRowToReviewItem(
     status = 'duplicate';
   } else if (row.status === 'POTENTIAL_DUPLICATE') {
     status = 'potential-duplicate';
+  } else if (!row.accountId) {
+    // Native-adapter rows resolve accountId per row from the sheet — it can
+    // come back unresolved. Transaction.accountId is required, so this row
+    // can't be committed until the user assigns one via the drawer.
+    status = 'needs-account';
   } else if (row.requiresEnrichment) {
     status = 'needs-enrichment';
   } else if (row.confidence != null && row.confidence < reviewThreshold) {
@@ -483,7 +488,7 @@ export default function TransactionReviewPage() {
       ),
     );
 
-    // Import matches: PENDING or POTENTIAL_DUPLICATE, non-enrichment
+    // Import matches: PENDING or POTENTIAL_DUPLICATE, ready to confirm as-is
     matches.push(
       ...importReviewItems.filter(
         (i) =>
@@ -496,7 +501,7 @@ export default function TransactionReviewPage() {
           // user must explicitly override each one via the drawer to commit it,
           // otherwise re-imported transactions would silently re-land.
           i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-          !itemNeedsEnrichment(i, categoriesMap),
+          !itemNeedsReview(i, categoriesMap),
       ),
     );
 
@@ -627,7 +632,8 @@ export default function TransactionReviewPage() {
           variant: 'destructive',
         });
       }
-      // Import group confirm — exclude items that need enrichment
+      // Import group confirm — exclude items that need the drawer first
+      // (investment enrichment or an unresolved account)
       const importItems = items.filter(
         (i) =>
           i.source === 'import' &&
@@ -638,9 +644,9 @@ export default function TransactionReviewPage() {
           // user must explicitly override each one via the drawer to commit it,
           // otherwise re-imported transactions would silently re-land.
           i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-          !itemNeedsEnrichment(i, categoriesMap),
+          !itemNeedsReview(i, categoriesMap),
       );
-      const importEnrichmentSkipped = items.filter(
+      const importReviewSkipped = items.filter(
         (i) =>
           i.source === 'import' &&
           i.promotionStatus !== 'CONFIRMED' &&
@@ -650,7 +656,7 @@ export default function TransactionReviewPage() {
           // user must explicitly override each one via the drawer to commit it,
           // otherwise re-imported transactions would silently re-land.
           i.promotionStatus !== 'POTENTIAL_DUPLICATE' &&
-          itemNeedsEnrichment(i, categoriesMap),
+          itemNeedsReview(i, categoriesMap),
       ).length;
       for (const item of importItems) {
         handleImportRowStatus(item.originalImportRow!, 'CONFIRMED');
@@ -660,14 +666,14 @@ export default function TransactionReviewPage() {
         // refetched grouped view reflects the drained category. See
         // `clearStaleCategoryFilters` docstring.
         clearStaleCategoryFilters();
-        const desc = importEnrichmentSkipped > 0
-          ? `${importItems.length} row(s) confirmed. ${importEnrichmentSkipped} investment row(s) need enrichment first.`
+        const desc = importReviewSkipped > 0
+          ? `${importItems.length} row(s) confirmed. ${importReviewSkipped} row(s) need attention first (enrichment or account).`
           : `${importItems.length} row(s) confirmed for commit.`;
         toast({ title: desc });
-      } else if (importEnrichmentSkipped > 0) {
+      } else if (importReviewSkipped > 0) {
         toast({
-          title: `${importEnrichmentSkipped} investment row(s) need enrichment data`,
-          description: 'Open each row to provide ticker, quantity, and price.',
+          title: `${importReviewSkipped} row(s) need attention before they can be confirmed`,
+          description: 'Open each row to provide the missing ticker/quantity/price or account.',
           variant: 'destructive',
         });
       }
@@ -763,8 +769,8 @@ export default function TransactionReviewPage() {
   // ── Approve / Skip via ReviewItem ──
   const handleItemApprove = useCallback(
     (item: ReviewItem) => {
-      // Investment items that need mandatory enrichment MUST go through the drawer
-      if (itemNeedsEnrichment(item, categoriesMap)) {
+      // Items missing investment enrichment or an account MUST go through the drawer
+      if (itemNeedsReview(item, categoriesMap)) {
         setSelectedItem(item);
         return;
       }
@@ -913,7 +919,7 @@ export default function TransactionReviewPage() {
                 i.id !== item.id &&
                 i.description === item.description &&
                 i.promotionStatus === 'CLASSIFIED' &&
-                !i.requiresEnrichment,
+                !itemNeedsEnrichment(i, categoriesMap),
             )
           : [];
         const otherImport = importReviewItems.filter(
@@ -923,7 +929,7 @@ export default function TransactionReviewPage() {
             i.promotionStatus !== 'CONFIRMED' &&
             i.promotionStatus !== 'SKIPPED' &&
             i.promotionStatus !== 'DUPLICATE' &&
-            !itemNeedsEnrichment(i, categoriesMap),
+            !itemNeedsReview(i, categoriesMap),
         );
         if (otherPlaid.length + otherImport.length > 0) {
           setPendingDrawerSave(data);

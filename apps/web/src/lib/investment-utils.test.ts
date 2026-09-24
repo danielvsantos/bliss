@@ -3,6 +3,8 @@ import {
   isMandatoryEnrichmentCategory,
   isInvestmentCategory,
   itemNeedsEnrichment,
+  itemNeedsAccount,
+  itemNeedsReview,
 } from './investment-utils';
 import type { Category, StagedImportRow } from '@/types/api';
 import type { ReviewItem } from '@/components/review/types';
@@ -172,5 +174,71 @@ describe('itemNeedsEnrichment', () => {
       originalImportRow: makeImportRow({ ticker: 'AAPL', assetQuantity: null, assetPrice: 150.25 }),
     });
     expect(itemNeedsEnrichment(item, map)).toBe(true);
+  });
+});
+
+describe('itemNeedsAccount', () => {
+  it('returns true for an import row with no accountId', () => {
+    const item = makeReviewItem({
+      source: 'import',
+      originalImportRow: makeImportRow({ accountId: null }),
+    });
+    expect(itemNeedsAccount(item)).toBe(true);
+  });
+
+  it('returns false for an import row with an accountId', () => {
+    const item = makeReviewItem({
+      source: 'import',
+      originalImportRow: makeImportRow({ accountId: 42 }),
+    });
+    expect(itemNeedsAccount(item)).toBe(false);
+  });
+
+  it('returns false for a Plaid-sourced item (always has an account)', () => {
+    const item = makeReviewItem({ source: 'plaid' });
+    expect(itemNeedsAccount(item)).toBe(false);
+  });
+});
+
+describe('itemNeedsReview', () => {
+  it('returns true when the account is missing, even if enrichment is not needed', () => {
+    const cat = makeCategory({ processingHint: 'MANUAL' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      source: 'import',
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({ accountId: null }),
+    });
+    expect(itemNeedsReview(item, map)).toBe(true);
+  });
+
+  it('returns true when enrichment is missing, even if the account is present', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      source: 'import',
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({ accountId: 42 }),
+    });
+    expect(itemNeedsReview(item, map)).toBe(true);
+  });
+
+  it('returns false when both the account and any required enrichment are present', () => {
+    const cat = makeCategory({ processingHint: 'API_STOCK' });
+    const map = new Map<number, Category>([[1, cat]]);
+    const item = makeReviewItem({
+      source: 'import',
+      requiresEnrichment: false,
+      categoryId: 1,
+      originalImportRow: makeImportRow({
+        accountId: 42,
+        ticker: 'AAPL',
+        assetQuantity: 10,
+        assetPrice: 150.25,
+      }),
+    });
+    expect(itemNeedsReview(item, map)).toBe(false);
   });
 });

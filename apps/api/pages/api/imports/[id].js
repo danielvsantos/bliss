@@ -140,6 +140,7 @@ async function handleGet(req, res, user, stagedImportId) {
         stagedImportId,
         status: { in: ['PENDING', 'ERROR', 'STAGED'] },
         requiresEnrichment: { not: true },
+        accountId: { not: null },
       },
       _count: { id: true },
     }),
