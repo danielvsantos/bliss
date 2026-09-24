@@ -140,6 +140,25 @@ describe('smartImportWorker — helper functions', () => {
       expect(rowData.enrichmentType).toBe('INVESTMENT');
     });
 
+    // Regression: manual transaction creation (transaction-form.tsx,
+    // transactions/index.js) has never required ticker/quantity/price for
+    // ANY investment category, including MANUAL — omitting it there just
+    // leaves the transaction unlinked from a portfolio item. Automated
+    // pipelines are intentionally stricter for API_STOCK/API_CRYPTO/API_FUND,
+    // but MANUAL should match manual-entry behavior and stay auto-confirmable.
+    it('DOES auto-confirm a MANUAL-hint category — enrichment is optional for it, unlike API_STOCK/API_CRYPTO/API_FUND', () => {
+      const rowData = { status: 'PENDING' };
+      const result = { categoryId: 40, confidence: 1.0, source: 'EXACT_MATCH' };
+      const categoryById = makeCategoryMap();
+      categoryById.set(40, { id: 40, name: 'Real Estate', type: 'Investments', processingHint: 'MANUAL' });
+
+      const wasAutoConfirmed = applyClassificationToRowData(rowData, result, 0.90, categoryById);
+
+      expect(wasAutoConfirmed).toBe(true);
+      expect(rowData.status).toBe('CONFIRMED');
+      expect(rowData.requiresEnrichment).toBeUndefined();
+    });
+
     it('does NOT auto-confirm when row status is not PENDING', () => {
       const rowData = { status: 'CONFIRMED' };
       const result = { categoryId: 10, confidence: 0.99, source: 'EXACT_MATCH' };
@@ -217,6 +236,19 @@ describe('smartImportWorker — helper functions', () => {
       const rowData = { ticker: null, assetQuantity: null, assetPrice: null };
 
       expect(applyNativeInvestmentCheck(rowData, null)).toBe(false);
+    });
+
+    // Regression: same MANUAL-is-optional rule as applyClassificationToRowData
+    // above, now enforced for native-adapter rows too.
+    it('does not require enrichment for a MANUAL-hint category, even with no ticker/quantity/price', () => {
+      const manualCategory = { id: 40, name: 'Real Estate', type: 'Investments', processingHint: 'MANUAL' };
+      const rowData = { ticker: null, assetQuantity: null, assetPrice: null };
+
+      const result = applyNativeInvestmentCheck(rowData, manualCategory);
+
+      expect(result).toBe(false);
+      expect(rowData.requiresEnrichment).toBe(false);
+      expect(rowData.enrichmentType).toBeUndefined();
     });
   });
 

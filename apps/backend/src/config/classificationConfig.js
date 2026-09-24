@@ -81,6 +81,26 @@ const TOP_N_SEEDS = 10;
  *  5 concurrent × ~3s/call ≈ 100 RPM — safe headroom on paid, paced on free. */
 const PHASE2_CONCURRENCY = 5;
 
+// ── Investment enrichment ────────────────────────────────────────────────────
+// Single source of truth for which Investments-category processingHints
+// require ticker/quantity/price before a transaction can auto-confirm through
+// an automated pipeline (Plaid classification, Smart Import). Previously
+// duplicated as a local `INVESTMENT_HINTS` set in both smartImportWorker.js
+// and plaidProcessorWorker.js, which had drifted out of sync with each other
+// and with the frontend's mandatory/optional split (apps/web/src/lib/
+// investment-utils.ts) — keep those two in sync if this changes.
+//
+// MANUAL is deliberately excluded: manual transaction creation (transaction-
+// form.tsx, transactions/index.js) has never required ticker/quantity/price
+// for any investment category, including MANUAL — omitting it there simply
+// leaves the transaction unlinked from a portfolio item rather than blocking
+// the save. Automated pipelines are intentionally held to a stricter standard
+// than manual entry for API_STOCK/API_CRYPTO/API_FUND (their data usually IS
+// present in the source file/feed, so requiring it catches real omissions),
+// but that rationale doesn't apply to MANUAL, which by definition never has
+// a market-quotable ticker to begin with.
+const MANDATORY_ENRICHMENT_HINTS = ['API_STOCK', 'API_CRYPTO', 'API_FUND'];
+
 // ── Subscriptions & recurring-charge detection ───────────────────────────────
 // Consumed by services/recurringDetectionService.js + subscriptionDetectionWorker.js.
 // Deterministic heuristic — no LLM. Tier A = category signal (isRecurring),
@@ -150,6 +170,7 @@ module.exports = {
     DEFAULT_REVIEW_THRESHOLD,
     TOP_N_SEEDS,
     PHASE2_CONCURRENCY,
+    MANDATORY_ENRICHMENT_HINTS,
     SUBSCRIPTION_INCREMENTAL_MONTHS,
     SUBSCRIPTION_FULL_SCAN_MONTHS,
     SUBSCRIPTION_TIER_B_ROW_CAP,

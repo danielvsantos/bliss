@@ -22,10 +22,11 @@ const {
     DEFAULT_REVIEW_THRESHOLD,
     TOP_N_SEEDS,
     PHASE2_CONCURRENCY,
+    MANDATORY_ENRICHMENT_HINTS,
 } = require('../config/classificationConfig');
 
 const ROW_BATCH_SIZE = 20;
-const INVESTMENT_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'MANUAL']);
+const INVESTMENT_HINTS = new Set(MANDATORY_ENRICHMENT_HINTS);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DUPLICATE DETECTION — imported from utils/transactionHash.js
