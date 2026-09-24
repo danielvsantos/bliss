@@ -240,7 +240,7 @@ export default function TransactionReviewPage() {
   const [selectedImportId, setSelectedImportId] = useState<string | null>(importIdParam);
   const [importPage, setImportPage] = useState(1);
   const [importCategoryFilter, setImportCategoryFilter] = useState<number | 'uncategorized' | null>(null);
-  const { data: stagedData, isLoading: stagedLoading } = useStagedImport(
+  const { data: stagedData, isLoading: stagedLoading, dataUpdatedAt: stagedDataUpdatedAt } = useStagedImport(
     selectedImportId,
     {
       page: importPage,
@@ -312,6 +312,17 @@ export default function TransactionReviewPage() {
   // this effect just runs the resulting side effects. commitInFlightRef is
   // set by handleCommitImport's onSuccess — see commitTransitionKind's
   // docstring for why it's needed alongside the observed-status check.
+  //
+  // Depends on `stagedDataUpdatedAt` (not just importInfo?.status/errorDetails)
+  // because TanStack Query's structural sharing (default in v5) reuses the
+  // SAME object reference across fetches when the new data is deep-equal to
+  // the cached data. A row that can never actually commit (e.g. stuck needing
+  // enrichment) returns an IDENTICAL commitResult on every retry — {0
+  // created, 1 remaining} every time — so importInfo/importInfo.errorDetails
+  // never change reference and this effect would otherwise never re-run past
+  // the first observation. dataUpdatedAt is a plain timestamp React Query
+  // bumps on every successful fetch regardless of structural sharing, so it
+  // reliably re-triggers this effect on every poll/refetch.
   const prevImportStatusRef = useRef<string | undefined>();
   const commitInFlightRef = useRef<boolean>(false);
   useEffect(() => {
@@ -356,7 +367,8 @@ export default function TransactionReviewPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
-  }, [importInfo?.status, importInfo?.errorDetails, toast, queryClient]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- importInfo?.status/errorDetails intentionally omitted: stagedDataUpdatedAt is the reliable re-trigger (see docstring above); adding them back would just be redundant since they're read from the same importInfo snapshot captured inside the effect body.
+  }, [stagedDataUpdatedAt, toast, queryClient]);
 
   // ── Metadata ──
   const { data: categories = [] } = useCategories();
