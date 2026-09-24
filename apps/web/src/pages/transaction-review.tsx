@@ -41,6 +41,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { translateCategoryName } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
 import { itemNeedsEnrichment, itemNeedsReview } from '@/lib/investment-utils';
+import { commitTransitionKind } from '@/lib/import-commit-status';
 import type { PlaidTransaction, Category, StagedImportRow } from '@/types/api';
 
 // ─── New review components ───────────────────────────────────────────
@@ -307,34 +308,51 @@ export default function TransactionReviewPage() {
   }, [stagedLoading]);
 
   // ── Detect COMMITTING → COMMITTED/READY transition ──
+  // Decision logic lives in commitTransitionKind() above (unit-tested there);
+  // this effect just runs the resulting side effects. commitInFlightRef is
+  // set by handleCommitImport's onSuccess — see commitTransitionKind's
+  // docstring for why it's needed alongside the observed-status check.
   const prevImportStatusRef = useRef<string | undefined>();
+  const commitInFlightRef = useRef<boolean>(false);
   useEffect(() => {
     const prevStatus = prevImportStatusRef.current;
     prevImportStatusRef.current = importInfo?.status;
 
-    if (!importInfo?.status || !prevStatus) return;
+    const kind = commitTransitionKind(prevStatus, importInfo?.status, commitInFlightRef.current);
+    if (!kind) return;
 
-    const wasCommitting = prevStatus === 'COMMITTING';
-    if (!wasCommitting) return;
-
-    const errorDetails = importInfo.errorDetails as
-      | { commitResult?: { transactionCount: number; remaining: number } }
+    const errorDetails = importInfo?.errorDetails as
+      | { commitResult?: { transactionCount: number; updateCount?: number; remaining: number } }
       | null;
     const result = errorDetails?.commitResult;
 
-    if (importInfo.status === 'COMMITTED') {
+    if (kind === 'committed') {
+      // COMMITTED is terminal — always fire, even if commitResult somehow
+      // isn't populated (defensive; toast just shows 0 counts in that case).
+      commitInFlightRef.current = false;
+      const parts = [];
+      if (result?.transactionCount) parts.push(`${result.transactionCount} created`);
+      if (result?.updateCount) parts.push(`${result.updateCount} updated`);
       toast({
         title: 'Import committed',
-        description: `${result?.transactionCount ?? 0} transactions created.`,
+        description: parts.length > 0 ? `${parts.join(', ')}.` : 'Done.',
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       // Import is fully committed — deselect it and refresh pending list
       queryClient.invalidateQueries({ queryKey: ['imports', 'pending'] });
       setSelectedImportId(null);
-    } else if (importInfo.status === 'READY' && result) {
+    } else if (kind === 'partial' && result) {
+      // READY can be reached for reasons other than a just-finished commit
+      // (e.g. it's the initial "ready to commit" state). Only treat it as a
+      // completion if a commitResult is actually attached; otherwise leave
+      // commitInFlightRef set so the next poll gets another chance to see it.
+      commitInFlightRef.current = false;
+      const parts = [];
+      if (result.transactionCount) parts.push(`${result.transactionCount} created`);
+      if (result.updateCount) parts.push(`${result.updateCount} updated`);
       toast({
         title: 'Partial commit complete',
-        description: `${result.transactionCount} transactions created. ${result.remaining} rows remaining.`,
+        description: `${parts.join(', ') || 'No rows committed'}. ${result.remaining} row(s) remaining.`,
       });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
@@ -741,16 +759,31 @@ export default function TransactionReviewPage() {
         { id: importId },
         {
           onSuccess: () => {
+            // Signal to the status-transition effect above that a commit is
+            // running, so it can show the completion toast when we next see
+            // a commitResult — even if we never observe the intermediate
+            // COMMITTING state via polling (fast commits finish before the
+            // 2s polling interval fires). See that effect's docstring.
+            commitInFlightRef.current = true;
+            // Invalidate the staged-import query so TanStack Query refetches
+            // immediately — the refetch picks up the new COMMITTING status
+            // and re-enables polling until the job completes.
+            queryClient.invalidateQueries({ queryKey: ['imports', 'staged', importId] });
             toast({
               title: 'Commit started',
               description: 'Your transactions are being committed in the background...',
             });
           },
-          onError: () => toast({ title: 'Failed to commit', variant: 'destructive' }),
+          onError: () => {
+            // Safety: clear the ref so a subsequent poll doesn't fire a
+            // stale transition from a failed attempt.
+            commitInFlightRef.current = false;
+            toast({ title: 'Failed to commit', variant: 'destructive' });
+          },
         },
       );
     },
-    [commitImport, toast],
+    [commitImport, toast, queryClient],
   );
 
   const handleCancelImport = useCallback(
