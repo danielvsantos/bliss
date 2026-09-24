@@ -300,7 +300,7 @@ const pt = {
         },
         topCategories: "Principais Categorias de Despesa",
         trendChart: {
-          movingAverageSuffix: " (média de 3 meses)"
+          movingAverageSuffix: " (média de 6 meses)"
         },
         comingSoon: {
           trends: "A visualização de tendências mensais estará disponível em breve.",

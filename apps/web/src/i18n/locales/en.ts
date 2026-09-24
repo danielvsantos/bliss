@@ -300,7 +300,7 @@ const en = {
         },
         topCategories: "Top Expense Categories",
         trendChart: {
-          movingAverageSuffix: " (3-mo avg)"
+          movingAverageSuffix: " (6-mo avg)"
         },
         comingSoon: {
           trends: "Monthly trend view will be available soon.",

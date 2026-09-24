@@ -286,7 +286,7 @@ const fr = {
         },
         topCategories: "Principales catégories de dépenses",
         trendChart: {
-          movingAverageSuffix: " (moy. 3 mois)"
+          movingAverageSuffix: " (moy. 6 mois)"
         },
         comingSoon: {
           trends: "La vue des tendances mensuelles sera bientôt disponible.",
