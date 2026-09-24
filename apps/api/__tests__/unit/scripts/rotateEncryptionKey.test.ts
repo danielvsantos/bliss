@@ -185,12 +185,34 @@ describe('rotate-encryption-key: migrateModel', () => {
       Array.from({ length: 10 }, async (_, i) => ({ id: i, value: await oldHelpers.encrypt(`row ${i}`) }))
     );
 
+    // A barrier, not a sleep. Each call blocks until CONCURRENT_TARGET calls
+    // are simultaneously in flight, so the assertion cannot be satisfied unless
+    // migrateModel genuinely overlaps work. If it processed serially the first
+    // call would wait here forever and the test would fail on timeout — the
+    // correct outcome.
+    //
+    // The previous version sampled a counter around a fixed 5ms sleep. That is
+    // load-dependent: the step before updateRecord is PBKDF2 at 100k iterations
+    // on a libuv threadpool of 4, so under CPU pressure the derivations
+    // serialize, the timer expires before the next record arrives, and
+    // maxInFlight never exceeds 1. It measured machine load rather than the
+    // behaviour under test, and went red as soon as the suite grew.
+    const CONCURRENT_TARGET = 2;
+
+    let releaseBarrier: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+
     let inFlight = 0;
     let maxInFlight = 0;
     const updateRecord = vi.fn(async (id, updates) => {
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (inFlight >= CONCURRENT_TARGET) releaseBarrier();
+
+      await barrier;
+
       inFlight--;
       Object.assign(db.find((r) => r.id === id), updates);
     });
@@ -206,7 +228,7 @@ describe('rotate-encryption-key: migrateModel', () => {
     });
 
     expect(updateRecord).toHaveBeenCalledTimes(10);
-    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeGreaterThanOrEqual(CONCURRENT_TARGET);
     expect(maxInFlight).toBeLessThanOrEqual(5);
   });
 });

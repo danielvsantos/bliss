@@ -221,3 +221,49 @@ procedures, verification steps, and rollback paths — especially before
 touching `ENCRYPTION_SECRET`, which is the one secret whose failure mode is
 irreversible.
 
+
+## Verifying what is actually deployed
+
+A green build does not prove what shipped. A stale layer cache, a
+platform-pinned runtime, or a `pnpm.overrides` entry that silently failed to
+apply all produce a successful deploy running the wrong versions — and nothing
+logs any of it at boot.
+
+```bash
+curl -H "x-admin-key: $ADMIN_API_KEY" https://<your-api-host>/api/runtime
+```
+
+One call covers all four services. The API layer is the only one reachable from
+outside, so it aggregates:
+
+| Service | How it is reported |
+|---|---|
+| `api` | directly — this is the process answering |
+| `backendWeb` | fetched over the private network with `INTERNAL_API_KEY` |
+| `backendWorker` | read from Redis. The worker runs `START_MODE=worker` and never starts an HTTP server, so it **cannot be polled** — it publishes a heartbeat instead |
+| `web` | `version.json`, stamped into the static bundle at build time |
+
+What to look at:
+
+- **`commit`** — the single most useful field. Answers "did my deploy actually
+  land, and is every service on the same code?" A mismatch between services
+  means a half-finished rollout. Populated from `RAILWAY_GIT_COMMIT_SHA`, or
+  `GIT_COMMIT_SHA` if you pass it yourself; `unknown` just means neither was set.
+- **`node`** and **`libc`** — confirms the runtime and the base image. `musl`
+  means Alpine, which is what the Dockerfiles build.
+- **`dependencies`** — resolved versions of the packages pinned by
+  `pnpm.overrides`. A `null` here, or a version below the pinned floor, means an
+  override did not apply.
+- **`backendWorker.status`** — `alive` means the worker wrote its heartbeat
+  within the last 3 minutes. **`absent` means the worker is down or wedged**, and
+  no amount of green in the other three services tells you that. Worth checking
+  whenever queued work has stopped moving.
+
+The endpoint is authenticated because exact runtime and dependency versions are
+information disclosure: they turn an untargeted scan into a targeted CVE lookup
+against a host already known to be vulnerable. It is deliberately **not** on
+`/health`, which stays unauthenticated for the platform's deploy health check.
+
+If `ADMIN_API_KEY` is unset, the endpoint rejects every request — the same
+fail-closed behaviour as the other admin routes. Set it to any high-entropy
+string; it does not need to match anything else.

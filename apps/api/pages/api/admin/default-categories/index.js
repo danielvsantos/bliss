@@ -15,6 +15,7 @@ import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import prisma from '../../../../prisma/prisma';
 import { DEFAULT_CATEGORIES } from '../../../../lib/defaultCategories';
+import { isAdminAuthorized as isAdminAuthorizedShared } from '../../../../utils/adminAuth.js';
 
 const ALLOWED_PORTFOLIO_STRATEGIES = [
   'TICKER',
@@ -27,13 +28,7 @@ const ALLOWED_PORTFOLIO_STRATEGIES = [
 // ── Admin key validation (mirrors plaid/items/hard-delete.js) ──────────────
 
 function isAdminAuthorized(req) {
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) {
-    console.warn('[admin/default-categories] ADMIN_API_KEY env var is not set — rejecting all requests');
-    return false;
-  }
-  const provided = req.headers['x-admin-key'];
-  return provided === adminKey;
+  return isAdminAuthorizedShared(req, 'admin/default-categories');
 }
 
 // ── Route handler ──────────────────────────────────────────────────────────

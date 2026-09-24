@@ -277,6 +277,10 @@ Same pattern as the API app: Prisma 6 `$extends` with encrypt -> validate -> exe
   curl -H "x-api-key: $INTERNAL_API_KEY" https://<backend>/api/runtime
   ```
 
-  Adding a package to `TRACKED_PACKAGES` in `routes/runtime.js`: transitives need a `via` parent, because pnpm's isolated `node_modules` only makes a service's own dependencies resolvable from its root. Version lookup falls back to walking up from the resolved entry point, since packages with an `exports` map (e.g. `openai`) reject `require('<pkg>/package.json')` outright.
+  Also reports the **worker** service, which is the only way its runtime can ever be observed: on Railway the backend is deployed twice (`START_MODE=web` and `START_MODE=worker`), and the worker never calls `app.listen()`, so it has no HTTP surface. It publishes to Redis instead via `utils/workerHeartbeat.js`, refreshed every 60s with a 180s TTL. An `absent` worker in the response means the process is down or wedged — liveness information Bliss has no other way to surface.
+
+  Adding a package to `TRACKED_PACKAGES` in `utils/runtimeInfo.js`: transitives need a `via` parent, because pnpm's isolated `node_modules` only makes a service's own dependencies resolvable from its root. Version lookup falls back to walking up from the resolved entry point, since packages with an `exports` map (e.g. `openai`) reject `require('<pkg>/package.json')` outright.
+
+  The API layer aggregates this with its own runtime and the frontend's build stamp at `GET /api/runtime` on `apps/api` — that is the one to curl, since the backend has no public domain.
 
 All routes under `/api/*` require the `apiKeyAuth` middleware (checks `X-API-KEY` against `INTERNAL_API_KEY`, compared in constant time with a length guard).

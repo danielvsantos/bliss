@@ -1,7 +1,12 @@
 const express = require('express');
 const request = require('supertest');
 
+jest.mock('../../../utils/workerHeartbeat', () => ({
+  readWorkerHeartbeat: jest.fn(),
+}));
+
 const runtimeRouter = require('../../../routes/runtime');
+const { readWorkerHeartbeat } = require('../../../utils/workerHeartbeat');
 
 const API_KEY = 'test-internal-api-key-32-chars!!';
 
@@ -15,7 +20,9 @@ describe('GET /api/runtime', () => {
   const ORIGINAL_KEY = process.env.INTERNAL_API_KEY;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     process.env.INTERNAL_API_KEY = API_KEY;
+    readWorkerHeartbeat.mockResolvedValue({ status: 'alive', role: 'backend-worker' });
   });
 
   afterAll(() => {
@@ -52,6 +59,37 @@ describe('GET /api/runtime', () => {
   });
 
   describe('with a valid key', () => {
+    it('identifies itself as the backend web role', async () => {
+      const res = await request(makeApp())
+        .get('/api/runtime')
+        .set('x-api-key', API_KEY);
+
+      expect(res.body.role).toBe('backend-web');
+      expect(res.body.commit).toEqual(expect.any(String));
+    });
+
+    // The worker has no HTTP server at all, so this is the only channel by
+    // which its runtime can ever be observed.
+    it('includes the worker heartbeat read from Redis', async () => {
+      const res = await request(makeApp())
+        .get('/api/runtime')
+        .set('x-api-key', API_KEY);
+
+      expect(res.body.worker).toEqual({ status: 'alive', role: 'backend-worker' });
+    });
+
+    it('still answers when the worker heartbeat is absent', async () => {
+      readWorkerHeartbeat.mockResolvedValue({ status: 'absent', note: 'no key' });
+
+      const res = await request(makeApp())
+        .get('/api/runtime')
+        .set('x-api-key', API_KEY);
+
+      expect(res.status).toBe(200);
+      expect(res.body.node).toBe(process.version);
+      expect(res.body.worker.status).toBe('absent');
+    });
+
     it('reports the running Node version', async () => {
       const res = await request(makeApp())
         .get('/api/runtime')
@@ -71,7 +109,7 @@ describe('GET /api/runtime', () => {
       expect(res.body.arch).toBe(process.arch);
       expect(['glibc', 'musl']).toContain(res.body.libc);
       expect(typeof res.body.startMode).toBe('string');
-      expect(typeof res.body.uptime).toBe('number');
+      expect(typeof res.body.uptimeSeconds).toBe('number');
     });
 
     it('resolves every tracked package in this service tree', async () => {

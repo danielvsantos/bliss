@@ -60,6 +60,7 @@ The check is length only — deliberately no entropy heuristic, which produces f
 | `JWT_SECRET_PREVIOUS` | No | -- | Set during JWT secret rotation. Tokens signed with the previous secret remain valid until they expire. |
 | `NEXTAUTH_SECRET` | Yes | -- | Secret used by NextAuth.js for session cookie signing. Minimum 32 characters. |
 | `INTERNAL_API_KEY` | Yes | -- | Shared secret for server-to-server calls between the API layer and the backend service. Must be identical in both services. Minimum 32 characters. Compared in constant time by the backend's `apiKeyAuth` middleware. |
+| `ADMIN_API_KEY` | No | -- | Operator credential for administrative and diagnostic endpoints, sent as the `x-admin-key` header. Distinct from `INTERNAL_API_KEY` on purpose: that one authenticates service-to-service calls, this one authenticates a human operator running scripts, so a service compromise does not confer admin. **Fails closed** — while unset, every route guarding on it rejects all requests. Guards `/api/admin/default-categories*`, `/api/plaid/items/hard-delete` and `/api/runtime`. Compared in constant time. |
 
 ## API Layer (Next.js)
 

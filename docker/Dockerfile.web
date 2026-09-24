@@ -14,8 +14,19 @@ COPY apps/web ./apps/web
 ARG NEXT_PUBLIC_API_URL=http://localhost:3000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Commit stamped into dist/version.json. There is no Node process at runtime —
+# nginx serves static files — so the only way the web service can report which
+# code is live is to bake it in here. Railway passes RAILWAY_GIT_COMMIT_SHA;
+# GIT_COMMIT_SHA is the generic fallback. Unset simply yields "unknown".
+ARG GIT_COMMIT_SHA=""
+ARG RAILWAY_GIT_COMMIT_SHA=""
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
+
 WORKDIR /app/apps/web
-RUN pnpm exec vite build
+# write-version.mjs runs first (see the package.json build script), emitting
+# public/version.json for Vite to copy into dist/.
+RUN pnpm run build
 
 # ─── Stage 2: Serve with nginx ────────────────────────────────────────────────
 FROM nginx:alpine AS runner
