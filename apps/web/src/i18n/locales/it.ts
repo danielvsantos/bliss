@@ -299,6 +299,9 @@ const it = {
           detailedList: "Lista dettagliata"
         },
         topCategories: "Categorie di spesa principali",
+        trendChart: {
+          movingAverageSuffix: " (media 3 mesi)"
+        },
         comingSoon: {
           trends: "La vista delle tendenze mensili sar\u00E0 disponibile a breve.",
           details: "La vista dettagliata delle spese sar\u00E0 disponibile a breve."
