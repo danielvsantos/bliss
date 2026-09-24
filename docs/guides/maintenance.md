@@ -279,15 +279,20 @@ One-off migration, and a no-op on any instance created after the change that
 introduced it. Bliss lowercases every email on write and lookup; this script
 brings pre-existing rows into the same canonical form.
 
-```bash
-cd apps/api
+Run it from the **API** service, which already has `DATABASE_URL` and
+`ENCRYPTION_SECRET` in its environment. The paths below are relative to the
+repo root, which is also the container's working directory (`/app`), so the
+same command works in a checkout and over `docker exec` / `railway ssh`.
 
+```bash
 # 1. Dry run — this is the DEFAULT. Nothing is written.
-node scripts/normalize-user-emails.mjs
+node apps/api/scripts/normalize-user-emails.mjs
 
 # 2. Only if step 1 reports rows needing change, and only after a pg_dump:
-node scripts/normalize-user-emails.mjs --apply
+node apps/api/scripts/normalize-user-emails.mjs --apply
 ```
+
+On Railway: `railway ssh --service api --environment <env> -- node apps/api/scripts/normalize-user-emails.mjs`
 
 **Why there is a script at all, rather than a SQL `UPDATE`.** `User.email` is
 stored with searchable (deterministic) encryption: its salt and IV are derived
