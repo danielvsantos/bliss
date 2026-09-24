@@ -1,17 +1,67 @@
-import { randomBytes, pbkdf2Sync } from 'crypto';
 import prisma from '../prisma/prisma';
 import { DEFAULT_CATEGORIES } from '../lib/defaultCategories.js';
+import { hashPassword, verifyPassword, needsRehash } from './password.js';
 
 export class AuthService {
+  /**
+   * Hash a password in the current (scrypt) format.
+   *
+   * Returns `{ hash, salt }` to keep the existing call signature. `salt` is
+   * always null now — the scrypt salt lives inside the PHC string in `hash`,
+   * and `User.passwordSalt` is only populated on legacy rows.
+   */
   static async hashPassword(password) {
-    const salt = randomBytes(16).toString('hex');
-    const hash = pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return { hash, salt };
+    const hash = await hashPassword(password);
+    return { hash, salt: null };
   }
 
+  /**
+   * Verify against either storage format. See services/password.js.
+   */
   static async verifyPassword(password, hash, salt) {
-    const verifyHash = pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return verifyHash === hash;
+    return verifyPassword(password, hash, salt);
+  }
+
+  /**
+   * Verify a password and, on success, transparently upgrade a legacy
+   * PBKDF2-1,000 hash to scrypt.
+   *
+   * Rehash-on-login is the ONLY mechanism that can perform this migration: a
+   * script cannot rehash a password, because PBKDF2 is one-way and there is
+   * nothing to re-derive without the plaintext. It also works for self-hosters,
+   * who do not have their users' plaintexts.
+   *
+   * The rehash write is deliberately **best-effort**. A failed write must not
+   * fail the login — the user supplied the correct password, and the old hash
+   * still verifies, so the next login simply tries the upgrade again.
+   *
+   * Idempotent by construction: `needsRehash` returns false for anything
+   * already in scrypt format, so a second login is a no-op.
+   *
+   * @param {{ id: string, passwordHash: string|null, passwordSalt: string|null }} user
+   * @param {string} plaintext
+   * @returns {Promise<boolean>} whether the password was correct
+   */
+  static async verifyAndUpgrade(user, plaintext) {
+    if (!user || !user.passwordHash) return false;
+
+    const isValid = await verifyPassword(plaintext, user.passwordHash, user.passwordSalt);
+    if (!isValid) return false;
+
+    if (needsRehash(user.passwordHash)) {
+      try {
+        const upgraded = await hashPassword(plaintext);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { passwordHash: upgraded, passwordSalt: null },
+        });
+      } catch (error) {
+        // Log and swallow: the login itself succeeded.
+        console.error('Password rehash failed (login still succeeded):', error?.message);
+      }
+    }
+
+    return true;
   }
 
   static async findUserByEmail(email) {

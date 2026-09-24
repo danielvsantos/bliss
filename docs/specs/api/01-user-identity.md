@@ -18,7 +18,7 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 - **Cookie Issuance**: Calls `utils/cookieUtils.js → setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie. The token is **not** included in the response body.
 
 ### Security & Encryption
-- **Password Hashing**: User passwords are not stored directly. They are hashed using the `pbkdf2Sync` algorithm with a unique salt for each user, as handled by the `AuthService`.
+- **Password Hashing**: User passwords are not stored directly. They are hashed with **scrypt** (`N=2^17, r=8, p=1`) and a unique 16-byte random salt per user, via `services/password.js` behind `AuthService`. See §1.2 for the storage format and the migration from the previous PBKDF2 scheme.
 - **Email Encryption**: The `User.email` field is encrypted at rest in the database using AES-256-GCM. This is handled transparently by a Prisma middleware. The encryption is **searchable**, meaning the email is encrypted deterministically, allowing for lookups while keeping the raw data secure.
 
 ### Data Flow & Logic:
@@ -49,19 +49,58 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 This service class centralizes the core logic for user authentication and management, acting as a dedicated layer between the API route handlers and the database for security-related operations.
 
 ### Responsibilities:
-- **Password Hashing**: Provides a static `hashPassword` method that takes a plaintext password, generates a cryptographically secure salt, and returns the hashed password and the salt. It uses Node.js's built-in `crypto` library with the `pbkdf2Sync` algorithm.
-- **Password Verification**: Provides a corresponding `verifyPassword` method to compare a plaintext password against a stored hash and salt.
+- **Password Hashing**: Provides a static `hashPassword` method that delegates to `services/password.js`. It generates a cryptographically secure salt and returns `{ hash, salt }`, where `salt` is always `null` — the scrypt salt lives inside the returned PHC string.
+- **Password Verification**: Provides `verifyPassword` (format-detecting) and `verifyAndUpgrade` (verify + transparent rehash). Every credential login path calls `verifyAndUpgrade`.
 - **User Record Management**: Contains methods for finding, creating, and updating user records (`findUserByEmail`, `createUser`, `findOrCreateGoogleUser`). These methods abstract away the direct Prisma calls from the API handlers.
 - **OAuth Logic**: Includes logic for handling Google OAuth sign-ins (`findOrCreateGoogleUser`), which involves checking for an existing user, updating their provider information, or creating a new user and tenant if they are signing in for the first time.
 
+### Password Hashing (scrypt)
+
+**Algorithm:** scrypt, `N=2^17 (131072), r=8, p=1`, 64-byte key, 16-byte random salt.
+
+**Why scrypt and not argon2id or bcrypt.** scrypt is built into Node. The dependency tree has no `bcrypt`/`node-gyp`, and keeping it that way means none of the three Alpine images needs a compiler toolchain. scrypt is memory-hard and OWASP-approved; argon2id is stronger but would add a native build dependency to all three Dockerfiles.
+
+**Storage format.** A PHC-style string in the existing `User.passwordHash` column:
+
+```
+$scrypt$N=131072,r=8,p=1$<salt-base64>$<hash-base64>
+```
+
+`User.passwordSalt` is `null` for scrypt rows. **No Prisma migration was required**: both columns are already `String?`, the encryption middleware covers only `User.email`, and the validation extension constrains only `User.name`.
+
+**Parameters are parsed from the stored string, never from the current constants.** That is what makes a future work-factor change a one-line edit rather than a second lockout — every hash already in the database stays verifiable at whatever parameters it was written with. There is deliberately **no environment variable** for the work factor.
+
+**`maxmem` is mandatory.** At `N=2^17, r=8` a single hash needs `128 x N x r` = 128 MiB, and Node caps scrypt at 32 MiB unless `maxmem` is passed as a call argument. Without it every login throws `ERR_CRYPTO_INVALID_SCRYPT_PARAM`. Peak memory is structurally bounded: `apps/api` runs at Node's default `UV_THREADPOOL_SIZE` of 4, so at most four hashes are ever in flight.
+
+**Always async.** `crypto.scrypt`, never `scryptSync` — a synchronous call would block the event loop for the full hash duration on every login.
+
+### Migration from PBKDF2-1,000
+
+The previous scheme was PBKDF2-HMAC-SHA512 at **1,000 iterations** with a hex digest and the salt in `User.passwordSalt`. OWASP guidance for that construction is 210,000; Bliss's own encryption module already used 100,000 for key derivation. A stolen `User` table was cheap to crack offline.
+
+**There is no migration script, and there cannot be one.** PBKDF2 is one-way: nothing can re-derive a scrypt hash without the plaintext. Rehash-on-login is the only mechanism that works, and it is also the only one that serves self-hosters, who do not have their users' plaintexts.
+
+| Aspect | Behaviour |
+|---|---|
+| Format detection | A leading `$` means scrypt. Anything else is a legacy PBKDF2 hex digest, read together with `passwordSalt`. No version column. |
+| Dual-format verify | `verifyPassword` handles both. A legacy row that stopped verifying would be a total lockout for every pre-existing user, so the legacy branch has dedicated tests including one against a real seeded database row. |
+| Upgrade trigger | A successful login through `AuthService.verifyAndUpgrade`. |
+| Write policy | **Best-effort.** The rehash write is wrapped in its own try/catch that logs and swallows. The user supplied the correct password and the old hash still verifies, so a failed write must not fail the login — the next login simply retries. |
+| Idempotence | Structural, not a guard: `needsRehash` returns `false` for anything already in scrypt format, so a second login is a no-op rather than a re-encode. |
+| Comparison | `crypto.timingSafeEqual`, **length-guarded**. It throws on unequal buffer lengths, and legacy and scrypt digests differ in length — an unguarded compare would crash on exactly the rows this path exists to keep working. |
+
+Operator sign-off query — after each user has logged in once, this must return 0:
+
+```sql
+SELECT count(*) FROM "User"
+WHERE "passwordHash" IS NOT NULL AND "passwordHash" NOT LIKE '$scrypt$%';
+```
+
 ### Key Functions:
-- **`hashPassword(password)`**:
-    - Generates a 16-byte salt.
-    - Uses `pbkdf2Sync` with 1000 iterations and a 'sha512' hash function.
-    - Returns the `{ hash, salt }`.
-- **`verifyPassword(password, hash, salt)`**:
-    - Re-hashes the provided password with the stored salt.
-    - Compares the result to the stored hash to confirm a match.
+- **`hashPassword(password)`** — 16-byte random salt, async `crypto.scrypt` at the parameters above, returns `{ hash, salt: null }`.
+- **`verifyPassword(password, hash, salt)`** — detects the format and verifies against either. Returns `false` (never throws) for malformed, absent or mismatched-length input.
+- **`verifyAndUpgrade(user, plaintext)`** — verifies, then rehashes to scrypt if the stored hash is legacy. Called from both credential paths (`signin.js` and the NextAuth `CredentialsProvider`). Two call sites, one implementation: a divergence here would mean one login path never upgrades.
+- **`needsRehash(storedHash)`** — `true` only for a non-scrypt, non-empty hash.
 - **`findOrCreateGoogleUser({ email, name, googleId })`**:
     - Returns `{ user, isNew }` (not just the user object).
     - `isNew: true` when a brand-new `Tenant` + `User` pair are created (first-time Google sign-in with an unknown email).
@@ -73,7 +112,7 @@ This service class centralizes the core logic for user authentication and manage
 - **`findOrCreateGoogleUser` (updated)**: Now passes `role: 'admin'` when creating a new `User` + `Tenant` pair (first-time Google sign-in). Existing users retain their current role.
 
 ### Security Note:
-The service correctly implements the standard and secure practice of **salting and hashing** passwords. It never stores passwords in plaintext. The use of a dedicated service for this logic is a good separation of concerns.
+The service salts and hashes every password and never stores plaintext. Hashing itself lives in `services/password.js` so the algorithm, its parameters and the dual-format migration are in one auditable place rather than spread across the routes that call it.
 
 ---
 
@@ -390,7 +429,7 @@ While the `signup` endpoint handles the initial creation, the ongoing management
 - **`POST /api/users`** *(Admin only)*: Creates a new user with login credentials. Returns `403 Forbidden` if `req.user.role !== 'admin'`.
   - **Required fields**: `email` (valid format), `password` (min 6 characters).
   - **Optional fields**: `name`, `role` (`'admin'`, `'member'`, or `'viewer'`; defaults to `'member'`), `relationshipType`, `preferredLocale`, `profilePictureUrl`, `birthDate`.
-  - Hashes the password via `AuthService.hashPassword()` (PBKDF2-SHA512) before storage.
+  - Hashes the password via `AuthService.hashPassword()` (scrypt — see §1.2) before storage.
   - Sets `provider: 'credentials'` so the user can sign in immediately.
   - Returns `409 Conflict` if a user with the same email already exists in the tenant.
 - **`PUT /api/users?id={id}`**: Updates user details. Accepts an optional `role` field (`'admin'`, `'member'`, or `'viewer'`). Only admins may set the `role` field; non-admins receive `403`.
