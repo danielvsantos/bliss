@@ -2,7 +2,7 @@ import { withSentryConfig } from '@sentry/nextjs';
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { buildSecurityHeaders } from './utils/securityHeaders.js';
+import { buildHeaderRules } from './utils/securityHeaders.js';
 
 // Load environment variables from monorepo root .env
 // (Next.js only auto-loads from the app directory; this ensures the unified root .env is used)
@@ -14,10 +14,13 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
 
-  // Security headers for every response. HSTS is gated on an HTTPS
-  // NEXTAUTH_URL inside buildSecurityHeaders — see utils/securityHeaders.js.
+  // Security headers. NOTE: Next evaluates this at BUILD time and bakes the
+  // result into routes-manifest.json — it is never re-run at runtime, so no
+  // runtime env var can be read here. HSTS is therefore gated by a `has`
+  // matcher on x-forwarded-proto, which the router evaluates per request.
+  // See utils/securityHeaders.js.
   async headers() {
-    return [{ source: '/(.*)', headers: buildSecurityHeaders() }];
+    return buildHeaderRules();
   },
 
   // Packages that use native Node.js modules or dynamic require() patterns
