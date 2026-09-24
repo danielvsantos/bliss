@@ -301,6 +301,53 @@ describe('commitWorker — processCommitJob', () => {
     );
   });
 
+  // ─── Missing accountId skip (regression: PrismaClientValidationError) ───
+
+  it('skips rows with a null accountId instead of failing the whole batch', async () => {
+    // Transaction.accountId is non-nullable. Native-adapter CSV rows resolve
+    // accountId per-row and can end up CONFIRMED with no match. Passing a null
+    // accountId through to createMany() used to throw PrismaClientValidationError
+    // for the entire batch (Sentry: commitWorker.js:194).
+    const rows = [
+      makeRow({ id: 'row-1', accountId: null, description: 'Unresolved account row' }),
+      makeRow({ id: 'row-2', accountId: 1, description: 'Normal purchase' }),
+    ];
+
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({
+      id: 'si-1',
+      tenantId: 'tenant-1',
+      status: 'COMMITTING',
+    });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(2);  // totalConfirmed
+    prisma.stagedImportRow.findMany
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([]);
+    prisma.transaction.findMany.mockResolvedValueOnce([]);   // pre-existing check
+    prisma.transaction.createMany.mockResolvedValueOnce({ count: 1 });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);   // remainingCount
+
+    const job = makeJob();
+    const result = await processCommitJob(job);
+
+    // Only the row with a valid accountId is created; the other is skipped.
+    expect(result.transactionCount).toBe(1);
+    expect(prisma.transaction.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.not.arrayContaining([expect.objectContaining({ accountId: null })]),
+      })
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Skipping row row-1')
+    );
+
+    // The skipped row returns to STAGED for the user to fix, rather than
+    // crashing the job and blocking every other row in the batch.
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['row-1'] } },
+      data: { status: 'STAGED' },
+    });
+  });
+
   // ─── Feedback for LLM/USER_OVERRIDE ─────────────────────────────────────
 
   it('calls recordFeedback for LLM and USER_OVERRIDE rows only', async () => {

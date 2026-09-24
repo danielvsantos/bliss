@@ -136,6 +136,17 @@ const processCommitJob = async (job) => {
                     logger.warn(`[CommitWorker] Skipping row ${row.id} — requiresEnrichment=true, ticker=${row.ticker}, qty=${row.assetQuantity}, price=${row.assetPrice}`);
                     continue;
                 }
+                // Transaction.accountId is a required (non-nullable) column. Native-adapter
+                // rows resolve accountId per-row from the CSV's account column (see
+                // smartImportWorker.js) and can end up CONFIRMED with no match — passing
+                // that through to createMany() throws a PrismaClientValidationError that
+                // fails the ENTIRE batch, not just this row. Skip it here so it falls
+                // through to the enrichmentPendingRowIds bucket below and returns to STAGED
+                // for the user to assign an account, instead of blocking every other row.
+                if (row.accountId == null) {
+                    logger.warn(`[CommitWorker] Skipping row ${row.id} — accountId is missing (required to create a Transaction)`);
+                    continue;
+                }
                 const date = new Date(row.transactionDate);
                 const amount = row.debit || row.credit;
                 const baseHash = computeTransactionHash(date, row.description, amount, row.accountId);
