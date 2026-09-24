@@ -469,22 +469,39 @@ const processCommitJob = async (job) => {
         );
         return { stagedImportId, transactionCount: totalCreated, updateCount: totalUpdated, remaining: remainingCount };
     } catch (error) {
-        // ─── Error handler: set status to ERROR ─────────────────────────────
-        try {
-            await prisma.stagedImport.update({
-                where: { id: stagedImportId },
-                data: {
-                    status: 'ERROR',
-                    progress: 0,
-                    errorDetails: { message: error.message },
-                },
-            });
-        } catch (updateErr) {
-            logger.error(`[CommitWorker] Failed to update StagedImport ${stagedImportId} to ERROR: ${updateErr.message}`);
+        // ─── Error handler: only persist ERROR once retries are exhausted ────
+        // smartImportQueue retries this job (attempts: 2). If every failed
+        // attempt flipped StagedImport to ERROR, the retry's own guard check
+        // above (step 1) would then find status "ERROR" instead of
+        // "COMMITTING" and throw a *different*, misleading error — masking
+        // the real root cause and double-reporting to Sentry. Mirror the
+        // retry-aware pattern from workerFailureReporter.js: only mutate
+        // status and page Sentry on the final attempt; let BullMQ retry
+        // silently (aside from a warn log) otherwise.
+        const totalAttempts = job?.opts?.attempts || 1;
+        const attemptsMade = job?.attemptsMade || 0;
+        const isFinalAttempt = attemptsMade + 1 >= totalAttempts;
+
+        if (isFinalAttempt) {
+            try {
+                await prisma.stagedImport.update({
+                    where: { id: stagedImportId },
+                    data: {
+                        status: 'ERROR',
+                        progress: 0,
+                        errorDetails: { message: error.message },
+                    },
+                });
+            } catch (updateErr) {
+                logger.error(`[CommitWorker] Failed to update StagedImport ${stagedImportId} to ERROR: ${updateErr.message}`);
+            }
+
+            logger.error(`[CommitWorker] Commit failed for ${stagedImportId}: ${error.message}`);
+            Sentry.captureException(error);
+        } else {
+            logger.warn(`[CommitWorker] Commit attempt failed for ${stagedImportId}, will retry: ${error.message}`);
         }
 
-        logger.error(`[CommitWorker] Commit failed for ${stagedImportId}: ${error.message}`);
-        Sentry.captureException(error);
         throw error;
     }
 };
