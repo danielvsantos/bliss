@@ -7,6 +7,7 @@ jest.mock('../../../queues/eventsQueue', () => ({
 
 jest.mock('../../../queues/portfolioQueue', () => ({
   getPortfolioQueue: jest.fn(),
+  fullValuationDedupOpts: jest.requireActual('../../../queues/portfolioQueue').fullValuationDedupOpts,
 }));
 
 jest.mock('../../../queues/analyticsQueue', () => ({
@@ -586,6 +587,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
         'value-all-assets',
         expect.objectContaining({ tenantId: 't1', _rebuildMeta: meta }),
+        {},
       );
     });
 
@@ -631,7 +633,11 @@ describe('eventSchedulerWorker — processEventJob', () => {
       });
       await processEventJob(job);
 
-      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', { tenantId: 't1' });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
+        'value-all-assets',
+        { tenantId: 't1' },
+        { deduplication: { id: 'value-all-assets:t1' } },
+      );
       expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-amortizing-loan', { tenantId: 't1' });
       expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-simple-liability', { tenantId: 't1' });
     });
@@ -651,7 +657,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', {
         tenantId: 't1',
         _rebuildMeta: { rebuildType: 'full-portfolio' },
-      });
+      }, {});
     });
 
     it('scoped analytics with empty portfolioItemIds does not trigger valuation', async () => {
@@ -663,6 +669,69 @@ describe('eventSchedulerWorker — processEventJob', () => {
       await processEventJob(job);
 
       expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── ANALYTICS_RECALCULATION_COMPLETE — value-all-assets deduplication ──
+  //
+  // Back-to-back imports each finish their own full cascade. Without a
+  // per-tenant dedup key every cascade enqueued another `value-all-assets`,
+  // and with portfolio concurrency 5 they ran side by side, each wiping and
+  // rebuilding the same history and re-fetching the same prices.
+
+  describe('ANALYTICS_RECALCULATION_COMPLETE — value-all-assets deduplication', () => {
+    const valuationCalls = () =>
+      mockPortfolioQueue.add.mock.calls.filter(([name]) => name === 'value-all-assets');
+
+    it('uses the same per-tenant dedup id for repeated organic cascades', async () => {
+      const job = makeJob('ANALYTICS_RECALCULATION_COMPLETE', { tenantId: 't1', isFullRebuild: true });
+      await processEventJob(job);
+      await processEventJob(job);
+
+      const calls = valuationCalls();
+      expect(calls).toHaveLength(2);
+      expect(calls[0][2]).toEqual({ deduplication: { id: 'value-all-assets:t1' } });
+      expect(calls[1][2]).toEqual(calls[0][2]);
+    });
+
+    it('scopes the dedup id per tenant so tenants never block each other', async () => {
+      await processEventJob(makeJob('ANALYTICS_RECALCULATION_COMPLETE', { tenantId: 't1', isFullRebuild: true }));
+      await processEventJob(makeJob('ANALYTICS_RECALCULATION_COMPLETE', { tenantId: 't2', isFullRebuild: true }));
+
+      const ids = valuationCalls().map(([, , opts]) => opts.deduplication.id);
+      expect(ids).toEqual(['value-all-assets:t1', 'value-all-assets:t2']);
+    });
+
+    it('does not deduplicate admin full-portfolio rebuilds (their lock must be released by a completing job)', async () => {
+      await processEventJob(makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: true,
+        _rebuildMeta: { rebuildType: 'full-portfolio' },
+      }));
+
+      const [[, , opts]] = valuationCalls();
+      expect(opts).not.toHaveProperty('deduplication');
+    });
+
+    it('does not deduplicate the loan processors', async () => {
+      await processEventJob(makeJob('ANALYTICS_RECALCULATION_COMPLETE', { tenantId: 't1', isFullRebuild: true }));
+
+      const loanCalls = mockPortfolioQueue.add.mock.calls.filter(
+        ([name]) => name === 'process-amortizing-loan' || name === 'process-simple-liability',
+      );
+      expect(loanCalls).toHaveLength(2);
+      loanCalls.forEach((call) => expect(call).toHaveLength(2));
+    });
+
+    it('scoped valuation (value-portfolio-items) is unaffected', async () => {
+      await processEventJob(makeJob('ANALYTICS_RECALCULATION_COMPLETE', {
+        tenantId: 't1',
+        isFullRebuild: false,
+        portfolioItemIds: [1, 2],
+      }));
+
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-portfolio-items', { tenantId: 't1', portfolioItemIds: [1, 2] });
+      expect(valuationCalls()).toHaveLength(0);
     });
   });
 

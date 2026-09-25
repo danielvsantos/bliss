@@ -18,7 +18,23 @@ Triggered by a bulk transaction import (`TRANSACTIONS_IMPORTED` event).
 1.  **`process-portfolio-changes`**: Initializes/updates all `PortfolioItem` records.
 2.  **`process-cash-holdings`**: Generates authoritative holdings for all CASH items (transaction-date-only strategy).
 3.  **`full-rebuild-analytics`**: Rebuilds all analytics data for cross-currency reporting.
-4.  **`value-all-assets` & Debt Processors**: The valuation engine and specialized debt processors run in parallel to generate history for all non-cash items and value history for cash items.
+4.  **`value-all-assets` & Debt Processors**: The valuation engine and specialized debt processors run in parallel to generate history for all non-cash items and value history for cash items. `value-all-assets` is deduplicated per tenant — see [Full-valuation deduplication](#full-valuation-deduplication).
+
+#### Full-valuation deduplication
+Every `value-all-assets` enqueue except admin rebuilds carries BullMQ's simple-mode deduplication option, keyed per tenant (`fullValuationDedupOpts(tenantId)` in `queues/portfolioQueue.js` → `deduplication: { id: 'value-all-assets:<tenantId>' }`). While a full valuation for that tenant is waiting, delayed, active or retrying, a second add is dropped and returns the existing job's id. The key is released as soon as the job completes or finally fails.
+
+**Why:** a large history upload spread over several imports finishes several full cascades back to back. Each `ANALYTICS_RECALCULATION_COMPLETE (isFullRebuild)` used to enqueue its own `value-all-assets`. With the portfolio worker at `concurrency: 5`, those jobs ran side by side for the same tenant. Each one wiped and rebuilt the same history, raced the others' `deleteMany`/`createMany`, and re-fetched the same Twelve Data prices, because each run's price cache is job-local. In the logs, this showed up as repeated `Starting daily processing loop for <symbol>` lines and identical `[TwelveData] Price for <symbol> on <date>` fetches.
+
+**Why not a fixed `jobId`:** the portfolio queue keeps completed jobs for 24 h (`removeOnComplete`). A fixed id would block every full revaluation for a tenant for a day after the first one completed. The deduplication key has no such retention.
+
+| Enqueue site | Deduplicated? |
+|---|---|
+| `ANALYTICS_RECALCULATION_COMPLETE` (organic full cascade) — `eventSchedulerWorker.js` | Yes |
+| `revalue-all-tenants` nightly cron — `portfolioWorker.js` (also keeps its date-scoped `jobId`) | Yes, same key |
+| `ANALYTICS_RECALCULATION_COMPLETE` carrying `_rebuildMeta` (admin `full-portfolio` rebuild) | **No** — already single-flight via the rebuild lock, and dropping it would leave that lock held until its 1 h TTL because no job with `_rebuildMeta` would complete |
+| `PORTFOLIO_STALE_REVALUATION` — debounced via `scheduleDebouncedJob` (30 min) | No (unchanged) |
+
+**Known trade-off:** a cascade that arrives while a full valuation is already **active** is dropped rather than queued behind it. The running job fetched its asset list when it started. Assets it hasn't reached yet load their transactions lazily, so they still see the new data. Assets already processed, and brand-new portfolio items, only catch up on the next full valuation: the nightly 4 AM revaluation, the staleness check, or the next import. Per-item FIFO/PnL state (`process-portfolio-changes`) and analytics are not affected.
 
 #### Scoped Update
 Triggered by a manual transaction change (e.g., `MANUAL_TRANSACTION_MODIFIED` event).
@@ -47,7 +63,7 @@ This ensures portfolio history has no gaps even when no transactions occur for d
     - `process-amortizing-loan` (amortizing loans)
 
 **Important:** `process-cash-holdings` is intentionally excluded. Cash holdings haven't changed (no new transactions), and that job emits `CASH_HOLDINGS_PROCESSED` which cascades into a full analytics rebuild + a second valuation run. The `value-all-assets` job already handles cash assets via its forward-fill logic.
-3.  **Idempotency**: The valuation engine deletes and rebuilds all history, so running it multiple times is safe.
+3.  **Idempotency**: The valuation engine deletes and rebuilds all history, so running it multiple times *sequentially* is safe. Concurrent runs for the same tenant are not safe: they race each other's delete/create. The nightly `value-all-assets` therefore shares the per-tenant deduplication key with the event cascade (see [Full-valuation deduplication](#full-valuation-deduplication)), in addition to its date-scoped `jobId`.
 
 **Schedule chain**: securityMasterWorker (3 AM, refreshes prices) -> portfolioWorker (4 AM, revaluation) -> insightGeneratorWorker (6 AM, AI insights).
 

@@ -2,7 +2,7 @@ const { Worker } = require('bullmq');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { EVENTS_QUEUE_NAME, enqueueEvent } = require('../queues/eventsQueue');
-const { getPortfolioQueue } = require('../queues/portfolioQueue');
+const { getPortfolioQueue, fullValuationDedupOpts } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
@@ -337,11 +337,20 @@ const processEventJob = async (job) => {
                     // single-flight lock (see `utils/rebuildLock.js`). The
                     // loan processors run independently and don't gate lock
                     // release.
+                    //
+                    // Organic cascades are deduplicated per tenant: back-to-back
+                    // imports otherwise stack several full valuations that run
+                    // concurrently (portfolio concurrency is 5), each wiping and
+                    // rebuilding the same history. Admin rebuilds (`_rebuildMeta`)
+                    // are already single-flight via their lock and must never be
+                    // dropped, or no job would complete to release that lock.
                     logger.info(`Analytics recalculation complete (full) for tenant ${tenantId}. Enqueuing full valuation for ALL assets.`);
-                    await getPortfolioQueue().add('value-all-assets', {
-                        tenantId,
-                        ...(_rebuildMeta ? { _rebuildMeta } : {}),
-                    });
+                    const valuationJob = await getPortfolioQueue().add(
+                        'value-all-assets',
+                        { tenantId, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
+                        _rebuildMeta ? {} : fullValuationDedupOpts(tenantId),
+                    );
+                    logger.info(`[Event] value-all-assets for tenant ${tenantId} → job ${valuationJob?.id} (an existing job id means the request was deduplicated).`);
                     await getPortfolioQueue().add('process-amortizing-loan', { tenantId });
                     await getPortfolioQueue().add('process-simple-liability', { tenantId });
                 } else if (portfolioItemIds && portfolioItemIds.length > 0) {

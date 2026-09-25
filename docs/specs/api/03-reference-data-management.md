@@ -320,6 +320,10 @@ When `ANALYTICS_RECALCULATION_COMPLETE` fires with `isFullRebuild: true`, the ev
 
 The suppression guard in `eventSchedulerWorker` checks `_rebuildMeta?.rebuildType === 'full-analytics'` and short-circuits the cascade in that one case. Every other path (nightly cron, transaction-driven, `full-portfolio` manual rebuild) is unaffected because the check is exact-match on a value that only flows through the manual-rebuild path.
 
+### `value-all-assets` deduplication exemption
+
+Organic `value-all-assets` jobs (from import cascades and the nightly cron) are deduplicated per tenant with BullMQ's `deduplication` option. This stops overlapping full valuations for the same tenant. The `full-portfolio` rebuild's `value-all-assets`, which carries `_rebuildMeta`, is deliberately **not** deduplicated. If it were dropped in favour of an in-flight organic run, no job carrying `_rebuildMeta` would ever complete, and the `rebuild-lock:<tenantId>:full-portfolio` lock would stay held until its 1-hour TTL. The admin rebuild is already single-flight via that lock. See `docs/specs/backend/06-portfolio-processing.md` → *Full-valuation deduplication*.
+
 ### Frontend: Settings → Maintenance Tab
 
 Component: `apps/web/src/components/settings/maintenance-tab.tsx`. The tab is gated on `user?.role === 'admin'` in `apps/web/src/pages/settings/index.tsx` — members and viewers don't see the entry point (and server-side auth returns 403 if they find the URL anyway).
