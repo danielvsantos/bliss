@@ -101,7 +101,7 @@ Pure utilities (encryption, hash functions, calculator logic) are tested without
 | `unit/strategies/API_STOCK.test.js` | 6 | 3-stage pricing: cache → API → 7-day lookback | stockService, Prisma, logger |
 | `unit/strategies/API_CRYPTO.test.js` | 8 | 3-stage pricing: cache → TwelveData (via cryptoService) → 7-day lookback, currency fallback | cryptoService, Prisma, logger |
 | `unit/strategies/MANUAL.test.js` | 5 | Exact match, forward-fill, future value rejection | Prisma, logger |
-| `unit/workers/eventSchedulerWorker.test.js` | 10 | Event routing for all event types (incl. SMART_IMPORT_COMMIT), missing data warnings | all queue modules, debounceService, redis, bullmq |
+| `unit/workers/eventSchedulerWorker.test.js` | 10 | Event routing for all event types (incl. SMART_IMPORT_COMMIT), missing data warnings, per-tenant `value-all-assets` dedup (admin rebuilds exempt) | all queue modules, debounceService, redis, bullmq |
 | `unit/workers/commitWorker.test.js` | 11 | Commit job validation, batch transaction creation, enrichment skip, tag linking, LLM/USER_OVERRIDE feedback, COMMITTED/READY status, error handling | prisma, tagUtils, categorizationService, eventsQueue, transactionHash, Sentry |
 | `unit/workers/smartImportHelpers.test.js` | 6 | `computeTransactionHash()` SHA-256 consistency, normalization | all smartImportWorker dependencies |
 | `unit/workers/plaidProcessorWorker.test.js` | 13 | Auto-promote threshold logic, hash-based dedup, investment detection, seedHeld behaviour, rate-limit deferral | categorizationService, geminiService, Prisma, logger |
@@ -164,6 +164,7 @@ Cascade deletion relies on the `onDelete: Cascade` rules in the Prisma schema: d
 | `integration/routes/ticker.test.js` | 12 | `GET /api/ticker/search`, `GET /api/ticker/profile` | stockService, cryptoService |
 | `integration/routes/similar.test.js` | 7 | `GET /api/similar` | geminiService.generateEmbedding, Prisma.$queryRaw |
 | `integration/routes/adminRoutes.test.js` | 6 | `POST /api/admin/regenerate-embedding` | geminiService, categorizationService |
+| `integration/valuationDedup.test.js` | 1 | Per-tenant `value-all-assets` BullMQ deduplication: collapses while waiting and active, isolates tenants, and releases the key on completion despite 24h job retention | none (real Redis + BullMQ, throwaway queue name) |
 
 All integration tests verify API key authentication (401 for missing/wrong key), request validation (400 for missing fields), and success responses. Tests use `supertest` against the real Express app with mocked external services.
 

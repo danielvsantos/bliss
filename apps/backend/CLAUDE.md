@@ -71,6 +71,8 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 
 **Critical:** `originalScope` and `portfolioItemIds` must be threaded through the entire pipeline from event source to final worker. Dropping these breaks scoped (incremental) updates.
 
+**Critical:** Every non-admin `value-all-assets` enqueue must pass `fullValuationDedupOpts(tenantId)` (from `queues/portfolioQueue.js`). With portfolio concurrency 5, two full valuations for one tenant run side by side and race each other's delete/rebuild of `PortfolioValueHistory`/`PortfolioHolding`. See `docs/specs/backend/06-portfolio-processing.md` → *Full-valuation deduplication*.
+
 ## Workers reference
 
 | Worker | Queue | Concurrency | Lock duration | Key job types |

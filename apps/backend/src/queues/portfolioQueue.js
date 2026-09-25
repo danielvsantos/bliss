@@ -29,6 +29,15 @@ const getPortfolioQueue = () => {
     return portfolioQueueInstance;
 };
 
+// BullMQ simple-mode deduplication: while a `value-all-assets` job for this
+// tenant is waiting, delayed, active or retrying, further adds with the same
+// id are dropped. The key is released when the job completes or finally
+// fails. A plain custom `jobId` would not work here: completed jobs are kept
+// for 24h (`removeOnComplete`), which would block every revaluation for a day.
+const fullValuationDedupOpts = (tenantId) => ({
+    deduplication: { id: `value-all-assets:${tenantId}` },
+});
+
 async function enqueuePortfolioJob(jobName, data) {
     try {
         await getPortfolioQueue().add(jobName, data);
@@ -42,5 +51,6 @@ async function enqueuePortfolioJob(jobName, data) {
 module.exports = {
     getPortfolioQueue,
     enqueuePortfolioJob,
+    fullValuationDedupOpts,
     PORTFOLIO_QUEUE_NAME,
 }; 

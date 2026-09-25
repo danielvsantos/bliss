@@ -2,7 +2,7 @@ const Sentry = require('@sentry/node');
 const { Worker } = require('bullmq');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
-const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue } = require('../queues/portfolioQueue');
+const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue, fullValuationDedupOpts } = require('../queues/portfolioQueue');
 const prisma = require('../../prisma/prisma');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
@@ -192,7 +192,12 @@ const processPortfolioJob = async (job, token) => {
                         // rebuild + a second valuation run — all unnecessary. The
                         // `value-all-assets` job already handles cash assets via its
                         // forward-fill logic in the valuation engine.
-                        await queue.add('value-all-assets', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-valuation` });
+                        // The shared dedup key also stops this overlapping an
+                        // import-triggered full valuation already in flight.
+                        await queue.add('value-all-assets', { tenantId: tenant.id }, {
+                            jobId: `${dedupePrefix}-valuation`,
+                            ...fullValuationDedupOpts(tenant.id),
+                        });
                         await queue.add('process-simple-liability', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-liability` });
                         await queue.add('process-amortizing-loan', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-amortizing` });
 

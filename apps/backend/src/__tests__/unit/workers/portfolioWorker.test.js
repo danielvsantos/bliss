@@ -27,6 +27,7 @@ jest.mock('../../../queues/portfolioQueue', () => ({
   getPortfolioQueue: jest.fn().mockReturnValue({
     add: jest.fn().mockResolvedValue({ id: 'q-1' }),
   }),
+  fullValuationDedupOpts: jest.requireActual('../../../queues/portfolioQueue').fullValuationDedupOpts,
 }));
 
 jest.mock('../../../../prisma/prisma', () => ({
@@ -168,6 +169,20 @@ describe('portfolioWorker — processPortfolioJob', () => {
     // Each tenant gets 3 jobs: value-all-assets, process-simple-liability, process-amortizing-loan
     expect(mockQueue.add).toHaveBeenCalledTimes(6); // 2 tenants * 3 jobs
     expect(result.enqueued).toBe(2);
+  });
+
+  it('revalue-all-tenants shares the per-tenant value-all-assets dedup key with the event cascade', async () => {
+    prisma.tenant.findMany.mockResolvedValue([{ id: 'tenant-1' }]);
+    const mockQueue = { add: jest.fn().mockResolvedValue({ id: 'q-1' }) };
+    getPortfolioQueue.mockReturnValue(mockQueue);
+
+    await processPortfolioJob(makeJob('revalue-all-tenants', {}));
+
+    const valuationCall = mockQueue.add.mock.calls.find(([name]) => name === 'value-all-assets');
+    expect(valuationCall[2]).toEqual({
+      jobId: expect.stringMatching(/^nightly-revalue-tenant-1-\d{4}-\d{2}-\d{2}-valuation$/),
+      deduplication: { id: 'value-all-assets:tenant-1' },
+    });
   });
 
   it('handles unknown job types gracefully', async () => {
