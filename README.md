@@ -179,7 +179,7 @@ Open **http://localhost:8080** and create your account. The database is automati
 
 ### Without Docker (local development)
 
-Prerequisites: Node.js 20+, pnpm 9+, PostgreSQL 16 with pgvector, Redis 7+
+Prerequisites: Node.js 22+, pnpm 9+, PostgreSQL 16 with pgvector, Redis 7+
 
 ```bash
 git clone https://github.com/danielvsantos/bliss.git && cd bliss
@@ -285,7 +285,7 @@ pnpm test:web          # 542 tests (Vitest + MSW) — hooks, pages, components, 
 
 All environment variables are documented in [`.env.example`](.env.example) and explained in detail in the [Configuration Reference](https://blissfinance.co/docs/configuration).
 
-The single root `.env` file is the source of truth for local development. Docker Compose reads from it automatically. For production, each deployment platform (Vercel, Cloud Run) manages its own environment variables.
+The single root `.env` file is the source of truth for local development. Docker Compose reads from it automatically. For production, the deployment platform (Railway, Cloud Run, or your own host) manages its own environment variables.
 
 ---
 

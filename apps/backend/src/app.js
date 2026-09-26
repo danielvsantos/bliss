@@ -1,4 +1,7 @@
 const Sentry = require('@sentry/node');
+// Zero-dependency module by design — this runs before validateEnv(), and
+// encryption.js throws at import time when ENCRYPTION_SECRET is unset.
+const { scrubEvent } = require('./utils/sentryScrub');
 
 // Sentry must be initialized before any other imports that create spans
 Sentry.init({
@@ -6,6 +9,10 @@ Sentry.init({
   environment: process.env.NODE_ENV,
   tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
   integrations: [Sentry.prismaIntegration()],
+  // Strips HTTP client envelopes (axios `config.data`/`config.headers`) and
+  // denylisted keys — Prisma errors embed *decrypted* transaction fields
+  // because encryption is middleware. See packages/shared/src/sentryScrub.js.
+  beforeSend: scrubEvent,
 });
 
 const express = require('express');
@@ -50,6 +57,9 @@ app.use('/api/admin/rebuild', require('./routes/rebuild'));
 app.use('/api/ticker', require('./routes/ticker'));
 app.use('/api/security-master', require('./routes/securityMaster'));
 app.use('/api/insights', require('./routes/insights'));
+// Authenticated on purpose — version strings are information disclosure and
+// must not sit on the unauthenticated /health endpoints. See routes/runtime.js.
+app.use('/api/runtime', require('./routes/runtime'));
 
 // Health Check Endpoint — pings Redis to detect degraded state
 app.get('/health', async (req, res) => {

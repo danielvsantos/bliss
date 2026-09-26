@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { validateEnv } from '../../../utils/validateEnv.js';
+import { validateEnv, MIN_SECRET_LENGTH } from '../../../utils/validateEnv.js';
 
 describe('validateEnv', () => {
   const savedEnv: Record<string, string | undefined> = {};
@@ -39,13 +39,17 @@ describe('validateEnv', () => {
     }
   });
 
-  /** Sets all required env vars to valid values */
+  /**
+   * Sets all required env vars to valid values.
+   * Every secret is >= MIN_SECRET_LENGTH — the length floor is an error, so
+   * shorter fixtures would make every unrelated assertion below fail.
+   */
   function setAllRequired() {
     process.env.DATABASE_URL = 'postgresql://localhost:5432/bliss';
-    process.env.JWT_SECRET_CURRENT = 'a-real-secret-key-for-testing';
+    process.env.JWT_SECRET_CURRENT = 'a-real-secret-key-for-testing-32c';
     process.env.ENCRYPTION_SECRET = 'test-secret-that-is-exactly-32-by';
-    process.env.INTERNAL_API_KEY = 'a-real-internal-api-key';
-    process.env.NEXTAUTH_SECRET = 'a-nextauth-secret';
+    process.env.INTERNAL_API_KEY = 'a-real-internal-api-key-32-chars!';
+    process.env.NEXTAUTH_SECRET = 'a-nextauth-secret-of-32-chars-ok!';
   }
 
   /** Sets all optional vars too */
@@ -271,6 +275,82 @@ describe('validateEnv', () => {
       process.env.JWT_SECRET_CURRENT = 'changeme';
       process.env.INTERNAL_API_KEY = 'your-default-api-key';
       process.env.NODE_ENV = 'development';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => validateEnv()).not.toThrow();
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('secret strength (minimum length)', () => {
+    const shortSecret = 'too-short';
+
+    it.each([
+      'ENCRYPTION_SECRET',
+      'JWT_SECRET_CURRENT',
+      'NEXTAUTH_SECRET',
+      'INTERNAL_API_KEY',
+    ])('throws in production when %s is shorter than the minimum', (key) => {
+      setAllRequired();
+      setAllOptional();
+      process.env[key] = shortSecret;
+      process.env.NODE_ENV = 'production';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => validateEnv()).toThrow(
+        new RegExp(`${key} must be at least ${MIN_SECRET_LENGTH} characters`),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('warns instead of throwing in development', () => {
+      setAllRequired();
+      setAllOptional();
+      process.env.INTERNAL_API_KEY = shortSecret;
+      process.env.NODE_ENV = 'development';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => validateEnv()).not.toThrow();
+      const msgs = warnSpy.mock.calls.map((c) => String(c[0]));
+      expect(msgs.some((m) => m.includes('INTERNAL_API_KEY must be at least'))).toBe(true);
+      warnSpy.mockRestore();
+    });
+
+    it('accepts a secret exactly at the minimum length', () => {
+      setAllRequired();
+      setAllOptional();
+      process.env.INTERNAL_API_KEY = 'x'.repeat(MIN_SECRET_LENGTH);
+      process.env.NODE_ENV = 'production';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => validateEnv()).not.toThrow();
+      warnSpy.mockRestore();
+    });
+
+    it('reports the missing-var error, not a length error, when a secret is absent', () => {
+      setAllRequired();
+      setAllOptional();
+      delete process.env.NEXTAUTH_SECRET;
+      process.env.NODE_ENV = 'production';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(() => validateEnv()).toThrow('NEXTAUTH_SECRET is required');
+      try {
+        validateEnv();
+      } catch (e) {
+        expect((e as Error).message).not.toContain('NEXTAUTH_SECRET must be at least');
+      }
+      warnSpy.mockRestore();
+    });
+
+    it('passes for the lengths scripts/setup.sh generates (48/48/48/32)', () => {
+      setAllRequired();
+      setAllOptional();
+      process.env.ENCRYPTION_SECRET = 'e'.repeat(48);
+      process.env.JWT_SECRET_CURRENT = 'j'.repeat(48);
+      process.env.NEXTAUTH_SECRET = 'n'.repeat(48);
+      process.env.INTERNAL_API_KEY = 'i'.repeat(32);
+      process.env.NODE_ENV = 'production';
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       expect(() => validateEnv()).not.toThrow();

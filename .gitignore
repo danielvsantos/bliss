@@ -102,3 +102,6 @@ apps/api/tmp/
 # Misc
 *.pem
 *.local
+
+# Generated at build time by apps/web/scripts/write-version.mjs
+apps/web/public/version.json

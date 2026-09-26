@@ -75,10 +75,10 @@ On first startup, the API container automatically:
 
 | Stage | Base | Purpose |
 |-------|------|---------|
-| `deps` | `node:20-alpine` | pnpm install with frozen lockfile; copies all workspace package.json stubs for peer resolution |
+| `deps` | `node:22-alpine` | pnpm install with frozen lockfile; copies all workspace package.json stubs for peer resolution |
 | `shared-build` | deps | Builds `@bliss/shared` package |
 | `builder` | shared-build | Generates Prisma client, builds Next.js standalone output |
-| `runner` | `node:20-alpine` | Production image with non-root `nextjs` user (UID 1001). Copies standalone output, Prisma schema/migrations, seed script, and `wait-for-db.sh` |
+| `runner` | `node:22-alpine` | Production image with non-root `nextjs` user (UID 1001). Copies standalone output, Prisma schema/migrations, seed script, and `wait-for-db.sh` |
 
 The standalone build includes only the files needed to run the server, significantly reducing the final image size.
 
@@ -86,16 +86,16 @@ The standalone build includes only the files needed to run the server, significa
 
 | Stage | Base | Purpose |
 |-------|------|---------|
-| `deps` | `node:20-alpine` | pnpm install; sets `PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x` for Alpine compatibility |
+| `deps` | `node:22-alpine` | pnpm install; sets `PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x` for Alpine compatibility |
 | `shared-build` | deps | Builds `@bliss/shared` package |
 | `builder` | shared-build | Generates Prisma client for the backend app |
-| `runner` | `node:20-alpine` | Production image with non-root `backendjs` user (UID 1001). Copies app code, shared package dist, full node_modules, and Prisma schema |
+| `runner` | `node:22-alpine` | Production image with non-root `backendjs` user (UID 1001). Copies app code, shared package dist, full node_modules, and Prisma schema |
 
 ### `Dockerfile.web` -- Vite + nginx (2 stages)
 
 | Stage | Base | Purpose |
 |-------|------|---------|
-| `builder` | `node:20-alpine` | pnpm install (ignore-scripts), Vite build with `NEXT_PUBLIC_API_URL` build arg baked into the static bundle |
+| `builder` | `node:22-alpine` | pnpm install (ignore-scripts), Vite build with `NEXT_PUBLIC_API_URL` build arg baked into the static bundle |
 | `runner` | `nginx:alpine` | Copies built assets to `/usr/share/nginx/html` and custom nginx config |
 
 The `NEXT_PUBLIC_API_URL` build argument controls which API URL is embedded in the frontend bundle. It defaults to `http://localhost:3000` and must be set at build time (not runtime).

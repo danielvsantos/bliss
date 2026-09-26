@@ -30,7 +30,8 @@ export interface AuthContextType {
   signIn: (data: SignInData) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  checkSession: () => Promise<void>;
+  /** Resolves to the signed-in user, or null when there is no session. */
+  checkSession: () => Promise<User | null>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);

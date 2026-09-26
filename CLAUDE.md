@@ -16,7 +16,11 @@ Monorepo with four services behind a single `.env` file:
 
 **Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues.
 
-**Database:** PostgreSQL 16 with pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
+**Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
+
+**⚠️ Version skew — dev/CI may be behind your deployment.** `docker-compose.yml` and both CI jobs pin `pgvector/pgvector:pg16`, so the test suite has never run against a major version above 16. Managed Postgres providers routinely provision something newer, so check what yours actually runs (`SHOW server_version`) — a `pg_dump` from a 16 client against a newer server refuses outright, which is usually how people find out. The least-covered code in the repo is exactly the code most exposed to a major-version difference: the raw-SQL `vector(768)` paths that Prisma does not model and that no migration declares. Treat a pgvector or planner-sensitive change as untested against your deployment until CI runs that major version too.
+
+Bumping the compose image is **not** a drop-in change: a `PGDATA` directory initialised by PG16 will not start under PG18 (`database files are incompatible with server`), so every existing self-host volume needs a dump/restore or `pg_upgrade` first.
 
 **Multi-tenancy:** Query-level isolation. Every Prisma query must include `tenantId`. No RLS.
 
@@ -91,10 +95,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 2,373 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 728 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,031 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 614 tests |
+| All | `pnpm test` | -- | 2,599 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 880 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,081 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 638 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 

@@ -169,7 +169,8 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 | Service | Purpose |
 |---------|---------|
-| `auth.service.js` | Password hashing (PBKDF2-SHA512), user CRUD, Google OAuth find-or-create |
+| `auth.service.js` | User CRUD, Google OAuth find-or-create, and `verifyAndUpgrade` (verify + rehash-on-login) |
+| `password.js` | Password hashing. scrypt `N=2^17,r=8,p=1`, PHC-style string in `passwordHash`, `passwordSalt` null. Verifies legacy PBKDF2-1,000 rows too and upgrades them on login |
 | `transaction.service.js` | Debt repayment splitting (principal + interest calculation) |
 | `plaid.service.js` | Pre-configured Plaid client instance |
 | `valuation.service.js` | Asset valuation logic |

@@ -204,5 +204,16 @@
     "layers": {
       "backend": "docs/specs/backend/20-llm-provider-abstraction.md"
     }
+  },
+  {
+    "slug": "subscriptions",
+    "title": "Subscriptions & Recurring Charges",
+    "description": "Deterministic recurring-charge detection (category signal + bounded interval heuristic), the Subscriptions page, and the per-merchant Confirm/Dismiss learning loop",
+    "order": 21,
+    "layers": {
+      "api": "docs/specs/api/21-subscriptions-api.md",
+      "backend": "docs/specs/backend/21-subscriptions-detection.md",
+      "frontend": "docs/specs/frontend/21-subscriptions.md"
+    }
   }
 ]

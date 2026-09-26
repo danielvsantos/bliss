@@ -267,9 +267,22 @@ pnpm test:coverage      # with coverage report
 
 Same pattern as the API app: Prisma 6 `$extends` with encrypt -> validate -> execute -> decrypt pipeline. The encryption config comes from `@bliss/shared/encryption`.
 
-## Health endpoints
+## Health & diagnostics endpoints
 
-- `GET /health` -- Redis ping + uptime (no auth required)
+- `GET /health` -- Redis ping + uptime (no auth required). **This is the path Railway polls as the backend service's deploy health check — it must stay unauthenticated and must not be given a payload that is expensive to produce.**
 - `GET /health/metrics` -- Cache statistics (no auth required)
+- `GET /api/runtime` -- **requires `apiKeyAuth`.** Node version, platform/arch, libc flavour (glibc vs musl), `START_MODE`, and the resolved versions of tracked dependencies. Answers "what is this instance *actually* running", which a green build does not prove: a stale layer cache, a platform-pinned runtime, or a `pnpm.overrides` entry that silently failed to apply all produce a successful deploy on the wrong versions.
 
-All other routes require `apiKeyAuth` middleware (checks `X-API-KEY` header against `INTERNAL_API_KEY`).
+  Authenticated deliberately. Exact runtime and dependency versions are information disclosure — they turn an untargeted scan into a targeted CVE lookup against a host already known to be vulnerable. Do not move this onto `/health`.
+
+  ```bash
+  curl -H "x-api-key: $INTERNAL_API_KEY" https://<backend>/api/runtime
+  ```
+
+  Also reports the **worker** service, which is the only way its runtime can ever be observed: on Railway the backend is deployed twice (`START_MODE=web` and `START_MODE=worker`), and the worker never calls `app.listen()`, so it has no HTTP surface. It publishes to Redis instead via `utils/workerHeartbeat.js`, refreshed every 60s with a 180s TTL. An `absent` worker in the response means the process is down or wedged — liveness information Bliss has no other way to surface.
+
+  Adding a package to `TRACKED_PACKAGES` in `utils/runtimeInfo.js`: transitives need a `via` parent, because pnpm's isolated `node_modules` only makes a service's own dependencies resolvable from its root. Version lookup falls back to walking up from the resolved entry point, since packages with an `exports` map (e.g. `openai`) reject `require('<pkg>/package.json')` outright.
+
+  The API layer aggregates this with its own runtime and the frontend's build stamp at `GET /api/runtime` on `apps/api` — that is the one to curl, since the backend has no public domain.
+
+All routes under `/api/*` require the `apiKeyAuth` middleware (checks `X-API-KEY` against `INTERNAL_API_KEY`, compared in constant time with a length guard).

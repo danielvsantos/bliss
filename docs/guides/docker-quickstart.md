@@ -69,7 +69,7 @@ If you prefer running services directly for development:
 
 | Dependency | Version | Notes |
 |---|---|---|
-| Node.js | 20+ | LTS recommended |
+| Node.js | 22+ | Node 22 LTS — supported to April 2027. Node 18 and 20 are both past end of life. |
 | pnpm | 9+ | `corepack enable && corepack prepare pnpm@latest --activate` |
 | PostgreSQL | 16+ | Must have the pgvector extension |
 | Redis | 7+ | Used by BullMQ for job queues |

@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { setAuthCookie } from '../../../utils/cookieUtils.js';
+import { normalizeEmail } from '../../../utils/normalizeEmail.js';
 
 const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -44,15 +45,22 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Normalize BEFORE validating: the regex rejects surrounding whitespace,
+    // so a pasted "  a@b.com " would otherwise be reported as malformed.
+    // Also required for the lookup itself — User.email is deterministically
+    // encrypted, so the ciphertext derives from the exact plaintext and a
+    // mixed-case address would simply not match the stored row.
+    const normalizedEmail = normalizeEmail(email);
+
     // Validate email format
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
       return;
     }
 
-    // Find user by email - encryption handled by Prisma middleware
+    // Find user by email - encryption handled by Prisma middleware.
     const user = await prisma.user.findFirst({
-      where: { email },
+      where: { email: normalizedEmail },
       include: {
         tenant: true
       }
@@ -63,18 +71,18 @@ export default async function handler(req, res) {
       return;
     }
 
-    // OAuth-only accounts have no password set — reject gracefully instead of crashing
-    if (!user.passwordHash || !user.passwordSalt) {
+    // OAuth-only accounts have no password set — reject gracefully instead of
+    // crashing. Note: only passwordHash is checked. passwordSalt is null for
+    // every scrypt-format row, so requiring it here would lock out every user
+    // the moment their hash is upgraded.
+    if (!user.passwordHash) {
       res.status(StatusCodes.UNAUTHORIZED).json({ error: 'Invalid credentials' });
       return;
     }
 
-    // Verify password using AuthService
-    const isValidPassword = await AuthService.verifyPassword(
-      password,
-      user.passwordHash,
-      user.passwordSalt
-    );
+    // Verifies against both storage formats and transparently upgrades a
+    // legacy PBKDF2-1,000 hash to scrypt on success.
+    const isValidPassword = await AuthService.verifyAndUpgrade(user, password);
 
     if (!isValidPassword) {
       res.status(StatusCodes.UNAUTHORIZED).json({ error: 'Invalid credentials' });

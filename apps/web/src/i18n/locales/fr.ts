@@ -2039,6 +2039,12 @@ const fr = {
   "Sign In": "Se connecter",
   "Sign Up": "S'inscrire",
   "Sign in with Google": "Se connecter avec Google",
+
+  // Auth rejection messages (task #71 — identity hygiene)
+  "An account with this email already exists. Sign in with your password instead.": "Un compte existe déjà avec cette adresse e-mail. Connectez-vous avec votre mot de passe.",
+  "Your Google account's email address is not verified. Verify it with Google, then try again.": "L'adresse e-mail de votre compte Google n'est pas vérifiée. Vérifiez-la auprès de Google, puis réessayez.",
+  "Sign-in with Google failed. Please try again.": "La connexion avec Google a échoué. Veuillez réessayer.",
+  "We could not sign you in automatically. Please try signing in with your password.": "Nous n'avons pas pu vous connecter automatiquement. Essayez de vous connecter avec votre mot de passe.",
   "Sign up with Google": "S'inscrire avec Google",
   "or continue with email": "ou continuer avec l'e-mail",
   "Email address": "Adresse e-mail",

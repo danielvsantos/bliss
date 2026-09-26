@@ -225,14 +225,18 @@ Sentry is initialised in `instrumentation.js` (Next.js 15 instrumentation hook),
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { init } = await import('@sentry/nextjs');
+    const { scrubEvent } = await import('./utils/sentryScrub.js');
     init({
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV,
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+      beforeSend: scrubEvent,
     });
   }
 }
 ```
+
+All four `init()` calls — nodejs, edge, browser (`instrumentation-client.js`) and the backend's `@sentry/node` — install the same `beforeSend` hook.
 
 ### What Gets Sent to Sentry
 
@@ -244,6 +248,29 @@ export async function register() {
 | Rate limit exceeded (429) | ❌ No | Handled by `express-rate-limit`, not thrown |
 
 Only thrown exceptions in `catch` blocks are sent. All intentional error responses (4xx) are returned directly without throwing.
+
+### Event Scrubbing (`beforeSend`)
+
+`sendDefaultPii` is left `false`, but that only governs what the SDK *adds*. It does nothing about what the application hands to `captureException`, and two payload shapes in this codebase carry financial data or credentials inside the error object itself:
+
+- **Prisma errors** embed the offending query payload. Because field encryption is Prisma middleware, that payload holds **decrypted** transaction descriptions and account numbers.
+- **HTTP client (axios) errors** carry `config.data` — the transaction descriptions posted to the LLM provider — and `config.headers`, which holds the provider API key.
+
+`packages/shared/src/sentryScrub.js` exports `scrubEvent(event, hint)`, the single implementation used by both services (`@bliss/shared/sentry`, re-exported through `apps/api/utils/sentryScrub.js` and `apps/backend/src/utils/sentryScrub.js`). It:
+
+| Action | Applies to |
+|---|---|
+| Deletes the container wholesale | `config`, `request`, `response`, `headers` — at the top level and anywhere in the tree |
+| Replaces the value with `[redacted]` | Keys matching the denylist: `description`, `details`, `accountNumber`, `accessToken`, `authorization`, `x-api-key`, `apiKey`, `password`, `token`, `secret`, `cookie`, `rawJson`, plus any key ending in `token` / `secret` / `apikey` / `password` |
+| Truncates to 2 KB | Any string, including the exception message |
+| Walks | `event.extra`, `event.contexts`, `event.tags`, `event.breadcrumbs`, `event.exception.values[].mechanism.data` |
+| **Never touches** | `event.exception.values[].value` (the message, beyond truncation) and `.stacktrace` |
+
+That last row is the point: a Sentry project full of empty issues is the classic failure mode of an over-eager scrubber.
+
+**Failure policy.** A `beforeSend` that returns `null` drops the event *silently and permanently*, so a bug in the hook would be invisible by construction. The whole body is wrapped in one `try/catch` that returns the **original, unscrubbed** event. Shipping an unscrubbed event is bad; shipping no events at all and not knowing is worse. `scrubEvent` never returns `null`.
+
+The module has **zero imports** by design. `apps/backend/src/app.js` initialises Sentry on line 1, before `validateEnv()` runs, and `encryption.js` throws at import time when `ENCRYPTION_SECRET` is unset.
 
 ### Sentry Mock in Tests
 

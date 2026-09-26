@@ -26,17 +26,12 @@ import { StatusCodes } from 'http-status-codes';
 import { plaidClient } from '../../../../services/plaid.service';
 import * as Sentry from '@sentry/nextjs';
 import prisma from '../../../../prisma/prisma';
+import { isAdminAuthorized as isAdminAuthorizedShared } from '../../../../utils/adminAuth.js';
 
 // ── Admin key validation ───────────────────────────────────────────────────────
 
 function isAdminAuthorized(req) {
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) {
-    console.warn('[hard-delete] ADMIN_API_KEY env var is not set — rejecting all requests');
-    return false;
-  }
-  const provided = req.headers['x-admin-key'];
-  return provided === adminKey;
+  return isAdminAuthorizedShared(req, 'plaid/items/hard-delete');
 }
 
 // ── Route handler ──────────────────────────────────────────────────────────────

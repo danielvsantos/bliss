@@ -16,7 +16,7 @@ const FETCH_TIMEOUT_MS = 10_000;        // 10 s per attempt
  *
  * Retries up to MAX_RETRIES times with exponential backoff on network
  * errors or 5xx responses. Uses a 10 s fetch timeout per attempt so a
- * hung backend never blocks a Vercel serverless function indefinitely.
+ * hung backend never blocks a request handler indefinitely.
  *
  * On final failure: logs at error level and reports to Sentry, but
  * never throws — callers can safely fire-and-forget.

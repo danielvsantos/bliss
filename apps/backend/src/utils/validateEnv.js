@@ -2,6 +2,26 @@ const logger = require('./logger');
 
 const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 
+// Minimum length for the secrets that guard everything else. Length only — no
+// entropy heuristic, which produces false negatives on legitimately random
+// strings and would be a boot-time landmine on a running instance.
+// scripts/setup.sh generates 48/48/48/32, so real installs pass.
+// Keep in sync with apps/api/utils/validateEnv.js.
+const MIN_SECRET_LENGTH = 32;
+
+/**
+ * Push a length error for a secret that is present but too short.
+ * Missing values are reported separately by the caller.
+ */
+function checkSecretLength(name, value, errors) {
+  if (value && value.length < MIN_SECRET_LENGTH) {
+    errors.push(
+      `${name} must be at least ${MIN_SECRET_LENGTH} characters (got ${value.length}). ` +
+        'Generate one with: openssl rand -base64 48'
+    );
+  }
+}
+
 const SUPPORTED_LLM_PROVIDERS = ['gemini', 'openai', 'anthropic'];
 const EMBEDDING_CAPABLE_PROVIDERS = ['gemini', 'openai'];
 
@@ -139,6 +159,12 @@ function validateEnv() {
     errors.push('ENCRYPTION_SECRET is required');
   }
 
+  // ─── Secret strength ─────────────────────────────────────────────────────
+  // The backend reads only these two of the four; the API layer validates all
+  // four (JWT_SECRET_CURRENT and NEXTAUTH_SECRET are not part of this service).
+  checkSecretLength('ENCRYPTION_SECRET', encryptionSecret, errors);
+  checkSecretLength('INTERNAL_API_KEY', apiKey, errors);
+
   // ─── LLM provider configuration ──────────────────────────────────────────
   validateLlmConfig({ errors, warnings });
 
@@ -201,4 +227,5 @@ module.exports = {
   EMBEDDING_CAPABLE_PROVIDERS,
   SUPPORTED_CURRENCY_PROVIDERS,
   PROVIDER_KEY_VAR,
+  MIN_SECRET_LENGTH,
 };

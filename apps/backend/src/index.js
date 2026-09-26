@@ -16,6 +16,7 @@ const logger = require('./utils/logger');
 const { waitForSchemaAndRefresh } = require('./utils/categoryCache');
 const { validateEnv } = require('./utils/validateEnv');
 const { keyFingerprint } = require('./utils/encryption');
+const { startWorkerHeartbeat, stopWorkerHeartbeat } = require('./utils/workerHeartbeat');
 
 const PORT = process.env.PORT || 3001;
 
@@ -62,6 +63,11 @@ const startServer = async () => {
             workers.push(startSecurityMasterWorker());
             workers.push(startSubscriptionDetectionWorker());
             logger.info('All workers have been started.');
+
+            // The worker service has no HTTP server (see below), so it
+            // publishes its runtime to Redis for /api/runtime to serve.
+            // A missing key means this process is down or wedged.
+            startWorkerHeartbeat();
         } else {
             logger.info('Skipping worker initialization (START_MODE is not "worker" or "all").');
         }
@@ -90,6 +96,9 @@ startServer();
 
 const gracefulShutdown = async () => {
     logger.info('Shutting down Bliss Backend Service...');
+    // 0. Stop publishing the runtime heartbeat — the key's TTL then lapses,
+    //    which is the correct signal for a worker that is going away.
+    stopWorkerHeartbeat();
     // 1. Close all workers first (they need Redis to clean up)
     try {
         logger.info(`Closing ${workers.length} workers...`);

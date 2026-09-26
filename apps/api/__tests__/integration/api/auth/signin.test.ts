@@ -41,13 +41,17 @@ vi.mock('../../../../prisma/prisma.js', () => ({
   default: mockPrisma,
 }));
 
-// Mock AuthService
-const { mockVerifyPassword } = vi.hoisted(() => ({
-  mockVerifyPassword: vi.fn(),
+// Mock AuthService.
+// The handler calls verifyAndUpgrade, which both verifies against either
+// storage format AND transparently rehashes a legacy PBKDF2 row to scrypt.
+// The real rehash path is exercised end-to-end against a real database row in
+// __tests__/integration/api/auth/password-upgrade.test.ts.
+const { mockVerifyAndUpgrade } = vi.hoisted(() => ({
+  mockVerifyAndUpgrade: vi.fn(),
 }));
 
 vi.mock('../../../../services/auth.service', () => ({
-  AuthService: { verifyPassword: mockVerifyPassword },
+  AuthService: { verifyAndUpgrade: mockVerifyAndUpgrade },
 }));
 
 // Mock jsonwebtoken
@@ -170,7 +174,7 @@ describe('POST /api/auth/signin', () => {
 
   it('returns 401 for wrong password', async () => {
     mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
-    mockVerifyPassword.mockResolvedValueOnce(false);
+    mockVerifyAndUpgrade.mockResolvedValueOnce(false);
 
     const req = makeReq({ body: { email: 'test@example.com', password: 'wrong-password' } });
     const res = makeRes();
@@ -179,12 +183,12 @@ describe('POST /api/auth/signin', () => {
 
     expect(res._status).toBe(401);
     expect(res._body).toEqual({ error: 'Invalid credentials' });
-    expect(mockVerifyPassword).toHaveBeenCalledWith('wrong-password', 'hashed-password', 'salt');
+    expect(mockVerifyAndUpgrade).toHaveBeenCalledWith(TEST_USER, 'wrong-password');
   });
 
   it('returns 200 with user object and calls setAuthCookie on success', async () => {
     mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
-    mockVerifyPassword.mockResolvedValueOnce(true);
+    mockVerifyAndUpgrade.mockResolvedValueOnce(true);
 
     const req = makeReq({ body: { email: 'test@example.com', password: 'correct-password' } });
     const res = makeRes();
@@ -208,5 +212,86 @@ describe('POST /api/auth/signin', () => {
       expect.any(String),
       expect.objectContaining({ expiresIn: '24h' }),
     );
+  });
+
+  // passwordSalt is null for every scrypt-format row. The handler previously
+  // required BOTH columns, which would have rejected every user the moment
+  // their hash was upgraded — a total lockout with no error to diagnose it.
+  it('accepts a scrypt-format user whose passwordSalt is null', async () => {
+    mockPrisma.user.findFirst.mockResolvedValueOnce({
+      ...TEST_USER,
+      passwordHash: '$scrypt$N=131072,r=8,p=1$c2FsdA==$aGFzaA==',
+      passwordSalt: null,
+    });
+    mockVerifyAndUpgrade.mockResolvedValueOnce(true);
+
+    const req = makeReq({ body: { email: 'test@example.com', password: 'correct-password' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(setAuthCookie).toHaveBeenCalled();
+  });
+
+  // A deliberately mixed-case fixture. User.email is deterministically
+  // encrypted, so the ciphertext derives from the exact plaintext bytes —
+  // without normalization at this call site, a user who types their address
+  // with different capitalisation than they registered with simply cannot log
+  // in. A suite written entirely in lowercase would never catch it.
+  it('normalizes a mixed-case email before looking the user up', async () => {
+    mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
+    mockVerifyAndUpgrade.mockResolvedValueOnce(true);
+
+    const req = makeReq({ body: { email: '  TeSt@ExAmPle.COM  ', password: 'correct-password' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { email: 'test@example.com' } }),
+    );
+  });
+
+  // The format regex rejects surrounding whitespace, so normalizing after
+  // validating would report a pasted address as malformed.
+  it('accepts a padded email rather than rejecting it as malformed', async () => {
+    mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
+    mockVerifyAndUpgrade.mockResolvedValueOnce(true);
+
+    const req = makeReq({ body: { email: ' test@example.com ', password: 'correct-password' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+  });
+
+  it('still rejects a genuinely malformed email', async () => {
+    const req = makeReq({ body: { email: 'not an email', password: 'x' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body).toEqual({ error: 'Invalid email format' });
+  });
+
+  it('returns 401 for an OAuth-only account with no password hash', async () => {
+    mockPrisma.user.findFirst.mockResolvedValueOnce({
+      ...TEST_USER,
+      passwordHash: null,
+      passwordSalt: null,
+    });
+
+    const req = makeReq({ body: { email: 'test@example.com', password: 'anything' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(401);
+    expect(res._body).toEqual({ error: 'Invalid credentials' });
+    expect(mockVerifyAndUpgrade).not.toHaveBeenCalled();
   });
 });

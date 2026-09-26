@@ -21,12 +21,11 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "@bliss/shared": "workspace:*",
-    "@bull-board/api": "^5.18.0",
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.1.0",
     "@sentry/node": "^10.40.0",
-    "axios": "^1.16.1",
+    "axios": "^1.18.0",
     "bullmq": "^5.51.0",
     "cors": "^2.8.5",
     "decimal.js": "^10.4.3",
@@ -61,6 +60,6 @@
     "supertest": "^7.2.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   }
 }

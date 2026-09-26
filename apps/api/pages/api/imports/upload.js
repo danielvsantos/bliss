@@ -32,7 +32,8 @@ export default withAuth(async function handler(req, res) {
   }
 
   // Initialize storage adapter lazily (inside handler so it fires at request time,
-  // not at module load / bundle analysis time — required for @google-cloud/storage on Vercel)
+  // not at module load / bundle analysis time — required for @google-cloud/storage,
+  // which webpack cannot statically bundle)
   let storage;
   try {
     storage = createStorageAdapter();

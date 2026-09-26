@@ -21,6 +21,7 @@
 import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import prisma from '../../../../../prisma/prisma';
+import { isAdminAuthorized as isAdminAuthorizedShared } from '../../../../../utils/adminAuth.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY || '';
@@ -28,13 +29,7 @@ const BACKEND_API_KEY = process.env.INTERNAL_API_KEY || '';
 // ── Admin key validation (mirrors plaid/items/hard-delete.js) ──────────────
 
 function isAdminAuthorized(req) {
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) {
-    console.warn('[admin/regenerate-embeddings] ADMIN_API_KEY env var is not set — rejecting all requests');
-    return false;
-  }
-  const provided = req.headers['x-admin-key'];
-  return provided === adminKey;
+  return isAdminAuthorizedShared(req, 'admin/regenerate-embeddings');
 }
 
 // ── Route handler ──────────────────────────────────────────────────────────

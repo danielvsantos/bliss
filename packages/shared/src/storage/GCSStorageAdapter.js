@@ -5,7 +5,7 @@
  * Credentials from GCS_SERVICE_ACCOUNT_JSON (JSON string) or
  * GOOGLE_APPLICATION_CREDENTIALS (file path fallback).
  *
- * Uses lazy async import() so this works in both ESM (Vercel/Next.js) and CJS
+ * Uses lazy async import() so this works in both ESM (Next.js) and CJS
  * (Express/backend) runtimes — synchronous require() fails in ESM contexts.
  */
 export class GCSStorageAdapter {

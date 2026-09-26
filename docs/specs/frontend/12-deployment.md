@@ -10,7 +10,7 @@ The frontend is a static single-page application built with Vite and React 18. I
 
 The frontend uses a 2-stage multi-stage Docker build:
 
-1. **builder** (`node:20-alpine`): Installs dependencies via pnpm (with `--ignore-scripts` since no native modules are needed), then runs `vite build`. The `NEXT_PUBLIC_API_URL` build argument is set as an environment variable so Vite injects it into the bundle.
+1. **builder** (`node:22-alpine`): Installs dependencies via pnpm (with `--ignore-scripts` since no native modules are needed), then runs `vite build`. The `NEXT_PUBLIC_API_URL` build argument is set as an environment variable so Vite injects it into the bundle.
 2. **runner** (`nginx:alpine`): Copies the built assets from `/app/apps/web/dist` to `/usr/share/nginx/html` and applies the custom nginx configuration.
 
 ## 12.3. Build Arguments
@@ -64,7 +64,7 @@ This means:
 
 The Vite build output (`apps/web/dist/`) is a standard static site and can be deployed to:
 
-- **Vercel**: Zero-config static deployment with automatic CDN
+- **Railway / Cloud Run / any static host**: the build output in `dist/` is a plain static bundle
 - **Netlify**: Static site with `_redirects` file for SPA fallback (`/* /index.html 200`)
 - **AWS S3 + CloudFront**: Upload dist to S3, configure CloudFront with custom error response for SPA routing
 - **Any static file server**: Serve the `dist/` directory with a fallback to `index.html` for unknown routes
