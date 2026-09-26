@@ -14,11 +14,13 @@ jobs:
   api-unit:
     name: API — Unit Tests
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'apps/api/') ||
-      contains(github.event.pull_request.changed_files, 'packages/shared/') ||
-      contains(github.event.pull_request.changed_files, 'prisma/')
+    # No path filter. `github.event.pull_request.changed_files` is an INTEGER
+    # (the count of changed files), not a list of paths, so the
+    # `contains(changed_files, 'apps/api/')` guard that used to live here was
+    # always false. On a pull_request event the condition therefore reduced to
+    # `github.event_name == 'push'` — also false — and this job silently
+    # skipped on every PR ever opened. The suite takes ~20s; running it
+    # unconditionally is cheaper than a filter that can be wrong this quietly.
 
     steps:
       - uses: actions/checkout@v4
@@ -208,10 +210,7 @@ jobs:
   web-unit:
     name: Web — Unit Tests
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'apps/web/') ||
-      contains(github.event.pull_request.changed_files, 'packages/shared/')
+    # No path filter — see the note on `api-unit`. ~46s.
 
     steps:
       - uses: actions/checkout@v4
@@ -277,15 +276,13 @@ jobs:
   docker-smoke:
     name: Docker — Build & Health Check
     runs-on: ubuntu-latest
-    # Run on every push to main; on PRs only when Docker/infra files change
-    if: |
-      github.ref == 'refs/heads/main' ||
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'docker/') ||
-      contains(github.event.pull_request.changed_files, 'docker-compose') ||
-      contains(github.event.pull_request.changed_files, 'prisma/') ||
-      contains(github.event.pull_request.changed_files, 'package.json') ||
-      contains(github.event.pull_request.changed_files, 'pnpm-lock.yaml')
+    # No path filter — see the note on `api-unit`. This is the slowest job
+    # (three image builds), so it is the one a correct filter would most help;
+    # but it is also the only check that would have caught a broken Dockerfile,
+    # and it skipped on the very PR that rewrote all five `FROM` lines for
+    # Node 22. Correctness first. If build time becomes a problem, compute the
+    # changed paths properly (a `git diff` job exposing outputs, or
+    # dorny/paths-filter) rather than reinstating a guard against an integer.
 
     steps:
       - uses: actions/checkout@v4
