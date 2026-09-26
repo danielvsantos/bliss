@@ -23,7 +23,7 @@
     "@bliss/shared": "workspace:*",
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
-    "@prisma/client": "^6.1.0",
+    "@prisma/client": "^7.10.0",
     "@sentry/node": "^10.40.0",
     "axios": "^1.18.0",
     "bullmq": "^5.51.0",
