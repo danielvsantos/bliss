@@ -16,7 +16,11 @@ Monorepo with four services behind a single `.env` file:
 
 **Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues.
 
-**Database:** PostgreSQL 16 with pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
+**Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
+
+**⚠️ Version skew — dev/CI are behind production.** `docker-compose.yml` and both CI jobs pin `pgvector/pgvector:pg16`, so the test suite has never run against a major version above 16. Reference production deployments run **18.x**. Nothing has broken because of this, but the least-covered code in the repo is exactly the code most exposed to a major-version difference: the raw-SQL `vector(768)` paths that Prisma does not model and that no migration declares. Treat a pgvector or planner-sensitive change as untested against production until CI runs 18 too.
+
+Bumping the compose image is **not** a drop-in change: a `PGDATA` directory initialised by PG16 will not start under PG18 (`database files are incompatible with server`), so every existing self-host volume needs a dump/restore or `pg_upgrade` first.
 
 **Multi-tenancy:** Query-level isolation. Every Prisma query must include `tenantId`. No RLS.
 
