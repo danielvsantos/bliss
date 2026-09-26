@@ -18,7 +18,7 @@ Monorepo with four services behind a single `.env` file:
 
 **Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
 
-**⚠️ Version skew — dev/CI are behind production.** `docker-compose.yml` and both CI jobs pin `pgvector/pgvector:pg16`, so the test suite has never run against a major version above 16. Reference production deployments run **18.x**. Nothing has broken because of this, but the least-covered code in the repo is exactly the code most exposed to a major-version difference: the raw-SQL `vector(768)` paths that Prisma does not model and that no migration declares. Treat a pgvector or planner-sensitive change as untested against production until CI runs 18 too.
+**⚠️ Version skew — dev/CI may be behind your deployment.** `docker-compose.yml` and both CI jobs pin `pgvector/pgvector:pg16`, so the test suite has never run against a major version above 16. Managed Postgres providers routinely provision something newer, so check what yours actually runs (`SHOW server_version`) — a `pg_dump` from a 16 client against a newer server refuses outright, which is usually how people find out. The least-covered code in the repo is exactly the code most exposed to a major-version difference: the raw-SQL `vector(768)` paths that Prisma does not model and that no migration declares. Treat a pgvector or planner-sensitive change as untested against your deployment until CI runs that major version too.
 
 Bumping the compose image is **not** a drop-in change: a `PGDATA` directory initialised by PG16 will not start under PG18 (`database files are incompatible with server`), so every existing self-host volume needs a dump/restore or `pg_upgrade` first.
 

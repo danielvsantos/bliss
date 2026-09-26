@@ -59,7 +59,8 @@ const SALT_BYTES = 16;
  *
  * Peak memory is structurally bounded: `apps/api` runs at Node's default
  * UV_THREADPOOL_SIZE of 4, so at most four hashes are ever in flight —
- * 4 × 128 MiB = 512 MiB, about 2% of the 24 GB production instance.
+ * 4 × 128 MiB = 512 MiB. Size the API container with that ceiling in mind; a
+ * host with less headroom than that should lower N rather than drop `maxmem`.
  */
 function maxmemFor(N, r) {
   return 128 * N * r * 2;
