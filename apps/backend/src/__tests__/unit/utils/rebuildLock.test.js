@@ -73,6 +73,28 @@ describe('maybeReleaseRebuildLock', () => {
     expect(release).toHaveBeenCalledWith('rebuild-lock:t1:single-asset');
   });
 
+  it('releases the security-data lock when refresh-tenant-securities completes with matching meta', async () => {
+    await maybeReleaseRebuildLock(
+      makeJob('refresh-tenant-securities', {
+        tenantId: 't1',
+        _rebuildMeta: { rebuildType: 'security-data' },
+      }),
+    );
+
+    expect(release).toHaveBeenCalledWith('rebuild-lock:t1:security-data');
+  });
+
+  it('does NOT release the full-portfolio lock on its refresh-tenant-securities step', async () => {
+    await maybeReleaseRebuildLock(
+      makeJob('refresh-tenant-securities', {
+        tenantId: 't1',
+        _rebuildMeta: { rebuildType: 'full-portfolio' },
+      }),
+    );
+
+    expect(release).not.toHaveBeenCalled();
+  });
+
   it('does NOT release when the job name does not match the terminal for the scope', async () => {
     // process-portfolio-changes is the FIRST step of full-portfolio, not
     // the terminal. It carries `_rebuildMeta` while the chain is still

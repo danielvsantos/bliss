@@ -1,6 +1,7 @@
 // ─── securityMasterService.test.js ──────────────────────────────────────────
 // Unit tests for SecurityMaster service: getBySymbol, getBySymbols,
-// upsertFromProfile, upsertFundamentals, getAllActiveStockSymbols,
+// upsertFromProfile, upsertFundamentals, getAllActiveSecuritySymbols,
+// getTenantSecuritySymbols,
 // getAllSecurityMasterSymbols.
 
 jest.mock('../../../../prisma/prisma.js', () => ({
@@ -25,8 +26,10 @@ const {
   getBySymbols,
   upsertFromProfile,
   upsertFundamentals,
-  getAllActiveStockSymbols,
+  getAllActiveSecuritySymbols,
+  getTenantSecuritySymbols,
   getAllSecurityMasterSymbols,
+  isEtfAssetType,
 } = require('../../../services/securityMasterService');
 
 describe('securityMasterService', () => {
@@ -84,6 +87,22 @@ describe('securityMasterService', () => {
 
   // ─── upsertFromProfile ────────────────────────────────────────────────────
   describe('upsertFromProfile', () => {
+    it('ignores the profile sector, industry and country for ETFs', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+
+      await upsertFromProfile('VWCE', {
+        name: 'Vanguard FTSE All-World',
+        sector: 'Basic Materials',
+        industry: 'Specialty Chemicals',
+        country: 'Netherlands',
+        micCode: 'XETR',
+        type: 'ETF',
+      });
+
+      const call = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(call.update).toEqual(expect.objectContaining({ sector: null, industry: null, country: null, assetType: 'ETF' }));
+    });
+
     it('upserts profile data with knownMicCode as exchange', async () => {
       prisma.securityMaster.upsert.mockResolvedValue({});
 
@@ -602,6 +621,10 @@ describe('securityMasterService', () => {
       await upsertFundamentals('O', { earnings: null, dividends: { dividends: monthly }, quote });
 
       const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      // recentDividends stores the same 12 payments, newest first (#77)
+      expect(upsertCall.update.recentDividends).toHaveLength(12);
+      expect(upsertCall.update.recentDividends[0]).toEqual({ exDate: daysAgo(5), amount: 0.2685 });
+      expect(upsertCall.update.recentDividends[0].exDate > upsertCall.update.recentDividends[11].exDate).toBe(true);
       expect(parseFloat(upsertCall.update.annualizedDividend)).toBeCloseTo(12 * 0.2685, 4);
       expect(parseFloat(upsertCall.update.dividendYield)).toBeCloseTo((12 * 0.2685) / 58, 5);
       expect(upsertCall.update.dividendTrusted).toBe(true);
@@ -636,31 +659,84 @@ describe('securityMasterService', () => {
       expect(parseFloat(upsertCall.update.annualizedDividend)).toBe(0);
       expect(parseFloat(upsertCall.update.dividendYield)).toBe(0);
       expect(upsertCall.update.dividendTrusted).toBe(true);
+      expect(upsertCall.update.recentDividends).toEqual([]); // trusted zero
+    });
+
+    it('keeps the previous recentDividends when the dividend fetch failed', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+      await upsertFundamentals('KO', { earnings: null, dividends: null, quote: { close: 70 } });
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(upsertCall.update).not.toHaveProperty('recentDividends');
+      expect(upsertCall.update.dividendTrusted).toBe(false);
     });
   });
 
-  // ─── getAllActiveStockSymbols ──────────────────────────────────────────────
-  describe('getAllActiveStockSymbols', () => {
-    it('returns distinct symbols with exchange from portfolio items', async () => {
+  // ─── getAllActiveSecuritySymbols (stocks + ETFs, #77) ─────────────────────
+  describe('getAllActiveSecuritySymbols', () => {
+    it('returns stocks, ETFs and not-yet-profiled funds; skips known mutual funds; dedupes', async () => {
       prisma.portfolioItem.findMany.mockResolvedValue([
-        { symbol: 'AAPL', exchange: 'XNAS' },
-        { symbol: 'MSFT', exchange: null },
+        { symbol: 'AAPL', exchange: 'XNAS', category: { processingHint: 'API_STOCK' } },
+        { symbol: 'AAPL', exchange: 'XNAS', category: { processingHint: 'API_STOCK' } },
+        { symbol: 'VWCE', exchange: 'XETR', category: { processingHint: 'API_FUND' } },
+        { symbol: 'VFIAX', exchange: null, category: { processingHint: 'API_FUND' } },
+        { symbol: 'NEWFUND', exchange: null, category: { processingHint: 'API_FUND' } },
+      ]);
+      prisma.securityMaster.findMany.mockResolvedValue([
+        { symbol: 'VWCE', assetType: 'ETF' },
+        { symbol: 'VFIAX', assetType: 'Mutual Fund' },
       ]);
 
-      const result = await getAllActiveStockSymbols();
+      const result = await getAllActiveSecuritySymbols();
 
-      expect(prisma.portfolioItem.findMany).toHaveBeenCalledWith({
-        where: {
-          quantity: { gt: 0 },
-          category: { processingHint: 'API_STOCK' },
-        },
-        select: { symbol: true, exchange: true },
-        distinct: ['symbol'],
-      });
+      expect(prisma.portfolioItem.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { quantity: { gt: 0 }, category: { processingHint: { in: ['API_STOCK', 'API_FUND'] } } },
+      }));
       expect(result).toEqual([
         { symbol: 'AAPL', exchange: 'XNAS' },
-        { symbol: 'MSFT', exchange: null },
+        { symbol: 'VWCE', exchange: 'XETR' },
+        { symbol: 'NEWFUND', exchange: null },
       ]);
+    });
+  });
+
+  describe('getTenantSecuritySymbols', () => {
+    const items = [
+      { symbol: 'KO', exchange: 'XNYS', category: { processingHint: 'API_STOCK' } },
+      { symbol: 'O', exchange: 'XNYS', category: { processingHint: 'API_STOCK' } },
+      { symbol: 'NEW', exchange: null, category: { processingHint: 'API_STOCK' } },
+    ];
+
+    it('requires tenantId', async () => {
+      await expect(getTenantSecuritySymbols()).rejects.toThrow('tenantId is required');
+    });
+
+    it('scopes to the tenant and returns only missing or stale symbols by default', async () => {
+      prisma.portfolioItem.findMany.mockResolvedValue(items);
+      prisma.securityMaster.findMany.mockResolvedValue([
+        { symbol: 'KO', lastFundamentalsUpdate: new Date() },
+        { symbol: 'O', lastFundamentalsUpdate: new Date(Date.now() - 10 * 86400000) },
+      ]);
+
+      const result = await getTenantSecuritySymbols('t1');
+
+      expect(prisma.portfolioItem.findMany.mock.calls[0][0].where.tenantId).toBe('t1');
+      expect(result.map((r) => r.symbol)).toEqual(['O', 'NEW']);
+    });
+
+    it('returns every symbol with force', async () => {
+      prisma.portfolioItem.findMany.mockResolvedValue(items);
+      const result = await getTenantSecuritySymbols('t1', { force: true });
+      expect(result.map((r) => r.symbol)).toEqual(['KO', 'O', 'NEW']);
+      expect(prisma.securityMaster.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isEtfAssetType', () => {
+    it('matches the Twelve Data ETF type only', () => {
+      expect(isEtfAssetType('ETF')).toBe(true);
+      expect(isEtfAssetType(' etf ')).toBe(true);
+      expect(isEtfAssetType('Common Stock')).toBe(false);
+      expect(isEtfAssetType(null)).toBe(false);
     });
   });
 

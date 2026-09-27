@@ -20,6 +20,8 @@
  *                      — single-job scope
  *   single-asset     → `value-portfolio-items`  (portfolio queue)
  *                      — single-job scope
+ *   security-data    → `refresh-tenant-securities` (security-master queue)
+ *                      — single-job scope (Passive Income, #77)
  *
  * For `full-portfolio` to work, `_rebuildMeta` must be propagated along
  * the event chain (see `process-portfolio-changes.js`, `cash-processor.js`,
@@ -41,6 +43,7 @@ const TERMINAL_JOBS = {
     'full-analytics': 'full-rebuild-analytics',
     'scoped-analytics': 'scoped-update-analytics',
     'single-asset': 'value-portfolio-items',
+    'security-data': 'refresh-tenant-securities',
 };
 
 async function maybeReleaseRebuildLock(job) {

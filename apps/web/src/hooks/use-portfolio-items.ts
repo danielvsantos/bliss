@@ -25,6 +25,8 @@ export function usePortfolioItems(options?: {
   includeManualValues?: boolean;
   accountId?: number | null;
   countryId?: string;
+  /** Defer the fetch (e.g. until a picker opens). Not part of the cache key. */
+  enabled?: boolean;
 }) {
   // Canonicalize the key params so callers that pass nothing, `{}`, or
   // `{ includeManualValues: false }` all resolve to the SAME cache entry.
@@ -46,6 +48,7 @@ export function usePortfolioItems(options?: {
 
   return useQuery<PortfolioItemsResponse>({
     queryKey,
+    enabled: options?.enabled ?? true,
     queryFn: () => api.getPortfolioItems({
       include_manual_values: keyParams.includeManualValues,
       ...(keyParams.accountId !== undefined && { accountId: keyParams.accountId }),

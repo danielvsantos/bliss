@@ -10,6 +10,12 @@ import { convertCurrency } from '../../../utils/currencyConversion.js';
 
 const VALID_GROUP_BY = ['sector', 'industry', 'country'];
 
+// ETFs (Passive Income #77): Twelve Data's profile sector/industry/country are
+// empty for US ETFs and misleading for UCITS ones, so ETFs are always bucketed
+// as "Diversified". Look-through by sector comes in #79.
+const DIVERSIFIED = 'Diversified';
+const isEtf = (sm) => typeof sm?.assetType === 'string' && sm.assetType.trim().toUpperCase() === 'ETF';
+
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
     rateLimiters.portfolio(req, res, (result) => {
@@ -41,14 +47,16 @@ export default withAuth(async function handler(req, res) {
     });
     const portfolioCurrency = tenant?.portfolioCurrency || 'USD';
 
-    // 1. Fetch stock-only holdings (API_STOCK with positive quantity)
-    const stockItems = await prisma.portfolioItem.findMany({
+    // 1. Fetch stock and fund holdings (API_STOCK / API_FUND with positive
+    //    quantity). API_FUND items are kept below only when SecurityMaster
+    //    identifies them as ETFs.
+    const candidateItems = await prisma.portfolioItem.findMany({
       where: {
         tenantId: req.user.tenantId,
         quantity: { gt: 0 },
         ...(accountId && { accountId: parseInt(accountId, 10) }),
         category: {
-          processingHint: 'API_STOCK',
+          processingHint: { in: ['API_STOCK', 'API_FUND'] },
         },
       },
       select: {
@@ -69,9 +77,23 @@ export default withAuth(async function handler(req, res) {
             processingHint: true,
           },
         },
+        incomeTerms: {
+          select: { incomeType: true, isDistributing: true, dividendPerUnit: true, currency: true },
+        },
       },
       orderBy: { symbol: 'asc' },
     });
+
+    // 2. Fetch SecurityMaster data for all candidate symbols
+    const candidateSymbols = [...new Set(candidateItems.map((item) => item.symbol))];
+    const securityMasterRecords = candidateSymbols.length
+      ? await prisma.securityMaster.findMany({ where: { symbol: { in: candidateSymbols } } })
+      : [];
+    const smMap = Object.fromEntries(securityMasterRecords.map((r) => [r.symbol, r]));
+
+    const stockItems = candidateItems.filter(
+      (item) => item.category?.processingHint === 'API_STOCK' || isEtf(smMap[item.symbol]),
+    );
 
     if (stockItems.length === 0) {
       return res.status(StatusCodes.OK).json({
@@ -85,13 +107,6 @@ export default withAuth(async function handler(req, res) {
         groups: [],
       });
     }
-
-    // 2. Fetch SecurityMaster data for all symbols
-    const symbols = [...new Set(stockItems.map((item) => item.symbol))];
-    const securityMasterRecords = await prisma.securityMaster.findMany({
-      where: { symbol: { in: symbols } },
-    });
-    const smMap = Object.fromEntries(securityMasterRecords.map((r) => [r.symbol, r]));
 
     // 3. Enrich holdings with live prices and SecurityMaster data
     const enrichedHoldings = await Promise.all(
@@ -125,30 +140,54 @@ export default withAuth(async function handler(req, res) {
         }
 
         const sm = smMap[item.symbol] || {};
+        const etf = isEtf(sm);
+
+        // Dividend yield, override-aware: a user dividend override
+        // (IncomeTerms DIVIDEND with dividendPerUnit) replaces SecurityMaster;
+        // "doesn't distribute" means zero. Carried as an annual USD amount so
+        // same-symbol holdings merge correctly below.
+        const terms = item.incomeTerms;
+        const valueUSD = parseFloat(marketValueUSD.toString());
+        let annualDividendUSD = null;
+        if (terms && (terms.isDistributing === false || terms.incomeType === 'NONE')) {
+          annualDividendUSD = 0;
+        } else if (terms?.incomeType === 'DIVIDEND' && terms.dividendPerUnit != null) {
+          const nativeAnnual = new Decimal(terms.dividendPerUnit).times(quantity);
+          const termsCurrency = terms.currency || item.currency;
+          const converted = termsCurrency === 'USD'
+            ? nativeAnnual
+            : await convertCurrency(nativeAnnual, termsCurrency, 'USD');
+          annualDividendUSD = parseFloat((converted || nativeAnnual).toString());
+        } else if (sm.dividendTrusted && sm.dividendYield != null) {
+          annualDividendUSD = parseFloat(sm.dividendYield.toString()) * valueUSD;
+        }
 
         return {
           symbol: item.symbol,
           name: sm.name || item.symbol,
+          assetType: etf ? 'ETF' : 'STOCK',
           quantity: parseFloat(quantity.toString()),
           currentValue: parseFloat(marketValuePC.toString()),
-          currentValueUSD: parseFloat(marketValueUSD.toString()),
-          sector: sm.sector || 'Unknown',
-          industry: sm.industry || 'Unknown',
-          country: sm.country || 'Unknown',
+          currentValueUSD: valueUSD,
+          sector: etf ? DIVERSIFIED : (sm.sector || 'Unknown'),
+          industry: etf ? DIVERSIFIED : (sm.industry || 'Unknown'),
+          country: etf ? DIVERSIFIED : (sm.country || 'Unknown'),
           // Trust gate: hide earnings/dividend fields when Twelve Data
           // returned inconsistent data (see SecurityMaster.earningsTrusted /
           // dividendTrusted, populated by upsertFundamentals). The frontend
           // already renders null as `—`, so the user sees missing data
           // instead of wrong data.
-          peRatio: sm.earningsTrusted && sm.peRatio ? parseFloat(sm.peRatio.toString()) : null,
-          dividendYield: sm.dividendTrusted && sm.dividendYield ? parseFloat(sm.dividendYield.toString()) : null,
-          trailingEps: sm.earningsTrusted && sm.trailingEps ? parseFloat(sm.trailingEps.toString()) : null,
-          latestEpsActual: sm.earningsTrusted && sm.latestEpsActual ? parseFloat(sm.latestEpsActual.toString()) : null,
-          latestEpsSurprise: sm.earningsTrusted && sm.latestEpsSurprise ? parseFloat(sm.latestEpsSurprise.toString()) : null,
+          // P/E and EPS stay stock-only: ETF earnings are meaningless.
+          peRatio: !etf && sm.earningsTrusted && sm.peRatio ? parseFloat(sm.peRatio.toString()) : null,
+          dividendYield: annualDividendUSD != null && valueUSD > 0 ? annualDividendUSD / valueUSD : null,
+          trailingEps: !etf && sm.earningsTrusted && sm.trailingEps ? parseFloat(sm.trailingEps.toString()) : null,
+          latestEpsActual: !etf && sm.earningsTrusted && sm.latestEpsActual ? parseFloat(sm.latestEpsActual.toString()) : null,
+          latestEpsSurprise: !etf && sm.earningsTrusted && sm.latestEpsSurprise ? parseFloat(sm.latestEpsSurprise.toString()) : null,
           week52High: sm.week52High ? parseFloat(sm.week52High.toString()) : null,
           week52Low: sm.week52Low ? parseFloat(sm.week52Low.toString()) : null,
           averageVolume: sm.averageVolume ? parseFloat(sm.averageVolume.toString()) : null,
           logoUrl: sm.logoUrl || null,
+          annualDividendUSD,
           weight: 0, // computed below
         };
       })
@@ -164,11 +203,20 @@ export default withAuth(async function handler(req, res) {
         existing.quantity += h.quantity;
         existing.currentValue += h.currentValue;
         existing.currentValueUSD += h.currentValueUSD;
+        if (existing.annualDividendUSD != null || h.annualDividendUSD != null) {
+          existing.annualDividendUSD = (existing.annualDividendUSD || 0) + (h.annualDividendUSD || 0);
+          existing.dividendYield = existing.currentValueUSD > 0
+            ? existing.annualDividendUSD / existing.currentValueUSD
+            : null;
+        }
       } else {
         symbolMap.set(h.symbol, { ...h });
       }
     }
-    const mergedHoldings = [...symbolMap.values()];
+    const mergedHoldings = [...symbolMap.values()].map(({ annualDividendUSD, ...h }) => ({
+      ...h,
+      dividendYield: h.dividendYield != null ? Math.round(h.dividendYield * 1e6) / 1e6 : null,
+    }));
 
     // 4. Compute total equity value and weights
     const totalEquityValue = mergedHoldings.reduce((sum, h) => sum + h.currentValue, 0);

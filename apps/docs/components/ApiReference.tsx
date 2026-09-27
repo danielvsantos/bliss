@@ -28,6 +28,7 @@ const CATEGORIES: { name: string; specs: Spec[] }[] = [
       { id: 'analytics', label: 'Analytics', file: 'analytics.yaml' },
       { id: 'insights', label: 'Insights', file: 'insights.yaml' },
       { id: 'equity-analysis', label: 'Equity Analysis', file: 'equity-analysis.yaml' },
+      { id: 'passive-income', label: 'Passive Income', file: 'passive-income.yaml' },
     ],
   },
   {

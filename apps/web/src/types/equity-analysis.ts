@@ -1,6 +1,8 @@
 export interface EquityHolding {
   symbol: string;
   name: string;
+  /** 'ETF' holdings are bucketed as "Diversified" and never carry P/E or EPS. */
+  assetType?: 'STOCK' | 'ETF';
   quantity: number;
   currentValue: number;
   currentValueUSD: number;

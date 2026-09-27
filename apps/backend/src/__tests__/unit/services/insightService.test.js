@@ -823,5 +823,33 @@ describe('insightService (v1)', () => {
       expect(result.sectorAllocation['Alternative Assets']).toBeDefined();
       expect(result.sectorAllocation['Unknown']).toBeUndefined();
     });
+
+    // Passive Income #77 regression: once ETFs are refreshed nightly they have
+    // SecurityMaster rows with no sector/industry/country (the profile values
+    // are ignored for ETFs) and earningsTrusted = false (no /earnings call).
+    it('ETF SecurityMaster rows (no sector, untrusted earnings) still fall back and hide EPS', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([
+        {
+          id: 1, symbol: 'VWCE', currency: 'EUR',
+          currentValue: 5000, costBasis: 4500, quantity: 40, realizedPnL: 0,
+          category: { name: 'ETFs', processingHint: 'API_FUND' },
+        },
+      ]);
+      mockSecurityMasterFindMany.mockResolvedValue([
+        { symbol: 'VWCE', name: 'Vanguard FTSE All-World', sector: null, industry: null, country: null,
+          peRatio: 12.3, trailingEps: 9.9, earningsTrusted: false,
+          dividendYield: 0, dividendTrusted: true, assetType: 'ETF',
+          week52High: null, week52Low: null, averageVolume: null },
+      ]);
+
+      const result = await gatherEquityFundamentals('tenant-1', 'EUR', {});
+
+      const [h] = result.holdings;
+      expect(h.sector).toBe('ETFs & Funds');
+      expect(h.country).toBe('Global');
+      expect(h.peRatio).toBeNull();
+      expect(h.trailingEps).toBeNull();
+      expect(result.sectorAllocation['Unknown']).toBeUndefined();
+    });
   });
 });

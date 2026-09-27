@@ -12,7 +12,7 @@ Monorepo with four services behind a single `.env` file:
 | `apps/backend` | Express + BullMQ | 3001 | **CJS** | Workers, async pipelines, internal API |
 | `apps/web` | React 18 + Vite | 8080 | ESM | SPA with shadcn/ui, TanStack Query, Tailwind, react-i18next (5 locales: en/es/fr/pt/it) |
 | `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
-| `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters |
+| `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters, `portfolio` (passive income projection engine) |
 
 **Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues.
 
@@ -95,10 +95,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 2,599 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 880 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,081 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 638 tests |
+| All | `pnpm test` | -- | 2,863 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 944 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,144 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 775 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -267,11 +267,23 @@ Nightly incremental scan (5 AM UTC, 6-month window). "Scan now" on the page
 to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
 [`docs/specs/backend/21-subscriptions-detection.md`](docs/specs/backend/21-subscriptions-detection.md).
 
+### Passive income projection
+
+`/reports/passive-income` projects dividends, bond coupons, net rent, cash interest and Allowance / Government Welfare streams for the next 12/24/36 months next to the last 12 months of actual "Passive Income" group income. See [`docs/specs/backend/22-passive-income.md`](docs/specs/backend/22-passive-income.md).
+
+- **Computed on read, never stored.** `GET /api/portfolio/passive-income` → `apps/api/services/passiveIncome.service.js` (`loadInputs()`: Prisma reads + FX) → the pure `project()` in **`@bliss/shared/portfolio`** (dual build; the backend `require`s it too). Saving terms/streams triggers **no job**.
+- **`IncomeTerms`** — one model for all user-entered income data. Owner is exactly one of `assetId` (1:1, asset income) or `categoryId` (N streams per eligible Passive Income category), **or neither when detached** (`orphanedAt`). Enforced by the raw CHECK `IncomeTerms_owner_check` in the hand-written migration. Rates are stored as percentages.
+- **Stock/ETF dividends** replay `SecurityMaster.recentDividends` (last 12 months, trusted only) at ex-date + 14 days each year; an empty trusted list is a trusted zero (accumulating ETFs). A `dividendPerUnit` override wins; `isDistributing = false` projects zero.
+- **Terms survive re-keying**: before the rebuild prune in `process-portfolio-changes`, `income-terms-preserver.js` moves `IncomeTerms`/`DebtTerms` to a single clear new item (same category + same account or symbol) or **detaches** the IncomeTerms — never silently deletes them. Intentional deletions still cascade.
+- The Income Terms modal opens from Portfolio holdings rows, Asset Price Updates and the Passive Income page.
+
 ### Security master
 
-Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
+Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
 
-- Profile, earnings, dividends, quote data (41 credits per symbol)
+- Profile, earnings, dividends, quote data (41 credits per stock; ETFs skip `/earnings` → 21 credits, and never store the profile's sector/industry/country — Equity Analysis shows them as "Diversified", P/E stays stock-only)
+- `recentDividends` (last-12-month ex-date + amount list) stored for the passive income replay
+- `refresh-tenant-securities` (deduplicated per tenant) fetches missing/stale symbols when a portfolio update creates new stock/ETF items (`newSecuritySymbols` on `PORTFOLIO_CHANGES_PROCESSED`) and as a step of Maintenance "Full rebuild"; Maintenance "Refresh my securities data" (`security-data` scope) forces it for all of the tenant's symbols
 - Computed fields: trailing EPS, P/E ratio, annualized dividend yield
 - Separate rate limiter: `FUNDAMENTALS_THROTTLE_MS` (~30 calls/min)
 - 7-day cache on profile data, checked before live API calls
@@ -287,7 +299,7 @@ Nightly refresh (3 AM UTC) of stock fundamentals from Twelve Data:
 | `portfolioWorker` | portfolio | 5 | FIFO lots, PnL, valuation, cash holdings, **nightly revaluation (4 AM UTC)** |
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
 | `insightGeneratorWorker` | insights | 1 | Tiered AI insights: 6 AM UTC scheduling heartbeat that auto-triggers monthly/quarterly/annual on their calendar windows, portfolio intel (Mon 5 AM) |
-| `securityMasterWorker` | security-master | 1 | Nightly stock fundamentals refresh (cron 3 AM UTC) |
+| `securityMasterWorker` | security-master | 1 | Nightly stock + ETF fundamentals refresh (cron 3 AM UTC); tenant-scoped `refresh-tenant-securities` |
 | `subscriptionDetectionWorker` | subscription-detection | 1 | Recurring-charge detection: nightly `detect-all-tenants` (cron 5 AM UTC) fans out one incremental `detect-tenant` per tenant; on-demand `detect-tenant` (incremental/full) from the Subscriptions page + Settings → Maintenance |
 
 **Schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> portfolioIntel (Mon 5 AM, equity insights) + subscriptionDetection (5 AM, recurring charges — read-only over `Transaction`, no cascade) -> insightGenerator (6 AM, auto-triggers monthly/quarterly/annual when their calendar window is open).

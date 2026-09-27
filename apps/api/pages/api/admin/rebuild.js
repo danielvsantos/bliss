@@ -5,7 +5,7 @@
  *
  *   POST /api/admin/rebuild
  *     Body: { scope, payload? }
- *     - scope: 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset'
+ *     - scope: 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset' | 'security-data'
  *     - payload.earliestDate required for scoped-analytics (ISO date string)
  *     - payload.portfolioItemId (number) OR payload.portfolioItemIds (number[]) required for single-asset
  *
@@ -45,6 +45,7 @@ const VALID_SCOPES = new Set([
   'full-analytics',
   'scoped-analytics',
   'single-asset',
+  'security-data', // #77: refresh this tenant's stock/ETF SecurityMaster data (no payload)
 ]);
 
 // 30s accommodates the status endpoint when the backend's Redis is

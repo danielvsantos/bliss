@@ -12,7 +12,7 @@ All files use `import` / `export`. Never use `require()` in this app.
 apps/web/src/
   pages/                # Route pages
     auth/               # Sign-in, sign-up
-    reports/            # Financial reports (portfolio, expenses, tags, financial-summary, equity-analysis)
+    reports/            # Financial reports (portfolio, expenses, tags, financial-summary, equity-analysis, passive-income)
     settings/           # User settings (index.tsx) + user management (users.tsx)
     Index.tsx           # Landing / home page
     dashboard.tsx       # Main dashboard
@@ -38,6 +38,8 @@ apps/web/src/
     review/             # Transaction review components
     entities/           # Shared entity components
     settings/           # Settings panels
+    income/             # Income Terms modal + zod schema (Passive Income)
+    passive-income/     # Passive Income page sections (chart, breakdown, streams, detached terms)
     onboarding/         # Onboarding flow components
     plaid-connect.tsx   # Plaid connection component (top-level)
     withAuth.tsx        # Auth HOC wrapper (top-level)
@@ -163,6 +165,7 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-tags.ts` -- Tag management
 - `use-tag-analytics.ts` -- Per-tag analytics
 - `use-equity-analysis.ts` -- Equity risk metrics
+- `use-passive-income.ts` -- Passive income projection, income terms, income streams, detached terms
 - `use-dashboard-metrics.ts` -- Dashboard summary data
 - `use-dashboard-actions.ts` -- Dashboard quick actions
 - `use-notifications.ts` -- Notification center

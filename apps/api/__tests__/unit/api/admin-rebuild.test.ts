@@ -69,6 +69,22 @@ describe('POST /api/admin/rebuild', () => {
     expect(res._status).toBe(202);
   });
 
+  it('accepts the security-data scope without a payload', async () => {
+    mockFetchWithTimeout.mockResolvedValue({
+      status: 202,
+      json: async () => ({ status: 'accepted', scope: 'security-data' }),
+    });
+
+    const req = makeReq({ method: 'POST', body: { scope: 'security-data' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(202);
+    const [, init] = mockFetchWithTimeout.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual(expect.objectContaining({ scope: 'security-data' }));
+  });
+
   it('returns 400 for invalid scope', async () => {
     const req = makeReq({ method: 'POST', body: { scope: 'invalid-scope' } });
     const res = makeRes();

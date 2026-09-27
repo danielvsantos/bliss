@@ -9,6 +9,7 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 | [Choosing Your External Services](/docs/guides/external-services) | What Gemini, Twelve Data (prices + FX rates), and Plaid do and why you'd want them |
 | [Importing Transactions](/docs/guides/importing-transactions) | CSV/XLSX import, custom adapters, and the Bliss Native CSV format |
 | [Investment Portfolios](/docs/guides/investment-portfolios) | Track stocks, ETFs, and real estate with FIFO lot calculation |
+| [Passive Income](/docs/guides/passive-income) | Project dividends, coupons, rent, interest and benefits for the next 12–36 months |
 | [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) | Connect bank accounts for automatic transaction sync |
 | [AI Classification](/docs/guides/ai-classification) | How the 4-tier pipeline works and how to train it |
 | [Tracking Subscriptions](/docs/guides/tracking-subscriptions) | How recurring charges are detected, and confirming or dismissing them |

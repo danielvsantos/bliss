@@ -6,6 +6,7 @@ const { SECURITY_MASTER_QUEUE_NAME, getSecurityMasterQueue } = require('../queue
 const prisma = require('../../prisma/prisma.js');
 const securityMasterService = require('../services/securityMasterService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 const {
     getSymbolProfile,
     getEarnings,
@@ -20,6 +21,7 @@ const PROFILE_STALE_DAYS = 7;
  *   377 credits/min shared across ALL API calls.
  *   Per symbol (with profile): 10 + 1 + 10 + 20 = 41 credits
  *   Per symbol (no profile):   1 + 10 + 20 = 31 credits
+ *   Per ETF: /earnings is skipped (meaningless EPS for funds) → 21 credits (+10 profile)
  *   Safe throughput: ~9 symbols/min → ~6.7s per symbol
  *
  * We enforce this by:
@@ -77,9 +79,13 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
 
     // Check if profile needs refreshing
     let needsProfile = forceProfile;
+    // Asset type decides whether /earnings is called (ETFs skip it). Taken from
+    // the stored row, then overridden by a fresh profile below.
+    let assetType = null;
     if (!forceProfile) {
         try {
             const existing = await securityMasterService.getBySymbol(symbol);
+            assetType = existing?.assetType || null;
             if (!existing || !existing.lastProfileUpdate ||
                 (Date.now() - existing.lastProfileUpdate.getTime()) > PROFILE_STALE_DAYS * 86400000) {
                 needsProfile = true;
@@ -100,6 +106,7 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         try {
             const profile = await getSymbolProfile(symbol, micOpts);
             if (profile) {
+                if (profile.type) assetType = profile.type;
                 // Pass the known MIC code so upsertFromProfile won't downgrade
                 // a good MIC code to a display name when /profile lacks mic_code.
                 if (exchange && !profile.micCode) {
@@ -134,6 +141,19 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         }
     }
 
+    if (forceProfile && !result.profile) {
+        // Forced profile failed — fall back to the stored type so an ETF still
+        // skips /earnings.
+        try {
+            const existing = await securityMasterService.getBySymbol(symbol);
+            assetType = existing?.assetType || null;
+        } catch {
+            // Non-fatal: earnings will be fetched as for a stock.
+        }
+    }
+    const isEtf = securityMasterService.isEtfAssetType(assetType);
+    result.isEtf = isEtf;
+
     try {
         // All fundamentals calls run SEQUENTIALLY to avoid blowing
         // through independent throttle queues simultaneously.
@@ -141,8 +161,10 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         // Quote — 1 credit
         const quote = await getLatestPrice(symbol, { extended: true, ...micOpts });
 
-        // Earnings — 10 credits
-        const earnings = await getEarnings(symbol, micOpts);
+        // Earnings — 20 credits. Skipped for ETFs: Twelve Data returns EPS-like
+        // numbers for funds that would give an ETF a meaningless P/E. With
+        // `earnings: null`, upsertFundamentals leaves earningsTrusted = false.
+        const earnings = isEtf ? null : await getEarnings(symbol, micOpts);
 
         // Dividends — 20 credits
         const dividends = await getDividends(symbol, micOpts);
@@ -204,9 +226,35 @@ const processSecurityMasterJob = async (job) => {
                 return { success: !result.error, ...result, duration };
             }
 
+            case 'refresh-tenant-securities': {
+                // Tenant-scoped refresh (#77): new holdings (PORTFOLIO_CHANGES_PROCESSED),
+                // the full-rebuild step, and Maintenance "Refresh my securities data".
+                const { tenantId, force = false } = data;
+                if (!tenantId) throw new Error('tenantId is required');
+
+                const holdings = await securityMasterService.getTenantSecuritySymbols(tenantId, { force: force === true });
+                logger.info(`[SecurityMaster] Tenant refresh: ${holdings.length} symbol(s) to refresh`, { tenantId, force });
+
+                let refreshed = 0;
+                let errors = 0;
+                for (let i = 0; i < holdings.length; i++) {
+                    const { symbol, exchange } = holdings[i];
+                    const result = await refreshSymbol(symbol, { exchange });
+                    if (result.fundamentals) refreshed++;
+                    if (result.error) errors++;
+                    await job.updateProgress(Math.round(((i + 1) / holdings.length) * 100));
+                }
+
+                const duration = Date.now() - startTime;
+                logger.info('[SecurityMaster] Tenant refresh complete', {
+                    jobId: job.id, tenantId, totalSymbols: holdings.length, refreshed, errors, duration: `${duration}ms`,
+                });
+                return { success: true, tenantId, totalSymbols: holdings.length, refreshed, errors, duration };
+            }
+
             case 'refresh-all-fundamentals': {
-                const holdings = await securityMasterService.getAllActiveStockSymbols();
-                logger.info(`[SecurityMaster] Found ${holdings.length} active stock symbols to refresh`);
+                const holdings = await securityMasterService.getAllActiveSecuritySymbols();
+                logger.info(`[SecurityMaster] Found ${holdings.length} active stock/ETF symbols to refresh`);
 
                 let refreshed = 0;
                 let profilesRefreshed = 0;
@@ -324,12 +372,15 @@ const startSecurityMasterWorker = () => {
         }
     );
 
-    worker.on('completed', (job) => {
+    worker.on('completed', async (job) => {
         logger.info('SecurityMaster job completed:', {
             jobId: job.id,
             name: job.name,
             result: job.returnvalue,
         });
+        // `refresh-tenant-securities` is the terminal job of the Maintenance
+        // `security-data` rebuild scope. See `utils/rebuildLock.js`.
+        await maybeReleaseRebuildLock(job);
     });
 
     worker.on('failed', (job, error) => {
@@ -344,4 +395,4 @@ const startSecurityMasterWorker = () => {
     return worker;
 };
 
-module.exports = { startSecurityMasterWorker };
+module.exports = { startSecurityMasterWorker, processSecurityMasterJob, refreshSymbol };

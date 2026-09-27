@@ -14,7 +14,8 @@ apps/api/
     auth/               # signin, signup, signout, session, change-password, google-token, [...nextauth]
     transactions/       # CRUD (index), export, merchant-history
     imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
-    portfolio/          # items, holdings, history, equity-analysis, items/[assetId]/manual-values, manual-values/[valueId], items/[assetId]/debt-terms
+    portfolio/          # items, holdings, history, equity-analysis, passive-income, items/[assetId]/manual-values, manual-values/[valueId], items/[assetId]/debt-terms, items/[assetId]/income-terms, income-terms/detached, income-terms/[id], income-terms/[id]/attach
+    passive-income/     # streams (index, [id]) — Allowance / Government Welfare income streams
     plaid/              # create-link-token, exchange-public-token, accounts, sync-accounts, sync-logs, fetch-historical, resync, disconnect, rotate-token, items, items/hard-delete, webhook, transactions/ (index, [id], bulk-promote, bulk-requeue, seeds, confirm-seeds)
     notifications/      # summary
     onboarding/         # progress
@@ -174,6 +175,8 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 | `transaction.service.js` | Debt repayment splitting (principal + interest calculation) |
 | `plaid.service.js` | Pre-configured Plaid client instance |
 | `valuation.service.js` | Asset valuation logic |
+| `passiveIncome.service.js` | Passive income `loadInputs()` (Prisma + FX) and response assembly around `project()` from `@bliss/shared/portfolio` |
+| `incomeTerms.service.js` | IncomeTerms body validation/whitelisting, serialization, stream-category eligibility |
 
 ## Lib
 

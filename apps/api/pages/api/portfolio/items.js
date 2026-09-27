@@ -78,6 +78,7 @@ export default withAuth(async function handler(req, res) {
           type: true,
           icon: true,
           processingHint: true,
+          defaultCategoryCode: true,
         },
       },
       account: {
@@ -98,6 +99,8 @@ export default withAuth(async function handler(req, res) {
     }
 
     selectClause.debtTerms = true;
+    // Passive Income (#77): lets holdings rows show whether income terms exist.
+    selectClause.incomeTerms = { select: { id: true, incomeType: true, isDistributing: true } };
 
     const assetsFromDb = await prisma.portfolioItem.findMany({
       where: filters,
@@ -229,6 +232,7 @@ export default withAuth(async function handler(req, res) {
             type: asset.category.type,
             icon: asset.category.icon,
             processingHint: asset.category.processingHint,
+            defaultCategoryCode: asset.category.defaultCategoryCode ?? null,
           },
           native: {
             costBasis: costBasisNative,
@@ -263,6 +267,10 @@ export default withAuth(async function handler(req, res) {
 
         if (asset.debtTerms) {
           response.debtTerms = asset.debtTerms;
+        }
+
+        if (asset.incomeTerms) {
+          response.incomeTerms = asset.incomeTerms;
         }
 
         return response;

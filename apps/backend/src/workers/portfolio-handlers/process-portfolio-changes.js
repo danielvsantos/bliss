@@ -6,6 +6,11 @@ const { enqueueEvent } = require('../../queues/eventsQueue');
 const { decrypt } = require('../../utils/encryption');
 const { calculatePortfolioItemState } = require('../../utils/portfolioItemStateCalculator.js');
 const { getRatesForDateRange } = require('../../services/currencyService.js');
+const { pruneItemsPreservingTerms } = require('./income-terms-preserver');
+
+// Categories whose new holdings need SecurityMaster data (stocks & ETFs).
+// `refresh-tenant-securities` is enqueued for them via PORTFOLIO_CHANGES_PROCESSED.
+const SECURITY_PROCESSING_HINTS = new Set(['API_STOCK', 'API_FUND']);
 
 /**
  * Creates ManualAssetValue records for each buy transaction of a MANUAL-source item,
@@ -92,6 +97,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     // 1. Handle the primary portfolio item (if any)
     const assetKey = generateAssetKey(transaction, decrypt);
     let portfolioItem = null;
+    let createdSecuritySymbol = null;
 
     if (assetKey) {
         // All assets — including manually-priced ones — are scoped per account.
@@ -134,6 +140,9 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
                         ...(transaction.assetCurrency && { assetCurrency: transaction.assetCurrency }),
                     },
                 });
+                if (SECURITY_PROCESSING_HINTS.has(transaction.category?.processingHint)) {
+                    createdSecuritySymbol = assetKey;
+                }
             }
         }
     }
@@ -213,6 +222,9 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     const payload = {
         tenantId,
         portfolioItemIds: Array.from(affectedPortfolioItems.keys()),
+        // Symbols of stock/ETF items created by this update — the event handler
+        // fetches their SecurityMaster data the same day (refresh-tenant-securities).
+        newSecuritySymbols: createdSecuritySymbol ? [createdSecuritySymbol] : [],
         dateScopes: Array.from(dateScopes).map(ds => {
             const [year, month] = ds.split('-');
             return {
@@ -259,7 +271,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     logger.info(`[Sync] Fetching existing portfolio items in scope...`);
     const existingItems = await prisma.portfolioItem.findMany({
         where: portfolioItemWhereScope,
-        select: { id: true, symbol: true, accountId: true },
+        select: { id: true, symbol: true, accountId: true, categoryId: true },
     });
     // Key is `symbol::accountId` to separate same-symbol positions in different accounts.
     const existingItemsMap = new Map(
@@ -290,9 +302,9 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     if (allTransactions.length === 0) {
         // If there are no transactions, all existing items in this scope are orphans.
         if (existingItems.length > 0) {
-            const itemIdsToDelete = existingItems.map(item => item.id);
-            logger.info(`[Sync] No transactions found. Pruning ${itemIdsToDelete.length} orphan items.`);
-            await prisma.portfolioItem.deleteMany({ where: { id: { in: itemIdsToDelete } } });
+            logger.info(`[Sync] No transactions found. Pruning ${existingItems.length} orphan items.`);
+            // No new items in this run, so any income terms are detached (never silently deleted).
+            await pruneItemsPreservingTerms(prisma, existingItems, []);
         }
         logger.info(`[Sync] No investment or debt transactions found for scope: ${scope}. Nothing further to do.`);
 
@@ -344,6 +356,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', {
             tenantId,
             isFullRebuild: !isAccountScoped,
+            newSecuritySymbols: [],
             // For account-scoped updates, pass empty portfolioItemIds + dateScopes
             // so downstream cash/analytics processing still triggers
             ...(isAccountScoped && { portfolioItemIds: [], dateScopes: dateScopes || [] }),
@@ -482,6 +495,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
             ...(firstTx.isin && { isin: firstTx.isin }),
             ...(firstTx.exchange && { exchange: firstTx.exchange }),
             ...(firstTx.assetCurrency && { assetCurrency: firstTx.assetCurrency }),
+            processingHint: firstTx.category?.processingHint || null,
             createdAt: new Date(),
             updatedAt: new Date(),
             ...initialState, // Spread the calculated state (includes hasLotMismatch)
@@ -494,7 +508,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     if (portfolioItemsToCreate.length > 0) {
         logger.info(`[Sync] Preparing to create ${portfolioItemsToCreate.length} items. Data:`, JSON.stringify(portfolioItemsToCreate, null, 2));
         await prisma.portfolioItem.createMany({
-            data: portfolioItemsToCreate,
+            // `processingHint` is carried for newSecuritySymbols only — not a column.
+            data: portfolioItemsToCreate.map(({ processingHint: _processingHint, ...data }) => data),
             skipDuplicates: true
         });
         logger.info(`[Sync] Bulk created ${portfolioItemsToCreate.length} new portfolio items.`);
@@ -505,7 +520,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     // Key by `symbol::accountId` to match the grouping used above.
     const allPortfolioItemsForTenant = await prisma.portfolioItem.findMany({
         where: { tenantId },
-        select: { id: true, symbol: true, accountId: true }
+        select: { id: true, symbol: true, accountId: true, categoryId: true }
     });
     const allItemsMap = new Map(
         allPortfolioItemsForTenant.map(item => [`${item.symbol}::${item.accountId}`, item])
@@ -550,18 +565,28 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     const itemsToDelete = [];
     for (const [groupKey, item] of existingItemsMap.entries()) {
         if (!activeKeys.has(groupKey)) {
-            itemsToDelete.push(item.id);
+            itemsToDelete.push(item);
         }
     }
 
     if (itemsToDelete.length > 0) {
         logger.info(`[Sync] Pruning ${itemsToDelete.length} orphan portfolio items.`);
-        await prisma.portfolioItem.deleteMany({
-            where: {
-                id: { in: itemsToDelete }
-            }
-        });
+        // Income terms of a re-keyed item (a corrected import) move to its single
+        // clear replacement created in this run, or are detached — never lost.
+        const newItems = portfolioItemsToCreate
+            .map((d) => allItemsMap.get(`${d.symbol}::${d.accountId}`))
+            .filter(Boolean);
+        const { moved, detached } = await pruneItemsPreservingTerms(prisma, itemsToDelete, newItems);
+        if (moved || detached) {
+            logger.info(`[Sync] Income terms preserved during prune: moved=${moved}, detached=${detached}.`);
+        }
     }
+
+    const newSecuritySymbols = [...new Set(
+        portfolioItemsToCreate
+            .filter((d) => SECURITY_PROCESSING_HINTS.has(d.processingHint))
+            .map((d) => d.symbol)
+    )];
 
     logger.info(`--- Finished Portfolio Rebuild for tenant: ${tenantId}. ---`);
 
@@ -577,6 +602,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         tenantId,
         isFullRebuild: !isAccountScoped,
         institutionId,
+        newSecuritySymbols,
         ...(isAccountScoped && allAffectedItemIds.length > 0 && { portfolioItemIds: allAffectedItemIds }),
         ...(isAccountScoped && dateScopes && { dateScopes }),
         ...(_rebuildMeta ? { _rebuildMeta } : {}),

@@ -36,6 +36,11 @@ if (typeof window.PointerEvent === 'undefined') {
 }
 
 vi.mock('@/hooks/use-portfolio-items');
+// Passive Income #77: the modal has its own tests; here we only check it opens.
+vi.mock('@/components/income/income-terms-modal', () => ({
+  IncomeTermsModal: (p: { open: boolean; assetId?: number | null }) =>
+    p.open ? <div data-testid="income-terms-modal">{`asset:${p.assetId}`}</div> : null,
+}));
 vi.mock('@/hooks/use-portfolio-history');
 vi.mock('@/hooks/use-metadata');
 vi.mock('@/hooks/use-account-list');
@@ -165,6 +170,43 @@ describe('PortfolioHoldingsPage', () => {
 
     // Liabilities are shown in a flat table (no group expand needed)
     expect(screen.getByText('Mortgage')).toBeInTheDocument();
+  });
+
+  it('opens the Income Terms modal from an income-capable holding row (#77)', async () => {
+    vi.mocked(UseItems.usePortfolioItems).mockReturnValue(
+      mockQueryResult({
+        portfolioCurrency: 'USD',
+        items: [
+          {
+            id: 7,
+            symbol: 'KO',
+            quantity: '10',
+            currentPrice: '700',
+            currency: 'USD',
+            category: { type: 'Investments', group: 'Stocks', processingHint: 'API_STOCK' },
+            costBases: { USD: '500' },
+          },
+          {
+            id: 8,
+            symbol: 'BTC',
+            quantity: '1',
+            currentPrice: '50000',
+            currency: 'USD',
+            category: { type: 'Investments', group: 'Crypto', processingHint: 'API_CRYPTO' },
+            costBases: { USD: '40000' },
+          },
+        ],
+      }),
+    );
+
+    const { user } = renderPage();
+    await user.click(screen.getByText('Stocks'));
+    await user.click(screen.getByText('Crypto'));
+
+    // Crypto can't produce passive income → no action.
+    expect(screen.queryByTestId('income-terms-8')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('income-terms-7'));
+    expect(screen.getByTestId('income-terms-modal')).toHaveTextContent('asset:7');
   });
 
   it('scopes the holdings graph to the selected account', async () => {

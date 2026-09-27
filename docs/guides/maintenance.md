@@ -77,14 +77,22 @@ hide the affected fields rather than show wrong numbers. A `—` on the
 Equity Analysis page means "data is missing or untrustworthy," not a
 bug.
 
-**Fix**: Settings → Maintenance → **"Refresh stock fundamentals"** →
-click **Refresh fundamentals**. This enqueues an immediate run of the
-same job the nightly cron triggers, iterating every active stock
-symbol across all tenants and re-fetching from Twelve Data. Each symbol
-takes about 2 seconds (rate-limited at 30 calls/min for the
-fundamentals slot), so a portfolio with 50 stocks finishes in ~2
-minutes. The button only disables briefly while the request enqueues —
-the actual refresh runs in the background.
+**Fix (your holdings)**: Settings → Maintenance → **"Refresh my securities
+data"** → click **Refresh securities**. This refreshes every stock and ETF
+*you* hold (profile, dividends and quote; earnings for stocks only) and is
+the right first step. It shares the 1-hour single-run lock and shows up in
+**Recent rebuilds**. New holdings are fetched automatically the same day,
+and **Full rebuild** also refreshes any holdings with missing or stale
+data (a "Refresh securities data" step in the history).
+
+**Fix (everyone, global)**: Settings → Maintenance → **"Refresh
+fundamentals for all symbols (global)"** → click **Refresh fundamentals**.
+This enqueues an immediate run of the same job the nightly cron
+triggers, iterating every active stock and ETF symbol across all tenants
+and re-fetching from Twelve Data. Each symbol takes about 2 seconds
+(rate-limited at 30 calls/min for the fundamentals slot), so a portfolio
+with 50 stocks finishes in ~2 minutes. The button only disables briefly
+while the request enqueues — the actual refresh runs in the background.
 
 **Verifying it worked**: reload the Equity Analysis page after a couple
 of minutes. Symbols whose underlying Twelve Data data was salvageable

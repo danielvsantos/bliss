@@ -8,6 +8,7 @@ const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
 const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetectionQueue');
+const { enqueueTenantSecuritiesRefresh } = require('../queues/securityMasterQueue');
 const { scheduleDebouncedJob } = require('../services/debounceService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
@@ -240,10 +241,33 @@ const processEventJob = async (job) => {
             }
 
             case 'PORTFOLIO_CHANGES_PROCESSED': {
-                const { tenantId, isFullRebuild, portfolioItemIds, dateScopes, _rebuildMeta } = data;
+                const { tenantId, isFullRebuild, portfolioItemIds, dateScopes, _rebuildMeta, newSecuritySymbols } = data;
                 if (!tenantId) {
                     logger.warn('PORTFOLIO_CHANGES_PROCESSED event is missing tenantId.');
                     return;
+                }
+
+                // Same-day SecurityMaster data for new stock/ETF holdings (#77), and
+                // the "Refresh securities data" step of an admin full rebuild. Only
+                // missing/stale symbols are fetched (force: false); deduplicated per
+                // tenant. A failure here must not block the cash/analytics cascade.
+                const isFullPortfolioRebuild = _rebuildMeta?.rebuildType === 'full-portfolio';
+                if ((Array.isArray(newSecuritySymbols) && newSecuritySymbols.length > 0) || isFullPortfolioRebuild) {
+                    try {
+                        await enqueueTenantSecuritiesRefresh(tenantId, {
+                            force: false,
+                            ...(isFullPortfolioRebuild ? { _rebuildMeta } : {}),
+                        }, isFullPortfolioRebuild ? {
+                            removeOnComplete: { age: 30 * 24 * 3600 },
+                            removeOnFail: { age: 30 * 24 * 3600 },
+                        } : {});
+                        logger.info(`[Event] Enqueued refresh-tenant-securities for tenant ${tenantId}`, {
+                            newSecuritySymbols: newSecuritySymbols || [],
+                            fromRebuild: isFullPortfolioRebuild,
+                        });
+                    } catch (err) {
+                        logger.error(`[Event] Failed to enqueue refresh-tenant-securities for tenant ${tenantId}`, { error: err.message });
+                    }
                 }
 
                 if (isFullRebuild) {
@@ -550,6 +574,16 @@ const processEventJob = async (job) => {
                                 portfolioItemIds: ids,
                                 _rebuildMeta: rebuildMeta,
                             },
+                            { jobId, ...retentionOpts },
+                        );
+                        break;
+                    }
+                    case 'security-data': {
+                        // Maintenance "Refresh my securities data" (#77): refresh every
+                        // stock/ETF symbol this tenant holds, not just missing/stale.
+                        await enqueueTenantSecuritiesRefresh(
+                            tenantId,
+                            { force: true, _rebuildMeta: rebuildMeta },
                             { jobId, ...retentionOpts },
                         );
                         break;

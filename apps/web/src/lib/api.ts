@@ -45,6 +45,15 @@ import type {
   SubscriptionsView,
   RecurringCadence,
 } from '../types/api';
+import type {
+  AssetIncomeTermsResponse,
+  IncomeTerms,
+  IncomeTermsRequest,
+  IncomeStream,
+  IncomeStreamsResponse,
+  DetachedIncomeTerms,
+  PassiveIncomeResponse,
+} from '../types/passive-income';
 
 export interface AggregatedPortfolioHistory {
   date: string;
@@ -1079,6 +1088,63 @@ class APIClient {
   async fullHistoryScan(): Promise<{ status: string; mode: string }> {
     const response = await this.client.post('/api/subscriptions', { action: 'fullScan' });
     return response.data;
+  }
+
+  // --- Passive Income (#77) ---
+
+  async getPassiveIncome(horizon: 12 | 24 | 36 = 12): Promise<PassiveIncomeResponse> {
+    const response = await this.client.get('/api/portfolio/passive-income', { params: { horizon } });
+    return response.data;
+  }
+
+  async getAssetIncomeTerms(assetId: number): Promise<AssetIncomeTermsResponse> {
+    const response = await this.client.get(`/api/portfolio/items/${assetId}/income-terms`);
+    return response.data;
+  }
+
+  async saveAssetIncomeTerms(
+    assetId: number,
+    body: IncomeTermsRequest,
+  ): Promise<{ terms: IncomeTerms; appliedTo: number[] }> {
+    const response = await this.client.put(`/api/portfolio/items/${assetId}/income-terms`, body);
+    return response.data;
+  }
+
+  async deleteAssetIncomeTerms(assetId: number): Promise<void> {
+    await this.client.delete(`/api/portfolio/items/${assetId}/income-terms`);
+  }
+
+  async getIncomeStreams(): Promise<IncomeStreamsResponse> {
+    const response = await this.client.get('/api/passive-income/streams');
+    return response.data;
+  }
+
+  async createIncomeStream(body: IncomeTermsRequest): Promise<IncomeStream> {
+    const response = await this.client.post('/api/passive-income/streams', body);
+    return response.data;
+  }
+
+  async updateIncomeStream(id: number, body: IncomeTermsRequest): Promise<IncomeStream> {
+    const response = await this.client.put(`/api/passive-income/streams/${id}`, body);
+    return response.data;
+  }
+
+  async deleteIncomeStream(id: number): Promise<void> {
+    await this.client.delete(`/api/passive-income/streams/${id}`);
+  }
+
+  async getDetachedIncomeTerms(): Promise<{ detached: DetachedIncomeTerms[] }> {
+    const response = await this.client.get('/api/portfolio/income-terms/detached');
+    return response.data;
+  }
+
+  async attachIncomeTerms(id: number, assetId: number): Promise<{ terms: IncomeTerms }> {
+    const response = await this.client.post(`/api/portfolio/income-terms/${id}/attach`, { assetId });
+    return response.data;
+  }
+
+  async discardIncomeTerms(id: number): Promise<void> {
+    await this.client.delete(`/api/portfolio/income-terms/${id}`);
   }
 }
 

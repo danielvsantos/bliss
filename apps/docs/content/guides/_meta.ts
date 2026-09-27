@@ -5,6 +5,7 @@ export default {
   'external-services': 'Choosing Your External Services',
   'importing-transactions': 'Importing Transactions',
   'investment-portfolios': 'Investment Portfolios',
+  'passive-income': 'Passive Income',
   'plaid-bank-sync': 'Bank Sync with Plaid',
   'ai-classification': 'AI Classification',
   'choosing-categories': 'Choosing the Right Category',

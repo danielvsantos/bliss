@@ -84,7 +84,7 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 | `portfolioWorker` | portfolio | 5 | 300s | `process-portfolio-changes`, `process-cash-holdings`, `recalculate-portfolio-item`, `recalculate-portfolio-items`, `process-simple-liability`, `process-amortizing-loan`, `value-portfolio-items`, `value-all-assets`, `generate-portfolio-valuation`, `revalue-all-tenants` (cron 4AM UTC) |
 | `analyticsWorker` | analytics | 1 | 300s | `full-rebuild-analytics`, `scoped-update-analytics` |
 | `insightGeneratorWorker` | insights | 1 | 600s | `generate-all-insights` (cron 6AM UTC), `generate-tenant-insights` |
-| `securityMasterWorker` | security-master | 1 | 1800s | `refresh-all-fundamentals` (cron 3AM UTC), `refresh-single-symbol` |
+| `securityMasterWorker` | security-master | 1 | 1800s | `refresh-all-fundamentals` (cron 3AM UTC, stocks + ETFs), `refresh-single-symbol`, `refresh-all-from-table`, `refresh-tenant-securities` (deduplicated per tenant) |
 
 ## Worker implementation pattern
 
@@ -164,7 +164,7 @@ past.
 | `cryptoService.js` | Crypto pair prices (e.g., `BTC/EUR`) |
 | `currencyService.js` | Exchange rate lookups |
 | `priceService.js` | Unified price fetching (delegates to appropriate provider) |
-| `securityMasterService.js` | SecurityMaster table: upsert profile, compute fundamentals (P/E, dividend yield) |
+| `securityMasterService.js` | SecurityMaster table: upsert profile (ETF sector/country ignored), compute fundamentals (P/E, dividend yield, `recentDividends`), stock/ETF symbol selection (global and per tenant) |
 
 **Import & processing:**
 
@@ -216,6 +216,7 @@ Strategy pattern for asset valuation:
 ```
 portfolioWorker
   -> process-portfolio-changes.js    # FIFO lot calculation, USD PnL with historical FX
+  -> income-terms-preserver.js       # Moves/detaches IncomeTerms before the rebuild prune (#77)
   -> recalculate-portfolio-item.js   # Re-derive lots/PnL for a single portfolio item
   -> cash-processor.js               # Transaction-date-only cash holdings
   -> simple-liability-processor.js   # Simple debt tracking

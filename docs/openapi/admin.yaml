@@ -174,13 +174,16 @@ components:
 
     RebuildScope:
       type: string
-      enum: [full-portfolio, full-analytics, scoped-analytics, single-asset]
+      enum: [full-portfolio, full-analytics, scoped-analytics, single-asset, security-data]
       description: |
         Which rebuild variant to run. Each scope has its own single-flight lock.
-          - `full-portfolio`    rebuilds items → cash → analytics → valuation.
+          - `full-portfolio`    rebuilds items → cash → analytics → valuation, plus a
+                                `refresh-tenant-securities` step (missing/stale stock & ETF symbols).
           - `full-analytics`    rebuilds AnalyticsCacheMonthly / TagAnalyticsCacheMonthly only.
           - `scoped-analytics`  rebuilds analytics from a given start date onwards.
           - `single-asset`      re-values one portfolio item's price / holdings history.
+          - `security-data`     refreshes SecurityMaster data (profile, dividends, quote; earnings
+                                for stocks only) for every stock and ETF this tenant holds. No payload.
 
     RebuildTriggerRequest:
       type: object
@@ -194,7 +197,7 @@ components:
             Scope-specific arguments. Required fields depend on `scope`:
               - `scoped-analytics`: `earliestDate` (ISO 8601 date-time string).
               - `single-asset`:     `portfolioItemId` (integer).
-            Ignored for `full-portfolio` and `full-analytics`.
+            Ignored for `full-portfolio`, `full-analytics` and `security-data`.
           properties:
             earliestDate:
               type: string

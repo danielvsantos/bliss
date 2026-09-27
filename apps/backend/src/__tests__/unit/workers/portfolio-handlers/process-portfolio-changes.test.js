@@ -57,7 +57,19 @@ jest.mock('../../../../../prisma/prisma.js', () => ({
   portfolioHolding: {
     createMany: jest.fn(),
   },
-  $transaction: jest.fn((ops) => Promise.all(ops)),
+  incomeTerms: {
+    findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  debtTerms: {
+    findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  // Array form (batched ops) and interactive form (callback receives the client).
+  $transaction: jest.fn((arg) =>
+    typeof arg === 'function'
+      ? arg(jest.requireMock('../../../../../prisma/prisma.js'))
+      : Promise.all(arg)),
 }));
 
 jest.mock('../../../../services/currencyService', () => ({
@@ -117,6 +129,10 @@ function installEmptyTenantMocks() {
   prisma.manualAssetValue.createMany.mockResolvedValue({ count: 0 });
   prisma.manualAssetValue.deleteMany.mockResolvedValue({ count: 0 });
   prisma.portfolioHolding.createMany.mockResolvedValue({ count: 0 });
+  prisma.incomeTerms.findMany.mockResolvedValue([]);
+  prisma.incomeTerms.update.mockResolvedValue({});
+  prisma.debtTerms.findMany.mockResolvedValue([]);
+  prisma.debtTerms.update.mockResolvedValue({});
 }
 
 describe('process-portfolio-changes — processPortfolioChanges', () => {
@@ -275,5 +291,122 @@ describe('process-portfolio-changes — processPortfolioChanges', () => {
     // loop iterations hit), but the run must complete cleanly either
     // way. The assertion here is the absence of ReferenceError — the
     // whole point of this test file.
+  });
+});
+
+// ─── Passive Income (#77): income terms survive re-keying + newSecuritySymbols ──
+describe('process-portfolio-changes — income terms & new security symbols', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    installEmptyTenantMocks();
+  });
+
+  const bondTx = (overrides = {}) => ({
+    id: 7,
+    tenantId: 'tenant-1',
+    categoryId: 20,
+    accountId: 5,
+    currency: 'BRL',
+    transaction_date: new Date('2026-03-01'),
+    year: 2026,
+    month: 3,
+    credit: 0,
+    debit: 1000,
+    ticker: 'Bonds - Tesouro IPCA 2035',
+    portfolioItemId: null,
+    category: { id: 20, type: 'Investments', group: 'Bonds', processingHint: 'MANUAL' },
+    ...overrides,
+  });
+
+  it('moves income terms to the single new item with the same category and account (corrected description)', async () => {
+    prisma.transaction.findMany.mockResolvedValue([bondTx()]);
+    prisma.portfolioItem.findMany
+      // Step 1: existing items in scope — the old, wrongly-described bond
+      .mockResolvedValueOnce([{ id: 1, symbol: 'Bonds - Tesouro IPCA 2053', accountId: 5, categoryId: 20 }])
+      // Step 5: all items after createMany
+      .mockResolvedValueOnce([
+        { id: 1, symbol: 'Bonds - Tesouro IPCA 2053', accountId: 5, categoryId: 20 },
+        { id: 2, symbol: 'Bonds - Tesouro IPCA 2035', accountId: 5, categoryId: 20 },
+      ]);
+    prisma.incomeTerms.findMany.mockResolvedValue([{ id: 900, assetId: 1 }]);
+
+    await processPortfolioChanges(makeJob());
+
+    expect(prisma.incomeTerms.update).toHaveBeenCalledWith({ where: { id: 900 }, data: { assetId: 2 } });
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [1] } } });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('detaches income terms when no clear match exists, and still prunes', async () => {
+    prisma.transaction.findMany.mockResolvedValue([bondTx({ categoryId: 21, category: { id: 21, type: 'Investments', group: 'Bonds' } })]);
+    prisma.portfolioItem.findMany
+      .mockResolvedValueOnce([{ id: 1, symbol: 'Old bond', accountId: 5, categoryId: 20 }])
+      .mockResolvedValueOnce([
+        { id: 1, symbol: 'Old bond', accountId: 5, categoryId: 20 },
+        { id: 2, symbol: 'Bonds - Tesouro IPCA 2035', accountId: 5, categoryId: 21 },
+      ]);
+    prisma.incomeTerms.findMany.mockResolvedValue([{ id: 900, assetId: 1 }]);
+
+    await processPortfolioChanges(makeJob());
+
+    expect(prisma.incomeTerms.update).toHaveBeenCalledWith({
+      where: { id: 900 },
+      data: { assetId: null, orphanedAt: expect.any(Date), orphanedLabel: 'Old bond' },
+    });
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalled();
+  });
+
+  it('detaches income terms when all transactions are gone (early-return prune)', async () => {
+    prisma.portfolioItem.findMany.mockResolvedValueOnce([{ id: 3, symbol: 'Rental flat', accountId: 9, categoryId: 30 }]);
+    prisma.incomeTerms.findMany.mockResolvedValue([{ id: 901, assetId: 3 }]);
+
+    await processPortfolioChanges(makeJob());
+
+    expect(prisma.incomeTerms.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 901 },
+      data: expect.objectContaining({ assetId: null, orphanedLabel: 'Rental flat' }),
+    }));
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [3] } } });
+    const [, payload] = enqueueEvent.mock.calls[0];
+    expect(payload.newSecuritySymbols).toEqual([]);
+  });
+
+  it('emits newSecuritySymbols for newly created stock/ETF items on a full rebuild', async () => {
+    prisma.transaction.findMany.mockResolvedValue([
+      bondTx({ id: 1, ticker: 'VWCE', category: { id: 40, type: 'Investments', group: 'ETFs', processingHint: 'API_FUND' }, categoryId: 40 }),
+      bondTx({ id: 2, ticker: 'Bonds - X', categoryId: 20 }),
+    ]);
+    prisma.portfolioItem.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { id: 10, symbol: 'VWCE', accountId: 5, categoryId: 40 },
+      { id: 11, symbol: 'Bonds - X', accountId: 5, categoryId: 20 },
+    ]);
+
+    await processPortfolioChanges(makeJob());
+
+    const [, payload] = enqueueEvent.mock.calls[0];
+    expect(payload.newSecuritySymbols).toEqual(['VWCE']);
+    // processingHint is not a PortfolioItem column — must be stripped before createMany.
+    const created = prisma.portfolioItem.createMany.mock.calls[0][0].data;
+    expect(created.every((d) => !('processingHint' in d))).toBe(true);
+  });
+
+  it('emits newSecuritySymbols on a scoped update that creates a stock item', async () => {
+    prisma.transaction.findUnique.mockResolvedValue({
+      id: 42, tenantId: 'tenant-1', categoryId: 1, accountId: 5, currency: 'USD',
+      transaction_date: new Date('2026-03-01'), year: 2026, month: 3,
+      credit: 0, debit: 100, ticker: 'KO',
+      category: { id: 1, type: 'Investments', group: 'Stocks', processingHint: 'API_STOCK' },
+      account: { countryId: 'US' },
+    });
+    prisma.portfolioItem.create.mockResolvedValue({ id: 5, symbol: 'KO', source: 'SYNCED' });
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 5, transactions: [] });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42 }));
+
+    expect(enqueueEvent).toHaveBeenCalledWith('PORTFOLIO_CHANGES_PROCESSED', expect.objectContaining({
+      newSecuritySymbols: ['KO'],
+    }));
   });
 });

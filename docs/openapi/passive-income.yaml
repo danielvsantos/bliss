@@ -1,0 +1,428 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Passive Income
+  version: 1.0.0
+  description: >
+    Passive Income Projection (#77): user-entered income terms on assets,
+    income streams (Allowance / Government Welfare), detached terms, and the
+    projection itself. The projection is computed on request by
+    `@bliss/shared/portfolio`'s `project()`; saving terms or streams never
+    starts a background job.
+
+    Rates on IncomeTerms (`couponRate`, `spread`, `assumedIndexRate`,
+    `yieldPct`, `apyPct`, `annualIndexationPct`) are percentages (5.25 = 5.25%).
+    Yields in the projection output (`rateOrYield`, `yieldOnValue`) are
+    fractions (0.0525). All amounts are gross.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+  schemas:
+    IncomeType:
+      type: string
+      enum: [DIVIDEND, FIXED_COUPON, FLOATING_COUPON, INFLATION_LINKED, RENT, INTEREST, CUSTOM_YIELD, FIXED_AMOUNT, NONE]
+    IncomeFrequency:
+      type: string
+      enum: [WEEKLY, MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL, AT_MATURITY]
+    IncomeTermsInput:
+      type: object
+      required: [incomeType]
+      description: |
+        Required fields per incomeType (skipped when `isDistributing: false` or `incomeType: NONE`):
+          - FIXED_COUPON: faceValuePerUnit, couponRate, frequency, maturityDate
+          - FLOATING_COUPON: faceValuePerUnit, assumedIndexRate, frequency, maturityDate
+          - INFLATION_LINKED: faceValuePerUnit, couponRate, assumedIndexRate, frequency, maturityDate
+          - RENT: monthlyRent (net)
+          - INTEREST: apyPct
+          - CUSTOM_YIELD: yieldPct
+          - DIVIDEND (asset): dividendPerUnit or yieldPct
+          - FIXED_AMOUNT (streams only): name, amountPerPayment, frequency, currency, startDate
+      properties:
+        incomeType: { $ref: '#/components/schemas/IncomeType' }
+        isDistributing: { type: boolean, default: true }
+        frequency: { $ref: '#/components/schemas/IncomeFrequency' }
+        currency: { type: string, example: 'BRL', description: 'ISO code. Assets default to the PortfolioItem currency.' }
+        anchorPaymentDate: { type: string, format: date, description: 'Any known payment date; schedules are phased on it.' }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        name: { type: string, maxLength: 100, description: 'Streams only.' }
+        amountPerPayment: { type: number }
+        dividendPerUnit: { type: number, description: 'Annual dividend per share/unit (override).' }
+        yieldPct: { type: number }
+        issuerType: { type: string, enum: [GOVERNMENT, CORPORATE] }
+        faceValuePerUnit: { type: number }
+        couponRate: { type: number }
+        referenceIndex: { type: string, enum: [SOFR, EURIBOR, CDI, SELIC, IPCA, CPI, OTHER] }
+        spread: { type: number }
+        assumedIndexRate: { type: number }
+        maturityDate: { type: string, format: date }
+        monthlyRent: { type: number, description: 'Net of costs and vacancy.' }
+        leaseEndDate: { type: string, format: date }
+        annualIndexationPct: { type: number }
+        apyPct: { type: number }
+    IncomeTerms:
+      allOf:
+        - $ref: '#/components/schemas/IncomeTermsInput'
+        - type: object
+          properties:
+            id: { type: integer }
+            assetId: { type: integer, nullable: true }
+            categoryId: { type: integer, nullable: true }
+            orphanedAt: { type: string, format: date-time, nullable: true }
+            orphanedLabel: { type: string, nullable: true }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    IncomeStream:
+      allOf:
+        - $ref: '#/components/schemas/IncomeTerms'
+        - type: object
+          properties:
+            categoryName: { type: string }
+            categoryCode: { type: string, nullable: true }
+    Buckets:
+      type: object
+      properties:
+        dividend: { type: number }
+        coupon: { type: number }
+        rent: { type: number }
+        interest: { type: number }
+        other: { type: number, description: 'Allowance & benefits (streams).' }
+        total: { type: number }
+    PassiveIncomeResponse:
+      type: object
+      properties:
+        displayCurrency: { type: string, example: EUR }
+        asOf: { type: string, format: date }
+        horizon: { type: integer, enum: [12, 24, 36] }
+        kpis:
+          type: object
+          properties:
+            next12mIncome: { type: number }
+            next12mInvestmentIncome: { type: number }
+            next12mOtherIncome: { type: number }
+            monthlyAverage: { type: number }
+            yieldOnValue: { type: number, nullable: true, description: 'Investment income ÷ value of income-capable assets.' }
+            essentialsCoveragePct: { type: number, nullable: true, description: 'next12mIncome ÷ trailing-12-month Essentials spending × 100.' }
+            trailingEssentials: { type: number }
+            coverage:
+              type: object
+              properties:
+                configured: { type: integer }
+                total: { type: integer }
+        actuals:
+          type: array
+          description: 12 months ending with the current (month-to-date) month; whole "Passive Income" category group.
+          items:
+            type: object
+            properties:
+              month: { type: string, example: '2026-09' }
+              total: { type: number }
+        projected:
+          type: array
+          description: The next `horizon` full calendar months.
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Buckets'
+              - type: object
+                properties:
+                  month: { type: string, example: '2026-10' }
+        yearly:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Buckets'
+              - type: object
+                properties:
+                  year: { type: integer, example: 1 }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [ASSET, STREAM] }
+              portfolioItemId: { type: integer, nullable: true }
+              streamId: { type: integer, nullable: true }
+              label: { type: string }
+              incomeType: { $ref: '#/components/schemas/IncomeType' }
+              source: { type: string, enum: [AUTO, OVERRIDE, MANUAL] }
+              rateOrYield: { type: number, nullable: true }
+              amountPerPayment: { type: number, nullable: true }
+              frequency: { type: string, description: 'IncomeFrequency, or IRREGULAR / NONE for automatic dividends.' }
+              nextPaymentDate: { type: string, format: date, nullable: true }
+              endDate: { type: string, format: date, nullable: true }
+              status: { type: string, enum: [OK, MATURED_UNREDEEMED, ENDED, STALE_RATE] }
+              horizonTotal: { type: number }
+              next12mTotal: { type: number }
+        upcomingPayments:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              kind: { type: string, enum: [ASSET, STREAM] }
+              refId: { type: integer }
+              label: { type: string }
+              amount: { type: number }
+              source: { type: string, enum: [dividend, coupon, rent, interest, other] }
+        maturityLadder:
+          type: array
+          description: Bond principal returning per year within the horizon (not income).
+          items:
+            type: object
+            properties:
+              year: { type: integer }
+              principal: { type: number }
+              items: { type: array, items: { type: integer } }
+        detached:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              orphanedLabel: { type: string }
+              orphanedAt: { type: string, format: date-time }
+              incomeType: { $ref: '#/components/schemas/IncomeType' }
+        missing:
+          type: array
+          items:
+            type: object
+            properties:
+              portfolioItemId: { type: integer }
+              symbol: { type: string }
+              label: { type: string }
+              assetClass: { type: string, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE] }
+              reason: { type: string, enum: [NO_TERMS, UNTRUSTED_DIVIDEND] }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        details: { type: array, items: { type: object } }
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/portfolio/passive-income:
+    get:
+      tags: [Passive Income]
+      summary: Passive income projection
+      parameters:
+        - name: horizon
+          in: query
+          schema: { type: integer, enum: [12, 24, 36], default: 12 }
+      responses:
+        '200':
+          description: Projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PassiveIncomeResponse' }
+        '400': { description: 'Invalid horizon', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized }
+
+  /api/portfolio/items/{assetId}/income-terms:
+    parameters:
+      - name: assetId
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Passive Income]
+      summary: Get an asset's income terms and automatic dividend data
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      symbol: { type: string }
+                      currency: { type: string }
+                      quantity: { type: number }
+                      categoryName: { type: string }
+                      assetClass: { type: string, nullable: true, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER] }
+                      defaultIncomeType: { $ref: '#/components/schemas/IncomeType' }
+                  terms: { $ref: '#/components/schemas/IncomeTerms' }
+                  auto:
+                    type: object
+                    nullable: true
+                    description: Present only when SecurityMaster marks the dividend data trusted.
+                    properties:
+                      recentDividends:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            exDate: { type: string, format: date }
+                            amount: { type: number }
+                      frequency: { type: string }
+                      annualDividend: { type: number, nullable: true }
+                      dividendYield: { type: number, nullable: true }
+        '404': { description: Not found in this tenant }
+    put:
+      tags: [Passive Income]
+      summary: Upsert an asset's income terms
+      description: >
+        Validated per incomeType. `applyToSymbol: true` (DIVIDEND only) copies the
+        dividend override onto every PortfolioItem of the tenant with that symbol,
+        in one transaction. Crypto, collectibles, vehicles, commodities and debt
+        cannot hold income terms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/IncomeTermsInput'
+                - type: object
+                  properties:
+                    applyToSymbol: { type: boolean }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  terms: { $ref: '#/components/schemas/IncomeTerms' }
+                  appliedTo: { type: array, items: { type: integer } }
+        '400': { description: Validation error or asset cannot hold income terms }
+        '404': { description: Not found in this tenant }
+    delete:
+      tags: [Passive Income]
+      summary: Remove an asset's income terms (stocks/ETFs fall back to automatic data)
+      responses:
+        '204': { description: Deleted }
+        '404': { description: No terms }
+
+  /api/passive-income/streams:
+    get:
+      tags: [Passive Income]
+      summary: List income streams and the categories eligible for streams
+      description: >
+        Eligible categories are Income categories in the "Passive Income" group that
+        no asset produces (no processingHint, IGNORE key strategy, not Dividends /
+        Bond Income / Interest Income / Rent Income / Options Income) — in practice
+        Allowance, Government Welfare and custom categories.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  streams: { type: array, items: { $ref: '#/components/schemas/IncomeStream' } }
+                  eligibleCategories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        defaultCategoryCode: { type: string, nullable: true }
+    post:
+      tags: [Passive Income]
+      summary: Create an income stream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/IncomeTermsInput'
+                - type: object
+                  required: [categoryId]
+                  properties:
+                    categoryId: { type: integer }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/IncomeStream' } } } }
+        '400': { description: Validation error or ineligible category }
+
+  /api/passive-income/streams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    put:
+      tags: [Passive Income]
+      summary: Update an income stream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncomeTermsInput' }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/IncomeStream' } } } }
+        '400': { description: Validation error }
+        '404': { description: Not found in this tenant }
+    delete:
+      tags: [Passive Income]
+      summary: Delete an income stream
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found in this tenant }
+
+  /api/portfolio/income-terms/detached:
+    get:
+      tags: [Passive Income]
+      summary: List detached income terms
+      description: >
+        Terms kept when a portfolio rebuild pruned their asset because its key
+        changed (a corrected import) and no single clear replacement existed.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detached: { type: array, items: { $ref: '#/components/schemas/IncomeTerms' } }
+
+  /api/portfolio/income-terms/{id}/attach:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Passive Income]
+      summary: Re-attach detached income terms to an asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId]
+              properties:
+                assetId: { type: integer }
+      responses:
+        '200': { description: Attached }
+        '404': { description: Terms or asset not found in this tenant }
+        '409': { description: Terms not detached, or the asset already has terms }
+
+  /api/portfolio/income-terms/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    delete:
+      tags: [Passive Income]
+      summary: Discard detached income terms (only while detached)
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found in this tenant }
+        '409': { description: Terms are attached }

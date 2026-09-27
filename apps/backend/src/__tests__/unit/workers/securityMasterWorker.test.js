@@ -43,14 +43,22 @@ jest.mock('@sentry/node', () => ({
 const mockGetBySymbol = jest.fn();
 const mockUpsertFromProfile = jest.fn();
 const mockUpsertFundamentals = jest.fn();
-const mockGetAllActiveStockSymbols = jest.fn();
+const mockGetAllActiveSecuritySymbols = jest.fn();
 const mockGetAllSecurityMasterSymbols = jest.fn();
+const mockGetTenantSecuritySymbols = jest.fn();
 jest.mock('../../../services/securityMasterService', () => ({
   getBySymbol: (...args) => mockGetBySymbol(...args),
   upsertFromProfile: (...args) => mockUpsertFromProfile(...args),
   upsertFundamentals: (...args) => mockUpsertFundamentals(...args),
-  getAllActiveStockSymbols: (...args) => mockGetAllActiveStockSymbols(...args),
+  getAllActiveSecuritySymbols: (...args) => mockGetAllActiveSecuritySymbols(...args),
+  getTenantSecuritySymbols: (...args) => mockGetTenantSecuritySymbols(...args),
   getAllSecurityMasterSymbols: (...args) => mockGetAllSecurityMasterSymbols(...args),
+  isEtfAssetType: (t) => typeof t === 'string' && t.toUpperCase() === 'ETF',
+}));
+
+const mockMaybeReleaseRebuildLock = jest.fn();
+jest.mock('../../../utils/rebuildLock', () => ({
+  maybeReleaseRebuildLock: (...args) => mockMaybeReleaseRebuildLock(...args),
 }));
 
 const mockGetSymbolProfile = jest.fn();
@@ -94,6 +102,7 @@ function setupSuccessfulApis() {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('securityMasterWorker', () => {
+  let onCompleted;
   beforeAll(() => {
     // The worker has a sleep(MIN_MS_PER_SYMBOL) delay per symbol.
     // Override global setTimeout to resolve immediately so tests don't hang.
@@ -102,7 +111,8 @@ describe('securityMasterWorker', () => {
       if (typeof fn === 'function') fn();
       return 0;
     });
-    startSecurityMasterWorker();
+    const instance = startSecurityMasterWorker();
+    onCompleted = instance.on.mock.calls.find(([evt]) => evt === 'completed')[1];
   });
 
   afterAll(() => {
@@ -153,8 +163,29 @@ describe('securityMasterWorker', () => {
   });
 
   describe('refresh-all-fundamentals', () => {
+    it('skips /earnings for an ETF (known from the stored row) and still refreshes dividends', async () => {
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'VWCE', exchange: 'XETR' }]);
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date() });
+
+      const result = await workerCallback(makeJob('refresh-all-fundamentals', {}));
+
+      expect(mockGetEarnings).not.toHaveBeenCalled();
+      expect(mockGetDividends).toHaveBeenCalledWith('VWCE', expect.any(Object));
+      expect(mockUpsertFundamentals).toHaveBeenCalledWith('VWCE', expect.objectContaining({ earnings: null }));
+      expect(result.refreshed).toBe(1);
+    });
+
+    it('skips /earnings when a fresh profile reports type ETF', async () => {
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'QQQ', exchange: null }]);
+      mockGetSymbolProfile.mockResolvedValue({ name: 'Invesco QQQ', type: 'ETF' });
+
+      await workerCallback(makeJob('refresh-all-fundamentals', {}));
+
+      expect(mockGetEarnings).not.toHaveBeenCalled();
+    });
+
     it('refreshes all active stock symbols', async () => {
-      mockGetAllActiveStockSymbols.mockResolvedValue([
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([
         { symbol: 'AAPL', exchange: 'XNAS' },
         { symbol: 'GOOGL', exchange: 'XNAS' },
       ]);
@@ -162,7 +193,7 @@ describe('securityMasterWorker', () => {
       const job = makeJob('refresh-all-fundamentals', {});
       const result = await workerCallback(job);
 
-      expect(mockGetAllActiveStockSymbols).toHaveBeenCalled();
+      expect(mockGetAllActiveSecuritySymbols).toHaveBeenCalled();
       expect(mockUpsertFundamentals).toHaveBeenCalledTimes(2);
       expect(result.totalSymbols).toBe(2);
       expect(result.refreshed).toBe(2);
@@ -170,7 +201,7 @@ describe('securityMasterWorker', () => {
     });
 
     it('continues with next symbol on API failure', async () => {
-      mockGetAllActiveStockSymbols.mockResolvedValue([
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([
         { symbol: 'AAPL', exchange: null },
         { symbol: 'FAIL', exchange: null },
         { symbol: 'MSFT', exchange: null },
@@ -195,7 +226,7 @@ describe('securityMasterWorker', () => {
       // swallowed by the service — the worker saw no error and moved on. Now
       // the service throws, and the worker's isolated try/catch around the
       // profile block ensures fundamentals still run for the same symbol.
-      mockGetAllActiveStockSymbols.mockResolvedValue([
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([
         { symbol: 'RDDT', exchange: 'XNYS' },
       ]);
 
@@ -218,6 +249,35 @@ describe('securityMasterWorker', () => {
 
       // Sentry captured the profile failure with phase tag
       expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('refresh-tenant-securities', () => {
+    it('refreshes only the symbols the service selects (missing or stale by default)', async () => {
+      mockGetTenantSecuritySymbols.mockResolvedValue([{ symbol: 'KO', exchange: 'XNYS' }]);
+
+      const result = await workerCallback(makeJob('refresh-tenant-securities', { tenantId: 't1' }));
+
+      expect(mockGetTenantSecuritySymbols).toHaveBeenCalledWith('t1', { force: false });
+      expect(mockUpsertFundamentals).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(expect.objectContaining({ success: true, tenantId: 't1', totalSymbols: 1, refreshed: 1 }));
+    });
+
+    it('passes force through (Maintenance "Refresh my securities data")', async () => {
+      mockGetTenantSecuritySymbols.mockResolvedValue([]);
+      const result = await workerCallback(makeJob('refresh-tenant-securities', { tenantId: 't1', force: true }));
+      expect(mockGetTenantSecuritySymbols).toHaveBeenCalledWith('t1', { force: true });
+      expect(result.totalSymbols).toBe(0);
+    });
+
+    it('throws without tenantId', async () => {
+      await expect(workerCallback(makeJob('refresh-tenant-securities', {}))).rejects.toThrow('tenantId is required');
+    });
+
+    it('releases the security-data rebuild lock from the completed handler', async () => {
+      const job = makeJob('refresh-tenant-securities', { tenantId: 't1', _rebuildMeta: { rebuildType: 'security-data' } });
+      await onCompleted(job);
+      expect(mockMaybeReleaseRebuildLock).toHaveBeenCalledWith(job);
     });
   });
 
