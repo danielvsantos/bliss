@@ -69,6 +69,7 @@ model Tenant {
   importAdapters      ImportAdapter[]
   insights            Insight[]
   recurringCharges    RecurringCharge[]
+  incomeTerms         IncomeTerms[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -272,6 +273,7 @@ model Category {
   descriptionMappings DescriptionMapping[]
   tagAnalyticsCache TagAnalyticsCacheMonthly[]
   recurringCharges RecurringCharge[]
+  incomeStreams    IncomeTerms[]    // Passive income streams (Allowance, Government Welfare, ...)
 
   @@unique([name, tenantId])
   @@index([group])
@@ -428,6 +430,7 @@ model PortfolioItem {
   manualValues     ManualAssetValue[]
   holdings         PortfolioHolding[]
   debtTerms        DebtTerms?
+  incomeTerms      IncomeTerms?
   tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   // Unique per (tenant, symbol, account). Each (tenant, symbol, account) triple maps
@@ -491,6 +494,97 @@ model DebtTerms {
   termInMonths    Int?
   originationDate DateTime
   initialBalance  Decimal        @db.Decimal(18, 8)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASSIVE INCOME — user-entered income terms
+//
+// One row per income source. The owner is exactly one of:
+//   * assetId    — asset income (bond coupons, rent, cash APY, dividend override, fund yield); 1:1
+//   * categoryId — an income stream not tied to an asset (Allowance, Government Welfare); N per category
+//   * neither    — DETACHED: the owning PortfolioItem was pruned by a rebuild that re-keyed it
+//                  (orphanedAt/orphanedLabel set). Re-attached or discarded from the Passive Income page.
+// Enforced by the raw CHECK constraint "IncomeTerms_owner_check" (see migration).
+// ═══════════════════════════════════════════════════════════════════════════════
+enum IncomeType {
+  DIVIDEND          // stocks/ETFs (override) and funds
+  FIXED_COUPON
+  FLOATING_COUPON
+  INFLATION_LINKED
+  RENT
+  INTEREST          // cash APY
+  CUSTOM_YIELD      // generic % of current value
+  FIXED_AMOUNT      // income streams: allowance, government welfare
+  NONE              // explicitly produces no income
+}
+
+enum IncomeFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+  AT_MATURITY
+}
+
+enum BondIssuerType {
+  GOVERNMENT
+  CORPORATE
+}
+
+model IncomeTerms {
+  id                  Int              @id @default(autoincrement())
+  tenantId            String
+  tenant              Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Owner: exactly one of assetId / categoryId, OR neither when detached (orphanedAt set)
+  assetId             Int?             @unique
+  asset               PortfolioItem?   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  categoryId          Int?
+  category            Category?        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name                String?          // required for streams ("State pension")
+  orphanedAt          DateTime?        // set when detached from a pruned asset
+  orphanedLabel       String?          // label of the pruned asset, e.g. "Bonds - Tesouro IPCA 2035"
+
+  incomeType          IncomeType
+  frequency           IncomeFrequency?
+  currency            String?          // asset: defaults to PortfolioItem.currency; stream: required
+  anchorPaymentDate   DateTime?
+  startDate           DateTime?
+  endDate             DateTime?
+  isDistributing      Boolean          @default(true)
+
+  // Streams
+  amountPerPayment    Decimal?         @db.Decimal(18, 8)
+
+  // Dividends / funds / custom yield
+  dividendPerUnit     Decimal?         @db.Decimal(18, 8)  // annual, per share/unit
+  yieldPct            Decimal?         @db.Decimal(9, 5)
+
+  // Bonds
+  issuerType          BondIssuerType?
+  faceValuePerUnit    Decimal?         @db.Decimal(18, 8)  // × PortfolioItem.quantity
+  couponRate          Decimal?         @db.Decimal(9, 5)
+  referenceIndex      String?          // SOFR | EURIBOR | CDI | SELIC | IPCA | CPI | OTHER
+  spread              Decimal?         @db.Decimal(9, 5)
+  assumedIndexRate    Decimal?         @db.Decimal(9, 5)
+  maturityDate        DateTime?
+
+  // Real estate
+  monthlyRent         Decimal?         @db.Decimal(18, 8)  // NET rent
+  leaseEndDate        DateTime?
+
+  // Shared: rent and streams
+  annualIndexationPct Decimal?         @db.Decimal(9, 5)
+
+  // Cash
+  apyPct              Decimal?         @db.Decimal(9, 5)
+
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([categoryId])
 }
 
 model AnalyticsCacheMonthly {
@@ -811,6 +905,12 @@ model SecurityMaster {
   // earnings/dividend fields as null when the corresponding flag is false.
   earningsTrusted        Boolean   @default(false)
   dividendTrusted        Boolean   @default(false)
+
+  // Last-12-month dividend history: [{ "exDate": "2026-09-15", "amount": 0.53 }, ...]
+  // ex-dates within the last 365 days, newest first. Written only when the
+  // dividend fetch succeeded; consumers treat it as empty unless dividendTrusted.
+  // Replayed by the passive income projection (@bliss/shared/portfolio).
+  recentDividends        Json?
 
   // ── Meta ──
   lastProfileUpdate      DateTime?

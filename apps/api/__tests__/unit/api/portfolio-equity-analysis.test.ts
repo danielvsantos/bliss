@@ -290,4 +290,78 @@ describe('GET /api/portfolio/equity-analysis', () => {
     // Weighted metrics should be null when no PE data
     expect(res._body.summary.weightedPeRatio).toBeNull();
   });
+
+  // ── Passive Income #77: ETFs in Equity Analysis ──────────────────────────
+  const item = (overrides: any = {}) => ({
+    id: 1,
+    symbol: 'AAPL',
+    currency: 'USD',
+    assetCurrency: 'USD',
+    quantity: new Decimal(10),
+    costBasis: new Decimal(1000),
+    currentValue: new Decimal(1500),
+    costBasisInUSD: new Decimal(1000),
+    currentValueInUSD: new Decimal(1500),
+    source: 'SYNCED',
+    category: { name: 'Stocks', group: 'Stocks', processingHint: 'API_STOCK' },
+    incomeTerms: null,
+    ...overrides,
+  });
+  const sm = (overrides: any = {}) => ({
+    symbol: 'AAPL', name: 'Apple', sector: 'Technology', industry: 'Consumer Electronics', country: 'US',
+    assetType: 'Common Stock', peRatio: new Decimal(30), trailingEps: new Decimal(5),
+    dividendYield: new Decimal(0.01), earningsTrusted: true, dividendTrusted: true,
+    ...overrides,
+  });
+
+  it('includes ETFs as "Diversified", keeps P/E stock-only and skips non-ETF funds', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      item(),
+      item({ id: 2, symbol: 'VWCE', category: { name: 'ETFs', group: 'ETFs', processingHint: 'API_FUND' } }),
+      item({ id: 3, symbol: 'VFIAX', category: { name: 'Funds', group: 'Funds', processingHint: 'API_FUND' } }),
+    ]);
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([
+      sm(),
+      // UCITS profile values are misleading — must be ignored.
+      sm({ symbol: 'VWCE', sector: 'Basic Materials', country: 'Netherlands', assetType: 'ETF', peRatio: new Decimal(3), dividendYield: new Decimal(0) }),
+      sm({ symbol: 'VFIAX', assetType: 'Mutual Fund' }),
+    ]);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { groupBy: 'country' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.summary.holdingsCount).toBe(2);
+    const names = res._body.groups.map((g: any) => g.name);
+    expect(names).toEqual(expect.arrayContaining(['US', 'Diversified']));
+    expect(names).not.toContain('Unknown');
+    expect(names).not.toContain('Netherlands');
+    const etf = res._body.groups.find((g: any) => g.name === 'Diversified').holdings[0];
+    expect(etf.symbol).toBe('VWCE');
+    expect(etf.assetType).toBe('ETF');
+    expect(etf.peRatio).toBeNull();
+    expect(etf.sector).toBe('Diversified');
+    // Weighted P/E comes from the stock only.
+    expect(res._body.summary.weightedPeRatio).toBe(30);
+  });
+
+  it('uses the dividend override for yield and merges same-symbol holdings', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    // Live price is mocked at 150 → value 1500 per 10 units.
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      item({ incomeTerms: { incomeType: 'DIVIDEND', isDistributing: true, dividendPerUnit: new Decimal(6), currency: 'USD' } }),
+      item({ id: 2, incomeTerms: { incomeType: 'DIVIDEND', isDistributing: false, dividendPerUnit: null, currency: 'USD' } }),
+    ]);
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([sm()]);
+
+    const res = makeRes();
+    await handler(makeReq({}) as NextApiRequest, res as unknown as NextApiResponse);
+
+    const holding = res._body.groups[0].holdings[0];
+    expect(res._body.summary.holdingsCount).toBe(1);
+    // (6 × 10 + 0) / (1500 + 1500) = 0.02
+    expect(holding.dividendYield).toBeCloseTo(0.02, 6);
+    expect(holding).not.toHaveProperty('annualDividendUSD');
+  });
 });

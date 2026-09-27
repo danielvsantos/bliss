@@ -3,7 +3,7 @@
  *
  *   POST /api/admin/rebuild/trigger
  *     Body: { tenantId, scope, requestedBy?, payload? }
- *     - scope: 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset'
+ *     - scope: 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset' | 'security-data'
  *     - payload.earliestDate required for scoped-analytics
  *     - payload.portfolioItemId required for single-asset
  *
@@ -43,6 +43,7 @@ const { enqueueEvent } = require('../queues/eventsQueue');
 const { acquire, isHeld } = require('../utils/singleFlightLock');
 const { getPortfolioQueue } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
+const { getSecurityMasterQueue } = require('../queues/securityMasterQueue');
 const prisma = require('../../prisma/prisma.js');
 
 const LOCK_TTL_SECONDS = 60 * 60; // 1 hour
@@ -53,6 +54,7 @@ const VALID_SCOPES = new Set([
     'full-analytics',
     'scoped-analytics',
     'single-asset',
+    'security-data', // #77: refresh this tenant's stock/ETF SecurityMaster data
 ]);
 
 const lockKey = (tenantId, scope) => `rebuild-lock:${tenantId}:${scope}`;
@@ -172,6 +174,9 @@ async function getRebuildJobsForTenant(tenantId) {
     // from a follow-up roundtrip per job.
     const portfolioQueue = getPortfolioQueue();
     const analyticsQueue = getAnalyticsQueue();
+    // security-master carries `refresh-tenant-securities` (the `security-data`
+    // scope and the full-portfolio "Refresh securities data" step).
+    const securityMasterQueue = getSecurityMasterQueue();
 
     const STATES = ['active', 'waiting', 'delayed', 'completed', 'failed'];
     // 30 per state is comfortably above the 20-entry history cap and
@@ -187,6 +192,7 @@ async function getRebuildJobsForTenant(tenantId) {
     const buckets = await Promise.all([
         ...STATES.map((s) => fetchStateJobs(portfolioQueue, s)),
         ...STATES.map((s) => fetchStateJobs(analyticsQueue, s)),
+        ...STATES.map((s) => fetchStateJobs(securityMasterQueue, s)),
     ]);
 
     const all = buckets.flat();

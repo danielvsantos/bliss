@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AxiosError } from 'axios';
 import {
   Check,
@@ -86,6 +87,7 @@ const SCOPE_LABEL: Record<RebuildScope, string> = {
   'full-analytics': 'Full analytics',
   'scoped-analytics': 'Scoped analytics',
   'single-asset': 'Single asset',
+  'security-data': 'Securities data',
 };
 
 // Human-readable label per BullMQ job name. Used in the history list
@@ -102,6 +104,9 @@ const STEP_LABEL: Record<string, string> = {
   'value-portfolio-items':     'Revalue selected asset(s)',
   'process-amortizing-loan':   'Rebuild amortizing loans',
   'process-simple-liability':  'Rebuild simple liabilities',
+  // Passive Income #77: a step of the full rebuild (missing/stale symbols) and
+  // the whole of the `security-data` scope (all of this tenant's symbols).
+  'refresh-tenant-securities': 'Refresh securities data',
 };
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
@@ -434,6 +439,7 @@ function RefreshFundamentalsButton() {
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export function MaintenanceTab() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { data: status, isLoading: statusLoading, isError: statusError } = useRebuildStatus();
   // Assets for the single-asset picker come from the rebuild status
@@ -546,6 +552,7 @@ export function MaintenanceTab() {
             then revalues every asset (including debt and loan processors).
             Heaviest option — expect 5-30 minutes depending on history size.
           </p>
+          <p className="text-sm text-muted-foreground mt-1">{t('maintenance.fullRebuildSecuritiesStep')}</p>
         </div>
         <RebuildButton
           scope="full-portfolio"
@@ -596,17 +603,27 @@ export function MaintenanceTab() {
         </div>
       </Card>
 
-      {/* ─── Refresh stock fundamentals ────────────────────────────────── */}
+      {/* ─── Refresh my securities data (tenant-scoped, #77) ───────────── */}
       <Card className="p-6 space-y-4">
         <div>
-          <h3 className="font-medium">Refresh stock fundamentals</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Re-runs the Twelve Data fundamentals refresh for every active stock
-            symbol (profile, earnings, dividends, quote). Use when P/E ratios,
-            EPS, or dividend yields look stale or appear as <code>—</code> on
-            the Equity Analysis page after the nightly refresh has missed data.
-            Each symbol takes ~2 seconds; expect a few minutes for a full run.
-          </p>
+          <h3 className="font-medium">{t('maintenance.securityData.title')}</h3>
+          <p className="text-sm text-muted-foreground mt-1">{t('maintenance.securityData.description')}</p>
+        </div>
+        <RebuildButton
+          scope="security-data"
+          status={status}
+          isPending={trigger.isPending && trigger.variables?.scope === 'security-data'}
+          disabled={statusLoading}
+          onClick={() => runTrigger('security-data')}
+          label={t('maintenance.securityData.button')}
+        />
+      </Card>
+
+      {/* ─── Refresh fundamentals — GLOBAL SecurityMaster table ────────── */}
+      <Card className="p-6 space-y-4">
+        <div>
+          <h3 className="font-medium">{t('maintenance.globalFundamentals.title')}</h3>
+          <p className="text-sm text-muted-foreground mt-1">{t('maintenance.globalFundamentals.description')}</p>
         </div>
         <RefreshFundamentalsButton />
       </Card>

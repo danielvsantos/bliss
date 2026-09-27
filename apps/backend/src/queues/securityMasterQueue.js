@@ -37,8 +37,33 @@ async function enqueueSecurityMasterJob(jobName, data) {
     return getSecurityMasterQueue().add(jobName, data);
 }
 
+// BullMQ simple-mode deduplication for the tenant-scoped refresh (#77): while a
+// `refresh-tenant-securities` job for this tenant is waiting, delayed, active
+// or retrying, further adds are dropped. Not a fixed `jobId` — completed jobs
+// are kept for 24h and would block every refresh for a day. Same pattern as
+// `fullValuationDedupOpts()` in portfolioQueue.js.
+const tenantSecuritiesDedupOpts = (tenantId) => ({
+    deduplication: { id: `tenant-securities-${tenantId}` },
+});
+
+/**
+ * Enqueue `refresh-tenant-securities` for a tenant (deduplicated per tenant).
+ * @param {string} tenantId
+ * @param {{ force?: boolean, _rebuildMeta?: Object }} [data]
+ * @param {Object} [opts] extra BullMQ job options (e.g. manual-rebuild retention)
+ */
+async function enqueueTenantSecuritiesRefresh(tenantId, data = {}, opts = {}) {
+    return getSecurityMasterQueue().add(
+        'refresh-tenant-securities',
+        { tenantId, force: false, ...data },
+        { ...tenantSecuritiesDedupOpts(tenantId), ...opts },
+    );
+}
+
 module.exports = {
     getSecurityMasterQueue,
     SECURITY_MASTER_QUEUE_NAME,
     enqueueSecurityMasterJob,
+    enqueueTenantSecuritiesRefresh,
+    tenantSecuritiesDedupOpts,
 };

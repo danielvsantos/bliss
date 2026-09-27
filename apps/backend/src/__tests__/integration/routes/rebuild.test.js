@@ -37,6 +37,15 @@ jest.mock('../../../queues/analyticsQueue', () => ({
   getAnalyticsQueue: jest.fn(() => ({ getJobs: mockGetJobsAnalytics })),
 }));
 
+// security-master carries `refresh-tenant-securities` (#77: `security-data` scope).
+const mockGetJobsSecurityMaster = jest.fn();
+jest.mock('../../../queues/securityMasterQueue', () => ({
+  SECURITY_MASTER_QUEUE_NAME: 'mock-security-master',
+  getSecurityMasterQueue: jest.fn(() => ({ getJobs: mockGetJobsSecurityMaster, add: jest.fn() })),
+  enqueueSecurityMasterJob: jest.fn(),
+  enqueueTenantSecuritiesRefresh: jest.fn(),
+}));
+
 // Mock Prisma: status endpoint now also reads portfolioItem for the
 // single-asset picker. We don't want a real DB, so mock the one call
 // and have each test override what it returns.
@@ -237,6 +246,26 @@ describe('POST /api/admin/rebuild/trigger', () => {
   });
 });
 
+describe('POST /api/admin/rebuild/trigger — security-data (#77)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    acquire.mockResolvedValue(true);
+  });
+
+  it('accepts the security-data scope without a payload', async () => {
+    const res = await request(app)
+      .post('/api/admin/rebuild/trigger')
+      .set('X-API-KEY', API_KEY)
+      .send({ tenantId: TENANT, scope: 'security-data' });
+
+    expect(res.status).toBe(202);
+    expect(acquire).toHaveBeenCalledWith(`rebuild-lock:${TENANT}:security-data`, 3600);
+    expect(enqueueEvent).toHaveBeenCalledWith('MANUAL_REBUILD_REQUESTED', expect.objectContaining({
+      tenantId: TENANT, scope: 'security-data',
+    }));
+  });
+});
+
 describe('GET /api/admin/rebuild/status', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -244,6 +273,7 @@ describe('GET /api/admin/rebuild/status', () => {
     isHeld.mockResolvedValue({ held: false, ttlSeconds: null });
     stubQueueJobs(mockGetJobsPortfolio);
     stubQueueJobs(mockGetJobsAnalytics);
+    stubQueueJobs(mockGetJobsSecurityMaster);
     mockPortfolioItemFindMany.mockResolvedValue([]);
   });
 
@@ -270,6 +300,7 @@ describe('GET /api/admin/rebuild/status', () => {
       { scope: 'full-analytics', held: false, ttlSeconds: null },
       { scope: 'scoped-analytics', held: false, ttlSeconds: null },
       { scope: 'single-asset', held: false, ttlSeconds: null },
+      { scope: 'security-data', held: false, ttlSeconds: null },
     ]));
     expect(res.body.current).toEqual([]);
     expect(res.body.recent).toEqual([]);
@@ -465,6 +496,18 @@ describe('GET /api/admin/rebuild/status', () => {
   // that caused the endpoint to time out at 10s regularly. The fix
   // splits into per-state queries (state comes from the list we asked
   // for) so there is NO follow-up `getState()` round-trip.
+  it('includes refresh-tenant-securities jobs from the security-master queue (#77)', async () => {
+    const job = makeJob({ id: 'sm-1', name: 'refresh-tenant-securities', rebuildType: 'security-data' });
+    stubQueueJobs(mockGetJobsSecurityMaster, { completed: [job] });
+
+    const res = await request(app)
+      .get(`/api/admin/rebuild/status?tenantId=${TENANT}`)
+      .set('X-API-KEY', API_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.recent.map((j) => j.name)).toContain('refresh-tenant-securities');
+  });
+
   it('does not call getState() on individual jobs (state is derived from the bucket)', async () => {
     const getStateSpy = jest.fn().mockResolvedValue('completed');
     const job = makeJob({ id: 1, name: 'full-rebuild-analytics' });

@@ -6,7 +6,7 @@ This document specifies the backend service changes for the global SecurityMaste
 
 The SecurityMaster table stores global (non-tenant) stock fundamental data sourced from Twelve Data APIs. This enables equity-specific analysis like sector allocation, industry breakdown, and fundamental screening.
 
-**Scope**: Stocks only (Common Stock). ETFs and funds are deferred to a future sprint.
+**Scope**: Stocks (`API_STOCK`) and, since #77 (Passive Income), ETFs — `API_FUND` holdings whose SecurityMaster `assetType` is `ETF`, or which have no row yet (the first profile fetch resolves the type). Mutual funds (`API_FUND` with a non-ETF row) are skipped. For ETFs the refresh **never calls `/earnings`** (Twelve Data returns meaningless EPS for funds) and `upsertFromProfile` **stores no sector, industry or country** (empty for US ETFs, misleading for UCITS ETFs — VWCE came back as "Basic Materials / Netherlands").
 
 **Data sources (available on our Grow plan):**
 - Twelve Data `/profile` (10 credits) — sector, industry, country, CEO, employees, description, website, exchange, ISIN
@@ -16,7 +16,7 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 
 **NOT available on our plan**: `/statistics` (50 credits, requires higher plan). P/E ratio and dividend yield are computed from earnings + dividends + quote data.
 
-**Cost per symbol (nightly refresh)**: 10 + 10 + 20 + 1 = **41 credits**
+**Cost per symbol (nightly refresh)**: stock 1 + 20 + 20 = **41 credits**, ETF 1 + 20 = **21 credits** (no `/earnings`); +10 when the weekly profile refresh is due.
 
 ## 19.2. SecurityMaster Service
 
@@ -30,7 +30,9 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 | `getBySymbols(symbols)` | Fetch multiple records by symbol array |
 | `upsertFromProfile(symbol, profileData)` | Upsert profile fields + `lastProfileUpdate` |
 | `upsertFundamentals(symbol, { earnings, dividends, quote })` | Compute and upsert fundamental fields |
-| `getAllActiveStockSymbols()` | Distinct `{ symbol, exchange }` pairs from PortfolioItem where `processingHint = 'API_STOCK'` and `quantity > 0` |
+| `getAllActiveSecuritySymbols()` | Distinct `{ symbol, exchange }` pairs from PortfolioItem with `quantity > 0`: `API_STOCK`, plus `API_FUND` whose SecurityMaster `assetType` is `ETF` or which has no row yet (replaced `getAllActiveStockSymbols` in #77) |
+| `getTenantSecuritySymbols(tenantId, { force, staleDays = 7 })` | Same selection for one tenant. `force: false` keeps only symbols with no row or `lastFundamentalsUpdate` older than `staleDays` |
+| `isEtfAssetType(type)` | `true` for the Twelve Data profile type `ETF` |
 | `getAllSecurityMasterSymbols()` | All `{ symbol, exchange }` pairs from the SecurityMaster table, ordered by symbol. Used for full-table refresh |
 
 ### Computation Logic (`upsertFundamentals`)
@@ -38,6 +40,7 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 - **trailingEps**: Sum of last 4 quarters `eps_actual` (skipping nulls). The function defensively re-sorts `withActual` newest-first before slicing — the upstream service is supposed to sort, but this is the load-bearing slice so we don't trust the input.
 - **peRatio**: `currentPrice / trailingEps`. **Omitted from the update payload** (not set to `null`) when `trailingEps <= 0` or no current price — preserves any previous good value on the row, while the trust flag (see 19.10) marks the row as untrusted so consumers ignore it. A previous version unconditionally wrote `null` here, which silently wiped a prior good value when a single bad refresh hit a transient API quirk.
 - **annualizedDividend**: Sum of dividends with `ex_date` in last 12 months
+- **recentDividends** (JSON, #77): the same last-12-month list, stored as `[{ exDate, amount }]` newest first. Written only when the dividend fetch succeeded (a failed fetch preserves the previous value); an empty list with `dividendTrusted = true` is a trusted zero (accumulating ETFs, non-payers). Replayed by the passive income projection — see `22-passive-income.md`.
 - **dividendYield**: `annualizedDividend / currentPrice`. Set to `Decimal('0')` when `annualizedDividend === 0` (the correct answer for a non-dividend stock); omitted from the update when `annualizedDividend > 0` but no current price (preserves previous value, trust flag handles the rest).
 - **latestEpsActual**: Most recent non-null `eps_actual`
 - **latestEpsSurprise**: Corresponding `surprise_prc`
@@ -255,3 +258,13 @@ Because both flags default to `false` for existing rows after the migration, the
 ### Manual Refresh Trigger
 
 A new admin endpoint, `POST /api/admin/refresh-fundamentals`, proxies to the existing internal `POST /api/security-master/refresh-all` and enqueues the same `refresh-all-fundamentals` job the nightly cron uses. The frontend exposes this as a "Refresh stock fundamentals" panel in the Maintenance tab. See `docs/specs/api/03-reference-data-management.md` section 3.5 for the API contract.
+
+
+## 19.12. ETFs and the tenant-scoped refresh (#77)
+
+- **`refresh-all-fundamentals`** (nightly 3 AM UTC) now iterates `getAllActiveSecuritySymbols()` (stocks + ETFs). In `refreshSymbol()` the asset type comes from the stored row, overridden by a fresh profile; ETFs skip `/earnings` and are upserted with `earnings: null`, so `earningsTrusted` stays `false`. One symbol failing is logged and skipped, as before.
+- **`refresh-tenant-securities`** (new, same queue): data `{ tenantId, force?: boolean, _rebuildMeta? }`. Refreshes `getTenantSecuritySymbols(tenantId, { force })` with the existing `refreshSymbol()`. Enqueued through `enqueueTenantSecuritiesRefresh()` in `queues/securityMasterQueue.js`, which applies BullMQ `deduplication: { id: 'tenant-securities-<tenantId>' }` (not a fixed `jobId` — completed jobs are kept 24h). Triggers:
+  - `PORTFOLIO_CHANGES_PROCESSED` carrying a non-empty `newSecuritySymbols` (new stock/ETF items from any transaction path) → `force: false`.
+  - The same event carrying `_rebuildMeta.rebuildType = 'full-portfolio'` → `force: false` + `_rebuildMeta`, shown as the "Refresh securities data" step in Maintenance history.
+  - `MANUAL_REBUILD_REQUESTED` scope `security-data` → `force: true` + `_rebuildMeta`. `refresh-tenant-securities` is that scope's terminal job (`utils/rebuildLock.js`); the worker's `completed` handler releases the lock.
+- The rebuild status endpoint also reads the `security-master` queue so these jobs appear under "Recent rebuilds".

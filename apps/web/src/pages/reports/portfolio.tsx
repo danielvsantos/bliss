@@ -14,6 +14,7 @@ import {
   ChevronRight,
   HelpCircle,
   EditIcon,
+  Coins,
   Loader2,
 } from "lucide-react";
 import {
@@ -63,6 +64,8 @@ import {
   getGroupIcon,
 } from "@/lib/portfolio-utils";
 import { translateCategoryGroup } from "@/lib/category-i18n";
+import { IncomeTermsModal } from "@/components/income/income-terms-modal";
+import { canHoldIncomeTerms } from "@/lib/passive-income";
 
 // ── Symbol-level merge (cross-account deduplication) ──────────────────────
 //
@@ -154,7 +157,31 @@ function SortChevron({ dir }: { dir: "asc" | "desc" | "none" }) {
 
 // ── Asset Row ──────────────────────────────────────────────────────────────
 
-function AssetRow({ item, currency }: { item: PortfolioItem; currency: string }) {
+// Passive Income (#77): opens the Income Terms modal in place (unlike the
+// debt row, which navigates away). Shown on every income-capable holding.
+function IncomeTermsButton({ item, onOpen }: { item: PortfolioItem; onOpen?: (item: PortfolioItem) => void }) {
+  const { t } = useTranslation();
+  if (!onOpen || !canHoldIncomeTerms(item.category)) return null;
+  const configured = Boolean(item.incomeTerms);
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "h-6 w-6 p-0 ml-1 align-middle",
+        configured ? "text-brand-primary" : "text-muted-foreground hover:text-brand-deep",
+      )}
+      aria-label={t("incomeTerms.action")}
+      title={configured ? t("incomeTerms.actionConfigured") : t("incomeTerms.action")}
+      onClick={() => onOpen(item)}
+      data-testid={`income-terms-${item.id}`}
+    >
+      <Coins className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
+
+function AssetRow({ item, currency, onIncomeTerms }: { item: PortfolioItem; currency: string; onIncomeTerms?: (item: PortfolioItem) => void }) {
   const { t } = useTranslation();
   const data = getDisplayData(item, currency);
   const marketValue = parseDecimal(data.marketValue);
@@ -162,7 +189,10 @@ function AssetRow({ item, currency }: { item: PortfolioItem; currency: string })
   if (item.category.group === "Cash") {
     return (
       <TableRow className="hover:bg-accent/30">
-        <TableCell className="font-medium">{item.symbol}</TableCell>
+        <TableCell className="font-medium">
+          {item.symbol}
+          <IncomeTermsButton item={item} onOpen={onIncomeTerms} />
+        </TableCell>
         <TableCell className="hidden md:table-cell" />
         <TableCell className="hidden md:table-cell" />
         <TableCell className="hidden md:table-cell" />
@@ -187,7 +217,10 @@ function AssetRow({ item, currency }: { item: PortfolioItem; currency: string })
   return (
     <TableRow className={`hover:bg-accent/30 ${isClosed ? "opacity-60" : ""}`}>
       <TableCell className="font-medium">
-        <div>{item.symbol}</div>
+        <div className="flex items-center">
+          <span>{item.symbol}</span>
+          <IncomeTermsButton item={item} onOpen={isClosed ? undefined : onIncomeTerms} />
+        </div>
         <p className="text-xs text-muted-foreground sm:hidden">
           {unrealizedPnL !== 0 && (
             <span className={unrealizedPnL >= 0 ? "text-positive" : "text-negative"}>
@@ -283,6 +316,7 @@ export default function PortfolioHoldingsPage() {
   const [closedSectionsVisible, setClosedSectionsVisible] = useState<Record<string, boolean>>({});
   const [timeRange, setTimeRange] = useState("all");
   const [showDebt, setShowDebt] = useState(false);
+  const [incomeTermsItem, setIncomeTermsItem] = useState<PortfolioItem | null>(null);
   // Account and country filters — "all" means no filter applied
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [selectedCountryId, setSelectedCountryId] = useState<string>("all");
@@ -906,11 +940,11 @@ export default function PortfolioHoldingsPage() {
                           </TableHeader>
                           <TableBody>
                             {openPositions.map((item) => (
-                              <AssetRow key={item.id} item={item} currency={portfolioCurrency} />
+                              <AssetRow key={item.id} item={item} currency={portfolioCurrency} onIncomeTerms={setIncomeTermsItem} />
                             ))}
                             {closedSectionsVisible[group] &&
                               closedPositions.map((item) => (
-                                <AssetRow key={item.id} item={item} currency={portfolioCurrency} />
+                                <AssetRow key={item.id} item={item} currency={portfolioCurrency} onIncomeTerms={setIncomeTermsItem} />
                               ))}
                           </TableBody>
                         </Table>
@@ -990,6 +1024,15 @@ export default function PortfolioHoldingsPage() {
         </Card>
       )}
       </div>
+
+      <IncomeTermsModal
+        open={incomeTermsItem !== null}
+        onOpenChange={(open) => !open && setIncomeTermsItem(null)}
+        mode="asset"
+        assetId={incomeTermsItem?.id ?? null}
+        assetLabel={incomeTermsItem?.symbol}
+        currentValue={incomeTermsItem ? parseDecimal(incomeTermsItem.native?.marketValue) : undefined}
+      />
     </div>
   );
 }

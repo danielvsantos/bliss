@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TrendingUp, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import {
@@ -9,10 +9,14 @@ import { motion } from 'framer-motion';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 
 import { useEquityAnalysis } from '@/hooks/use-equity-analysis';
 import { formatCurrency, formatPercentage } from '@/lib/utils';
 import type { EquityHolding } from '@/types/equity-analysis';
+
+/** Bucket the API uses for ETF sector/industry/country (look-through comes in #79). */
+const DIVERSIFIED = 'Diversified';
 
 /* ── Dataviz palette (design tokens) ── */
 const CHART_COLORS = ['#6D657A', '#2E8B57', '#E09F12', '#3A3542', '#3A8A8F', '#B8AEC8', '#7E7590', '#9A95A4'];
@@ -104,14 +108,20 @@ export default function EquityAnalysisPage() {
     });
   }, [allHoldings, sortField, sortOrder]);
 
+  // ETFs are bucketed as "Diversified" by the API (sector/industry/country).
+  const groupLabel = useCallback(
+    (name: string) => (name === DIVERSIFIED ? t('equityAnalysis.diversified') : name),
+    [t],
+  );
+
   // Donut chart data
   const donutData = useMemo(() => {
     return groups.map((g) => ({
-      name: g.name,
+      name: groupLabel(g.name),
       value: g.totalValue,
       weight: g.weight,
     }));
-  }, [groups]);
+  }, [groups, groupLabel]);
 
   // Top 10 bar chart data
   const topHoldings = useMemo(() => {
@@ -375,10 +385,17 @@ export default function EquityAnalysisPage() {
                     <tbody>
                       {sortedHoldings.map((h: EquityHolding) => (
                         <tr key={h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
-                          <td className="px-3 py-2.5 font-medium text-brand-deep">{h.symbol}</td>
+                          <td className="px-3 py-2.5 font-medium text-brand-deep whitespace-nowrap">
+                            {h.symbol}
+                            {h.assetType === 'ETF' && (
+                              <Badge variant="outline" className="ml-1.5 px-1.5 py-0 text-[10px] bg-brand-primary/10 text-brand-primary border-brand-primary/20">
+                                {t('equityAnalysis.etfBadge')}
+                              </Badge>
+                            )}
+                          </td>
                           <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">{h.name}</td>
-                          <td className="hidden md:table-cell px-3 py-2.5 text-muted-foreground text-xs">{h.sector}</td>
-                          <td className="hidden lg:table-cell px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">{h.industry}</td>
+                          <td className="hidden md:table-cell px-3 py-2.5 text-muted-foreground text-xs">{groupLabel(h.sector)}</td>
+                          <td className="hidden lg:table-cell px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">{groupLabel(h.industry)}</td>
                           <td className="hidden sm:table-cell px-3 py-2.5 tabular-nums">
                             {h.peRatio != null ? h.peRatio.toFixed(1) : '—'}
                           </td>

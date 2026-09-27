@@ -55,11 +55,15 @@ async function upsertFromProfile(symbol, profileData) {
         exchange = existing?.exchange || profileData.exchange || null;
     }
 
+    // ETFs: Twelve Data's profile sector/industry/country are empty for US ETFs
+    // and misleading for UCITS ones (VWCE came back as "Basic Materials /
+    // Netherlands"). Never store them — consumers show "Diversified" instead.
+    const isEtf = isEtfAssetType(profileData.type);
     const data = {
         name: profileData.name || null,
-        sector: profileData.sector || null,
-        industry: profileData.industry || null,
-        country: profileData.country || null,
+        sector: isEtf ? null : (profileData.sector || null),
+        industry: isEtf ? null : (profileData.industry || null),
+        country: isEtf ? null : (profileData.country || null),
         exchange,
         currency: profileData.currency || null,
         isin: profileData.isin || null,
@@ -84,6 +88,13 @@ async function upsertFromProfile(symbol, profileData) {
         update: data,
     });
     logger.info(`[SecurityMaster] Upserted profile for ${symbol} (exchange=${exchange})`);
+}
+
+/** Twelve Data /profile `type` for exchange-traded funds (confirmed by the #77 spike). */
+const ETF_ASSET_TYPE = 'ETF';
+
+function isEtfAssetType(type) {
+    return typeof type === 'string' && type.trim().toUpperCase() === ETF_ASSET_TYPE;
 }
 
 // Trust-gate windows. Tuned for quarterly reporting:
@@ -244,6 +255,12 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
         });
 
         const annualizedDividend = recentDividends.reduce((sum, d) => sum + d.amount, 0);
+
+        // Store the filtered last-12-month list itself so the passive income
+        // projection can replay it (#77). Newest first, plain JSON.
+        data.recentDividends = recentDividends
+            .map(d => ({ exDate: String(d.exDate).slice(0, 10), amount: d.amount }))
+            .sort((a, b) => (a.exDate < b.exDate ? 1 : a.exDate > b.exDate ? -1 : 0));
         data.annualizedDividend = new Decimal(annualizedDividend.toFixed(4));
 
         const currentPrice = quote ? quote.close : null;
@@ -280,25 +297,98 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
 }
 
 /**
- * Get all distinct stock symbols currently held across all tenants.
- * Only includes PortfolioItems linked to a category with processingHint = 'API_STOCK'
- * and with a positive quantity (active positions).
+ * Keep API_STOCK symbols, plus API_FUND symbols that SecurityMaster knows to be
+ * ETFs or has no row for yet (the first profile fetch resolves the type).
+ * Mutual funds (API_FUND with a non-ETF row) are skipped: Twelve Data has no
+ * useful fundamentals for them.
+ */
+async function filterSecuritySymbols(items) {
+    const fundSymbols = [...new Set(items.filter(i => i.category?.processingHint === 'API_FUND').map(i => i.symbol))];
+    const smRows = fundSymbols.length
+        ? await prisma.securityMaster.findMany({
+            where: { symbol: { in: fundSymbols } },
+            select: { symbol: true, assetType: true },
+        })
+        : [];
+    const fundType = new Map(smRows.map(r => [r.symbol, r.assetType]));
+
+    const seen = new Set();
+    const out = [];
+    for (const i of items) {
+        if (seen.has(i.symbol)) continue;
+        const hint = i.category?.processingHint;
+        if (hint === 'API_FUND') {
+            const known = fundType.has(i.symbol);
+            if (known && !isEtfAssetType(fundType.get(i.symbol))) continue;
+        } else if (hint !== 'API_STOCK') {
+            continue;
+        }
+        seen.add(i.symbol);
+        out.push({ symbol: i.symbol, exchange: i.exchange || null });
+    }
+    return out;
+}
+
+const SECURITY_ITEM_SELECT = {
+    symbol: true,
+    exchange: true,
+    category: { select: { processingHint: true } },
+};
+
+/**
+ * Get all distinct stock and ETF symbols currently held across all tenants
+ * (positive quantity). Stocks: processingHint API_STOCK. ETFs: API_FUND items
+ * whose SecurityMaster assetType is ETF, or with no row yet.
  * Returns symbol + exchange (MIC code) so callers can disambiguate on Twelve Data.
  * @returns {Promise<Array<{symbol: string, exchange: string|null}>>}
  */
-async function getAllActiveStockSymbols() {
+async function getAllActiveSecuritySymbols() {
     const items = await prisma.portfolioItem.findMany({
         where: {
             quantity: { gt: 0 },
-            category: {
-                processingHint: 'API_STOCK',
-            },
+            category: { processingHint: { in: ['API_STOCK', 'API_FUND'] } },
         },
-        select: { symbol: true, exchange: true },
-        distinct: ['symbol'],
+        select: SECURITY_ITEM_SELECT,
+        orderBy: { symbol: 'asc' },
     });
+    return filterSecuritySymbols(items);
+}
 
-    return items.map(i => ({ symbol: i.symbol, exchange: i.exchange || null }));
+/**
+ * Stock and ETF symbols held by ONE tenant (positive quantity), for the
+ * tenant-scoped `refresh-tenant-securities` job.
+ *
+ * @param {string} tenantId
+ * @param {Object} [options]
+ * @param {boolean} [options.force=false]  false → only symbols with no SecurityMaster
+ *        row or with lastFundamentalsUpdate older than `staleDays`; true → all.
+ * @param {number} [options.staleDays=7]
+ * @returns {Promise<Array<{symbol: string, exchange: string|null}>>}
+ */
+async function getTenantSecuritySymbols(tenantId, { force = false, staleDays = 7 } = {}) {
+    if (!tenantId) throw new Error('tenantId is required');
+    const items = await prisma.portfolioItem.findMany({
+        where: {
+            tenantId,
+            quantity: { gt: 0 },
+            category: { processingHint: { in: ['API_STOCK', 'API_FUND'] } },
+        },
+        select: SECURITY_ITEM_SELECT,
+        orderBy: { symbol: 'asc' },
+    });
+    const symbols = await filterSecuritySymbols(items);
+    if (force || symbols.length === 0) return symbols;
+
+    const rows = await prisma.securityMaster.findMany({
+        where: { symbol: { in: symbols.map(s => s.symbol) } },
+        select: { symbol: true, lastFundamentalsUpdate: true },
+    });
+    const updated = new Map(rows.map(r => [r.symbol, r.lastFundamentalsUpdate]));
+    const cutoff = Date.now() - staleDays * MS_PER_DAY;
+    return symbols.filter(s => {
+        const last = updated.get(s.symbol);
+        return !last || new Date(last).getTime() < cutoff;
+    });
 }
 
 /**
@@ -319,6 +409,8 @@ module.exports = {
     getBySymbols,
     upsertFromProfile,
     upsertFundamentals,
-    getAllActiveStockSymbols,
+    getAllActiveSecuritySymbols,
+    getTenantSecuritySymbols,
     getAllSecurityMasterSymbols,
+    isEtfAssetType,
 };

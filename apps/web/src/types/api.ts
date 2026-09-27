@@ -177,11 +177,14 @@ export type PortfolioItem = {
     type: string;
     icon?: string;
     processingHint?: string;
+    defaultCategoryCode?: string | null;
   };
   native: FinancialSummary;
   usd: FinancialSummary;
   portfolio?: FinancialSummary;
   debtTerms?: DebtTerms;
+  /** Passive Income (#77): present when the holding has income terms. */
+  incomeTerms?: { id: number; incomeType: string; isDistributing: boolean } | null;
   manualValues?: ManualAssetValue[];
 };
 
@@ -265,7 +268,7 @@ export type Error = {
 
 // ─── Admin Maintenance (rebuild) ──────────────────────────────────────────
 
-export type RebuildScope = 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset';
+export type RebuildScope = 'full-portfolio' | 'full-analytics' | 'scoped-analytics' | 'single-asset' | 'security-data';
 
 export type RebuildJobState = 'active' | 'waiting' | 'delayed' | 'completed' | 'failed' | 'unknown';
 

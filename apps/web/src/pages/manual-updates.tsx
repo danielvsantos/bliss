@@ -22,11 +22,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { differenceInDays } from "date-fns";
-import { AlertCircle, Pencil, FileText, History } from "lucide-react";
+import { AlertCircle, Pencil, FileText, History, Coins } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ManualPriceForm } from "@/components/entities/manual-price-form";
 import { ManualPriceHistoryDialog } from "@/components/entities/manual-price-history-dialog";
 import { DebtTermsForm } from "@/components/entities/debt-terms-form";
+import { IncomeTermsModal } from "@/components/income/income-terms-modal";
+import { canHoldIncomeTerms } from "@/lib/passive-income";
 import { parseDecimal, getDisplayData } from "@/lib/portfolio-utils";
 import { formatCurrency } from "@/lib/utils";
 
@@ -82,6 +84,7 @@ export default function ManualUpdatesPage() {
   const [selectedAsset, setSelectedAsset] = useState<PortfolioItem | null>(null);
   const [dialogType, setDialogType] = useState<"price" | "debt" | null>(null);
   const [historyAsset, setHistoryAsset] = useState<PortfolioItem | null>(null);
+  const [incomeTermsAsset, setIncomeTermsAsset] = useState<PortfolioItem | null>(null);
 
   // Sort state for stale assets
   const [staleSortKey, setStaleSortKey] = useState<StaleSortKey>("days");
@@ -379,15 +382,30 @@ export default function ManualUpdatesPage() {
                             {lastUpdateStr}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 gap-1.5 text-xs"
-                              onClick={() => setHistoryAsset(asset)}
-                            >
-                              <History className="h-3.5 w-3.5" />
-                              <span className="hidden sm:inline">{t("manualPriceHistory.viewHistory")}</span>
-                            </Button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {canHoldIncomeTerms(asset.category) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 gap-1.5 text-xs"
+                                  onClick={() => setIncomeTermsAsset(asset)}
+                                  aria-label={t("incomeTerms.action")}
+                                  data-testid={`income-terms-${asset.id}`}
+                                >
+                                  <Coins className={`h-3.5 w-3.5 ${asset.incomeTerms ? "text-brand-primary" : ""}`} />
+                                  <span className="hidden sm:inline">{t("incomeTerms.action")}</span>
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs"
+                                onClick={() => setHistoryAsset(asset)}
+                              >
+                                <History className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">{t("manualPriceHistory.viewHistory")}</span>
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -521,6 +539,20 @@ export default function ManualUpdatesPage() {
       </Dialog>
 
       {/* ── Price History Modal ── */}
+      <IncomeTermsModal
+        open={incomeTermsAsset !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setIncomeTermsAsset(null);
+            refetch();
+          }
+        }}
+        mode="asset"
+        assetId={incomeTermsAsset?.id ?? null}
+        assetLabel={incomeTermsAsset?.symbol}
+        currentValue={incomeTermsAsset ? parseDecimal(incomeTermsAsset.native?.marketValue) : undefined}
+      />
+
       <ManualPriceHistoryDialog
         asset={historyAsset}
         open={historyAsset !== null}

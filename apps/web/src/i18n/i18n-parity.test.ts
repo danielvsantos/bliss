@@ -90,3 +90,62 @@ describe('i18n parity — task #71 auth rejection messages', () => {
     });
   }
 });
+
+// Keys introduced by task #77 (Passive Income Projection). Same rules: present
+// and non-empty in all five locales, translated in es/fr/pt/it (except the
+// few that are identical by design, e.g. "ETF", "OK", "Total", "Irregular").
+const PASSIVE_INCOME_KEYS = [
+  'nav.passiveIncome',
+  'passiveIncome.title',
+  'passiveIncome.subtitle',
+  'passiveIncome.kpi.next12m',
+  'passiveIncome.kpi.essentialsCoverage',
+  'passiveIncome.kpi.dataCoverage',
+  'passiveIncome.chart.today',
+  'passiveIncome.bucket.other',
+  'passiveIncome.status.MATURED_UNREDEEMED',
+  'passiveIncome.status.STALE_RATE',
+  'passiveIncome.streams.title',
+  'passiveIncome.detached.title',
+  'passiveIncome.detached.discardConfirm',
+  'passiveIncome.missing.title_one',
+  'passiveIncome.missing.title_other',
+  'incomeTerms.action',
+  'incomeTerms.override',
+  'incomeTerms.notDistributing',
+  'incomeTerms.applyToSymbol',
+  'incomeTerms.fields.faceValuePerUnit',
+  'incomeTerms.fields.monthlyRent',
+  'incomeTerms.errors.required',
+  'maintenance.securityData.title',
+  'maintenance.securityData.button',
+  'maintenance.globalFundamentals.title',
+  'maintenance.fullRebuildSecuritiesStep',
+  'equityAnalysis.diversified',
+];
+
+const FREQUENCY_KEYS = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL', 'AT_MATURITY', 'IRREGULAR', 'NONE']
+  .map((f) => `passiveIncome.frequency.${f}`);
+const INCOME_TYPE_KEYS = ['DIVIDEND', 'FIXED_COUPON', 'FLOATING_COUPON', 'INFLATION_LINKED', 'RENT', 'INTEREST', 'CUSTOM_YIELD', 'FIXED_AMOUNT', 'NONE']
+  .map((ty) => `passiveIncome.incomeType.${ty}`);
+
+describe('i18n parity — task #77 passive income keys', () => {
+  for (const key of [...PASSIVE_INCOME_KEYS, ...FREQUENCY_KEYS, ...INCOME_TYPE_KEYS]) {
+    it(`"${key}" is a non-empty string in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  for (const key of PASSIVE_INCOME_KEYS) {
+    it(`"${key}" is actually translated in es/fr/pt/it`, () => {
+      const enValue = resolve(en, key) as string;
+      for (const lang of NON_EN) {
+        expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(enValue);
+      }
+    });
+  }
+});

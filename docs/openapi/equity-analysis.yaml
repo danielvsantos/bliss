@@ -22,6 +22,10 @@ components:
         name:
           type: string
           example: 'Apple Inc.'
+        assetType:
+          type: string
+          enum: [STOCK, ETF]
+          description: ETFs are bucketed as "Diversified" and never carry P/E or EPS.
         quantity:
           type: number
           example: 50
@@ -147,10 +151,14 @@ paths:
         - Portfolio
       summary: Get equity portfolio analysis
       description: >
-        Returns stock-only portfolio composition enriched with fundamental data
+        Returns stock and ETF portfolio composition enriched with fundamental data
         from the SecurityMaster reference table. Holdings are grouped by the
         requested dimension (sector, industry, or country) with weighted
-        aggregate metrics.
+        aggregate metrics. ETFs (API_FUND items whose SecurityMaster assetType
+        is `ETF`, or any holding SecurityMaster identifies as an ETF) are always
+        bucketed as `Diversified` for sector, industry and country, and never
+        carry P/E or EPS — weighted P/E stays stock-only. Dividend yield honours
+        a user dividend override (IncomeTerms) and "doesn't distribute".
       security:
         - cookieAuth: []
       parameters:

@@ -26,6 +26,10 @@ jest.mock('../../../queues/smartImportQueue', () => ({
   getSmartImportQueue: jest.fn(),
 }));
 
+jest.mock('../../../queues/securityMasterQueue', () => ({
+  enqueueTenantSecuritiesRefresh: jest.fn().mockResolvedValue({ id: 'sm-1' }),
+}));
+
 jest.mock('../../../services/debounceService', () => ({
   scheduleDebouncedJob: jest.fn(),
 }));
@@ -54,6 +58,7 @@ const { getPlaidSyncQueue } = require('../../../queues/plaidSyncQueue');
 const { getPlaidProcessingQueue } = require('../../../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../../../queues/smartImportQueue');
 const { scheduleDebouncedJob } = require('../../../services/debounceService');
+const { enqueueTenantSecuritiesRefresh } = require('../../../queues/securityMasterQueue');
 const logger = require('../../../utils/logger');
 
 const { processEventJob } = require('../../../workers/eventSchedulerWorker');
@@ -520,6 +525,57 @@ describe('eventSchedulerWorker — processEventJob', () => {
   // downstream event → job hop to reach `value-all-assets`. If any
   // propagation link breaks, the lock will never release and the admin
   // will be stuck until the TTL expires.
+
+  // ─── Passive Income (#77): tenant securities refresh ──────────────────────
+  describe('refresh-tenant-securities wiring', () => {
+    it('enqueues a non-forced refresh when new stock/ETF items were created', async () => {
+      await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1', isFullRebuild: true, newSecuritySymbols: ['VWCE'],
+      }));
+      expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith('t1', { force: false }, {});
+      // The cash/analytics cascade still runs.
+      expect(scheduleDebouncedJob).toHaveBeenCalled();
+    });
+
+    it('does not enqueue when no new securities and no rebuild meta', async () => {
+      await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1', isFullRebuild: true, newSecuritySymbols: [],
+      }));
+      expect(enqueueTenantSecuritiesRefresh).not.toHaveBeenCalled();
+    });
+
+    it('enqueues the refresh as a full-portfolio rebuild step even with no new symbols', async () => {
+      const meta = { rebuildType: 'full-portfolio', requestedAt: '2026-09-27T10:00:00Z' };
+      await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1', isFullRebuild: true, _rebuildMeta: meta,
+      }));
+      expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith(
+        't1',
+        { force: false, _rebuildMeta: meta },
+        expect.objectContaining({ removeOnComplete: expect.any(Object) }),
+      );
+    });
+
+    it('keeps the cascade going when the enqueue fails', async () => {
+      enqueueTenantSecuritiesRefresh.mockRejectedValueOnce(new Error('redis down'));
+      await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+        tenantId: 't1', isFullRebuild: true, newSecuritySymbols: ['KO'],
+      }));
+      expect(logger.error).toHaveBeenCalled();
+      expect(scheduleDebouncedJob).toHaveBeenCalled();
+    });
+
+    it('MANUAL_REBUILD_REQUESTED security-data enqueues a forced refresh with rebuild meta', async () => {
+      await processEventJob(makeJob('MANUAL_REBUILD_REQUESTED', {
+        tenantId: 't1', scope: 'security-data', requestedBy: 'a@b.c',
+      }));
+      expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith(
+        't1',
+        { force: true, _rebuildMeta: expect.objectContaining({ rebuildType: 'security-data', requestedBy: 'a@b.c' }) },
+        expect.objectContaining({ jobId: expect.stringContaining('manual-rebuild-security-data-t1-') }),
+      );
+    });
+  });
 
   describe('_rebuildMeta propagation (full-portfolio chain)', () => {
     const meta = { rebuildType: 'full-portfolio', requestedBy: 'admin@example.com', requestedAt: '2026-04-23T10:00:00.000Z' };

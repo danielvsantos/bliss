@@ -75,7 +75,11 @@ describe('MaintenanceTab', () => {
     });
     expect(screen.getByRole('heading', { name: 'Full rebuild' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild analytics from a date' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Refresh stock fundamentals' })).toBeInTheDocument();
+    // #77: tenant-scoped securities refresh + the relabelled global refresh
+    // (new strings are i18n keys; no i18n instance is initialised in tests).
+    expect(screen.getByRole('heading', { name: 'maintenance.securityData.title' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'maintenance.globalFundamentals.title' })).toBeInTheDocument();
+    expect(screen.getByText('maintenance.fullRebuildSecuritiesStep')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild a single asset' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Recent rebuilds' })).toBeInTheDocument();
   });
@@ -155,6 +159,70 @@ describe('MaintenanceTab', () => {
     expect(vi.mocked(api.triggerRebuild).mock.calls[0][0]).toMatchObject({
       scope: 'full-analytics',
     });
+  });
+
+  it('calls triggerRebuild with scope=security-data from "Refresh my securities data" (#77)', async () => {
+    vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
+    vi.mocked(api.triggerRebuild).mockResolvedValue({
+      status: 'accepted',
+      scope: 'security-data',
+      requestedAt: '2026-09-27T10:00:00.000Z',
+      lockTtlSeconds: 3600,
+    });
+
+    renderTab();
+
+    await waitFor(() => {
+      expect(screen.getByText(/No recent rebuilds\./)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'maintenance.securityData.button' }));
+
+    await waitFor(() => {
+      expect(api.triggerRebuild).toHaveBeenCalled();
+    });
+    expect(vi.mocked(api.triggerRebuild).mock.calls[0][0]).toMatchObject({ scope: 'security-data' });
+  });
+
+  it('shows the security-data lock and a "Refresh securities data" history step', async () => {
+    vi.mocked(api.getRebuildStatus).mockResolvedValue({
+      ...emptyStatus,
+      locks: [{ scope: 'security-data', held: true, ttlSeconds: 1800 }],
+      recent: [{
+        id: 'sm-1',
+        name: 'refresh-tenant-securities',
+        state: 'completed',
+        progress: 100,
+        rebuildType: 'security-data',
+        requestedBy: 'admin@test.com',
+        requestedAt: '2026-09-27T10:00:00.000Z',
+        startedAt: '2026-09-27T10:00:01.000Z',
+        finishedAt: '2026-09-27T10:02:00.000Z',
+        failedReason: null,
+        attemptsMade: 1,
+      }, {
+        // The same job as a step of a full rebuild shows its step label.
+        id: 'sm-2',
+        name: 'refresh-tenant-securities',
+        state: 'completed',
+        progress: 100,
+        rebuildType: 'full-portfolio',
+        requestedBy: 'admin@test.com',
+        requestedAt: '2026-09-27T09:00:00.000Z',
+        startedAt: '2026-09-27T09:00:01.000Z',
+        finishedAt: '2026-09-27T09:02:00.000Z',
+        failedReason: null,
+        attemptsMade: 1,
+      }],
+    });
+
+    renderTab();
+
+    await waitFor(() => {
+      expect(screen.getByText('Securities data')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Refresh securities data/)).toBeInTheDocument();
+    expect(screen.getByText(/Next available in 30m/)).toBeInTheDocument();
   });
 
   it('disables the button and shows "Running" when a rebuild of the same scope is in flight', async () => {
