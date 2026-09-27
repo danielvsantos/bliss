@@ -374,6 +374,67 @@ describe('twelveDataService', () => {
   // TWELVE_DATA. Resolution order: /exchange_rate → /time_series backtrack →
   // inverse symbol. Direction: returns X where 1 FROM = X TO.
 
+  // ─── getDividends ────────────────────────────────────────────────────────
+  // Without range=full Twelve Data returns only the latest dividend, which
+  // collapses the trailing-12-month sum to a single payment.
+
+  describe('getDividends()', () => {
+    it('requests the full dividend history (range=full)', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: { meta: {}, dividends: [] } });
+
+      await twelveDataService.getDividends('KO');
+
+      const [url, config] = axios.get.mock.calls[0];
+      expect(url).toMatch(/\/dividends$/);
+      expect(config.params).toEqual({ symbol: 'KO', range: 'full', apikey: 'test-api-key' });
+    });
+
+    it('sends range=full alongside mic_code when provided', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: { meta: {}, dividends: [] } });
+
+      await twelveDataService.getDividends('KO', { micCode: 'XNYS' });
+
+      expect(axios.get.mock.calls[0][1].params).toEqual({
+        symbol: 'KO',
+        range: 'full',
+        mic_code: 'XNYS',
+        apikey: 'test-api-key',
+      });
+    });
+
+    it('maps ex_date/amount for every record returned', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: {
+          meta: { symbol: 'KO' },
+          dividends: [
+            { ex_date: '2026-09-15', amount: '0.53' },
+            { ex_date: '2026-06-13', amount: '0.51' },
+            { ex_date: null, amount: 'bad' },
+          ],
+        },
+      });
+
+      const result = await twelveDataService.getDividends('KO');
+
+      expect(result.meta).toEqual({ symbol: 'KO' });
+      expect(result.dividends).toEqual([
+        { exDate: '2026-09-15', amount: 0.53 },
+        { exDate: '2026-06-13', amount: 0.51 },
+        { exDate: null, amount: null },
+      ]);
+    });
+
+    it('returns null on an API error status', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: { status: 'error', message: 'nope' } });
+
+      expect(await twelveDataService.getDividends('KO')).toBeNull();
+    });
+  });
+
   describe('getFxRate()', () => {
     const PAST = new Date('2026-03-10T00:00:00.000Z'); // a Tuesday, safely historical
 

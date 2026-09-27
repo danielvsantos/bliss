@@ -383,6 +383,11 @@ async function getEarnings(symbol, { micCode } = {}) {
 /**
  * Fetches historical dividend data for a symbol from Twelve Data.
  * Returns ex-dividend dates and payment amounts.
+ *
+ * `range: 'full'` is required: without it the endpoint returns ONLY the most
+ * recent dividend, so the trailing-12-month sum in securityMasterService
+ * collapses to a single payment (~4x too low for quarterly payers, ~12x for
+ * monthly). Same credit cost as the default call.
  * @param {string} symbol The ticker symbol.
  * @param {Object} [options] Optional parameters.
  * @param {string} [options.micCode] ISO-10383 MIC code for exchange disambiguation.
@@ -402,7 +407,7 @@ async function getDividends(symbol, { micCode } = {}) {
     try {
         const response = await axios.get(url, {
             timeout: 10000,
-            params: { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
+            params: { symbol, range: 'full', apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
         });
 
         if (response.data.status === 'error') {
