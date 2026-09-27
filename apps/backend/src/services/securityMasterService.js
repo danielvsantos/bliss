@@ -233,10 +233,15 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
     // --- Dividend-derived fields ---
     if (dividends && dividends.dividends) {
         const rawDividends = dividends.dividends.filter(d => d.exDate && d.amount != null);
-        const oneYearAgoMs = Date.now() - 365 * MS_PER_DAY;
-        const recentDividends = rawDividends.filter(
-            d => new Date(d.exDate).getTime() >= oneYearAgoMs
-        );
+        const nowMs = Date.now();
+        const oneYearAgoMs = nowMs - 365 * MS_PER_DAY;
+        // Full history may include announced future ex-dates; exclude them
+        // (24h grace for timezone skew) so they don't add an extra payment.
+        const graceMs = nowMs + MS_PER_DAY;
+        const recentDividends = rawDividends.filter(d => {
+            const t = new Date(d.exDate).getTime();
+            return t >= oneYearAgoMs && t <= graceMs;
+        });
 
         const annualizedDividend = recentDividends.reduce((sum, d) => sum + d.amount, 0);
         data.annualizedDividend = new Decimal(annualizedDividend.toFixed(4));

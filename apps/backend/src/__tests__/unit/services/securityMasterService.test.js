@@ -565,6 +565,78 @@ describe('securityMasterService', () => {
       const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
       expect(upsertCall.update.dividendTrusted).toBe(false);
     });
+
+    // Full-history responses (range=full): only the trailing 365 days count.
+    it('quarterly payer (KO-like full history) → annual = sum of last 4 payments', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+      const quote = { close: 70 };
+      const dividends = {
+        dividends: [
+          { exDate: daysAgo(12), amount: 0.53 },
+          { exDate: daysAgo(104), amount: 0.53 },
+          { exDate: daysAgo(195), amount: 0.51 },
+          { exDate: daysAgo(286), amount: 0.51 },
+          // Older history — must be ignored
+          { exDate: daysAgo(377), amount: 0.51 },
+          { exDate: daysAgo(468), amount: 0.485 },
+          { exDate: daysAgo(3000), amount: 0.3 },
+        ],
+      };
+
+      await upsertFundamentals('KO', { earnings: null, dividends, quote });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(parseFloat(upsertCall.update.annualizedDividend)).toBeCloseTo(2.08, 4);
+      expect(parseFloat(upsertCall.update.dividendYield)).toBeCloseTo(2.08 / 70, 5);
+      expect(upsertCall.update.dividendTrusted).toBe(true);
+    });
+
+    it('monthly payer (O-like full history) → annual = sum of last 12 payments', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+      const quote = { close: 58 };
+      const monthly = Array.from({ length: 24 }, (_, i) => ({
+        exDate: daysAgo(i < 12 ? 5 + i * 30 : 400 + (i - 12) * 30),
+        amount: i < 12 ? 0.2685 : 0.2565,
+      }));
+
+      await upsertFundamentals('O', { earnings: null, dividends: { dividends: monthly }, quote });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(parseFloat(upsertCall.update.annualizedDividend)).toBeCloseTo(12 * 0.2685, 4);
+      expect(parseFloat(upsertCall.update.dividendYield)).toBeCloseTo((12 * 0.2685) / 58, 5);
+      expect(upsertCall.update.dividendTrusted).toBe(true);
+    });
+
+    it('excludes announced future ex-dates from the trailing-12-month sum', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+      const future = new Date();
+      future.setDate(future.getDate() + 20);
+      const dividends = {
+        dividends: [
+          { exDate: future.toISOString().split('T')[0], amount: 0.53 },
+          { exDate: daysAgo(70), amount: 0.53 },
+          { exDate: daysAgo(160), amount: 0.51 },
+          { exDate: daysAgo(250), amount: 0.51 },
+          { exDate: daysAgo(340), amount: 0.51 },
+        ],
+      };
+
+      await upsertFundamentals('KO', { earnings: null, dividends, quote: { close: 70 } });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(parseFloat(upsertCall.update.annualizedDividend)).toBeCloseTo(2.06, 4);
+    });
+
+    it('accumulating ETF (empty full history) → zero annual dividend and yield, trusted', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+
+      await upsertFundamentals('VWCE', { earnings: null, dividends: { dividends: [] }, quote: { close: 120 } });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(parseFloat(upsertCall.update.annualizedDividend)).toBe(0);
+      expect(parseFloat(upsertCall.update.dividendYield)).toBe(0);
+      expect(upsertCall.update.dividendTrusted).toBe(true);
+    });
   });
 
   // ─── getAllActiveStockSymbols ──────────────────────────────────────────────
