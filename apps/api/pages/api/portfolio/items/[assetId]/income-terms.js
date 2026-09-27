@@ -96,6 +96,8 @@ async function handleGet(req, res, id) {
       symbol: item.symbol,
       currency: item.currency,
       quantity: Number(item.quantity.toString()),
+      // What was paid (item currency) — the modal defaults a bond's total face value to it.
+      costBasis: item.costBasis != null ? Number(item.costBasis.toString()) : null,
       categoryName: item.category.name,
       assetClass,
       defaultIncomeType: assetClass ? DEFAULT_INCOME_TYPE_BY_CLASS[assetClass] : null,

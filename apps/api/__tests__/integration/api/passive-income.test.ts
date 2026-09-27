@@ -128,6 +128,7 @@ describe('Passive Income API (integration)', () => {
       expect(res._status).toBe(200);
       expect(res._body.asset.assetClass).toBe('STOCK');
       expect(res._body.asset.defaultIncomeType).toBe('DIVIDEND');
+      expect(res._body.asset).toHaveProperty('costBasis');
       expect(res._body.terms).toBeNull();
       expect(res._body.auto.frequency).toBe('QUARTERLY');
       expect(res._body.auto.recentDividends).toHaveLength(4);

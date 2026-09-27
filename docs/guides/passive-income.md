@@ -37,7 +37,7 @@ Open the **Income terms** action (coin icon) on:
 - a row on **Asset Price Updates** (manually priced assets),
 - the Passive Income page (breakdown rows and the "no income data" prompt).
 
-The form adapts to the asset: bonds ask for face value per unit, coupon or index + spread + assumed index rate, frequency and maturity; real estate asks for **net** rent (what you keep after costs and vacancy); cash asks for an APY. A preview shows the result, e.g. "≈ 1,240 / year · next payment 15 Nov · ends 2029".
+The form adapts to the asset: bonds ask for the **total face value** you hold (pre-filled with what you paid; Bliss shows how many units that covers and stores it per unit, so partial sales scale it), coupon or index + spread + assumed index rate, frequency and maturity; real estate asks for **net** rent (what you keep after costs and vacancy); cash asks for an APY. A preview shows the result, e.g. "≈ 1,240 / year · next payment 15 Nov · ends 2029".
 
 **Stocks and ETFs** show the automatic dividend data. Switch on **Override automatic dividends** to enter your own annual dividend per share, and tick **Apply to all holdings of this symbol** if you hold it in several accounts. An accumulating fund (no dividends in the last year) projects zero and isn't flagged as missing.
 

@@ -80,6 +80,7 @@ export interface AssetIncomeTermsResponse {
     symbol: string;
     currency: string;
     quantity: number;
+    costBasis?: number | null;
     categoryName: string;
     assetClass: IncomeAssetClass | null;
     defaultIncomeType: IncomeType | null;

@@ -16,6 +16,8 @@ import type { IncomeStream, PassiveIncomeItem } from '@/types/passive-income';
 
 type Horizon = 12 | 24 | 36;
 const HORIZONS: Horizon[] = [12, 24, 36];
+/** Missing-data buttons shown before "Show all" (large portfolios). */
+const MISSING_PREVIEW = 8;
 
 type ModalState =
   | { mode: 'asset'; assetId: number; label: string }
@@ -32,6 +34,7 @@ export default function PassiveIncomePage() {
   const locale = i18n.language || 'en-US';
   const [horizon, setHorizon] = useState<Horizon>(12);
   const [modal, setModal] = useState<ModalState>(null);
+  const [showAllMissing, setShowAllMissing] = useState(false);
 
   const { data, isLoading, isFetching, error } = usePassiveIncome(horizon);
   const { data: streamsData } = useIncomeStreams();
@@ -158,7 +161,7 @@ export default function PassiveIncomePage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 pl-6">
-                {data.missing.map((m) => (
+                {(showAllMissing ? data.missing : data.missing.slice(0, MISSING_PREVIEW)).map((m) => (
                   <Button
                     key={m.portfolioItemId}
                     size="sm"
@@ -169,6 +172,18 @@ export default function PassiveIncomePage() {
                     {m.label}
                   </Button>
                 ))}
+                {data.missing.length > MISSING_PREVIEW && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => setShowAllMissing((v) => !v)}
+                  >
+                    {showAllMissing
+                      ? t('passiveIncome.missing.showLess')
+                      : t('passiveIncome.missing.showAll', { count: data.missing.length })}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

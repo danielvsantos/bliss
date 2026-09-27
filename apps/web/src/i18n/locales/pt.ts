@@ -2306,6 +2306,18 @@ const pt = {
       empty: "Nenhum pagamento previsto ainda.",
     },
     breakdown: {
+      filters: {
+        all: "Tudo",
+        assets: "Posições",
+        streams: "Fluxos",
+        attention: "Requer atenção",
+      },
+      search: "Buscar posições ou fluxos",
+      filter: "Filtrar",
+      noMatches: "Nada corresponde à sua busca.",
+      showing: "{{from}}–{{to}} de {{total}}",
+      prev: "Página anterior",
+      next: "Próxima página",
       title: "Detalhamento por posição ou fluxo",
       description: "Projetado para os próximos {{count}} meses",
       empty: "Nenhuma renda configurada ainda. Adicione condições de renda às suas posições ou um fluxo de renda.",
@@ -2330,11 +2342,15 @@ const pt = {
       noCategories: "Crie uma categoria Mesada ou Benefícios governamentais no grupo Renda passiva para adicionar fluxos.",
     },
     missing: {
+      showAll: "Ver todas ({{count}})",
+      showLess: "Ver menos",
       title_one: "{{count}} posição não tem dados de renda",
       title_other: "{{count}} posições não têm dados de renda",
       description: "Adicione as condições de renda ou marque-as como sem distribuição para completar a projeção.",
     },
     detached: {
+      searchAsset: "Buscar posições…",
+      noAssets: "Nenhuma posição sem condições de renda.",
       title: "Condições de renda desvinculadas",
       description: "Essas condições pertenciam a posições recriadas após uma importação corrigida. Vincule-as novamente à posição correta ou descarte-as.",
       unnamed: "Posição sem nome",
@@ -2352,6 +2368,10 @@ const pt = {
     },
   },
   incomeTerms: {
+    faceValueHint_one: "{{units}} unidade em carteira · {{perUnit}} por unidade",
+    faceValueHint_other: "{{units}} unidades em carteira · {{perUnit}} por unidade",
+    pickDate: "Escolha uma data",
+    clearDate: "Limpar data",
     action: "Condições de renda",
     actionConfigured: "Condições de renda (configuradas)",
     title: "Condições de renda — {{name}}",
@@ -2385,6 +2405,7 @@ const pt = {
       CORPORATE: "Corporativo",
     },
     fields: {
+      faceValueTotal: "Valor de face total",
       incomeType: "Tipo de renda",
       issuerType: "Emissor",
       faceValuePerUnit: "Valor de face por unidade",

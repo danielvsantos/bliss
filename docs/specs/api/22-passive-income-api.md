@@ -9,7 +9,7 @@ All routes use `withAuth` (tenant from the JWT), the `portfolio` rate limiter an
 | Method | Route | Notes |
 |--------|-------|-------|
 | GET | `/api/portfolio/passive-income?horizon=12\|24\|36` | Projection (default 12; anything else → 400). |
-| GET | `/api/portfolio/items/:assetId/income-terms` | `{ asset (with assetClass, defaultIncomeType), terms, auto }`. `auto` only when SecurityMaster `dividendTrusted`. |
+| GET | `/api/portfolio/items/:assetId/income-terms` | `{ asset (with assetClass, defaultIncomeType, quantity, costBasis), terms, auto }`. `auto` only when SecurityMaster `dividendTrusted`. |
 | PUT | `/api/portfolio/items/:assetId/income-terms` | Upsert, validated per `incomeType` by `validateIncomeTerms` (`@bliss/shared/portfolio`). `applyToSymbol: true` (DIVIDEND) upserts the same override on every holding of the symbol in one transaction. Non income-capable assets (crypto, collectibles, vehicles, commodities, debt) → 400. |
 | DELETE | `/api/portfolio/items/:assetId/income-terms` | 204; stocks/ETFs fall back to automatic data. |
 | GET / POST | `/api/passive-income/streams` | List streams + eligible categories / create (`incomeType FIXED_AMOUNT`). |

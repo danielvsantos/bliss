@@ -2258,6 +2258,18 @@ const es = {
       empty: "Aún no se esperan pagos.",
     },
     breakdown: {
+      filters: {
+        all: "Todo",
+        assets: "Posiciones",
+        streams: "Flujos",
+        attention: "Requiere atención",
+      },
+      search: "Buscar posiciones o flujos",
+      filter: "Filtrar",
+      noMatches: "Nada coincide con tu búsqueda.",
+      showing: "{{from}}–{{to}} de {{total}}",
+      prev: "Página anterior",
+      next: "Página siguiente",
       title: "Desglose por posición o flujo",
       description: "Previsto para los próximos {{count}} meses",
       empty: "Aún no hay ingresos configurados. Añade condiciones de ingresos a tus posiciones o un flujo de ingresos.",
@@ -2282,11 +2294,15 @@ const es = {
       noCategories: "Crea una categoría Asignación o Prestaciones públicas en el grupo Ingresos pasivos para añadir flujos.",
     },
     missing: {
+      showAll: "Ver todas ({{count}})",
+      showLess: "Ver menos",
       title_one: "{{count}} posición no tiene datos de ingresos",
       title_other: "{{count}} posiciones no tienen datos de ingresos",
       description: "Añade sus condiciones de ingresos o márcalas como sin distribución para completar la proyección.",
     },
     detached: {
+      searchAsset: "Buscar posiciones…",
+      noAssets: "No hay posiciones sin condiciones de ingresos.",
       title: "Condiciones de ingresos desvinculadas",
       description: "Estas condiciones pertenecían a posiciones recreadas tras corregir una importación. Vuelve a vincularlas a la posición correcta o descártalas.",
       unnamed: "Posición sin nombre",
@@ -2304,6 +2320,10 @@ const es = {
     },
   },
   incomeTerms: {
+    faceValueHint_one: "{{units}} unidad en cartera · {{perUnit}} por unidad",
+    faceValueHint_other: "{{units}} unidades en cartera · {{perUnit}} por unidad",
+    pickDate: "Elige una fecha",
+    clearDate: "Borrar fecha",
     action: "Condiciones de ingresos",
     actionConfigured: "Condiciones de ingresos (configuradas)",
     title: "Condiciones de ingresos — {{name}}",
@@ -2337,6 +2357,7 @@ const es = {
       CORPORATE: "Corporativo",
     },
     fields: {
+      faceValueTotal: "Valor nominal total",
       incomeType: "Tipo de ingreso",
       issuerType: "Emisor",
       faceValuePerUnit: "Valor nominal por unidad",

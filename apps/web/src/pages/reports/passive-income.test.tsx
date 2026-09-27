@@ -137,6 +137,18 @@ describe('PassiveIncomePage', () => {
     expect(screen.getByTestId('modal')).toHaveTextContent('asset:3');
   });
 
+  it('caps the missing-data prompt for large portfolios', () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      portfolioItemId: 100 + i, symbol: `M${i}`, label: `Missing ${i}`, assetClass: 'FUND' as const, reason: 'NO_TERMS' as const,
+    }));
+    setup(response({ missing: many }));
+    render(<PassiveIncomePage />);
+    const prompt = within(screen.getByTestId('missing-data'));
+    expect(prompt.queryByRole('button', { name: 'Missing 9' })).not.toBeInTheDocument();
+    fireEvent.click(prompt.getByRole('button', { name: 'passiveIncome.missing.showAll:12' }));
+    expect(prompt.getByRole('button', { name: 'Missing 11' })).toBeInTheDocument();
+  });
+
   it('streams card: add opens a new stream, edit opens the existing one', () => {
     setup();
     render(<PassiveIncomePage />);

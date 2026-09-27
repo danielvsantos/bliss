@@ -2264,6 +2264,18 @@ const fr = {
       empty: "Aucun paiement prévu pour l'instant.",
     },
     breakdown: {
+      filters: {
+        all: "Tout",
+        assets: "Positions",
+        streams: "Flux",
+        attention: "À vérifier",
+      },
+      search: "Rechercher positions ou flux",
+      filter: "Filtrer",
+      noMatches: "Aucun résultat pour cette recherche.",
+      showing: "{{from}}–{{to}} sur {{total}}",
+      prev: "Page précédente",
+      next: "Page suivante",
       title: "Détail par position ou flux",
       description: "Prévu sur les {{count}} prochains mois",
       empty: "Aucun revenu configuré. Ajoutez des conditions de revenus à vos positions ou un flux de revenus.",
@@ -2288,11 +2300,15 @@ const fr = {
       noCategories: "Créez une catégorie Allocation ou Aides publiques dans le groupe Revenus passifs pour ajouter des flux.",
     },
     missing: {
+      showAll: "Tout afficher ({{count}})",
+      showLess: "Afficher moins",
       title_one: "{{count}} position n'a pas de données de revenus",
       title_other: "{{count}} positions n'ont pas de données de revenus",
       description: "Ajoutez leurs conditions de revenus ou indiquez qu'elles ne distribuent pas pour compléter la projection.",
     },
     detached: {
+      searchAsset: "Rechercher des positions…",
+      noAssets: "Aucune position sans conditions de revenus.",
       title: "Conditions de revenus détachées",
       description: "Ces conditions appartenaient à des positions recréées après une importation corrigée. Rattachez-les à la bonne position ou supprimez-les.",
       unnamed: "Position sans nom",
@@ -2310,6 +2326,10 @@ const fr = {
     },
   },
   incomeTerms: {
+    faceValueHint_one: "{{units}} unité détenue · {{perUnit}} par unité",
+    faceValueHint_other: "{{units}} unités détenues · {{perUnit}} par unité",
+    pickDate: "Choisir une date",
+    clearDate: "Effacer la date",
     action: "Conditions de revenus",
     actionConfigured: "Conditions de revenus (configurées)",
     title: "Conditions de revenus — {{name}}",
@@ -2343,6 +2363,7 @@ const fr = {
       CORPORATE: "Entreprise",
     },
     fields: {
+      faceValueTotal: "Valeur nominale totale",
       incomeType: "Type de revenu",
       issuerType: "Émetteur",
       faceValuePerUnit: "Valeur nominale par unité",

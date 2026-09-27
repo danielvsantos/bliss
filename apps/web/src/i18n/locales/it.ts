@@ -2306,6 +2306,18 @@ const it = {
       empty: "Nessun pagamento previsto per ora.",
     },
     breakdown: {
+      filters: {
+        all: "Tutto",
+        assets: "Posizioni",
+        streams: "Flussi",
+        attention: "Da verificare",
+      },
+      search: "Cerca posizioni o flussi",
+      filter: "Filtra",
+      noMatches: "Nessun risultato per la ricerca.",
+      showing: "{{from}}–{{to}} di {{total}}",
+      prev: "Pagina precedente",
+      next: "Pagina successiva",
       title: "Dettaglio per posizione o flusso",
       description: "Previsto per i prossimi {{count}} mesi",
       empty: "Nessun reddito configurato. Aggiungi condizioni di reddito alle tue posizioni o un flusso di reddito.",
@@ -2330,11 +2342,15 @@ const it = {
       noCategories: "Crea una categoria Assegno o Sussidi pubblici nel gruppo Reddito passivo per aggiungere flussi.",
     },
     missing: {
+      showAll: "Mostra tutte ({{count}})",
+      showLess: "Mostra meno",
       title_one: "{{count}} posizione non ha dati di reddito",
       title_other: "{{count}} posizioni non hanno dati di reddito",
       description: "Aggiungi le condizioni di reddito o segnale come senza distribuzione per completare la proiezione.",
     },
     detached: {
+      searchAsset: "Cerca posizioni…",
+      noAssets: "Nessuna posizione senza condizioni di reddito.",
       title: "Condizioni di reddito scollegate",
       description: "Queste condizioni appartenevano a posizioni ricreate dopo un'importazione corretta. Ricollegale alla posizione giusta o eliminale.",
       unnamed: "Posizione senza nome",
@@ -2352,6 +2368,10 @@ const it = {
     },
   },
   incomeTerms: {
+    faceValueHint_one: "{{units}} unità detenuta · {{perUnit}} per unità",
+    faceValueHint_other: "{{units}} unità detenute · {{perUnit}} per unità",
+    pickDate: "Scegli una data",
+    clearDate: "Cancella data",
     action: "Condizioni di reddito",
     actionConfigured: "Condizioni di reddito (configurate)",
     title: "Condizioni di reddito — {{name}}",
@@ -2385,6 +2405,7 @@ const it = {
       CORPORATE: "Societario",
     },
     fields: {
+      faceValueTotal: "Valore nominale totale",
       incomeType: "Tipo di reddito",
       issuerType: "Emittente",
       faceValuePerUnit: "Valore nominale per unità",

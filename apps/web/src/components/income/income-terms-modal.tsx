@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, Trash2, X } from 'lucide-react';
+import { format, parse } from 'date-fns';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -55,6 +58,8 @@ export interface IncomeTermsModalProps {
 }
 
 type FieldName = keyof IncomeTermsFormValues;
+
+const roundMoney = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Income Terms modal (Passive Income #77). One component, two modes:
@@ -105,6 +110,11 @@ function IncomeTermsModalBody({
   const auto = assetQuery.data?.auto ?? null;
 
   const [values, setValues] = useState<IncomeTermsFormValues | null>(null);
+  // Bonds are entered as a TOTAL face value (what the user sees on their
+  // statement); IncomeTerms stores it per unit so partial sells scale it.
+  // Manual holdings without a quantity are 1 unit, so per-unit alone was misleading.
+  const [faceTotal, setFaceTotal] = useState('');
+  const unitsHeld = assetInfo?.quantity && assetInfo.quantity > 0 ? assetInfo.quantity : 1;
   const [override, setOverride] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -122,15 +132,30 @@ function IncomeTermsModalBody({
     const fallbackType: IncomeType = assetQuery.data.asset.defaultIncomeType
       ?? (assetClass ? INCOME_TYPES_BY_CLASS[assetClass][0] : 'CUSTOM_YIELD');
     const terms = assetQuery.data.terms;
+    const qty = assetQuery.data.asset.quantity > 0 ? assetQuery.data.asset.quantity : 1;
     if (terms) {
       const init = formValuesFromTerms(terms, 'asset');
       if (terms.incomeType === 'NONE') init.incomeType = fallbackType;
       setValues(init);
       setOverride(terms.incomeType === 'DIVIDEND' && terms.dividendPerUnit != null);
+      if (terms.faceValuePerUnit != null) setFaceTotal(String(roundMoney(terms.faceValuePerUnit * qty)));
     } else {
-      setValues(emptyFormValues('asset', fallbackType));
+      const init = emptyFormValues('asset', fallbackType);
+      // Default a bond's face value to what was paid for it.
+      const cost = assetQuery.data.asset.costBasis;
+      if (assetClass === 'BOND' && cost != null && cost > 0) {
+        init.faceValuePerUnit = String(cost / qty);
+        setFaceTotal(String(roundMoney(cost)));
+      }
+      setValues(init);
     }
   }, [mode, stream, defaultCurrency, assetQuery.data, assetClass, values]);
+
+  const setFaceTotalValue = (raw: string) => {
+    setFaceTotal(raw);
+    const n = Number(raw);
+    set('faceValuePerUnit', raw === '' || !Number.isFinite(n) ? raw : String(n / unitsHeld));
+  };
 
   const set = (field: FieldName, value: string | boolean) => {
     setValues((prev) => (prev ? { ...prev, [field]: value } : prev));
@@ -238,19 +263,57 @@ function IncomeTermsModalBody({
     </div>
   );
 
-  const dateField = ({ field, label }: { field: FieldName; label: string }) => (
-    <div className="space-y-1.5">
-      <Label htmlFor={`it-${field}`}>{label}</Label>
-      <Input
-        id={`it-${field}`}
-        type="date"
-        value={(values?.[field] as string) ?? ''}
-        onChange={(e) => set(field, e.target.value)}
-        aria-invalid={Boolean(errors[field])}
-      />
-      {fieldError(field)}
-    </div>
-  );
+  // Same Popover + Calendar picker as the rest of the app (e.g. transaction filters).
+  const dateField = ({ field, label }: { field: FieldName; label: string }) => {
+    const raw = (values?.[field] as string) || '';
+    const selected = raw ? parse(raw, 'yyyy-MM-dd', new Date()) : undefined;
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={`it-${field}`}>{label}</Label>
+        <div className="flex gap-1">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                id={`it-${field}`}
+                type="button"
+                variant="outline"
+                className="flex-1 justify-start text-left font-normal"
+                aria-invalid={Boolean(errors[field])}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4 opacity-60" />
+                {selected ? format(selected, 'MMM d, yyyy') : <span className="text-muted-foreground">{t('incomeTerms.pickDate')}</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                captionLayout="dropdown-buttons"
+                fromYear={1990}
+                toYear={new Date().getFullYear() + 50}
+                selected={selected}
+                defaultMonth={selected}
+                onSelect={(date) => set(field, date ? format(date, 'yyyy-MM-dd') : '')}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+          {raw && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              aria-label={t('incomeTerms.clearDate')}
+              onClick={() => set(field, '')}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        {fieldError(field)}
+      </div>
+    );
+  };
 
   const selectField = ({
     field, label, options, allowEmpty = false,
@@ -288,7 +351,32 @@ function IncomeTermsModalBody({
               { value: 'GOVERNMENT', label: t('incomeTerms.issuer.GOVERNMENT') },
               { value: 'CORPORATE', label: t('incomeTerms.issuer.CORPORATE') },
             ] })}
-          {numberField({ field: 'faceValuePerUnit', label: t('incomeTerms.fields.faceValuePerUnit'), suffix: currency })}
+          <div className="space-y-1.5">
+            <Label htmlFor="it-faceTotal">{t('incomeTerms.fields.faceValueTotal')}</Label>
+            <div className="relative">
+              <Input
+                id="it-faceTotal"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={faceTotal}
+                onChange={(e) => setFaceTotalValue(e.target.value)}
+                className="pr-12"
+                aria-invalid={Boolean(errors.faceValuePerUnit)}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{currency}</span>
+            </div>
+            <p className="text-xs text-muted-foreground" data-testid="face-value-hint">
+              {t('incomeTerms.faceValueHint', {
+                count: unitsHeld,
+                units: unitsHeld.toLocaleString(locale, { maximumFractionDigits: 4 }),
+                perUnit: values?.faceValuePerUnit
+                  ? formatCurrency(Number(values.faceValuePerUnit), currency, locale, { maximumFractionDigits: 2 })
+                  : '—',
+              })}
+            </p>
+            {fieldError('faceValuePerUnit')}
+          </div>
           {type !== 'FLOATING_COUPON' && (
             numberField({ field: 'couponRate', label: type === 'INFLATION_LINKED' ? t('incomeTerms.fields.realCoupon') : t('incomeTerms.fields.couponRate'), suffix: '%' })
           )}

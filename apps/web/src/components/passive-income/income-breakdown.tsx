@@ -1,7 +1,9 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { PassiveIncomeItem } from '@/types/passive-income';
 
@@ -11,6 +13,11 @@ interface Props {
   onEditAsset: (item: PassiveIncomeItem) => void;
   onEditStream: (item: PassiveIncomeItem) => void;
 }
+
+export const BREAKDOWN_PAGE_SIZE = 20;
+
+type BreakdownFilter = 'all' | 'assets' | 'streams' | 'attention';
+const FILTERS: BreakdownFilter[] = ['all', 'assets', 'streams', 'attention'];
 
 const SOURCE_CLASS: Record<PassiveIncomeItem['source'], string> = {
   AUTO: 'bg-positive/10 text-positive border-positive/20',
@@ -28,10 +35,41 @@ const STATUS_CLASS: Record<string, string> = {
 /**
  * Breakdown by holding or stream (R1.5). A table from `md` up, stacked cards
  * on phones. Each row opens the Income Terms modal (asset or stream mode).
+ * Search, a kind/attention filter and client-side pagination keep it usable
+ * for portfolios with 100+ income-producing holdings (the API already returns
+ * every row, sorted by projected income).
  */
 export function IncomeBreakdown({ items, currency, onEditAsset, onEditStream }: Props) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'en-US';
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<BreakdownFilter>('all');
+  const [page, setPage] = useState(1);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((item) => {
+      if (filter === 'assets' && item.kind !== 'ASSET') return false;
+      if (filter === 'streams' && item.kind !== 'STREAM') return false;
+      if (filter === 'attention' && item.status === 'OK') return false;
+      if (!q) return true;
+      const haystack = [
+        item.label,
+        item.symbol ?? '',
+        item.categoryName ?? '',
+        t(`passiveIncome.incomeType.${item.incomeType}`),
+      ].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [items, query, filter, t]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / BREAKDOWN_PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [query, filter]);
+  const currentPage = Math.min(page, pageCount);
+  const pageItems = filtered.slice((currentPage - 1) * BREAKDOWN_PAGE_SIZE, currentPage * BREAKDOWN_PAGE_SIZE);
+  const attentionCount = items.filter((i) => i.status !== 'OK').length;
 
   const money = (v: number | null) => (v == null ? '—' : formatCurrency(v, currency, locale));
   const date = (v: string | null) => (v ? formatDate(v, undefined, locale) : '—');
@@ -64,8 +102,43 @@ export function IncomeBreakdown({ items, currency, onEditAsset, onEditStream }: 
 
   return (
     <>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
+        <div className="relative sm:max-w-xs flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('passiveIncome.breakdown.search')}
+            aria-label={t('passiveIncome.breakdown.search')}
+            className="pl-8 h-9"
+          />
+        </div>
+        <div className="inline-flex flex-wrap gap-1" role="group" aria-label={t('passiveIncome.breakdown.filter')}>
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+              className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                filter === f
+                  ? 'bg-primary text-white border-primary'
+                  : 'border-gray-200 text-muted-foreground hover:text-brand-deep'
+              }`}
+            >
+              {t(`passiveIncome.breakdown.filters.${f}`)}
+              {f === 'attention' && attentionCount > 0 ? ` (${attentionCount})` : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filtered.length === 0 && (
+        <p className="text-sm text-muted-foreground py-6 text-center">{t('passiveIncome.breakdown.noMatches')}</p>
+      )}
+
       {/* Desktop / tablet table */}
-      <div className="hidden md:block overflow-x-auto">
+      <div className={filtered.length === 0 ? 'hidden' : 'hidden md:block overflow-x-auto'}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -80,7 +153,7 @@ export function IncomeBreakdown({ items, currency, onEditAsset, onEditStream }: 
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {pageItems.map((item) => (
               <tr key={key(item)} className="border-b border-gray-50 hover:bg-accent/40">
                 <td className="px-3 py-2.5">
                   <div className="font-medium text-brand-deep">{item.label}</div>
@@ -104,8 +177,8 @@ export function IncomeBreakdown({ items, currency, onEditAsset, onEditStream }: 
       </div>
 
       {/* Phone cards */}
-      <ul className="md:hidden space-y-2" data-testid="breakdown-cards">
-        {items.map((item) => (
+      <ul className={filtered.length === 0 ? 'hidden' : 'md:hidden space-y-2'} data-testid="breakdown-cards">
+        {pageItems.map((item) => (
           <li key={key(item)}>
             <button
               type="button"
@@ -132,6 +205,40 @@ export function IncomeBreakdown({ items, currency, onEditAsset, onEditStream }: 
           </li>
         ))}
       </ul>
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between gap-2 pt-3 text-xs text-muted-foreground" data-testid="breakdown-pager">
+          <span>
+            {t('passiveIncome.breakdown.showing', {
+              from: (currentPage - 1) * BREAKDOWN_PAGE_SIZE + 1,
+              to: Math.min(currentPage * BREAKDOWN_PAGE_SIZE, filtered.length),
+              total: filtered.length,
+            })}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label={t('passiveIncome.breakdown.prev')}
+              disabled={currentPage <= 1}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="tabular-nums px-1">{currentPage} / {pageCount}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label={t('passiveIncome.breakdown.next')}
+              disabled={currentPage >= pageCount}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

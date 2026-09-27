@@ -62,7 +62,7 @@ describe('IncomeTermsModal — asset mode', () => {
     setup();
     render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} assetLabel="Tesouro 2030" />);
 
-    expect(screen.getByLabelText('incomeTerms.fields.faceValuePerUnit')).toBeInTheDocument();
+    expect(screen.getByLabelText('incomeTerms.fields.faceValueTotal')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
 
     expect((await screen.findAllByText('incomeTerms.errors.required')).length).toBeGreaterThanOrEqual(4);
@@ -96,6 +96,53 @@ describe('IncomeTermsModal — asset mode', () => {
       }),
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('bond: defaults the TOTAL face value to what was paid and stores it per unit', async () => {
+    // A manual holding without a quantity is 1 unit: the user paid 10,000.
+    setup(assetResponse({ asset: { ...assetResponse().asset, quantity: 1, costBasis: 10000 } }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} />);
+
+    expect(screen.getByLabelText('incomeTerms.fields.faceValueTotal')).toHaveValue(10000);
+    expect(screen.getByTestId('face-value-hint')).toHaveTextContent('incomeTerms.faceValueHint');
+    fireEvent.change(screen.getByLabelText('incomeTerms.fields.couponRate'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    // frequency + maturity still required
+    expect((await screen.findAllByText('incomeTerms.errors.required')).length).toBe(2);
+    expect(saveAsset).not.toHaveBeenCalled();
+  });
+
+  it('bond: a total face value is split across the units held', async () => {
+    setup(assetResponse({
+      asset: { ...assetResponse().asset, quantity: 4, costBasis: 3900 },
+      terms: {
+        id: 9, assetId: 5, categoryId: null, name: null, orphanedAt: null, orphanedLabel: null,
+        incomeType: 'FIXED_COUPON', frequency: 'ANNUAL', currency: 'BRL', anchorPaymentDate: null,
+        startDate: null, endDate: null, isDistributing: true, amountPerPayment: null, dividendPerUnit: null,
+        yieldPct: null, issuerType: null, faceValuePerUnit: 1000, couponRate: 5, referenceIndex: null,
+        spread: null, assumedIndexRate: null, maturityDate: '2030-06-15T00:00:00.000Z', monthlyRent: null,
+        leaseEndDate: null, annualIndexationPct: null, apyPct: null,
+      },
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} />);
+    const total = screen.getByLabelText('incomeTerms.fields.faceValueTotal');
+    expect(total).toHaveValue(4000);
+    fireEvent.change(total, { target: { value: '6000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(saveAsset).toHaveBeenCalled());
+    expect(saveAsset.mock.calls[0][0].body.faceValuePerUnit).toBe(1500);
+  });
+
+  it('uses the app date picker (popover calendar) with a clear button', async () => {
+    setup(assetResponse({
+      asset: { ...assetResponse().asset, assetClass: 'REAL_ESTATE', defaultIncomeType: 'RENT' },
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} />);
+    const trigger = screen.getByLabelText('incomeTerms.fields.leaseEndDate');
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger).toHaveTextContent('incomeTerms.pickDate');
+    fireEvent.click(trigger);
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
   });
 
   it('removes existing terms', async () => {

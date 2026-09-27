@@ -2306,6 +2306,18 @@ const en = {
       empty: "No payments expected yet.",
     },
     breakdown: {
+      filters: {
+        all: "All",
+        assets: "Holdings",
+        streams: "Streams",
+        attention: "Needs attention",
+      },
+      search: "Search holdings or streams",
+      filter: "Filter",
+      noMatches: "Nothing matches your search.",
+      showing: "{{from}}–{{to}} of {{total}}",
+      prev: "Previous page",
+      next: "Next page",
       title: "Breakdown by holding or stream",
       description: "Projected over the next {{count}} months",
       empty: "No income configured yet. Add income terms to your holdings or an income stream.",
@@ -2330,11 +2342,15 @@ const en = {
       noCategories: "Create an Allowance or Government Welfare category in the Passive Income group to add streams.",
     },
     missing: {
+      showAll: "Show all ({{count}})",
+      showLess: "Show less",
       title_one: "{{count}} holding has no income data",
       title_other: "{{count}} holdings have no income data",
       description: "Add their income terms, or mark them as not distributing, to complete the projection.",
     },
     detached: {
+      searchAsset: "Search holdings…",
+      noAssets: "No holdings without income terms.",
       title: "Detached income terms",
       description: "These terms belonged to holdings that were re-created after a corrected import. Re-attach them to the right holding or discard them.",
       unnamed: "Unnamed holding",
@@ -2352,6 +2368,10 @@ const en = {
     },
   },
   incomeTerms: {
+    faceValueHint_one: "{{units}} unit held · {{perUnit}} per unit",
+    faceValueHint_other: "{{units}} units held · {{perUnit}} per unit",
+    pickDate: "Pick a date",
+    clearDate: "Clear date",
     action: "Income terms",
     actionConfigured: "Income terms (configured)",
     title: "Income terms — {{name}}",
@@ -2385,6 +2405,7 @@ const en = {
       CORPORATE: "Corporate",
     },
     fields: {
+      faceValueTotal: "Total face value",
       incomeType: "Income type",
       issuerType: "Issuer",
       faceValuePerUnit: "Face value per unit",

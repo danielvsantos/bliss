@@ -1,9 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link2, Trash2 } from 'lucide-react';
+import { Check, ChevronsUpDown, Link2, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +43,7 @@ export function DetachedTermsSection({ detached }: { detached: DetachedIncomeTer
   const [attachingId, setAttachingId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<string>('');
   const [discardId, setDiscardId] = useState<number | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const attach = useAttachIncomeTerms();
   const discard = useDiscardIncomeTerms();
 
@@ -45,6 +55,9 @@ export function DetachedTermsSection({ detached }: { detached: DetachedIncomeTer
       .sort((a, b) => a.symbol.localeCompare(b.symbol)),
     [portfolio?.items],
   );
+
+  const selected = candidates.find((c) => String(c.id) === targetId);
+  const selectedLabel = selected ? `${selected.symbol}${selected.account?.name ? ` · ${selected.account.name}` : ''}` : '';
 
   if (detached.length === 0) return null;
 
@@ -101,18 +114,49 @@ export function DetachedTermsSection({ detached }: { detached: DetachedIncomeTer
             </div>
             {attachingId === d.id && (
               <div className="flex flex-col sm:flex-row gap-2">
-                <Select value={targetId} onValueChange={setTargetId}>
-                  <SelectTrigger className="sm:flex-1" aria-label={t('passiveIncome.detached.pickAsset')}>
-                    <SelectValue placeholder={t('passiveIncome.detached.pickAsset')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {candidates.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.symbol}{c.account?.name ? ` · ${c.account.name}` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Searchable: a large portfolio can have 100+ candidate holdings. */}
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={pickerOpen}
+                      aria-label={t('passiveIncome.detached.pickAsset')}
+                      className="sm:flex-1 justify-between font-normal min-w-0"
+                    >
+                      <span className="truncate">
+                        {selectedLabel || <span className="text-muted-foreground">{t('passiveIncome.detached.pickAsset')}</span>}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[240px]" align="start">
+                    <Command>
+                      <CommandInput placeholder={t('passiveIncome.detached.searchAsset')} />
+                      <CommandList>
+                        <CommandEmpty>{t('passiveIncome.detached.noAssets')}</CommandEmpty>
+                        <CommandGroup>
+                          {candidates.map((c) => {
+                            const label = `${c.symbol}${c.account?.name ? ` · ${c.account.name}` : ''}`;
+                            return (
+                              <CommandItem
+                                key={c.id}
+                                value={`${label} ${c.id}`}
+                                onSelect={() => {
+                                  setTargetId(String(c.id));
+                                  setPickerOpen(false);
+                                }}
+                              >
+                                <Check className={cn('mr-2 h-4 w-4', targetId === String(c.id) ? 'opacity-100' : 'opacity-0')} />
+                                <span className="truncate">{label}</span>
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={() => doAttach(d.id)} disabled={!targetId || attach.isPending}>
                     {t('passiveIncome.detached.confirmAttach')}
