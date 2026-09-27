@@ -81,6 +81,15 @@ export const PASSIVE_INCOME_GROUP = 'Passive Income';
 /** A floating / inflation-linked assumed index rate older than this is flagged STALE_RATE. */
 export const STALE_RATE_DAYS = 180;
 
+/**
+ * Manually-priced assets (Manage Assets #81): a price is stale after this many
+ * days without a manual value; the warning / critical urgency levels follow.
+ * Mirrored in apps/web/src/lib/manage-assets.ts.
+ */
+export const MANUAL_PRICE_STALE_DAYS = 30;
+export const MANUAL_PRICE_WARNING_DAYS = 60;
+export const MANUAL_PRICE_CRITICAL_DAYS = 90;
+
 const PAYMENTS_PER_YEAR = {
   WEEKLY: 52,
   MONTHLY: 12,
@@ -384,6 +393,19 @@ function resolveAssetMode(asset) {
   if (t && t.incomeType && t.incomeType !== 'DIVIDEND') return { mode: t.incomeType, source: 'MANUAL' };
   if (Array.isArray(asset.recentDividends)) return { mode: 'DIVIDEND_AUTO', source: 'AUTO' };
   return { mode: 'MISSING', source: 'MISSING' };
+}
+
+/**
+ * Where an asset's projected income comes from (Manage Assets #81), using the
+ * same priority as the projection: 'AUTO' (trusted SecurityMaster dividends),
+ * 'OVERRIDE' (a stock/ETF dividend override), 'MANUAL' (any other user-entered
+ * terms) or 'MISSING' (nothing to project from).
+ *
+ * @param {Object} asset  { assetClass, terms, recentDividends } — as `project()` takes them
+ * @returns {'AUTO'|'OVERRIDE'|'MANUAL'|'MISSING'}
+ */
+export function incomeDataSource(asset = {}) {
+  return resolveAssetMode(asset).source;
 }
 
 function bondRate(mode, t) {

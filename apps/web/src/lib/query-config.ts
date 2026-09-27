@@ -89,12 +89,19 @@ export function shouldPersistPortfolioQuery(query: PersistCandidateQuery): boole
 }
 
 /**
+ * Portfolio query roots that are invalidated with the others but never
+ * persisted to `localStorage` (the Manage Assets list, #81 — keep in sync with
+ * `MANAGE_ASSETS_QUERY_KEY` in `hooks/use-manage-assets.ts`).
+ */
+export const PORTFOLIO_INVALIDATE_ONLY_ROOTS = ['portfolio-assets'] as const;
+
+/**
  * Invalidate every portfolio query root so cached views refetch immediately
  * rather than waiting out {@link PORTFOLIO_STALE_TIME_MS}. Call this from
  * mutation success handlers that change holdings composition or value.
  */
 export function invalidatePortfolioQueries(queryClient: QueryClient): void {
-  for (const root of PORTFOLIO_QUERY_KEY_ROOTS) {
+  for (const root of [...PORTFOLIO_QUERY_KEY_ROOTS, ...PORTFOLIO_INVALIDATE_ONLY_ROOTS]) {
     queryClient.invalidateQueries({ queryKey: [root] });
   }
 }

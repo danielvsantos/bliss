@@ -34,7 +34,7 @@ Everything is **gross** (before tax) and shown in your portfolio currency, conve
 Open the **Income terms** action (coin icon) on:
 
 - a holding row on **Portfolio Holdings**,
-- a row on **Asset Price Updates** (manually priced assets),
+- a row on **Manage Assets** (any income-capable asset — row menu → Income terms),
 - the Passive Income page (breakdown rows and the "no income data" prompt).
 
 The form adapts to the asset: bonds ask for the **total face value** you hold (pre-filled with what you paid; Bliss shows how many units that covers and stores it per unit, so partial sales scale it), coupon or index + spread + assumed index rate, frequency and maturity; real estate asks for **net** rent (what you keep after costs and vacancy); cash asks for an APY. A preview shows the result, e.g. "≈ 1,240 / year · next payment 15 Nov · ends 2029".

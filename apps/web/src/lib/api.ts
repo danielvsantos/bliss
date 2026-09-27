@@ -650,6 +650,36 @@ class APIClient {
     await this.client.delete(`/api/portfolio/items/${itemId}/manual-values/${valueId}`);
   }
 
+  /** Debt terms for one item, or null when none have been entered (API 404). */
+  async getDebtTerms(itemId: number): Promise<DebtTerms | null> {
+    try {
+      const response = await this.client.get(`/api/portfolio/items/${itemId}/debt-terms`);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+      throw error;
+    }
+  }
+
+  // --- Manage Assets (#81) ---
+
+  async getManageAssets(
+    params: import('@/types/manage-assets').ManageAssetsFilters & { id?: number; cursor?: string | null; limit?: number } = {},
+  ): Promise<import('@/types/manage-assets').ManageAssetsResponse> {
+    const query: Record<string, string | number> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === '' || value === false) continue;
+      query[key] = typeof value === 'boolean' ? String(value) : (value as string | number);
+    }
+    const response = await this.client.get('/api/portfolio/assets', { params: query });
+    return response.data;
+  }
+
+  async getAssetClass(portfolioItemId: number): Promise<import('@/types/manage-assets').AssetClassInfo> {
+    const response = await this.client.get(`/api/portfolio/items/${portfolioItemId}/asset-class`);
+    return response.data;
+  }
+
   async createOrUpdateDebtTerms(itemId: number, data: DebtTermsRequest): Promise<DebtTerms> {
     const response = await this.client.post(`/api/portfolio/items/${itemId}/debt-terms`, data);
     return response.data;

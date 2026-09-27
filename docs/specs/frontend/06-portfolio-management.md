@@ -115,39 +115,62 @@ tuning (all in `apps/web`, no API/backend change — see `src/lib/query-config.t
   KPI total, and the Equity Analysis total. A first-ever load with no cached data
   keeps the existing `Skeleton` treatment (`isLoading`).
 - **Mutation-driven invalidation.** `invalidatePortfolioQueries(queryClient)`
-  invalidates all four roots so a change reflects immediately rather than waiting
+  invalidates all four roots (plus the non-persisted Manage Assets list,
+  `portfolio-assets`) so a change reflects immediately rather than waiting
   out the window. It is called after: manual value create/update/delete, debt
   terms edit, transaction add/edit, account create/delete, Plaid account link,
   and a portfolio-currency change.
 
-## 6.3. Manual Updates & Debt Management Page
+## 6.3. Manage Assets Page (#81)
 
-This page provides a centralized location for users to manage assets and liabilities that require manual input.
+One page for every asset and liability and every piece of asset data the user edits by hand: manual prices (and their history), debt terms, income terms (#77) and the asset class override (#79). It replaces **Asset Price Updates** (`/manual-updates`).
 
-- **File Path**: `src/pages/manual-updates.tsx`
+- **Route**: `/assets` — `src/pages/assets.tsx` (`ManageAssetsPage`). Sidebar / Header label `nav.manageAssets`.
+- **Redirect**: `/manual-updates` renders `src/pages/manual-updates-redirect.tsx` → `<Navigate to={`/assets${location.search}`} replace />`, so old bookmarks and deep links keep working.
+- **Deep links**: `?item=<portfolioItemId>&modal=income|price|history|debt|assetClass` opens that modal. Opening a modal from the list writes these params; closing removes them (`replace`). The Portfolio holdings liability row's "Add/Edit terms" navigates to `/assets?item=<id>&modal=debt`; the holdings "Income terms" action still opens the Income Terms modal in place.
 
-### 6.3.1. Manual Price Updates
+### 6.3.1. List
 
-- **Asset Identification**: The page automatically identifies all manually-tracked assets (`processingHint: 'MANUAL'`) that have not had a price update in over 30 days. These are listed in the "Action Required: Stale Prices" card.
-- **All manually-priced assets**: A second card ("All manually-priced assets") lists **every** `MANUAL` asset with a positive quantity — stale or not — sorted by symbol, so the price history is always reachable.
-- **Update Mechanism**: For each asset, the user is prompted to enter a new price through the `<ManualPriceForm />` component, which opens in a dialog.
+- **Data**: `useManageAssets(filters)` (`src/hooks/use-manage-assets.ts`) — a `useInfiniteQuery` over `GET /api/portfolio/assets` (50 rows per page, `nextCursor`). Query key root `portfolio-assets`: invalidated by `invalidatePortfolioQueries()` (via `PORTFOLIO_INVALIDATE_ONLY_ROOTS`), the Passive Income mutations and `useSetAssetClass`, but **never persisted** to `localStorage`.
+- **First load**: one request for list rows only. No manual-value history, no live pricing (values are the stored `currentValue`, converted to the portfolio currency by the API).
+- **Filters (all server-side)**: search (symbol or SecurityMaster name, 300 ms debounce), type (category group, options from `facets.groups`), account (`facets.accounts`), asset class (the 12 `ASSET_CLASSES`), "Show closed positions" (`includeClosed`; debts always show). Status filter chips: Price stale · Income terms missing · Dividend override · Lot mismatch · Asset class overridden (single-select, `aria-pressed`).
+- **Row**: symbol, SecurityMaster name / category / account, asset class badge (not on debts), status chips, value in the portfolio currency (negative in `text-negative`), and an overflow menu (`AssetActionsMenu`) with the actions that apply (`availableModals()` in `src/lib/manage-assets.ts`):
+  - `MANUAL` non-debt → Update price, Price history
+  - `Category.type === 'Debt'` → Add/Edit terms
+  - income-capable (`incomeAssetClass != null`) → Income terms
+  - every non-debt → Asset class
+- **Status chips (per row, `AssetStatusChips`)**: stale price (`Nd old · Stale|Warning|Critical`, or "No price yet"; thresholds 30/60/90 days — `MANUAL_PRICE_*` in `lib/manage-assets.ts`, mirrored from `@bliss/shared/portfolio`), income terms missing (`incomeDataStatus === 'MISSING'`), dividend override, lot mismatch (warning only), asset class overridden. Design tokens only.
+- **Pagination**: "Load more" button (chosen over infinite scroll: simpler, screen-reader friendly).
+- **Detached income terms banner** (`components/manage-assets/detached-terms-banner.tsx`): shown when `detachedTermsCount > 0`. "Review" loads `GET /api/portfolio/income-terms/detached` (`useDetachedIncomeTerms`) and renders the Passive Income page's `DetachedTermsSection` (re-attach to a holding / discard).
+- **Mobile (< 768 px, `useIsMobile`)**: cards instead of the table, the same overflow menu per card, filters behind `MobileFilterDrawer` (search and status chips stay visible; chips scroll horizontally inside their own row), every modal is a full-screen sheet (`MOBILE_SHEET_CLASSES`). No horizontal page scroll at 375 px.
 
-### 6.3.1.1. Price History Modal
+### 6.3.2. Modals (each loads its own data)
+
+| Modal | Component | Loads | Saves |
+|-------|-----------|-------|-------|
+| Update price | `components/entities/manual-value-modal.tsx` → `<ManualPriceForm />` | — (asset id/symbol/currency from the row) | `POST /api/portfolio/items/{id}/manual-values` (unchanged) |
+| Price history | `<ManualPriceHistoryDialog />` (§6.3.4) | `GET …/manual-values` | `PUT`/`DELETE …/manual-values/{valueId}` (unchanged) |
+| Debt terms | `components/entities/debt-terms-modal.tsx` → `<DebtTermsForm />` | `GET …/debt-terms` (`useDebtTerms`; 404 → empty form) | `POST …/debt-terms` (unchanged) |
+| Income terms | `<IncomeTermsModal mode="asset" />` (#77) | `GET …/income-terms` | `PUT`/`DELETE …/income-terms` |
+| Asset class | `components/entities/asset-class-modal.tsx` | `GET …/asset-class` (`useAssetClassInfo`) | `PUT …/asset-class` with `applyToSymbol: true` (same as Equity Analysis) |
+
+The forms take an `AssetRef` (`Pick<PortfolioItem, 'id' | 'symbol' | 'currency'>` + optional `debtTerms`) so a list row or a full `PortfolioItem` both work. A deep link to an item that is not in the loaded pages (or outside the current filters) is resolved with `GET /api/portfolio/assets?id=<id>&includeClosed=true` (`useManagedAsset`).
+
+### 6.3.3. Manual price and debt terms behaviour
+
+Unchanged from Asset Price Updates: the manual price form defaults to the asset's currency (locked), saves `YYYY-MM-DD`, invalidates `['manual-asset-values']` and all portfolio roots; the debt terms form validates balance / rate / term / origination date and posts to `debt-terms`. The backend emits `MANUAL_PORTFOLIO_PRICE_UPDATED` / the debt-terms events exactly as before.
+
+### 6.3.4. Price History Modal
 
 - **Component**: `src/components/entities/manual-price-history-dialog.tsx` (`<ManualPriceHistoryDialog />`).
-- **Entry points**: A "View history" button on every stale-card row (beside "Update Price") and on every "All manually-priced assets" row. Reachable in ≤2 clicks, including for non-stale assets.
+- **Entry point**: the "Price history" item in the row overflow menu of every `MANUAL` asset (`?modal=history`). Reachable in 2 clicks, stale or not.
 - **Data**: `useManualAssetValues(itemId)` (`src/hooks/use-manual-asset-values.ts`) wraps `GET /api/portfolio/items/{assetId}/manual-values` — returns every `ManualAssetValue` for the asset, newest first. Query key: `['manual-asset-values', itemId]`; disabled until `itemId` is set.
-- **List columns**: Effective date, Price (currency-formatted per row), Currency, Notes, Recorded on (`createdAt`), row actions. Notes is hidden below `lg`, Recorded on below `md`; the table scrolls horizontally inside its bordered container on narrow widths. Dialog is `sm:max-w-3xl`, capped at `90vh` with its own vertical scroll.
+- **List columns**: Effective date, Price (currency-formatted per row), Currency, Notes, Recorded on (`createdAt`), row actions. Notes is hidden below `lg`, Recorded on below `md`; the table scrolls horizontally inside its bordered container on narrow widths. Dialog is `sm:max-w-3xl`, capped at `90vh` with its own vertical scroll; a full-screen sheet below `sm`.
 - **Pagination**: client-side, `PAGE_SIZE = 12` (the API returns the full array). A Previous/Next control with a "Showing X–Y of N" label appears only when there are more than 12 entries; the page resets to 1 whenever the dialog opens or the asset changes.
 - **Mixed currency**: Rows whose `currency` differs from the asset's base currency are flagged with a `warning`-token badge. **No FX conversion** is performed — each row is shown in its own stored currency. Price formatting goes through a guarded helper that falls back to `"<amount> <CODE>"` if the ISO code is malformed (legacy/imported rows).
 - **States**: skeleton rows while loading; inline `Alert` + "Retry" on error; empty state with a "Record first price" button that opens `<ManualPriceForm />`.
 - **Edit / delete**: The dialog uses an internal `list | add | edit` view switch (no nested `Dialog`s). Editing reuses `<ManualPriceForm existingValue={row} />` — in edit mode the currency default comes from the row (not the asset) so a save round-trips the original code; the form submits via `api.updateManualAssetValue(itemId, valueId, ...)`. Delete uses a shadcn `AlertDialog` confirmation, then `api.deleteManualAssetValue(itemId, valueId)`.
 - **After any mutation**: invalidates `['manual-asset-values']` and calls `invalidatePortfolioQueries(queryClient)` (all four portfolio roots), shows a toast. The backend already emits `MANUAL_PORTFOLIO_PRICE_UPDATED` on create/update/delete, so portfolio revaluation is automatic.
-
-### 6.3.2. Debt Terms Management
-
-- **Liability Listing**: The page displays a table of all liabilities.
-- **Terms Management**: Users can add or edit the terms of their loans (e.g., interest rate, amortization schedule) using the `<DebtTermsForm />` component. This information is crucial for the backend workers that process loan payments and calculate remaining balances.
 
 ## 6.4. Ticker Search & Resolution
 

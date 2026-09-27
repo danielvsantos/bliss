@@ -32,7 +32,7 @@ Task #77. API: `docs/specs/api/22-passive-income-api.md`.
 ## 22.3. Entry points
 
 - **Portfolio holdings** (`pages/reports/portfolio.tsx`): a Coins icon button next to the symbol of every income-capable, open holding (incl. cash). Opens the modal in place (the debt row still navigates away). Highlighted (`text-brand-primary`) when terms exist.
-- **Asset Price Updates** (`pages/manual-updates.tsx`): "Income terms" button on every row of the "All manually-priced assets" table.
+- **Manage Assets** (`pages/assets.tsx`, #81): "Income terms" in the row overflow menu of every income-capable asset (`/assets?item=<id>&modal=income`). The page also shows a detached income terms banner with re-attach / discard.
 - **Passive Income page**: breakdown rows and the missing-data prompt.
 
 `canHoldIncomeTerms` / `classifyIncomeCategory` in `src/lib/passive-income.ts` mirror the shared classifier (the web bundle doesn't depend on `@bliss/shared`).

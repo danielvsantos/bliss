@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { IncomeTermsRequest, PassiveIncomeResponse, IncomeStreamsResponse, AssetIncomeTermsResponse } from '@/types/passive-income';
+import type {
+  IncomeTermsRequest,
+  PassiveIncomeResponse,
+  IncomeStreamsResponse,
+  AssetIncomeTermsResponse,
+  DetachedIncomeTerms,
+} from '@/types/passive-income';
 
 /**
  * Passive Income Projection (#77) hooks.
@@ -14,6 +20,7 @@ export const passiveIncomeKeys = {
   projection: (horizon: number) => [...passiveIncomeKeys.all, 'projection', horizon] as const,
   streams: () => [...passiveIncomeKeys.all, 'streams'] as const,
   assetTerms: (assetId: number) => [...passiveIncomeKeys.all, 'asset-terms', assetId] as const,
+  detached: () => [...passiveIncomeKeys.all, 'detached'] as const,
 };
 
 export function usePassiveIncome(horizon: 12 | 24 | 36 = 12) {
@@ -34,6 +41,15 @@ export function useIncomeStreams(enabled = true) {
   });
 }
 
+/** Detached income terms (Manage Assets banner, #81). */
+export function useDetachedIncomeTerms(enabled = true) {
+  return useQuery<{ detached: DetachedIncomeTerms[] }>({
+    queryKey: passiveIncomeKeys.detached(),
+    queryFn: () => api.getDetachedIncomeTerms(),
+    enabled,
+  });
+}
+
 export function useAssetIncomeTerms(assetId: number | null) {
   return useQuery<AssetIncomeTermsResponse>({
     queryKey: passiveIncomeKeys.assetTerms(assetId ?? 0),
@@ -49,6 +65,8 @@ function useInvalidatePassiveIncome() {
     qc.invalidateQueries({ queryKey: ['equity-analysis'] });
     // Holdings rows show whether income terms exist.
     qc.invalidateQueries({ queryKey: ['portfolio-items'] });
+    // Manage Assets list: income status chips and the detached-terms count.
+    qc.invalidateQueries({ queryKey: ['portfolio-assets'] });
   };
 }
 

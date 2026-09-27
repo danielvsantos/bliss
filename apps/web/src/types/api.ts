@@ -188,6 +188,12 @@ export type PortfolioItem = {
   manualValues?: ManualAssetValue[];
 };
 
+/**
+ * The fields the manual price / debt terms forms and the price history dialog
+ * need. A full PortfolioItem satisfies it, and so does a Manage Assets row.
+ */
+export type AssetRef = Pick<PortfolioItem, 'id' | 'symbol' | 'currency'> & { debtTerms?: DebtTerms | null };
+
 export type Transaction = {
   id: number;
   description: string;

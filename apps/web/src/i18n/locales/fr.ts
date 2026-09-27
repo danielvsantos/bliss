@@ -115,7 +115,7 @@ const fr = {
     importAgent: "Agent d'importation",
     insightAgent: "Insights IA",
     travelAgent: "Agent de voyage",
-    assetPriceUpdates: "Mise à jour des prix",
+    manageAssets: "Gérer les actifs",
     assetsLiabilities: "Actifs et passifs",
     transactionReview: "Révision des transactions",
     subscriptions: "Abonnements",
@@ -2449,6 +2449,59 @@ const fr = {
     globalFundamentals: {
       title: "Actualiser les fondamentaux de tous les symboles (global)",
       description: "Actualise la table SecurityMaster partagée pour tous les symboles détenus par tous les locataires, pas seulement les vôtres. Plus lourd que l'actualisation de vos titres ; à utiliser après un incident du fournisseur de données.",
+    },
+  },
+
+  // Manage Assets page (#81)
+  manageAssets: {
+    title: "Gérer les actifs",
+    subtitle: "Tous vos actifs et passifs au même endroit : prix, conditions de revenus, conditions de dette et classes d'actifs.",
+    loadFailed: "Impossible de charger les actifs. Veuillez réessayer.",
+    assetClassHint: "S'applique à toutes les positions de {{symbol}}. Choisissez Automatique pour supprimer la modification.",
+    searchPlaceholder: "Rechercher par symbole ou nom",
+    empty: "Aucun actif ne correspond à ces filtres.",
+    count: "{{count}} actifs",
+    count_one: "{{count}} actif",
+    count_other: "{{count}} actifs",
+    loadMore: "Charger plus",
+    loadingMore: "Chargement…",
+    columns: {
+      assetClass: "Classe d'actif",
+    },
+    filters: {
+      type: "Type",
+      allTypes: "Tous les types",
+      account: "Compte",
+      allAccounts: "Tous les comptes",
+      assetClass: "Classe d'actif",
+      allAssetClasses: "Toutes les classes",
+      includeClosed: "Afficher les positions clôturées",
+      clear: "Effacer les filtres",
+    },
+    status: {
+      label: "Filtrer par statut",
+      stale: "Prix obsolète",
+      incomeMissing: "Conditions de revenus manquantes",
+      dividendOverride: "Dividende modifié",
+      lotMismatch: "Incohérence de lots",
+      assetClassOverridden: "Classe d'actif modifiée",
+    },
+    chips: {
+      noPrice: "Pas encore de prix",
+    },
+    actions: {
+      menu: "Actions pour {{symbol}}",
+      price: "Mettre à jour le prix",
+      history: "Historique des prix",
+      assetClass: "Classe d'actif",
+    },
+    detached: {
+      title: "{{count}} ensembles de conditions de revenus sont détachés",
+      title_one: "{{count}} ensemble de conditions de revenus est détaché",
+      title_other: "{{count}} ensembles de conditions de revenus sont détachés",
+      description: "Une reconstruction du portefeuille n'a pas pu les associer à une position. Rattachez-les ou supprimez-les.",
+      review: "Examiner",
+      hide: "Masquer",
     },
   },
 };

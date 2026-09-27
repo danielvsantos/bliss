@@ -353,6 +353,40 @@ paths:
                     example: 'Server Error'
 
   /api/portfolio/items/{assetId}/asset-class:
+    get:
+      tags:
+        - Portfolio
+      summary: Get a holding's asset class
+      description: Current class, its source and the automatic class (Manage Assets asset class modal, #81).
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The item's classification.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assetClass:
+                    $ref: '#/components/schemas/AssetClass'
+                  assetClassSource:
+                    type: string
+                    enum: [OVERRIDE, AUTO]
+                  autoAssetClass:
+                    $ref: '#/components/schemas/AssetClass'
+        '400':
+          description: Invalid id.
+        '404':
+          description: Portfolio item not found in this tenant.
+        '500':
+          description: Internal server error.
     put:
       tags:
         - Portfolio

@@ -233,6 +233,10 @@ Provides a breakdown of the user's stock holdings grouped by a configurable dime
 - **ETF look-through (#79)**: for `sector` and `country`, `lookThrough()` from `@bliss/shared/portfolio` spreads each `INDEX_ETF` / `SECTOR_ETF` value by its `SecurityMaster.etfComposition` weights; `1 − Σweights` goes to `Other`. No composition (or an empty country list, e.g. QQQ) → `Diversified`. Bond ETFs go to `Fixed Income` so they never inflate an equity sector. `industry` is never looked through. Weighted P/E and dividend yield are unchanged.
 - **Cross-account dedup**: When the same ticker is held in multiple brokerage accounts, the API merges those rows by symbol before grouping — quantities and market values are summed. SecurityMaster data (sector, P/E, etc.) is per-symbol and is therefore identical across accounts. An `OVERRIDE` asset class wins the merge. This ensures each ticker appears exactly once in `holdings` regardless of how many accounts hold it.
 
+### `GET /api/portfolio/items/{assetId}/asset-class`
+
+- **Responsibility**: The current classification of one item, for the Manage Assets asset class modal (#81): `{ assetClass, assetClassSource, autoAssetClass }`. Same inputs as `PUT` (category, SecurityMaster type/name/composition, income terms issuer type); 404 outside the tenant.
+
 ### `PUT /api/portfolio/items/{assetId}/asset-class`
 
 - **Responsibility**: Sets or clears (`assetClass: null`) `PortfolioItem.assetClassOverride` (#79). Validated against `ASSET_CLASSES`; the item must belong to the tenant (404 otherwise). `applyToSymbol: true` updates every holding of the same symbol in the tenant (the web always sends it, since Equity Analysis merges them).
@@ -347,3 +351,33 @@ For crypto categories (`processingHint === 'API_CRYPTO'`), `assetCurrency` is se
 | Unit | `tenant-settings.test.ts` | 8 | GET/PUT portfolioCurrency, validation, RBAC |
 | Unit | `currencyConversion.test.ts` | 7 | Direct/inverse rates, forward-fill, batch |
 | Integration | `ticker-search.test.ts` | 6 | Proxy auth, validation, response |
+
+---
+
+## 6.14. Manage Assets List (#81)
+
+### `GET /api/portfolio/assets`
+
+- **Handler**: `pages/api/portfolio/assets.js` → `listAssets()` in `services/manageAssets.service.js`.
+- **Responsibility**: A lightweight, paginated list of **every** portfolio item (category type `Investments`, `Asset` or `Debt`) for the Manage Assets page, with the flags the page needs. **No live pricing and no manual-value history** — values are the stored `currentValue` / `currentValueInUSD`; the only manual-value read is one `manualAssetValue.groupBy({ by: ['assetId'], _max: { date } })` over the page's `MANUAL` items.
+- **Query parameters** (all optional; invalid values → `400`):
+
+| Param | Meaning |
+|-------|---------|
+| `type` | A `processingHint` when it is upper snake case (`API_STOCK`, `MANUAL`, …), otherwise a `Category.group` (`Stocks`, `Real Estate`, …). SQL filter. |
+| `accountId` | Integer. SQL filter. |
+| `assetClass` | One of the 12 `ASSET_CLASSES` (#79). In-memory filter after classification. |
+| `search` | Case-insensitive substring of the symbol or `SecurityMaster.name`. In memory. |
+| `status` | `stale` \| `incomeMissing` \| `dividendOverride` \| `lotMismatch` \| `assetClassOverridden`. In memory; `stale` loads the last manual value date of every candidate `MANUAL` item instead of only the page's. |
+| `includeClosed` | `true` to include items with quantity 0. By default they are hidden, except debts. |
+| `id` | One item (deep links). Skips the closed filter and facets. |
+| `cursor` | Opaque; base64 of an offset into the sorted list. |
+| `limit` | Default 50, capped at 100; `< 1` or non-numeric → 400. |
+
+- **Algorithm (two-stage)**: (1) one narrow `portfolioItem.findMany` (list fields + `incomeTerms { id, incomeType, issuerType, dividendPerUnit, isDistributing, yieldPct }` + `debtTerms { id }` + category + account name) with the SQL filters, one `securityMaster.findMany` for those symbols, `incomeTerms.count` of detached terms, and (first page only) a facet query over the unfiltered list; (2) classify every row with `classifyAssetClass` / `classifyIncomeAsset` / `incomeDataSource` from `@bliss/shared/portfolio`, apply `assetClass`, `search` and `status`, sort by `(category.group, symbol, id)`, slice the page, then enrich only the page (last manual value date, FX to the portfolio currency via `createFxResolver`). Deterministic sort + offset cursor → no duplicates or gaps across pages. If a tenant ever holds thousands of items, store the class in a column and move to keyset pagination.
+- **Row fields**: `id, symbol, displayName (SecurityMaster name or symbol), categoryName, categoryType, group, processingHint, accountId, accountName, currency, quantity, currentValue, currentValueInDisplay, lastManualValueDate, assetClass, assetClassSource (AUTO|OVERRIDE), incomeAssetClass (null = can't hold income terms), hasLotMismatch, hasIncomeTerms, hasDividendOverride, hasDebtTerms, isPriceStale, incomeDataStatus`.
+  - `isPriceStale`: `MANUAL`, quantity > 0 and no manual value in more than `MANUAL_PRICE_STALE_DAYS` (30) days, or none at all. Thresholds live in `@bliss/shared/portfolio` (`MANUAL_PRICE_STALE_DAYS / _WARNING_DAYS / _CRITICAL_DAYS` = 30 / 60 / 90).
+  - `incomeDataStatus`: `NOT_APPLICABLE` when the item can't hold income terms; otherwise the projection's own source (`incomeDataSource()`): `AUTO` (trusted SecurityMaster dividends), `OVERRIDE` (stock/ETF dividend override), `MANUAL` (any other terms), `MISSING` (stock/ETF/fund/bond/real estate with quantity > 0 and nothing to project from), or `NONE` (cash/other without terms, or a closed position).
+- **Response**: `{ portfolioCurrency, items, nextCursor (null on the last page), totals: { count }, detachedTermsCount, facets? }` — `facets: { groups: [{ group, count }], accounts: [{ id, name }] }` on the first page only.
+- **Tenant isolation**: every query is scoped by `req.user.tenantId`.
+- **Tests**: `__tests__/unit/api/portfolio-assets.test.ts` (filters alone and combined, search, stable pagination, no history in the payload, `lastManualValueDate` / `isPriceStale`, asset class and its filter, `detachedTermsCount`, tenant scoping, limit bounds).
