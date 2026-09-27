@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,23 @@ const LENS_LABELS: Record<string, string> = {
   SAVINGS_TREND: "Savings Trend",
 };
 
+/** Lens labels translated per locale (newer lenses; the map above predates i18n here). */
+const LENS_LABEL_KEYS: Record<string, string> = {
+  PASSIVE_INCOME_OUTLOOK: "insights.lens.passiveIncomeOutlook",
+};
+
+/**
+ * Deep links for action types the user can act on inside Bliss.
+ * PASSIVE_INCOME_SETUP (#80): income terms are configured from the Passive
+ * Income page (missing holdings + streams) or from the Portfolio holdings rows.
+ */
+const ACTION_LINKS: Record<string, { to: string; labelKey: string }[]> = {
+  PASSIVE_INCOME_SETUP: [
+    { to: "/reports/passive-income", labelKey: "insights.actions.passiveIncomeSetup" },
+    { to: "/reports/portfolio", labelKey: "insights.actions.portfolioHoldings" },
+  ],
+};
+
 const TIER_BADGE_STYLES: Record<string, string> = {
   MONTHLY: "bg-brand-primary/10 text-brand-primary",
   QUARTERLY: "bg-positive/10 text-positive",
@@ -62,6 +80,10 @@ export function InsightCard({ insight, onDismiss, showTierBadge = true }: Insigh
   const severityClass = SEVERITY_STYLES[insight.severity] || SEVERITY_STYLES.INFO;
   const dotClass = SEVERITY_DOT[insight.severity] || SEVERITY_DOT.INFO;
   const tierBadgeClass = TIER_BADGE_STYLES[insight.tier] || TIER_BADGE_STYLES.MONTHLY;
+  const lensLabel = LENS_LABEL_KEYS[insight.lens]
+    ? t(LENS_LABEL_KEYS[insight.lens])
+    : LENS_LABELS[insight.lens] || insight.lens;
+  const actionLinks = (insight.metadata?.actionTypes || []).flatMap((type) => ACTION_LINKS[type] || []);
 
   return (
     <motion.div
@@ -78,7 +100,7 @@ export function InsightCard({ insight, onDismiss, showTierBadge = true }: Insigh
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {LENS_LABELS[insight.lens] || insight.lens}
+                  {lensLabel}
                 </span>
                 {showTierBadge && insight.tier && (
                   <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${tierBadgeClass} border-0`}>
@@ -100,6 +122,19 @@ export function InsightCard({ insight, onDismiss, showTierBadge = true }: Insigh
                 <p className="text-xs text-brand-primary mt-2 italic">
                   {insight.metadata.suggestedAction}
                 </p>
+              )}
+              {actionLinks.length > 0 && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  {actionLinks.map((link) => (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      className="text-xs font-medium text-brand-primary underline-offset-4 hover:underline"
+                    >
+                      {t(link.labelKey)}
+                    </Link>
+                  ))}
+                </div>
               )}
             </div>
             <button

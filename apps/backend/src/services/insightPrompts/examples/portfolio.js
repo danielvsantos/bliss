@@ -8,31 +8,31 @@
 const examples = {
   PORTFOLIO_EXPOSURE: {
     lens: 'PORTFOLIO_EXPOSURE',
-    title: 'Equity Heavy at 84% — Top Three at 27%',
-    body: "Equity carried 84% of the portfolio's $312,400 at week close. Top three positions: VTI (12%), AAPL (8%), BRK.B (7%) — none crossing the 25% concentration threshold. Mix shifted modestly from the prior week, not directionally.",
+    title: 'Equity at 71%, Bonds Hold 18% of the Book',
+    body: "Of the $412,300 portfolio, 71% is equity — 38% index ETFs, 29% individual stocks, 4% REITs — with government and corporate bonds at 18% and real estate at 11%. The bonds carry $74,000 of face value at a 4.6% weighted coupon and 3.8 years to maturity on average, 70% government. Top three positions: VTI (21%), the Lisbon apartment (11%) and AAPL (6%), none above the 25% single-holding flag.",
     severity: 'INFO',
     priority: 55,
     category: 'PORTFOLIO',
     metadata: {
-      dataPoints: { current: 84, prior: 82, yoy: 81, deltaPct: 2.4 },
+      dataPoints: { current: 71, prior: 72, yoy: null, deltaPct: -1.4 },
       actionTypes: ['PORTFOLIO_REBALANCE'],
-      relatedLenses: ['SECTOR_CONCENTRATION'],
+      relatedLenses: ['SECTOR_CONCENTRATION', 'PASSIVE_INCOME_OUTLOOK'],
       suggestedAction: 'No action signal — the mix is inside normal bounds.',
     },
   },
 
   SECTOR_CONCENTRATION: {
     lens: 'SECTOR_CONCENTRATION',
-    title: 'Technology at 47% — Semiconductors Alone Carry 28%',
-    body: "Technology accounts for 47% of the equity portfolio, well above the 25% single-sector flag. Inside that, Semiconductors alone is 28% of the equity book — driven by NVDA and AMD — with Software a further 12% (MSFT, ADBE) and Consumer Electronics 7% (AAPL). Financials sit at 18% and healthcare at 12%. The story isn't broad tech exposure so much as a concentrated chip bet.",
+    title: 'Technology at 44% Once ETFs Are Looked Through',
+    body: "Looking through ETFs, Technology is 44% of the $268,000 equity book, above the 40% single-sector flag. It comes from direct holdings NVDA and AAPL plus 59% of QQQ and 31% of VTI. Inside that, Semiconductors alone is 17% of equity (NVDA, AMD). Financials follow at 13% and Healthcare at 11%; bonds and property are outside this view by design.",
     severity: 'WARNING',
     priority: 75,
     category: 'PORTFOLIO',
     metadata: {
-      dataPoints: { current: 47, prior: 45, yoy: 41, deltaPct: 4.4 },
+      dataPoints: { current: 44, prior: 43, yoy: null, deltaPct: 2.3 },
       actionTypes: ['PORTFOLIO_REBALANCE'],
       relatedLenses: ['PORTFOLIO_EXPOSURE', 'VALUATION_RISK'],
-      suggestedAction: 'A diversified ETF added against new contributions would gradually dilute sector share without selling.',
+      suggestedAction: 'Directing new contributions to non-tech exposure would dilute the sector share without selling.',
     },
   },
 
@@ -53,16 +53,31 @@ const examples = {
 
   DIVIDEND_OPPORTUNITY: {
     lens: 'DIVIDEND_OPPORTUNITY',
-    title: '$1,050 in Passive Income Over the Last 90 Days',
-    body: "Passive Income posted $1,050 over the last 90 days, mostly from JNJ, KO, and PG dividends. The portfolio's dividend-paying stocks total $185,000 and yield about 2.3% on those holdings. Total stock allocation is $238,000, so dividends contribute roughly 1.8% on the broader stock book. Yield has been stable; the most recent change was JNJ's 4% dividend raise in February.",
+    title: '$4,380 in Stock and ETF Dividends Ahead',
+    body: "Stocks and ETFs are projected to pay $4,380 in dividends over the next 12 months, replaying the last year of payments on current share counts. The dividend-paying holdings total $185,000, a weighted yield of 2.4% on that allocation. JNJ, KO and VTI carry most of it; JNJ's 4% raise in February is already in the figure.",
     severity: 'INFO',
     priority: 45,
     category: 'PORTFOLIO',
     metadata: {
-      dataPoints: { current: 2.3, prior: 2.3, yoy: 2.2, deltaPct: 0 },
+      dataPoints: { current: 2.4, prior: 2.3, yoy: null, deltaPct: 4.3 },
       actionTypes: ['PORTFOLIO_REBALANCE'],
-      relatedLenses: ['PORTFOLIO_EXPOSURE'],
+      relatedLenses: ['PASSIVE_INCOME_OUTLOOK'],
       suggestedAction: 'Reinvesting dividends into the same holdings compounds the yield over time.',
+    },
+  },
+
+  PASSIVE_INCOME_OUTLOOK: {
+    lens: 'PASSIVE_INCOME_OUTLOOK',
+    title: '31% of Passive Income Ends With a Bond in March',
+    body: "Bliss projects $9,600 of passive income over the next 12 months (gross, before tax) — $8,400 from investments and $1,200 from a family allowance — against $8,900 actually received in the last 12 months. That covers 22% of essential spending. The Treasury 2027 bond matures on 2027-03-15 and takes $250 a month with it, 31% of the projection. Its floating coupon uses the rate you assumed.",
+    severity: 'WARNING',
+    priority: 70,
+    category: 'INCOME',
+    metadata: {
+      dataPoints: { current: 22, prior: 21, yoy: null, deltaPct: 7.9 },
+      actionTypes: ['INCOME_GROWTH'],
+      relatedLenses: ['DIVIDEND_OPPORTUNITY', 'PORTFOLIO_EXPOSURE'],
+      suggestedAction: 'Decide ahead of March where the maturing principal goes, so the income gap is planned rather than discovered.',
     },
   },
 };

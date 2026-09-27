@@ -182,12 +182,13 @@ interface InsightCardProps {
 |----------------------|---------------------------------------------------------------------|
 | Left accent border   | Severity-keyed design token (see table below)                       |
 | Severity dot         | 6px circle, colored by severity                                     |
-| Lens label           | Translated via `insights.lenses.<LENS_NAME>`                        |
+| Lens label           | `LENS_LABELS` map (English); newer lenses translated via `LENS_LABEL_KEYS` → `insights.lens.*` (e.g. `PASSIVE_INCOME_OUTLOOK` → `insights.lens.passiveIncomeOutlook`) |
 | Tier badge           | Colored pill with `insights.tiers.<tier>`                           |
 | Period label         | Small muted text showing `periodKey`                                |
 | Title                | `font-semibold text-sm text-brand-deep`                             |
 | Body                 | `text-sm text-muted-foreground`                                     |
 | Suggested action CTA | `text-xs text-brand-primary italic` — only when `metadata.suggestedAction` exists |
+| Action links         | `ACTION_LINKS` deep links for `metadata.actionTypes`, `text-xs font-medium text-brand-primary` router `<Link>`s. `PASSIVE_INCOME_SETUP` (#80) → `/reports/passive-income` (`insights.actions.passiveIncomeSetup`) and `/reports/portfolio` (`insights.actions.portfolioHoldings`). Other action types render no link. |
 | Dismiss button       | `X` icon (Lucide), top-right, calls `onDismiss(insight.id)`         |
 
 ### 15.4.3. Severity Token Map

@@ -32,6 +32,7 @@ const lensRubrics = {
   UNUSUAL_SPENDING:        require('./lenses/unusualSpending'),
   INCOME_STABILITY:        require('./lenses/incomeStability'),
   INCOME_DIVERSIFICATION:  require('./lenses/incomeDiversification'),
+  PASSIVE_INCOME_OUTLOOK:  require('./lenses/passiveIncomeOutlook'),
   SAVINGS_RATE:            require('./lenses/savingsRate'),
   SAVINGS_TREND:           require('./lenses/savingsTrend'),
   PORTFOLIO_EXPOSURE:      require('./lenses/portfolioExposure'),
@@ -106,10 +107,20 @@ function buildSystemString(tier, activeLenses) {
   return buildSystemBlocks(tier, activeLenses).map((b) => b.text).join('\n\n');
 }
 
-/** Strip internal/derived flags before serializing the financial-data section. */
+/**
+ * Strip internal/derived flags before serializing the financial-data section.
+ * Blocks that KEY SIGNALS already carries in full (passive income summary,
+ * income mix, asset-class mix, fixed income) are dropped here so the prompt
+ * doesn't carry them twice (#80).
+ */
 function stripInternalFlags(tenantData) {
-  // eslint-disable-next-line no-unused-vars
-  const { tier, hasTransactions, hasPortfolio, hasDebt, comparisonAvailable, ...rest } = tenantData;
+  const {
+    // eslint-disable-next-line no-unused-vars
+    tier, hasTransactions, hasPortfolio, hasDebt, comparisonAvailable,
+    // eslint-disable-next-line no-unused-vars
+    passiveIncome, incomeMix, assetClassAllocation, fixedIncome, sectorBaseValue,
+    ...rest
+  } = tenantData;
   return rest;
 }
 

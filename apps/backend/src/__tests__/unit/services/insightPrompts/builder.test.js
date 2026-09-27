@@ -139,4 +139,79 @@ describe('insightPrompts/builder', () => {
       expect(financialDataSection).not.toMatch(/"comparisonAvailable":/);
     });
   });
+
+  // ── Passive income & asset class awareness (#80) ──────────────────────────
+  describe('PASSIVE_INCOME_OUTLOOK', () => {
+    it.each(['PORTFOLIO', 'QUARTERLY', 'ANNUAL'])('%s: rubric and example included only when the lens is active', (tier) => {
+      const withLens = buildSystemBlocks(tier, ['PASSIVE_INCOME_OUTLOOK']);
+      const lenses = withLens.find((b) => b.kind === 'lenses').text;
+      const examples = withLens.find((b) => b.kind === 'examples').text;
+      expect(lenses).toMatch(/PASSIVE_INCOME_OUTLOOK/);
+      expect(lenses).toMatch(/GROSS/);
+      expect(lenses).toMatch(/NON-investment income/);
+      expect(examples).toMatch(/"lens": "PASSIVE_INCOME_OUTLOOK"/);
+
+      const without = buildSystemString(tier, tier === 'PORTFOLIO' ? ['DIVIDEND_OPPORTUNITY'] : ['SAVINGS_RATE']);
+      expect(without).not.toMatch(/PASSIVE_INCOME_OUTLOOK\nFocus/);
+      expect(without).not.toMatch(/"lens": "PASSIVE_INCOME_OUTLOOK"/);
+    });
+
+    it('rubric covers the severity triggers and the setup action', () => {
+      const text = buildSystemString('QUARTERLY', ['PASSIVE_INCOME_OUTLOOK']);
+      expect(text).toMatch(/endingIncomeWarning/);
+      expect(text).toMatch(/singleSourceWarning/);
+      expect(text).toMatch(/coverageMilestoneCrossed/);
+      expect(text).toMatch(/PASSIVE_INCOME_SETUP/);
+    });
+
+    it('examples cover a WARNING (ending income) and a POSITIVE (coverage milestone)', () => {
+      const portfolio = buildSystemString('PORTFOLIO', ['PASSIVE_INCOME_OUTLOOK']);
+      const quarterly = buildSystemString('QUARTERLY', ['PASSIVE_INCOME_OUTLOOK']);
+      expect(portfolio).toMatch(/PASSIVE_INCOME_OUTLOOK \(WARNING\)/);
+      expect(quarterly).toMatch(/PASSIVE_INCOME_OUTLOOK \(POSITIVE\)/);
+    });
+  });
+
+  describe('updated portfolio rubrics', () => {
+    it('DIVIDEND_OPPORTUNITY quotes the engine figure instead of deriving one from yields', () => {
+      const text = buildSystemString('PORTFOLIO', ['DIVIDEND_OPPORTUNITY']);
+      expect(text).toMatch(/dividendsNext12m/);
+      expect(text).toMatch(/never write "trailing yield implies/);
+      expect(text).not.toMatch(/Frame projections as "trailing yield implies/);
+    });
+
+    it('SECTOR_CONCENTRATION describes look-through and never flags non-equity buckets', () => {
+      const text = buildSystemString('PORTFOLIO', ['SECTOR_CONCENTRATION']);
+      expect(text).toMatch(/LOOK-THROUGH/);
+      expect(text).toMatch(/59% of QQQ/);
+      expect(text).toMatch(/NEVER flag them/);
+    });
+
+    it('PORTFOLIO_EXPOSURE uses asset classes and fixed income; VALUATION_RISK is stocks-only', () => {
+      const text = buildSystemString('PORTFOLIO', ['PORTFOLIO_EXPOSURE', 'VALUATION_RISK']);
+      expect(text).toMatch(/assetClassAllocation/);
+      expect(text).toMatch(/fixedIncome/);
+      expect(text).toMatch(/ETFs never carry a P\/E/);
+    });
+  });
+
+  describe('buildUserMessage() — passive income', () => {
+    it('puts the passive income summary in KEY SIGNALS only (not twice)', () => {
+      const data = {
+        tier: 'QUARTERLY',
+        targetPeriod: '2026-Q3',
+        monthlyData: {},
+        months: [],
+        quarterTotals: { income: 1, expenses: 0, groups: {} },
+        passiveIncome: { next12m: { total: 1234 }, coverage: { pct: 100 }, endingWithin12m: {} },
+        incomeMix: { passiveIncomeSharePct: 4 },
+      };
+      const message = buildUserMessage('QUARTERLY', data, ['PASSIVE_INCOME_OUTLOOK']);
+      const [keySignals, financialData] = message.split('FINANCIAL DATA (raw context');
+      expect(keySignals).toMatch(/"total": 1234/);
+      expect(keySignals).toMatch(/"passiveIncomeSharePct": 4/);
+      expect(financialData).not.toMatch(/passiveIncome/);
+      expect(financialData).not.toMatch(/incomeMix/);
+    });
+  });
 });

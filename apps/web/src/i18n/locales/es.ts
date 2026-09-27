@@ -1957,6 +1957,13 @@ const es = {
       annual: "Informe anual",
       portfolio: "Inteligencia de cartera",
     },
+    lens: {
+      passiveIncomeOutlook: "Perspectiva de ingresos pasivos",
+    },
+    actions: {
+      passiveIncomeSetup: "Configurar condiciones de ingresos",
+      portfolioHoldings: "Cartera de inversiones",
+    },
   },
 
   // Manual Updates page

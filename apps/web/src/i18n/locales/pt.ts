@@ -2004,6 +2004,13 @@ const pt = {
       annual: "Relatório anual",
       portfolio: "Inteligência de portfólio",
     },
+    lens: {
+      passiveIncomeOutlook: "Perspectiva de renda passiva",
+    },
+    actions: {
+      passiveIncomeSetup: "Configurar condições de renda",
+      portfolioHoldings: "Carteira de Investimentos",
+    },
   },
 
   // Página de atualizações manuais

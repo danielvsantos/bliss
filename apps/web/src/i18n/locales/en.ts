@@ -2004,6 +2004,13 @@ const en = {
       annual: "Annual Report",
       portfolio: "Portfolio Intelligence",
     },
+    lens: {
+      passiveIncomeOutlook: "Passive income outlook",
+    },
+    actions: {
+      passiveIncomeSetup: "Set up income terms",
+      portfolioHoldings: "Portfolio holdings",
+    },
   },
 
   // Manual Updates page

@@ -37,7 +37,7 @@ Critical files:
 
 ## 15.2. Lens Inventory
 
-Fifteen lenses grouped into six categories. Each lens is active in a subset of tiers defined by `TIER_LENSES`.
+Sixteen lenses grouped into six categories. Each lens is active in a subset of tiers defined by `TIER_LENSES`.
 
 | Category   | Lens                     | Source Tiers                       |
 |------------|--------------------------|-------------------------------------|
@@ -46,6 +46,7 @@ Fifteen lenses grouped into six categories. Each lens is active in a subset of t
 | SPENDING   | UNUSUAL_SPENDING         | MONTHLY                            |
 | INCOME     | INCOME_STABILITY         | MONTHLY, QUARTERLY, ANNUAL         |
 | INCOME     | INCOME_DIVERSIFICATION   | QUARTERLY, ANNUAL                  |
+| INCOME     | PASSIVE_INCOME_OUTLOOK   | QUARTERLY, ANNUAL, PORTFOLIO       |
 | SAVINGS    | SAVINGS_RATE             | MONTHLY, QUARTERLY, ANNUAL         |
 | SAVINGS    | SAVINGS_TREND            | QUARTERLY, ANNUAL                  |
 | PORTFOLIO  | PORTFOLIO_EXPOSURE       | PORTFOLIO                          |
@@ -109,8 +110,10 @@ Each tier has a dedicated gatherer in `insightService.js`. All gatherers return 
 | `gatherMonthlyData(tenantId, year, month, comparisonAvailable)`| `AnalyticsCacheMonthly` (target + prior + YoY month)              |
 | `gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)` | `AnalyticsCacheMonthly` (3 months × target + prior Q + YoY Q) |
 | `gatherAnnualData(tenantId, year, comparisonAvailable)`        | `AnalyticsCacheMonthly` (12 months × target + 1–2 prior years)    |
-| `gatherPortfolioIntelligenceData(tenantId)`                    | `PortfolioItem`, `SecurityMaster`, `AnalyticsCacheMonthly` (Passive Income last 90d) |
-| `gatherEquityFundamentals(tenantId)`                           | `PortfolioItem` ⋈ `SecurityMaster` (sector, industry, P/E, dividend yield, 52W). Returns sector AND industry allocations side-by-side. |
+| `gatherPortfolioIntelligenceData(tenantId)`                    | `PortfolioItem`, `SecurityMaster`, `AnalyticsCacheMonthly` (Passive Income last 90d), passive income summary (15.4.2) |
+| `gatherEquityFundamentals(tenantId, currency, rateCache, asOf)` | `PortfolioItem` ⋈ `SecurityMaster` (sector, industry, P/E, dividend yield, 52W, ETF composition) + `IncomeTerms` (bonds). Classifies every holding with `classifyAssetClass` (#79). Returns look-through sector allocation, stock/REIT industry allocation, `assetClassAllocation` and `fixedIncome` — see 15.4.3. |
+| `gatherPassiveIncomeSummary(tenantId, currency, rateCache, asOf)` | `loadPassiveIncomeInputs` → `project()` → `summarize()` (15.4.2). PORTFOLIO, QUARTERLY and ANNUAL. |
+| `gatherPeriodIncomeMix({...})`                                  | Passive income share of the period's income (QUARTERLY, ANNUAL): the "Passive Income" group from `AnalyticsCacheMonthly`, with the non-investment part from `Transaction` sums in stream-eligible categories. |
 | `gatherPassiveIncomeRecent(tenantId, currency, monthsBack)`    | `AnalyticsCacheMonthly` rows where `type='Income'` AND `group='Passive Income'`. Returns null when the tenant has no such category — caller treats that as "skip the signal," not "$0 reported." |
 
 All monetary values are converted to the tenant's portfolio currency before being passed to the LLM. Currency rate access is **strictly read-only** — see 15.4.1 below for the planner pattern that enforces this. Currency symbols used in prompts are looked up from the `CURRENCY_SYMBOLS` map.
@@ -209,6 +212,42 @@ Comment mentions are stripped before the static check so the warning banner at t
 
 If a future refactor reintroduces the write-through path — directly, transitively via a new service import, or via `axios` — CI fails immediately instead of letting the regression land silently and get discovered by FX-provider billing alerts (historically CurrencyLayer).
 
+
+### 15.4.2. Passive income summary (#80)
+
+`gatherPassiveIncomeSummary` gives the LLM the numbers of the passive income projection engine (#77) instead of letting it extrapolate from yields:
+
+1. **`loadPassiveIncomeInputs(tenantId, portfolioCurrency, rateCache, asOf)`** — the backend twin of the API's `loadInputs()` (`apps/api/services/passiveIncome.service.js`). Same reads (portfolio items with `quantity > 0` and their `IncomeTerms`, income streams, SecurityMaster `recentDividends` — trusted only) and the same asset / stream shape, but FX goes through the pipeline's `rateCache` (`convertAmount`), topped up by `prefetchExtraCurrencies` for terms, dividend and stream currencies that aren't portfolio-item currencies. Actuals and essential spending are the **12 complete months before `asOf`** (whole "Passive Income" group; `Essentials` type).
+2. **`project()`** (12-month horizon) and **`summarize()`** from `@bliss/shared/portfolio` (CJS build).
+3. Returns `null` when nothing produces passive income (no coverage-eligible holding, no stream, no projected income). A load error is logged at `warn` and also returns `null` — the tier run continues without the signal.
+
+`summarize(projection, actuals, essentials)` output (all amounts whole units of the display currency, percentages 1 decimal, arrays bounded and deterministically ordered):
+
+| Field | Meaning |
+|---|---|
+| `next12m.{total, investment, other, bySource}` | Next 12 full months; `other` = allowance / welfare streams |
+| `trailing12mActual`, `trailing12mEssentials` | Last 12 complete months |
+| `essentialsCoveragePct`, `essentialsCoverageInvestmentPct` | Projected income ÷ trailing essential spending |
+| `topContributors` (≤3), `largestSharePct` | Largest items by next-12-month income |
+| `endingWithin12m.{monthlyAmountLost, sharePct, items (≤5)}` | Items whose end date (maturity, lease end, stream end) falls in the window; `sharePct` = their current annual run rate ÷ `next12m.total` |
+| `coverage.{configured, total, pct, missingLabels (≤5)}` | Holdings with / without income terms |
+| `assumedRates.{count, labels (≤3)}` | Floating-rate and inflation-linked items (user-assumed rates) |
+| `streamCount`, `dividendsNext12m` | Streams; stock + ETF dividends only (for DIVIDEND_OPPORTUNITY) |
+
+`generateTieredInsights` adds `priorEssentialsCoveragePct`: `dataPoints.current` of the latest PASSIVE_INCOME_OUTLOOK insight of the same tier from an **earlier** period (`periodKey < current`), so the POSITIVE milestone check never reads the run it is part of.
+
+**Dedup stability.** The projection depends on its date, so `asOf` comes from the period, never the clock: PORTFOLIO uses the Monday of the `periodKey` week (weeks count from Sunday, so a Sunday maps to the next day), QUARTERLY and ANNUAL the first day after the period ends. Together with the rounding above, two runs in the same period with unchanged data hash the same; a change in income terms changes the hash. Expect every tenant's first PORTFOLIO run after the #80 deploy to regenerate (the input shape changed).
+
+### 15.4.3. Asset classes and look-through (#80)
+
+`gatherEquityFundamentals` classifies every investment holding with the shared `classifyAssetClass` (#79: override → bond issuer / category → REIT → ETF composition → stock / fund). The pre-#80 fallback sectors (`HINT_TO_SECTOR`: "ETFs & Funds", "Cryptocurrency", "Alternative Assets") are gone — a holding without a real sector has `sector: null`.
+
+- **`sectorAllocation`** uses `lookThrough(…, 'sector')` over `EQUITY_ASSET_CLASSES` (STOCK, REIT, INDEX_ETF, SECTOR_ETF): stocks and REITs by their own sector, equity ETFs split by composition weight. The "Diversified" (ETF without composition), "Other" (unassigned ETF weight) and "Unknown" buckets are dropped, and bond ETFs, bonds, real estate, crypto, funds and cash never enter. Percentages are over what remains (`equityValue`, exposed as `sectorBaseValue`). Each sector carries `holdings` (direct symbols) and `viaEtfs` (`[{ symbol, weightPct }]`).
+- **`industryAllocation`** counts STOCK and REIT only (no industry look-through), as a share of the same base.
+- **`assetClassAllocation`** — `buildComposition` over every holding except cash: `[{ assetClass, percent, count }]`.
+- **`fixedIncome`** — `buildFixedIncome` over GOV_BOND / CORP_BOND holdings with face value (converted via `rateCache`), anchored on `asOf`.
+- ETFs never carry `peRatio` / `trailingEps`; KEY SIGNALS' weighted P/E is stocks-only.
+
 ## 15.5. Prompt Architecture
 
 The prompt is layered into four cacheable system blocks plus a per-call user message. Content lives in `src/services/insightPrompts/`; the orchestration lives in `src/services/insightService.js` and the three LLM adapters under `src/services/llm/`.
@@ -219,7 +258,7 @@ The prompt is layered into four cacheable system blocks plus a per-call user mes
 |-------|------|------|-------------|
 | L1 | Identity, fiduciary principle, voice rules, severity calibration, global readership, output contract | `insightPrompts/identity.js` | global |
 | L2 | Tier addendum (length, comparison expectations, title cap) | `insightPrompts/tiers/{monthly,quarterly,annual,portfolio}.js` | per tier |
-| L3 | Lens-specific rubrics (15 files, one per lens) — severity quantization, focus, personalization guidance | `insightPrompts/lenses/*.js` | per lens-set |
+| L3 | Lens-specific rubrics (16 files, one per lens) — severity quantization, focus, personalization guidance | `insightPrompts/lenses/*.js` | per lens-set |
 | L4 | Few-shot examples filtered to the active lenses for this run (≤8 monthly, ≤10 quarterly/annual, ≤4 portfolio) | `insightPrompts/examples/{monthly,quarterly,annual,portfolio}.js` | per lens-set |
 
 Provider-specific caching mechanics:
@@ -232,9 +271,12 @@ Provider-specific caching mechanics:
 Before the LLM call, a deterministic JS module (`insightPrompts/keySignals.js`) computes a tier-appropriate signal summary from the gathered `tenantData`:
 
 - **MONTHLY**: spending MoM/YoY, top movers (3 by absolute $ change), top-category share with a 6-month tenant baseline, savings-rate delta, income arrival check + CoV, anomalies (categories above 2σ from their own 6-month mean), net-worth split between contributions and market change.
-- **QUARTERLY**: quarter totals, within-quarter monthly savings-rate path, top category share, income stability, net-worth decomposition.
-- **ANNUAL**: full-year totals, quarterly savings-rate breakdown, top category share, net-worth decomposition.
-- **PORTFOLIO**: total equity, top 3 holdings by weight, top sector, **top 3 industries** (each carries its parent sector and constituent symbols, so the lens can unpack "Technology 47%" into "Semiconductors 28% via NVDA, AMD"), weighted P/E across trusted holdings, weighted dividend yield across trusted holdings, **dividend-paying stock value** (the correct denominator for the yield — never total equity, never total portfolio), **passive income recent actuals** when the tenant has a "Passive Income" category (last 90 days from `AnalyticsCacheMonthly`, summed and broken down per month), count of holdings with trusted fundamentals.
+- **QUARTERLY**: quarter totals, within-quarter monthly savings-rate path, top category share, income stability, **income mix** (`income.mix`: passive / investment / other passive income share of the quarter's income), net-worth decomposition, **passive income** (15.4.2).
+- **ANNUAL**: full-year totals, quarterly savings-rate breakdown, top category share, income stability + **income mix**, net-worth decomposition, **passive income**.
+- **PORTFOLIO**: total equity, top 3 holdings by weight, top sector, **top 3 industries** (each carries its parent sector and constituent symbols, so the lens can unpack "Technology 47%" into "Semiconductors 28% via NVDA, AMD"), **asset-class mix** and **fixed income** (15.4.3), look-through **top sector** with its direct holdings and `viaEtfs`, weighted P/E across trusted **stocks only**, weighted dividend yield across trusted holdings, **`dividendsNext12m`** (the engine's stock + ETF dividend figure), **dividend-paying stock value** (the correct denominator for the yield — never total equity, never total portfolio), **passive income recent actuals** when the tenant has a "Passive Income" category (last 90 days from `AnalyticsCacheMonthly`, summed and broken down per month), count of holdings with trusted fundamentals, **passive income** (15.4.2).
+- **`passiveIncome`** (PORTFOLIO, QUARTERLY, ANNUAL): the `summarize()` output plus pre-computed `triggers` — `endingIncomeWarning` (`endingWithin12m.sharePct ≥ 20`), `singleSourceWarning` (`largestSharePct > 50`), `coverageMilestoneCrossed` (highest of 25/50/75/100 crossed upward since `priorEssentialsCoveragePct`), `incompleteData` (`coverage.pct < 80`), `usesAssumedRates`. These drive the PASSIVE_INCOME_OUTLOOK severity (WARNING / POSITIVE / INFO) and honesty rules (gross figures, assumed rates named, missing holdings named, streams described as non-investment income). The lens adds `PASSIVE_INCOME_SETUP` to `actionTypes` on incomplete data; the web insight card links that action to `/reports/passive-income` and `/reports/portfolio`.
+
+`passiveIncome`, `incomeMix`, `assetClassAllocation`, `fixedIncome` and `sectorBaseValue` are carried in KEY SIGNALS only — `buildUserMessage` strips them from FINANCIAL DATA so the prompt doesn't carry them twice.
 
 The KEY SIGNALS object is serialized at the top of the user message under a `KEY SIGNALS:` heading. The model writes prose about pre-computed signals rather than recomputing arithmetic — this is the largest single quality lever in v1.1 over v1.0.
 
@@ -491,6 +533,13 @@ When the active provider's API key is unset the service logs a warning and retur
   - Severity/priority validation (drops invalid insights)
   - `generateAllDueTiers` calendar gating (MONTHLY/QUARTERLY/ANNUAL only on trigger days) — explicitly asserts no DAILY key in the result
 
+- **File**: `src/__tests__/unit/services/insightService.passiveIncome.test.js` (#80)
+  - `loadPassiveIncomeInputs` — same asset / stream shape as the API's `loadInputs()`, trusted-only dividends, FX via `rateCache` + missing-pair prefetch, 12 complete months of actuals
+  - `gatherPassiveIncomeSummary` — engine numbers, null without income sources, never fails the run
+  - `gatherEquityFundamentals` — classifier, look-through sector allocation (QQQ contributes by weight; bond ETFs, bonds, real estate, crypto, uncomposed ETFs excluded), stock/REIT industries, asset-class mix, fixed income, no ETF P/E
+  - `gatherPeriodIncomeMix`, period anchors, PASSIVE_INCOME_OUTLOOK gating
+  - Dedup: two PORTFOLIO runs in the same week hash the same; an income-terms change doesn't; prior coverage read from earlier periods only
+
 - **File**: `src/__tests__/unit/services/insightService.hygiene.test.js`
   - Structural invariant — enforces the read-only currency rate policy (15.4.1)
   - Forbids `prisma.currencyRate.{create,createMany,upsert,update,delete,findUnique,findFirst,...}` during any tier run
@@ -519,4 +568,10 @@ Tests mock BullMQ, Prisma, the LLM adapter (`services/llm/index.js`), and the re
 
 - **File**: `src/__tests__/unit/services/insightPrompts/keySignals.test.js`
   - MONTHLY: spending/MoM, top movers, top-category share + 6-month baseline, savings-rate delta, income stability, anomalies, period-anchored net-worth (start/end derived from the breakdown's per-group sums, not from trend-window endpoints), single-month-tenant fallback
+  - `passiveIncomeSignals` triggers (ending income, single source, milestone crossing, incomplete data); PORTFOLIO `dividendsNext12m` / asset-class / fixed-income / look-through top sector / stocks-only P/E; QUARTERLY + ANNUAL income mix
   - PORTFOLIO: top holdings, top sector, weighted P/E, weighted dividend yield, **top industries with parent sector + constituent symbols** (e.g. Semiconductors → NVDA, AMD), **dividend-paying stock value** as the correct yield denominator, **passiveIncomeRecent passthrough** when the tenant has the corresponding category
+
+- **File**: `src/__tests__/unit/services/insightPrompts/schema.test.js` (#80)
+  - New lens + action type in the enums; OpenAI strict-mode shape; Gemini conversion keeps the enums; Anthropic tool `input_schema` shape
+
+- **API Vitest**: `apps/api/__tests__/unit/services/portfolio-summarize.test.ts` — `summarize()` (bounded arrays, rounding, ending share, largest share, coverage labels, `dividendsNext12m`, determinism)
