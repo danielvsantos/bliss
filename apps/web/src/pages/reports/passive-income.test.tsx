@@ -5,11 +5,14 @@ import PassiveIncomePage from './passive-income';
 import * as Hooks from '@/hooks/use-passive-income';
 import * as PortfolioHooks from '@/hooks/use-portfolio-items';
 import { mockQueryResult, mockQueryError, mockMutationResult } from '@/test/mock-helpers';
-import type { PassiveIncomeResponse, IncomeStreamsResponse } from '@/types/passive-income';
+import type { PassiveIncomeResponse, IncomeStreamsResponse, PassiveIncomeItem, PassiveIncomeGroup } from '@/types/passive-income';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (k: string, o?: Record<string, unknown>) => (o?.count != null ? `${k}:${o.count}` : k),
+    t: (k: string, o?: Record<string, unknown>) => {
+      if (o?.configured != null) return `${k}:${o.configured}/${o.total}`;
+      return o?.count != null ? `${k}:${o.count}` : k;
+    },
     i18n: { language: 'en' },
   }),
 }));
@@ -18,8 +21,8 @@ vi.mock('@/hooks/use-portfolio-items');
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 // The modal has its own tests — here we only check which modal is opened.
 vi.mock('@/components/income/income-terms-modal', () => ({
-  IncomeTermsModal: (p: { open: boolean; mode: string; assetId?: number | null; stream?: { id: number } | null }) =>
-    p.open ? <div data-testid="modal">{`${p.mode}:${p.assetId ?? p.stream?.id ?? 'new'}`}</div> : null,
+  IncomeTermsModal: (p: { open: boolean; mode: string; assetId?: number | null; stream?: { id: number } | null; scope?: string }) =>
+    p.open ? <div data-testid="modal">{`${p.mode}:${p.assetId ?? p.stream?.id ?? 'new'}:${p.scope ?? 'single'}`}</div> : null,
 }));
 // Recharts needs layout; the chart has no logic worth rendering here.
 vi.mock('@/components/passive-income/income-chart', () => ({
@@ -98,7 +101,11 @@ function setup(data: PassiveIncomeResponse = response()) {
   } as never));
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  window.localStorage.clear();
+});
 
 describe('PassiveIncomePage', () => {
   it('renders the five KPI tiles', () => {
@@ -109,7 +116,7 @@ describe('PassiveIncomePage', () => {
     expect(tiles.getByText('passiveIncome.kpi.monthlyAverage')).toBeInTheDocument();
     expect(tiles.getByText('3.60%')).toBeInTheDocument();
     expect(tiles.getByText('12.5%')).toBeInTheDocument();
-    expect(tiles.getByText('passiveIncome.kpi.dataCoverageValue')).toBeInTheDocument();
+    expect(tiles.getByText('passiveIncome.kpi.dataCoverageValue:2/3')).toBeInTheDocument();
     expect(screen.getByTestId('passive-income-chart')).toBeInTheDocument();
   });
 
@@ -197,5 +204,115 @@ describe('PassiveIncomePage', () => {
     vi.mocked(Hooks.useIncomeStreams).mockReturnValue(mockQueryResult(streams));
     render(<PassiveIncomePage />);
     expect(screen.getByText('passiveIncome.loadFailed')).toBeInTheDocument();
+  });
+});
+
+// ─── Grouped view (#83) ─────────────────────────────────────────────────────
+
+const holding = (id: number, account: string, over: Partial<PassiveIncomeItem> = {}): PassiveIncomeItem => ({
+  kind: 'ASSET', portfolioItemId: id, streamId: null, incomeTermsId: id, label: `GOOG · ${account}`, symbol: 'GOOG',
+  assetClass: 'STOCK', accountName: account, incomeType: 'DIVIDEND', source: 'AUTO', rateOrYield: 0.005, amountPerPayment: null,
+  frequency: 'QUARTERLY', nextPaymentDate: '2026-12-15', endDate: null, status: 'OK', horizonTotal: 20, next12mTotal: 20,
+  ...over,
+});
+
+function groupedResponse(): PassiveIncomeResponse {
+  const children = [holding(11, 'IBKR'), holding(42, 'XP')];
+  const goog: PassiveIncomeGroup = {
+    groupKey: 'GOOG', kind: 'SECURITY', label: 'Alphabet Inc.', symbol: 'GOOG', assetClass: 'STOCK', accountCount: 2,
+    portfolioItemIds: [11, 42], quantity: 35, currentValue: 6120, currency: 'USD', incomeType: 'DIVIDEND', source: 'AUTO',
+    frequency: 'QUARTERLY', rateOrYield: 0.0065, rateRange: null, amountPerPayment: null, nextPaymentDate: '2026-12-15',
+    endDate: null, status: 'OK', statusCount: 0, configured: true, inCoverage: true, horizonTotal: 40, next12mTotal: 40, children,
+  };
+  const base = response();
+  return {
+    ...base,
+    kpis: { ...base.kpis, coverage: { configured: 1, total: 2 }, coverageByHolding: { configured: 2, total: 4 } },
+    items: [...children, base.items[1]],
+    groups: [goog],
+    upcomingPayments: [
+      { date: '2026-12-15', kind: 'ASSET', refId: 11, label: 'GOOG · IBKR', amount: 10, source: 'dividend' },
+      { date: '2026-12-15', kind: 'ASSET', refId: 42, label: 'GOOG · XP', amount: 10, source: 'dividend' },
+    ],
+    upcomingPaymentsGrouped: [
+      { date: '2026-12-15', kind: 'ASSET', groupKey: 'GOOG', refId: null, refIds: [11, 42], label: 'Alphabet Inc.', amount: 20, source: 'dividend', accounts: ['IBKR', 'XP'] },
+    ],
+    missing: [
+      { portfolioItemId: 5, symbol: 'VTI', label: 'VTI · IBKR', assetClass: 'ETF', reason: 'NO_TERMS' },
+      { portfolioItemId: 9, symbol: 'VTI', label: 'VTI · XP', assetClass: 'ETF', reason: 'NO_TERMS' },
+    ],
+    missingGroups: [{ groupKey: 'VTI', symbol: 'VTI', label: 'Vanguard Total', assetClass: 'ETF', portfolioItemIds: [5, 9], reason: 'NO_TERMS' }],
+  };
+}
+
+describe('PassiveIncomePage — grouped view (#83)', () => {
+  it('is grouped by default: merged upcoming payments and one missing-data button per symbol', () => {
+    setup(groupedResponse());
+    render(<PassiveIncomePage />);
+    const upcoming = screen.getByTestId('upcoming-payments');
+    expect(within(upcoming).getAllByRole('listitem')).toHaveLength(1);
+    expect(upcoming).toHaveTextContent('Alphabet Inc.');
+    expect(upcoming).toHaveTextContent('passiveIncome.breakdown.accounts:2');
+    expect(within(upcoming).getByRole('listitem')).toHaveAttribute('title', 'IBKR, XP');
+
+    const prompt = within(screen.getByTestId('missing-data'));
+    expect(prompt.getByText('passiveIncome.missing.title:1')).toBeInTheDocument();
+    fireEvent.click(prompt.getByRole('button', { name: 'Vanguard Total' }));
+    expect(screen.getByTestId('modal')).toHaveTextContent('asset:5:symbol');
+  });
+
+  it('the group row edit opens the modal in symbol scope; a child row edits one account', () => {
+    setup(groupedResponse());
+    render(<PassiveIncomePage />);
+    const row = screen.getByTestId('group-row-GOOG');
+    fireEvent.click(within(row).getByRole('button', { name: 'passiveIncome.breakdown.editGroup' }));
+    expect(screen.getByTestId('modal')).toHaveTextContent('asset:11:symbol');
+  });
+
+  it('a child row edits only that account', () => {
+    setup(groupedResponse());
+    render(<PassiveIncomePage />);
+    fireEvent.click(screen.getByTestId('group-row-GOOG'));
+    fireEvent.click(within(screen.getByTestId('child-row-42')).getByRole('button', { name: 'common.edit' }));
+    expect(screen.getByTestId('modal')).toHaveTextContent('asset:42:single');
+  });
+
+  it('the data coverage tile counts groups', () => {
+    setup(groupedResponse());
+    render(<PassiveIncomePage />);
+    // kpis.coverage (1 of 2 groups), not coverageByHolding (2 of 4 holdings).
+    expect(within(screen.getByTestId('kpi-tiles')).getByText('passiveIncome.kpi.dataCoverageValue:1/2')).toBeInTheDocument();
+  });
+
+  it('"By account" shows the flat lists and is remembered after a reload', () => {
+    setup(groupedResponse());
+    const { unmount } = render(<PassiveIncomePage />);
+    fireEvent.click(screen.getByRole('button', { name: 'passiveIncome.breakdown.view.flat' }));
+    expect(window.localStorage.getItem('bliss.passiveIncome.breakdownView')).toBe('flat');
+    expect(within(screen.getByTestId('upcoming-payments')).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(screen.getByTestId('missing-data')).getByRole('button', { name: 'VTI · XP' })).toBeInTheDocument();
+    unmount();
+
+    render(<PassiveIncomePage />);
+    expect(screen.getByRole('button', { name: 'passiveIncome.breakdown.view.flat' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('group-row-GOOG')).not.toBeInTheDocument();
+  });
+
+  it('still works when browser storage throws', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    setup(groupedResponse());
+    render(<PassiveIncomePage />);
+    expect(screen.getByTestId('group-row-GOOG')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'passiveIncome.breakdown.view.flat' }));
+    expect(screen.queryByTestId('group-row-GOOG')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the flat view against an older API (no groups)', () => {
+    window.localStorage.setItem('bliss.passiveIncome.breakdownView', 'grouped');
+    setup();
+    render(<PassiveIncomePage />);
+    expect(screen.queryByTestId('breakdown-view-toggle')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('missing-data')).getByRole('button', { name: 'VFIAX' })).toBeInTheDocument();
   });
 });

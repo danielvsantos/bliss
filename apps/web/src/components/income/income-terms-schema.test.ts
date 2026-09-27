@@ -48,7 +48,9 @@ describe('income terms form schema', () => {
 
   it('toRequest: apply-to-symbol only for dividends; streams carry category and name', () => {
     expect(toRequest({ ...emptyFormValues('asset', 'DIVIDEND'), dividendPerUnit: '2', applyToSymbol: true })).toMatchObject({ applyToSymbol: true, dividendPerUnit: 2 });
-    expect(toRequest({ ...emptyFormValues('asset', 'RENT'), monthlyRent: '10', applyToSymbol: true })).not.toHaveProperty('applyToSymbol');
+    // #83: every type except cash interest can apply to all holdings of the symbol.
+    expect(toRequest({ ...emptyFormValues('asset', 'RENT'), monthlyRent: '10', applyToSymbol: true })).toMatchObject({ applyToSymbol: true });
+    expect(toRequest({ ...emptyFormValues('asset', 'INTEREST'), apyPct: '4', applyToSymbol: true })).not.toHaveProperty('applyToSymbol');
     expect(toRequest({ ...emptyFormValues('stream', 'FIXED_AMOUNT'), name: 'X', categoryId: '7', amountPerPayment: '10' }))
       .toMatchObject({ categoryId: 7, name: 'X', amountPerPayment: 10 });
     expect(toRequest({ ...emptyFormValues('asset', 'DIVIDEND'), isDistributing: false, dividendPerUnit: '2' }))

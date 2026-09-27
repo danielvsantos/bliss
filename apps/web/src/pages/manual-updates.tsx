@@ -551,6 +551,9 @@ export default function ManualUpdatesPage() {
         assetId={incomeTermsAsset?.id ?? null}
         assetLabel={incomeTermsAsset?.symbol}
         currentValue={incomeTermsAsset ? parseDecimal(incomeTermsAsset.native?.marketValue) : undefined}
+        // #83 R5: pre-ticks "apply to all holdings" when the symbol is held in
+        // more than one account (the modal checks the server-side siblings; cash excluded).
+        defaultApplyToSymbol
       />
 
       <ManualPriceHistoryDialog
