@@ -7,14 +7,88 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { withAuth } from '../../../utils/withAuth.js';
 import { calculateAssetCurrentValue } from '../../../services/valuation.service.js';
 import { convertCurrency } from '../../../utils/currencyConversion.js';
+import {
+  classifyAssetClass,
+  normalizeEtfComposition,
+  lookThrough,
+  buildComposition,
+  buildFixedIncome,
+  bondCouponPct,
+  DIVERSIFIED,
+} from '@bliss/shared/portfolio';
 
-const VALID_GROUP_BY = ['sector', 'industry', 'country'];
+const VALID_GROUP_BY = ['sector', 'industry', 'country', 'assetClass'];
+const GROUPINGS = VALID_GROUP_BY;
 
 // ETFs (Passive Income #77): Twelve Data's profile sector/industry/country are
-// empty for US ETFs and misleading for UCITS ones, so ETFs are always bucketed
-// as "Diversified". Look-through by sector comes in #79.
-const DIVERSIFIED = 'Diversified';
+// empty for US ETFs and misleading for UCITS ones, so an ETF's own sector,
+// industry and country are always "Diversified". Since #79 the sector and
+// country views look through ETFs using SecurityMaster.etfComposition.
 const isEtf = (sm) => typeof sm?.assetType === 'string' && sm.assetType.trim().toUpperCase() === 'ETF';
+
+// Classes the shared look-through places by the holding's own sector/country
+// or splits; anything else in the equity list (e.g. a stock overridden to a
+// bond) is placed by its own attributes like OTHER.
+const LOOK_THROUGH_CLASSES = new Set(['STOCK', 'REIT', 'FUND', 'OTHER', 'INDEX_ETF', 'SECTOR_ETF', 'BOND_ETF']);
+
+const EQUITY_HINTS = ['API_STOCK', 'API_FUND'];
+const round2 = (n) => Math.round(n * 100) / 100;
+const toNum = (v) => (v == null ? null : parseFloat(v.toString()));
+
+/** Asset class input for the shared classifier. */
+function classifierInput(item, sm) {
+  return {
+    override: item.assetClassOverride,
+    processingHint: item.category?.processingHint,
+    defaultCategoryCode: item.category?.defaultCategoryCode,
+    categoryGroup: item.category?.group,
+    security: sm ? { assetType: sm.assetType, name: sm.name, composition: sm.etfComposition } : null,
+    incomeTerms: item.incomeTerms,
+  };
+}
+
+/** Convert a Decimal amount; falls back to the unconverted amount when no rate. */
+async function convert(amount, from, to) {
+  if (!from || from === to) return amount;
+  const converted = await convertCurrency(amount, from, to);
+  return converted || amount;
+}
+
+/** Group holdings for one dimension. Group holdings reference the merged rows. */
+function groupHoldings(holdings, dimension, totalEquityValue, enabled) {
+  let raw;
+  if (dimension === 'assetClass') {
+    const map = new Map();
+    holdings.forEach((h, index) => {
+      const g = map.get(h.assetClass) || { name: h.assetClass, value: 0, holdings: [] };
+      g.value += h.currentValue;
+      g.holdings.push({ index, value: h.currentValue });
+      map.set(h.assetClass, g);
+    });
+    raw = [...map.values()].sort((a, b) => b.value - a.value);
+  } else {
+    raw = lookThrough(
+      holdings.map((h) => ({
+        value: h.currentValue,
+        assetClass: LOOK_THROUGH_CLASSES.has(h.assetClass) ? h.assetClass : 'OTHER',
+        isEtf: h.assetType === 'ETF',
+        sector: h.sector,
+        industry: h.industry,
+        country: h.country,
+        composition: h.composition,
+      })),
+      dimension,
+      { enabled },
+    );
+  }
+  return raw.map((g) => ({
+    name: g.name,
+    totalValue: round2(g.value),
+    weight: totalEquityValue > 0 ? g.value / totalEquityValue : 0,
+    holdingsCount: g.holdings.length,
+    holdings: g.holdings.map(({ index }) => holdings[index]),
+  }));
+}
 
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
@@ -33,6 +107,7 @@ export default withAuth(async function handler(req, res) {
 
   try {
     const { groupBy = 'sector', accountId } = req.query;
+    const lookThroughEnabled = req.query.lookThrough !== 'false';
 
     if (!VALID_GROUP_BY.includes(groupBy)) {
       return res.status(StatusCodes.BAD_REQUEST).json({
@@ -47,16 +122,20 @@ export default withAuth(async function handler(req, res) {
     });
     const portfolioCurrency = tenant?.portfolioCurrency || 'USD';
 
-    // 1. Fetch stock and fund holdings (API_STOCK / API_FUND with positive
-    //    quantity). API_FUND items are kept below only when SecurityMaster
-    //    identifies them as ETFs.
-    const candidateItems = await prisma.portfolioItem.findMany({
+    // 1. Fetch every investment item with a positive quantity: stock and fund
+    //    holdings (API_STOCK / API_FUND) for the equity views, plus bonds, real
+    //    estate, crypto, … for the Portfolio composition and Fixed income cards
+    //    (#79). Cash (type Asset) and debt are excluded, matching net worth.
+    const investmentItems = await prisma.portfolioItem.findMany({
       where: {
         tenantId: req.user.tenantId,
         quantity: { gt: 0 },
         ...(accountId && { accountId: parseInt(accountId, 10) }),
         category: {
-          processingHint: { in: ['API_STOCK', 'API_FUND'] },
+          OR: [
+            { type: 'Investments' },
+            { processingHint: { in: EQUITY_HINTS } },
+          ],
         },
       },
       select: {
@@ -70,45 +149,50 @@ export default withAuth(async function handler(req, res) {
         costBasisInUSD: true,
         currentValueInUSD: true,
         source: true,
+        assetClassOverride: true,
         category: {
           select: {
             name: true,
             group: true,
+            type: true,
             processingHint: true,
+            defaultCategoryCode: true,
           },
         },
         incomeTerms: {
-          select: { incomeType: true, isDistributing: true, dividendPerUnit: true, currency: true },
+          select: {
+            incomeType: true,
+            isDistributing: true,
+            dividendPerUnit: true,
+            currency: true,
+            issuerType: true,
+            faceValuePerUnit: true,
+            couponRate: true,
+            spread: true,
+            assumedIndexRate: true,
+            maturityDate: true,
+          },
         },
       },
       orderBy: { symbol: 'asc' },
     });
+    const candidateItems = investmentItems.filter((item) => EQUITY_HINTS.includes(item.category?.processingHint));
 
-    // 2. Fetch SecurityMaster data for all candidate symbols
+    // 2. Fetch SecurityMaster data for all stock/fund symbols
     const candidateSymbols = [...new Set(candidateItems.map((item) => item.symbol))];
     const securityMasterRecords = candidateSymbols.length
       ? await prisma.securityMaster.findMany({ where: { symbol: { in: candidateSymbols } } })
       : [];
     const smMap = Object.fromEntries(securityMasterRecords.map((r) => [r.symbol, r]));
 
+    // API_FUND items are kept in the equity views only when SecurityMaster
+    // identifies them as ETFs.
     const stockItems = candidateItems.filter(
       (item) => item.category?.processingHint === 'API_STOCK' || isEtf(smMap[item.symbol]),
     );
 
-    if (stockItems.length === 0) {
-      return res.status(StatusCodes.OK).json({
-        portfolioCurrency,
-        summary: {
-          totalEquityValue: 0,
-          holdingsCount: 0,
-          weightedPeRatio: null,
-          weightedDividendYield: null,
-        },
-        groups: [],
-      });
-    }
-
     // 3. Enrich holdings with live prices and SecurityMaster data
+    const valueByItemId = new Map();
     const enrichedHoldings = await Promise.all(
       stockItems.map(async (item) => {
         const quantity = new Decimal(item.quantity || 0);
@@ -141,6 +225,10 @@ export default withAuth(async function handler(req, res) {
 
         const sm = smMap[item.symbol] || {};
         const etf = isEtf(sm);
+        const classInput = classifierInput(item, smMap[item.symbol]);
+        const { assetClass, source: assetClassSource } = classifyAssetClass(classInput);
+        const autoAssetClass = classifyAssetClass({ ...classInput, override: null }).assetClass;
+        const composition = etf ? normalizeEtfComposition(sm.etfComposition) : null;
 
         // Dividend yield, override-aware: a user dividend override
         // (IncomeTerms DIVIDEND with dividendPerUnit) replaces SecurityMaster;
@@ -162,12 +250,20 @@ export default withAuth(async function handler(req, res) {
           annualDividendUSD = parseFloat(sm.dividendYield.toString()) * valueUSD;
         }
 
+        const currentValue = parseFloat(marketValuePC.toString());
+        valueByItemId.set(item.id, currentValue);
+
         return {
+          id: item.id,
           symbol: item.symbol,
           name: sm.name || item.symbol,
           assetType: etf ? 'ETF' : 'STOCK',
+          assetClass,
+          assetClassSource,
+          autoAssetClass,
+          composition,
           quantity: parseFloat(quantity.toString()),
-          currentValue: parseFloat(marketValuePC.toString()),
+          currentValue,
           currentValueUSD: valueUSD,
           sector: etf ? DIVERSIFIED : (sm.sector || 'Unknown'),
           industry: etf ? DIVERSIFIED : (sm.industry || 'Unknown'),
@@ -195,14 +291,20 @@ export default withAuth(async function handler(req, res) {
 
     // 3b. Merge entries for the same symbol held across multiple accounts.
     //     SecurityMaster data (sector, P/E, etc.) is per-symbol so it is
-    //     identical across accounts — we just sum the financial values.
+    //     identical across accounts — we just sum the financial values. The
+    //     asset class override is set per symbol, so an OVERRIDE wins the merge.
     const symbolMap = new Map();
-    for (const h of enrichedHoldings) {
+    for (const { id, ...h } of enrichedHoldings) {
       if (symbolMap.has(h.symbol)) {
         const existing = symbolMap.get(h.symbol);
+        existing.itemIds.push(id);
         existing.quantity += h.quantity;
         existing.currentValue += h.currentValue;
         existing.currentValueUSD += h.currentValueUSD;
+        if (h.assetClassSource === 'OVERRIDE' && existing.assetClassSource !== 'OVERRIDE') {
+          existing.assetClass = h.assetClass;
+          existing.assetClassSource = h.assetClassSource;
+        }
         if (existing.annualDividendUSD != null || h.annualDividendUSD != null) {
           existing.annualDividendUSD = (existing.annualDividendUSD || 0) + (h.annualDividendUSD || 0);
           existing.dividendYield = existing.currentValueUSD > 0
@@ -210,7 +312,7 @@ export default withAuth(async function handler(req, res) {
             : null;
         }
       } else {
-        symbolMap.set(h.symbol, { ...h });
+        symbolMap.set(h.symbol, { ...h, itemIds: [id] });
       }
     }
     const mergedHoldings = [...symbolMap.values()].map(({ annualDividendUSD, ...h }) => ({
@@ -225,7 +327,7 @@ export default withAuth(async function handler(req, res) {
       h.weight = totalEquityValue > 0 ? h.currentValue / totalEquityValue : 0;
     }
 
-    // 5. Compute weighted P/E and dividend yield
+    // 5. Compute weighted P/E and dividend yield (unchanged by look-through)
     let weightedPeRatio = null;
     let weightedDividendYield = null;
 
@@ -247,35 +349,63 @@ export default withAuth(async function handler(req, res) {
       }
     }
 
-    // 6. Group by requested field
-    const groupMap = {};
-    for (const h of mergedHoldings) {
-      const key = h[groupBy] || 'Unknown';
-      if (!groupMap[key]) {
-        groupMap[key] = { name: key, totalValue: 0, holdingsCount: 0, holdings: [] };
-      }
-      groupMap[key].totalValue += h.currentValue;
-      groupMap[key].holdingsCount += 1;
-      groupMap[key].holdings.push(h);
-    }
+    // 6. Group by every dimension. Sector and country look through ETFs
+    //    (unless lookThrough=false); an ETF can then sit in several groups, so
+    //    the flat `holdings` list is the one to render rows from.
+    const groupings = Object.fromEntries(
+      GROUPINGS.map((dim) => [dim, groupHoldings(mergedHoldings, dim, totalEquityValue, lookThroughEnabled)]),
+    );
+    const holdings = [...mergedHoldings].sort((a, b) => b.currentValue - a.currentValue);
 
-    const groups = Object.values(groupMap)
-      .map((g) => ({
-        ...g,
-        weight: totalEquityValue > 0 ? g.totalValue / totalEquityValue : 0,
-        totalValue: Math.round(g.totalValue * 100) / 100,
-      }))
-      .sort((a, b) => b.totalValue - a.totalValue);
+    // 7. Portfolio composition and fixed income across every investment item
+    //    (#79). Equity holdings reuse their live values; everything else uses
+    //    the stored valuation.
+    const compositionItems = [];
+    const bonds = [];
+    for (const item of investmentItems) {
+      if (item.category?.processingHint === 'CASH') continue;
+      const { assetClass } = classifyAssetClass(classifierInput(item, smMap[item.symbol]));
+      let value = valueByItemId.get(item.id);
+      if (value == null) {
+        const converted = item.currentValueInUSD != null
+          ? await convert(new Decimal(item.currentValueInUSD), 'USD', portfolioCurrency)
+          : await convert(new Decimal(item.currentValue || 0), item.currency, portfolioCurrency);
+        value = toNum(converted) ?? 0;
+      }
+      compositionItems.push({ assetClass, value });
+
+      const terms = item.incomeTerms;
+      if ((assetClass === 'GOV_BOND' || assetClass === 'CORP_BOND') && terms?.faceValuePerUnit != null) {
+        const faceNative = new Decimal(terms.faceValuePerUnit).times(new Decimal(item.quantity || 0));
+        const face = toNum(await convert(faceNative, terms.currency || item.currency, portfolioCurrency));
+        bonds.push({
+          assetClass,
+          face,
+          couponPct: bondCouponPct({
+            incomeType: terms.incomeType,
+            couponRate: toNum(terms.couponRate),
+            spread: toNum(terms.spread),
+            assumedIndexRate: toNum(terms.assumedIndexRate),
+          }),
+          maturityDate: terms.maturityDate,
+        });
+      }
+    }
 
     res.status(StatusCodes.OK).json({
       portfolioCurrency,
+      lookThrough: lookThroughEnabled,
       summary: {
-        totalEquityValue: Math.round(totalEquityValue * 100) / 100,
+        totalEquityValue: round2(totalEquityValue),
         holdingsCount: mergedHoldings.length,
         weightedPeRatio,
         weightedDividendYield,
       },
-      groups,
+      groups: groupings[groupBy],
+      groupings,
+      holdings,
+      composition: buildComposition(compositionItems),
+      fixedIncome: buildFixedIncome(bonds),
     });
   } catch (error) {
     Sentry.captureException(error);

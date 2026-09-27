@@ -1,6 +1,7 @@
 const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
 const { Decimal } = require('@prisma/client/runtime/library');
+const { normalizeEtfComposition } = require('@bliss/shared/portfolio');
 
 /**
  * SecurityMaster service — CRUD operations and fundamental data computation.
@@ -88,6 +89,22 @@ async function upsertFromProfile(symbol, profileData) {
         update: data,
     });
     logger.info(`[SecurityMaster] Upserted profile for ${symbol} (exchange=${exchange})`);
+}
+
+/**
+ * Store an ETF's composition (Equity Analysis #79). Weights are stored as
+ * fractions (normalized by the shared module), `creditsUsed` is dropped.
+ * @param {string} symbol
+ * @param {{ sectors: Array, countries: Array, assetAllocation: Object }} composition
+ */
+async function upsertEtfComposition(symbol, composition) {
+    const normalized = normalizeEtfComposition(composition) || { sectors: [], countries: [], assetAllocation: {} };
+    const data = { etfComposition: normalized, lastCompositionUpdate: new Date() };
+    await prisma.securityMaster.upsert({
+        where: { symbol },
+        create: { symbol, ...data },
+        update: data,
+    });
 }
 
 /** Twelve Data /profile `type` for exchange-traded funds (confirmed by the #77 spike). */
@@ -409,6 +426,7 @@ module.exports = {
     getBySymbols,
     upsertFromProfile,
     upsertFundamentals,
+    upsertEtfComposition,
     getAllActiveSecuritySymbols,
     getTenantSecuritySymbols,
     getAllSecurityMasterSymbols,

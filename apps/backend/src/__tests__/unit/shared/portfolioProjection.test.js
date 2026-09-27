@@ -49,3 +49,45 @@ describe('@bliss/shared/portfolio (CJS build)', () => {
     expect(cjs.totals.next12mIncome).toBeGreaterThan(0);
   });
 });
+
+// Equity Analysis #79 — #80's insights require these from the CJS build.
+const CLASSIFY_FIXTURES = [
+  { processingHint: 'API_STOCK', security: { assetType: 'Common Stock' } },
+  { processingHint: 'API_STOCK', security: { assetType: 'REIT' } },
+  { processingHint: 'API_FUND', security: { assetType: 'ETF', composition: { sectors: [{ sector: 'Technology', weight: 0.5915 }] } } },
+  { processingHint: 'API_FUND', security: { assetType: 'ETF', name: 'Vanguard Total Bond Market' } },
+  { defaultCategoryCode: 'GOVERNMENT_BONDS', incomeTerms: { issuerType: 'CORPORATE' } },
+  { override: 'FUND', processingHint: 'API_STOCK' },
+];
+const LOOK_THROUGH_FIXTURE = [
+  { value: 1000, assetClass: 'INDEX_ETF', isEtf: true, composition: { sectors: [{ sector: 'Technology', weight: 0.5915 }] } },
+  { value: 500, assetClass: 'STOCK', sector: 'Consumer Defensive' },
+];
+
+describe('@bliss/shared/portfolio asset class helpers (CJS build)', () => {
+  it('exports the classifier, look-through and aggregation helpers', () => {
+    expect(shared.ASSET_CLASSES).toHaveLength(12);
+    for (const fn of ['classifyAssetClass', 'lookThrough', 'buildComposition', 'buildFixedIncome', 'normalizeEtfComposition']) {
+      expect(typeof shared[fn]).toBe('function');
+    }
+  });
+
+  it('classifies and looks through exactly like the ESM build', () => {
+    const cjs = {
+      classes: CLASSIFY_FIXTURES.map((f) => shared.classifyAssetClass(f)),
+      groups: shared.lookThrough(LOOK_THROUGH_FIXTURE, 'sector'),
+    };
+    const script = `import { classifyAssetClass, lookThrough } from '@bliss/shared/portfolio';
+      process.stdout.write(JSON.stringify({
+        classes: ${JSON.stringify(CLASSIFY_FIXTURES)}.map((f) => classifyAssetClass(f)),
+        groups: lookThrough(${JSON.stringify(LOOK_THROUGH_FIXTURE)}, 'sector'),
+      }));`;
+    const esm = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: __dirname,
+      encoding: 'utf8',
+    }));
+    expect(cjs).toEqual(esm);
+    expect(cjs.classes.map((c) => c.assetClass)).toEqual(['STOCK', 'REIT', 'INDEX_ETF', 'BOND_ETF', 'CORP_BOND', 'FUND']);
+    expect(cjs.groups.find((g) => g.name === 'Technology').value).toBeCloseTo(591.5);
+  });
+});

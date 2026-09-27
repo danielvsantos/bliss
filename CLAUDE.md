@@ -12,7 +12,7 @@ Monorepo with four services behind a single `.env` file:
 | `apps/backend` | Express + BullMQ | 3001 | **CJS** | Workers, async pipelines, internal API |
 | `apps/web` | React 18 + Vite | 8080 | ESM | SPA with shadcn/ui, TanStack Query, Tailwind, react-i18next (5 locales: en/es/fr/pt/it) |
 | `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
-| `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters, `portfolio` (passive income projection engine) |
+| `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters, `portfolio` (passive income projection engine, asset class classifier, ETF look-through) |
 
 **Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues.
 
@@ -95,10 +95,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 2,871 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 944 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,144 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 783 tests |
+| All | `pnpm test` | -- | 2,955 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 996 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,163 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 796 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -277,6 +277,14 @@ to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
 - **Terms survive re-keying**: before the rebuild prune in `process-portfolio-changes`, `income-terms-preserver.js` moves `IncomeTerms`/`DebtTerms` to a single clear new item (same category + same account or symbol) or **detaches** the IncomeTerms — never silently deletes them. Intentional deletions still cascade.
 - The Income Terms modal opens from Portfolio holdings rows, Asset Price Updates and the Passive Income page.
 
+### Equity Analysis: asset classes & ETF look-through
+
+`/reports/equity-analysis` groups stock + ETF holdings by sector, industry, country or **asset class**, and shows a **Portfolio composition** card (every investment by class, cash and debt excluded) and a **Fixed income** card (direct bonds with income terms). See [`docs/specs/api/06-portfolio-api.md`](docs/specs/api/06-portfolio-api.md#67-equity-analysis).
+
+- **One classifier**: `classifyAssetClass()` in **`@bliss/shared/portfolio`** (12 classes: STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER). The API uses it now and backend insights (#80) must `require` the same function — never re-derive classes locally.
+- **Override**: `PortfolioItem.assetClassOverride` (String, validated against `ASSET_CLASSES`, not an enum), set via `PUT /api/portfolio/items/:assetId/asset-class`; carried to the replacement item by `income-terms-preserver.js` on a re-keying rebuild.
+- **Look-through**: `lookThrough()` (shared) spreads each ETF across its sectors / countries by weight for the sector and country views (remainder → "Other", no data → "Diversified", bond ETFs → "Fixed Income"); industry is never looked through. `?lookThrough=false` restores the #77 buckets. Computed on read — no stored aggregates.
+
 ### Security master
 
 Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
@@ -284,6 +292,7 @@ Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
 - Profile, earnings, dividends, quote data (41 credits per stock; ETFs skip `/earnings` → 21 credits, and never store the profile's sector/industry/country — Equity Analysis shows them as "Diversified", P/E stays stock-only)
 - `recentDividends` (last-12-month ex-date + amount list) stored for the passive income replay
 - `refresh-tenant-securities` (deduplicated per tenant) fetches missing/stale symbols when a portfolio update creates new stock/ETF items (`newSecuritySymbols` on `PORTFOLIO_CHANGES_PROCESSED`) and as a step of Maintenance "Full rebuild"; Maintenance "Refresh my securities data" (`security-data` scope) forces it for all of the tenant's symbols
+- `etfComposition` (sector weights, country allocation, asset allocation from `/etfs/world/composition`, ~1 credit) refreshed weekly for ETFs inside `refreshSymbol()`; drives the asset class and look-through below
 - Computed fields: trailing EPS, P/E ratio, annualized dividend yield
 - Separate rate limiter: `FUNDAMENTALS_THROTTLE_MS` (~30 calls/min)
 - 7-day cache on profile data, checked before live API calls

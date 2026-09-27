@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from '@/lib/api';
 import React from 'react';
-import { useEquityAnalysis, EQUITY_ANALYSIS_QUERY_KEY } from './use-equity-analysis';
+import { useEquityAnalysis, useSetAssetClass, EQUITY_ANALYSIS_QUERY_KEY } from './use-equity-analysis';
 
 vi.mock('@/lib/api');
 
@@ -131,5 +131,56 @@ describe('useEquityAnalysis', () => {
     await queryClient.invalidateQueries({ queryKey: [EQUITY_ANALYSIS_QUERY_KEY] });
 
     await waitFor(() => expect(api.getEquityAnalysis).toHaveBeenCalledTimes(2));
+  });
+
+  it('uses the server groupings and flat holdings when present (#79)', async () => {
+    const qqq = { symbol: 'QQQ', currentValue: 1000 };
+    vi.mocked(api.getEquityAnalysis).mockResolvedValueOnce({
+      ...mockData,
+      holdings: [qqq],
+      groupings: {
+        sector: [{ name: 'Technology', totalValue: 591.5, weight: 0.59, holdingsCount: 1, holdings: [qqq] }],
+        assetClass: [{ name: 'INDEX_ETF', totalValue: 1000, weight: 1, holdingsCount: 1, holdings: [qqq] }],
+      },
+    } as unknown as Awaited<ReturnType<typeof api.getEquityAnalysis>>);
+
+    const { wrapper } = createWrapper();
+    const { result, rerender } = renderHook(({ groupBy }) => useEquityAnalysis(groupBy), {
+      wrapper, initialProps: { groupBy: 'sector' },
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.groups[0].name).toBe('Technology');
+    expect(result.current.data?.holdings).toHaveLength(1);
+
+    rerender({ groupBy: 'assetClass' });
+    await waitFor(() => expect(result.current.data?.groups[0].name).toBe('INDEX_ETF'));
+    expect(api.getEquityAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches separately with look-through off', async () => {
+    vi.mocked(api.getEquityAnalysis).mockResolvedValue(
+      mockData as unknown as Awaited<ReturnType<typeof api.getEquityAnalysis>>,
+    );
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useEquityAnalysis('sector', { lookThrough: false }), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getEquityAnalysis).toHaveBeenCalledWith({ groupBy: 'sector', lookThrough: false });
+  });
+});
+
+describe('useSetAssetClass', () => {
+  it('saves the override for the symbol and invalidates equity analysis', async () => {
+    vi.mocked(api.setAssetClass).mockResolvedValueOnce({
+      assetClass: 'FUND', assetClassSource: 'OVERRIDE', autoAssetClass: 'STOCK', updatedCount: 2,
+    });
+    const { wrapper, queryClient } = createWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useSetAssetClass(), { wrapper });
+
+    result.current.mutate({ portfolioItemId: 7, assetClass: 'FUND' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.setAssetClass).toHaveBeenCalledWith(7, 'FUND', { applyToSymbol: true });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: [EQUITY_ANALYSIS_QUERY_KEY] });
   });
 });

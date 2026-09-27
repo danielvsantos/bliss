@@ -9,7 +9,8 @@ The Portfolio API is divided into four main endpoints, each serving a distinct p
 -   **`GET /api/portfolio/items`**: Fetches the current, real-time state of all portfolio items.
 -   **`GET /api/portfolio/holdings`**: Retrieves historical, daily snapshots of portfolio holdings.
 -   **`GET /api/portfolio/history`**: Provides aggregated historical data for performance charting.
--   **`GET /api/portfolio/equity-analysis`**: Returns stock holdings grouped by sector, industry, or country, enriched with SecurityMaster fundamentals.
+-   **`GET /api/portfolio/equity-analysis`**: Returns stock and ETF holdings grouped by sector, industry, country or asset class (sector/country look through ETFs), enriched with SecurityMaster fundamentals, plus the Portfolio composition by asset class and the Fixed income summary.
+-   **`PUT /api/portfolio/items/{assetId}/asset-class`**: Sets or clears a holding's asset class override.
 
 All endpoints are authenticated and tenant-aware.
 
@@ -218,12 +219,25 @@ Provides a breakdown of the user's stock holdings grouped by a configurable dime
 
 | Parameter   | Type     | Description                                        | Default  |
 |-------------|----------|----------------------------------------------------|----------|
-| `groupBy`   | `string` | Grouping dimension: `sector`, `industry`, or `country`. | `sector` |
-| `accountId` | `number` | Restricts analysis to a single brokerage account.  |          |
+| `groupBy`     | `string` | Grouping returned in `groups`: `sector`, `industry`, `country`, or `assetClass`. | `sector` |
+| `lookThrough` | `string` | `false` shows every ETF as one `Diversified` bucket (pre-#79 behaviour). | `true` |
+| `accountId`   | `number` | Restricts analysis to a single brokerage account.  |          |
 
-- **Response**: `{ portfolioCurrency, summary: { totalEquityValue, holdingsCount, weightedPeRatio, weightedDividendYield }, groups: [...] }`. Each group contains `name`, `totalValue`, `holdingsCount`, `weight`, and an array of enriched `holdings` with per-stock metrics.
-- **Scope**: Only `API_STOCK` items with positive quantity are included. Funds, crypto, and manual assets are excluded.
-- **Cross-account dedup**: When the same ticker is held in multiple brokerage accounts, the API merges those rows by symbol before grouping — quantities and market values are summed. SecurityMaster data (sector, P/E, etc.) is per-symbol and is therefore identical across accounts. This ensures each ticker appears exactly once in the response regardless of how many accounts hold it.
+- **Response**: `{ portfolioCurrency, lookThrough, summary: { totalEquityValue, holdingsCount, weightedPeRatio, weightedDividendYield }, groups, groupings: { sector, industry, country, assetClass }, holdings, composition, fixedIncome }`.
+  - Each group contains `name`, `totalValue`, `holdingsCount`, `weight`, and the `holdings` contributing to it. `groupings` carries every dimension so the client switches tabs without refetching.
+  - `holdings` lists every equity holding **once** (largest first) — render rows from it, because with look-through an ETF sits in several groups. Each holding carries `assetClass`, `assetClassSource` (`OVERRIDE` | `AUTO`), `autoAssetClass`, `itemIds` (merged portfolio item ids) and, for ETFs, the normalized `composition`.
+  - `composition`: `[{ assetClass, value, percent (0–100), count }]` across **every** investment item with a positive quantity (stocks, ETFs, funds, bonds, real estate, crypto, …; cash and debt excluded, matching net worth). Equity holdings use their live value; everything else the stored valuation converted to the portfolio currency.
+  - `fixedIncome`: `{ totalFace, weightedCouponPct, avgYearsToMaturity, governmentPct, corporatePct, count }` over `GOV_BOND` / `CORP_BOND` items with `IncomeTerms.faceValuePerUnit`, face-weighted; `null` without bonds.
+- **Scope (equity views)**: `API_STOCK` items plus `API_FUND` items that SecurityMaster identifies as ETFs, with positive quantity. Mutual funds, crypto and manual assets are excluded from the equity views (they still count in `composition`).
+- **Asset classes (#79)**: every item is classified by the shared `classifyAssetClass()` in `@bliss/shared/portfolio` — the same function the backend uses — so the API and insights never disagree. Order (first match wins): user override → bond issuer type from `IncomeTerms` / government or corporate bond category → real estate, crypto, cash categories → SecurityMaster `REIT` → SecurityMaster `ETF` (`BOND_ETF` when composition bonds ≥ 50% or, without composition, a bond-like name; `SECTOR_ETF` when the largest sector ≥ 75%; else `INDEX_ETF`) → `API_STOCK` → `STOCK` → `API_FUND` → `FUND` → `OTHER`. Commodities (API_STOCK hint) are `OTHER`.
+- **ETF look-through (#79)**: for `sector` and `country`, `lookThrough()` from `@bliss/shared/portfolio` spreads each `INDEX_ETF` / `SECTOR_ETF` value by its `SecurityMaster.etfComposition` weights; `1 − Σweights` goes to `Other`. No composition (or an empty country list, e.g. QQQ) → `Diversified`. Bond ETFs go to `Fixed Income` so they never inflate an equity sector. `industry` is never looked through. Weighted P/E and dividend yield are unchanged.
+- **Cross-account dedup**: When the same ticker is held in multiple brokerage accounts, the API merges those rows by symbol before grouping — quantities and market values are summed. SecurityMaster data (sector, P/E, etc.) is per-symbol and is therefore identical across accounts. An `OVERRIDE` asset class wins the merge. This ensures each ticker appears exactly once in `holdings` regardless of how many accounts hold it.
+
+### `PUT /api/portfolio/items/{assetId}/asset-class`
+
+- **Responsibility**: Sets or clears (`assetClass: null`) `PortfolioItem.assetClassOverride` (#79). Validated against `ASSET_CLASSES`; the item must belong to the tenant (404 otherwise). `applyToSymbol: true` updates every holding of the same symbol in the tenant (the web always sends it, since Equity Analysis merges them).
+- **Response**: `{ assetClass, assetClassSource, autoAssetClass, updatedCount }`.
+- **No background job**: Equity Analysis classifies on read. A portfolio rebuild that re-keys the item carries the override to the replacement (`income-terms-preserver.js`).
 
 ---
 

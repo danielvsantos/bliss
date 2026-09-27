@@ -12,9 +12,12 @@ const {
     getEarnings,
     getDividends,
     getLatestPrice,
+    getEtfComposition,
 } = require('../services/twelveDataService');
 
 const PROFILE_STALE_DAYS = 7;
+/** ETF composition (#79) is refreshed on the same weekly cadence as the profile. */
+const COMPOSITION_STALE_DAYS = 7;
 
 /**
  * Credit budget math (Twelve Data Grow plan):
@@ -22,6 +25,7 @@ const PROFILE_STALE_DAYS = 7;
  *   Per symbol (with profile): 10 + 1 + 10 + 20 = 41 credits
  *   Per symbol (no profile):   1 + 10 + 20 = 31 credits
  *   Per ETF: /earnings is skipped (meaningless EPS for funds) → 21 credits (+10 profile)
+ *            + /etfs/world/composition weekly (~1 credit, logged on each fetch — #79)
  *   Safe throughput: ~9 symbols/min → ~6.7s per symbol
  *
  * We enforce this by:
@@ -59,6 +63,33 @@ function isLikelyMicCode(exchange) {
 }
 
 /**
+ * Fetch and store an ETF's composition when it is missing or older than
+ * COMPOSITION_STALE_DAYS. Returns true when a new composition was stored.
+ * @param {string} symbol
+ * @param {Object|null|undefined} existing Stored SecurityMaster row (undefined = not read yet)
+ * @param {Object} micOpts
+ */
+async function refreshEtfComposition(symbol, existing, micOpts) {
+    try {
+        if (existing === undefined) existing = await securityMasterService.getBySymbol(symbol);
+        const last = existing?.lastCompositionUpdate ? new Date(existing.lastCompositionUpdate).getTime() : 0;
+        if (last && (Date.now() - last) <= COMPOSITION_STALE_DAYS * 86400000) return false;
+
+        const composition = await getEtfComposition(symbol, micOpts);
+        if (!composition) {
+            logger.warn(`[SecurityMaster] No ETF composition for ${symbol} — keeping the previous value`);
+            return false;
+        }
+        await securityMasterService.upsertEtfComposition(symbol, composition);
+        logger.info(`[SecurityMaster] Stored ETF composition for ${symbol}`, { creditsUsed: composition.creditsUsed ?? null });
+        return true;
+    } catch (error) {
+        logger.error(`[SecurityMaster] Error refreshing ETF composition for ${symbol}`, { error: error.message });
+        return false;
+    }
+}
+
+/**
  * Refresh fundamentals (and optionally profile) for a single symbol.
  * All API calls run SEQUENTIALLY to respect the shared credit budget.
  * @param {string} symbol Ticker symbol
@@ -82,9 +113,11 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
     // Asset type decides whether /earnings is called (ETFs skip it). Taken from
     // the stored row, then overridden by a fresh profile below.
     let assetType = null;
+    // Stored row (undefined = not read yet). Also used for composition staleness.
+    let existing;
     if (!forceProfile) {
         try {
-            const existing = await securityMasterService.getBySymbol(symbol);
+            existing = await securityMasterService.getBySymbol(symbol);
             assetType = existing?.assetType || null;
             if (!existing || !existing.lastProfileUpdate ||
                 (Date.now() - existing.lastProfileUpdate.getTime()) > PROFILE_STALE_DAYS * 86400000) {
@@ -145,7 +178,7 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         // Forced profile failed — fall back to the stored type so an ETF still
         // skips /earnings.
         try {
-            const existing = await securityMasterService.getBySymbol(symbol);
+            existing = await securityMasterService.getBySymbol(symbol);
             assetType = existing?.assetType || null;
         } catch {
             // Non-fatal: earnings will be fetched as for a stock.
@@ -180,6 +213,12 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
             scope.setExtra('symbol', symbol);
             Sentry.captureException(error);
         });
+    }
+
+    // ETF composition (#79) — weekly, ~1 credit. Isolated: a failure keeps the
+    // previous composition and never fails the symbol.
+    if (isEtf) {
+        result.composition = await refreshEtfComposition(symbol, existing, micOpts);
     }
 
     // Preserve the legacy `error` field for callers that still use it.
@@ -395,4 +434,4 @@ const startSecurityMasterWorker = () => {
     return worker;
 };
 
-module.exports = { startSecurityMasterWorker, processSecurityMasterJob, refreshSymbol };
+module.exports = { startSecurityMasterWorker, processSecurityMasterJob, refreshSymbol, COMPOSITION_STALE_DAYS };

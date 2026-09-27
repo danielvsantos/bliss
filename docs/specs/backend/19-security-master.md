@@ -16,7 +16,9 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 
 **NOT available on our plan**: `/statistics` (50 credits, requires higher plan). P/E ratio and dividend yield are computed from earnings + dividends + quote data.
 
-**Cost per symbol (nightly refresh)**: stock 1 + 20 + 20 = **41 credits**, ETF 1 + 20 = **21 credits** (no `/earnings`); +10 when the weekly profile refresh is due.
+- Twelve Data `/etfs/world/composition` (ETFs only, weekly, #79) — sector weights, country allocation, asset allocation (`top_holdings` dropped). Estimated ~1 credit; each fetch logs the `api-credits-used` header to confirm it.
+
+**Cost per symbol (nightly refresh)**: stock 1 + 20 + 20 = **41 credits**, ETF 1 + 20 = **21 credits** (no `/earnings`); +10 when the weekly profile refresh is due; ETFs +~1 when the weekly composition refresh is due.
 
 ## 19.2. SecurityMaster Service
 
@@ -30,6 +32,7 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 | `getBySymbols(symbols)` | Fetch multiple records by symbol array |
 | `upsertFromProfile(symbol, profileData)` | Upsert profile fields + `lastProfileUpdate` |
 | `upsertFundamentals(symbol, { earnings, dividends, quote })` | Compute and upsert fundamental fields |
+| `upsertEtfComposition(symbol, composition)` | Store `etfComposition` (normalized to fractions by `normalizeEtfComposition` from `@bliss/shared/portfolio`) + `lastCompositionUpdate` (#79) |
 | `getAllActiveSecuritySymbols()` | Distinct `{ symbol, exchange }` pairs from PortfolioItem with `quantity > 0`: `API_STOCK`, plus `API_FUND` whose SecurityMaster `assetType` is `ETF` or which has no row yet (replaced `getAllActiveStockSymbols` in #77) |
 | `getTenantSecuritySymbols(tenantId, { force, staleDays = 7 })` | Same selection for one tenant. `force: false` keeps only symbols with no row or `lastFundamentalsUpdate` older than `staleDays` |
 | `isEtfAssetType(type)` | `true` for the Twelve Data profile type `ETF` |
@@ -268,3 +271,13 @@ A new admin endpoint, `POST /api/admin/refresh-fundamentals`, proxies to the exi
   - The same event carrying `_rebuildMeta.rebuildType = 'full-portfolio'` → `force: false` + `_rebuildMeta`, shown as the "Refresh securities data" step in Maintenance history.
   - `MANUAL_REBUILD_REQUESTED` scope `security-data` → `force: true` + `_rebuildMeta`. `refresh-tenant-securities` is that scope's terminal job (`utils/rebuildLock.js`); the worker's `completed` handler releases the lock.
 - The rebuild status endpoint also reads the `security-master` queue so these jobs appear under "Recent rebuilds".
+
+## 19.13. ETF composition (#79)
+
+- **Fetch**: `twelveDataService.getEtfComposition(symbol, { micCode })` → `GET /etfs/world/composition`, on the fundamentals throttle slot. Maps `major_market_sectors` → `sectors: [{ sector, weight }]`, `country_allocation` → `countries: [{ country, weight }]`, `asset_allocation` → `assetAllocation`, plus `creditsUsed` from the response header (logged, not stored). Returns `null` on an error payload, an empty payload, a network error or a missing API key.
+- **When**: inside `refreshSymbol()`, after fundamentals, only when the symbol is an ETF and `lastCompositionUpdate` is missing or older than `COMPOSITION_STALE_DAYS` (7, same cadence as the profile). The stored row is read for the staleness check even on a forced profile refresh. Both `refresh-all-fundamentals` and `refresh-tenant-securities` pick it up; no new job or cron.
+- **Failure isolation**: a fetch or storage failure is logged and skipped (`result.composition = false`); the previous composition is kept and the symbol's fundamentals result is unaffected.
+- **Storage**: `SecurityMaster.etfComposition` (JSONB, fractions) + `lastCompositionUpdate`, added by the hand-written migration `20260928120000_asset_class_override_etf_composition` (apply with `prisma migrate deploy`).
+- **Consumers**: `classifyAssetClass()` (BOND_ETF when bonds ≥ 50%, SECTOR_ETF when the largest sector ≥ 75%) and `lookThrough()` in `@bliss/shared/portfolio`, used by Equity Analysis (API) and, from #80, the insights pipeline. An ETF with no composition yet stays "Diversified".
+- **Rollout**: after deploy, run the global "Refresh fundamentals" once (or wait for the nightly job) so every ETF gets its composition, and check the `creditsUsed` log lines to confirm the per-call cost.
+

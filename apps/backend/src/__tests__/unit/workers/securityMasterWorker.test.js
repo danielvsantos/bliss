@@ -46,10 +46,12 @@ const mockUpsertFundamentals = jest.fn();
 const mockGetAllActiveSecuritySymbols = jest.fn();
 const mockGetAllSecurityMasterSymbols = jest.fn();
 const mockGetTenantSecuritySymbols = jest.fn();
+const mockUpsertEtfComposition = jest.fn();
 jest.mock('../../../services/securityMasterService', () => ({
   getBySymbol: (...args) => mockGetBySymbol(...args),
   upsertFromProfile: (...args) => mockUpsertFromProfile(...args),
   upsertFundamentals: (...args) => mockUpsertFundamentals(...args),
+  upsertEtfComposition: (...args) => mockUpsertEtfComposition(...args),
   getAllActiveSecuritySymbols: (...args) => mockGetAllActiveSecuritySymbols(...args),
   getTenantSecuritySymbols: (...args) => mockGetTenantSecuritySymbols(...args),
   getAllSecurityMasterSymbols: (...args) => mockGetAllSecurityMasterSymbols(...args),
@@ -65,7 +67,9 @@ const mockGetSymbolProfile = jest.fn();
 const mockGetEarnings = jest.fn();
 const mockGetDividends = jest.fn();
 const mockGetLatestPrice = jest.fn();
+const mockGetEtfComposition = jest.fn();
 jest.mock('../../../services/twelveDataService', () => ({
+  getEtfComposition: (...args) => mockGetEtfComposition(...args),
   getSymbolProfile: (...args) => mockGetSymbolProfile(...args),
   getEarnings: (...args) => mockGetEarnings(...args),
   getDividends: (...args) => mockGetDividends(...args),
@@ -97,7 +101,16 @@ function setupSuccessfulApis() {
   mockGetEarnings.mockResolvedValue({ eps: 6.5 });
   mockGetDividends.mockResolvedValue({ amount: 0.82 });
   mockUpsertFundamentals.mockResolvedValue(undefined);
+  mockGetEtfComposition.mockResolvedValue(QQQ_COMPOSITION);
+  mockUpsertEtfComposition.mockResolvedValue(undefined);
 }
+
+const QQQ_COMPOSITION = {
+  sectors: [{ sector: 'Technology', weight: 0.5915 }, { sector: 'Communication Services', weight: 0.1 }],
+  countries: [],
+  assetAllocation: { stocks: 0.9995, cash: 0.0005, bonds: 0 },
+  creditsUsed: 1,
+};
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -249,6 +262,71 @@ describe('securityMasterWorker', () => {
 
       // Sentry captured the profile failure with phase tag
       expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('ETF composition (#79)', () => {
+    const DAY = 86400000;
+
+    it('fetches and stores the composition for an ETF with none yet', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: null });
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'QQQ', exchange: 'XNAS' }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockGetEtfComposition).toHaveBeenCalledWith('QQQ', { micCode: 'XNAS' });
+      expect(mockUpsertEtfComposition).toHaveBeenCalledWith('QQQ', QQQ_COMPOSITION);
+    });
+
+    it('refetches when the stored composition is older than 7 days', async () => {
+      mockGetBySymbol.mockResolvedValue({
+        assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: new Date(Date.now() - 8 * DAY),
+      });
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'QQQ', exchange: null }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockGetEtfComposition).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a fresh composition', async () => {
+      mockGetBySymbol.mockResolvedValue({
+        assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: new Date(Date.now() - 2 * DAY),
+      });
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'QQQ', exchange: null }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockGetEtfComposition).not.toHaveBeenCalled();
+    });
+
+    it('never fetches composition for a stock', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'Common Stock', lastProfileUpdate: new Date() });
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'KO', exchange: null }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockGetEtfComposition).not.toHaveBeenCalled();
+    });
+
+    it('keeps the previous composition when the fetch fails, without failing the symbol', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: null });
+      mockGetEtfComposition.mockResolvedValue(null);
+      mockGetSymbolProfile.mockResolvedValue({ name: 'Invesco QQQ', type: 'ETF' });
+      const result = await workerCallback(makeJob('refresh-single-symbol', { symbol: 'QQQ' }));
+      expect(mockUpsertEtfComposition).not.toHaveBeenCalled();
+      expect(result.composition).toBe(false);
+      expect(result.success).toBe(true);
+    });
+
+    it('reads the stored row on a forced profile refresh to check staleness', async () => {
+      mockGetSymbolProfile.mockResolvedValue({ name: 'Invesco QQQ', type: 'ETF', micCode: 'XNAS' });
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastCompositionUpdate: new Date() });
+      const result = await workerCallback(makeJob('refresh-single-symbol', { symbol: 'QQQ' }));
+      expect(mockGetBySymbol).toHaveBeenCalledWith('QQQ');
+      expect(mockGetEtfComposition).not.toHaveBeenCalled();
+      expect(result.composition).toBe(false);
+    });
+
+    it('logs and swallows a storage error', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: null });
+      mockUpsertEtfComposition.mockRejectedValue(new Error('db down'));
+      mockGetSymbolProfile.mockResolvedValue({ name: 'Invesco QQQ', type: 'ETF' });
+      const result = await workerCallback(makeJob('refresh-single-symbol', { symbol: 'QQQ' }));
+      expect(result.composition).toBe(false);
+      expect(result.success).toBe(true);
     });
   });
 
