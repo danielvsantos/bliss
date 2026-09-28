@@ -66,6 +66,21 @@ const examples = {
     },
   },
 
+  PASSIVE_INCOME_OUTLOOK: {
+    lens: 'PASSIVE_INCOME_OUTLOOK',
+    title: 'Passive Income Crossed Half of Essentials in 2026',
+    body: "Projected passive income for the next 12 months is $21,600 gross — $19,800 from dividends, coupons and rent, and $1,800 from a state pension — up from $18,900 received over the last 12 months. That covers 52% of the $41,500 of essential spending, crossing the 50% milestone (it was 46% a year ago). The rental flat is the largest source at 38%. Three holdings (VWCE, MSFT, Tesouro 2035) have no income terms yet, so the figure is incomplete.",
+    severity: 'POSITIVE',
+    priority: 70,
+    category: 'INCOME',
+    metadata: {
+      dataPoints: { current: 52, prior: 46, yoy: null, deltaPct: 14.3 },
+      actionTypes: ['PASSIVE_INCOME_SETUP'],
+      relatedLenses: ['INCOME_DIVERSIFICATION', 'SAVINGS_RATE'],
+      suggestedAction: 'Add income terms for VWCE, MSFT and Tesouro 2035 to complete the projection.',
+    },
+  },
+
   SAVINGS_RATE: {
     lens: 'SAVINGS_RATE',
     title: 'Savings Rate Climbed to 18% — Best Year on Record',

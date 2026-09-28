@@ -11,9 +11,6 @@ import {
   classifyAssetClass,
   normalizeEtfComposition,
   lookThrough,
-  buildComposition,
-  buildFixedIncome,
-  bondCouponPct,
   DIVERSIFIED,
 } from '@bliss/shared/portfolio';
 
@@ -33,7 +30,6 @@ const LOOK_THROUGH_CLASSES = new Set(['STOCK', 'REIT', 'FUND', 'OTHER', 'INDEX_E
 
 const EQUITY_HINTS = ['API_STOCK', 'API_FUND'];
 const round2 = (n) => Math.round(n * 100) / 100;
-const toNum = (v) => (v == null ? null : parseFloat(v.toString()));
 
 /** Asset class input for the shared classifier. */
 function classifierInput(item, sm) {
@@ -45,13 +41,6 @@ function classifierInput(item, sm) {
     security: sm ? { assetType: sm.assetType, name: sm.name, composition: sm.etfComposition } : null,
     incomeTerms: item.incomeTerms,
   };
-}
-
-/** Convert a Decimal amount; falls back to the unconverted amount when no rate. */
-async function convert(amount, from, to) {
-  if (!from || from === to) return amount;
-  const converted = await convertCurrency(amount, from, to);
-  return converted || amount;
 }
 
 /** Group holdings for one dimension. Group holdings reference the merged rows. */
@@ -122,20 +111,16 @@ export default withAuth(async function handler(req, res) {
     });
     const portfolioCurrency = tenant?.portfolioCurrency || 'USD';
 
-    // 1. Fetch every investment item with a positive quantity: stock and fund
-    //    holdings (API_STOCK / API_FUND) for the equity views, plus bonds, real
-    //    estate, crypto, … for the Portfolio composition and Fixed income cards
-    //    (#79). Cash (type Asset) and debt are excluded, matching net worth.
-    const investmentItems = await prisma.portfolioItem.findMany({
+    // 1. Fetch stock and fund holdings (API_STOCK / API_FUND with positive
+    //    quantity). API_FUND items are kept below only when SecurityMaster
+    //    identifies them as ETFs.
+    const candidateItems = await prisma.portfolioItem.findMany({
       where: {
         tenantId: req.user.tenantId,
         quantity: { gt: 0 },
         ...(accountId && { accountId: parseInt(accountId, 10) }),
         category: {
-          OR: [
-            { type: 'Investments' },
-            { processingHint: { in: EQUITY_HINTS } },
-          ],
+          processingHint: { in: EQUITY_HINTS },
         },
       },
       select: {
@@ -154,7 +139,6 @@ export default withAuth(async function handler(req, res) {
           select: {
             name: true,
             group: true,
-            type: true,
             processingHint: true,
             defaultCategoryCode: true,
           },
@@ -166,17 +150,11 @@ export default withAuth(async function handler(req, res) {
             dividendPerUnit: true,
             currency: true,
             issuerType: true,
-            faceValuePerUnit: true,
-            couponRate: true,
-            spread: true,
-            assumedIndexRate: true,
-            maturityDate: true,
           },
         },
       },
       orderBy: { symbol: 'asc' },
     });
-    const candidateItems = investmentItems.filter((item) => EQUITY_HINTS.includes(item.category?.processingHint));
 
     // 2. Fetch SecurityMaster data for all stock/fund symbols
     const candidateSymbols = [...new Set(candidateItems.map((item) => item.symbol))];
@@ -192,7 +170,6 @@ export default withAuth(async function handler(req, res) {
     );
 
     // 3. Enrich holdings with live prices and SecurityMaster data
-    const valueByItemId = new Map();
     const enrichedHoldings = await Promise.all(
       stockItems.map(async (item) => {
         const quantity = new Decimal(item.quantity || 0);
@@ -251,7 +228,6 @@ export default withAuth(async function handler(req, res) {
         }
 
         const currentValue = parseFloat(marketValuePC.toString());
-        valueByItemId.set(item.id, currentValue);
 
         return {
           id: item.id,
@@ -357,41 +333,6 @@ export default withAuth(async function handler(req, res) {
     );
     const holdings = [...mergedHoldings].sort((a, b) => b.currentValue - a.currentValue);
 
-    // 7. Portfolio composition and fixed income across every investment item
-    //    (#79). Equity holdings reuse their live values; everything else uses
-    //    the stored valuation.
-    const compositionItems = [];
-    const bonds = [];
-    for (const item of investmentItems) {
-      if (item.category?.processingHint === 'CASH') continue;
-      const { assetClass } = classifyAssetClass(classifierInput(item, smMap[item.symbol]));
-      let value = valueByItemId.get(item.id);
-      if (value == null) {
-        const converted = item.currentValueInUSD != null
-          ? await convert(new Decimal(item.currentValueInUSD), 'USD', portfolioCurrency)
-          : await convert(new Decimal(item.currentValue || 0), item.currency, portfolioCurrency);
-        value = toNum(converted) ?? 0;
-      }
-      compositionItems.push({ assetClass, value });
-
-      const terms = item.incomeTerms;
-      if ((assetClass === 'GOV_BOND' || assetClass === 'CORP_BOND') && terms?.faceValuePerUnit != null) {
-        const faceNative = new Decimal(terms.faceValuePerUnit).times(new Decimal(item.quantity || 0));
-        const face = toNum(await convert(faceNative, terms.currency || item.currency, portfolioCurrency));
-        bonds.push({
-          assetClass,
-          face,
-          couponPct: bondCouponPct({
-            incomeType: terms.incomeType,
-            couponRate: toNum(terms.couponRate),
-            spread: toNum(terms.spread),
-            assumedIndexRate: toNum(terms.assumedIndexRate),
-          }),
-          maturityDate: terms.maturityDate,
-        });
-      }
-    }
-
     res.status(StatusCodes.OK).json({
       portfolioCurrency,
       lookThrough: lookThroughEnabled,
@@ -410,8 +351,6 @@ export default withAuth(async function handler(req, res) {
       groups: groupings[groupBy],
       groupings,
       holdings,
-      composition: buildComposition(compositionItems),
-      fixedIncome: buildFixedIncome(bonds),
     });
   } catch (error) {
     Sentry.captureException(error);

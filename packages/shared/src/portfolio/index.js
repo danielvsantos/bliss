@@ -25,6 +25,8 @@
 // Asset classes & ETF look-through (Equity Analysis #79).
 export * from './assetClass.js';
 export * from './lookThrough.js';
+// Insights summary of a projection (#80).
+export * from './summarize.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

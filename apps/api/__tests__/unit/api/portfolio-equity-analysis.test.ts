@@ -392,15 +392,6 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
     category: { name: 'Stocks', group: 'Stocks', type: 'Investments', processingHint: 'API_STOCK', defaultCategoryCode: 'STOCKS' } };
   const qqq = { ...base, id: 2, symbol: 'QQQ', currentValue: new Decimal(1500), currentValueInUSD: new Decimal(1500),
     category: { name: 'ETFs', group: 'ETFs', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' } };
-  const bond = { ...base, id: 3, symbol: 'Bonds - Tesouro 2035', source: 'MANUAL', quantity: new Decimal(2),
-    currentValue: new Decimal(2100), currentValueInUSD: new Decimal(2000),
-    category: { name: 'Government Bonds', group: 'Bonds', type: 'Investments', processingHint: 'MANUAL', defaultCategoryCode: 'GOVERNMENT_BONDS' },
-    incomeTerms: { incomeType: 'FIXED_COUPON', issuerType: 'GOVERNMENT', faceValuePerUnit: new Decimal(1000),
-      couponRate: new Decimal(6), spread: null, assumedIndexRate: null, maturityDate: new Date('2035-01-01'), currency: 'USD' } };
-  const house = { ...base, id: 4, symbol: 'Real Estate - Flat', source: 'MANUAL', quantity: new Decimal(1),
-    currentValue: new Decimal(0), currentValueInUSD: null,
-    category: { name: 'Real Estate', group: 'Real Estate', type: 'Investments', processingHint: 'MANUAL', defaultCategoryCode: 'REAL_ESTATE' } };
-  const houseWithValue = { ...house, currentValue: new Decimal(5000), currency: 'EUR' };
 
   const koSm = { symbol: 'KO', name: 'Coca-Cola', sector: 'Consumer Defensive', industry: 'Beverages', country: 'United States',
     assetType: 'Common Stock', peRatio: new Decimal(25), earningsTrusted: true, dividendTrusted: false };
@@ -416,12 +407,10 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
   }
   const values = (groups: any[]) => Object.fromEntries(groups.map((g) => [g.name, g.totalValue]));
 
-  it('queries all investment items (cash & debt excluded) plus stock/fund holdings', async () => {
+  it('queries only stock/fund holdings', async () => {
     await run();
     const { where, select } = mockPrisma.portfolioItem.findMany.mock.calls[0][0];
-    expect(where.category).toEqual({
-      OR: [{ type: 'Investments' }, { processingHint: { in: ['API_STOCK', 'API_FUND'] } }],
-    });
+    expect(where.category).toEqual({ processingHint: { in: ['API_STOCK', 'API_FUND'] } });
     expect(where.tenantId).toBe('test-tenant-123');
     expect(select.assetClassOverride).toBe(true);
     expect(select.incomeTerms.select.issuerType).toBe(true);
@@ -484,27 +473,10 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
     expect(values(res._body.groups)).toEqual({ STOCK: 1500, INDEX_ETF: 1500 });
   });
 
-  it('builds the composition across all investments and the fixed income card', async () => {
-    const res = await run({}, [ko, qqq, bond, house]);
-    expect(res._body.summary.holdingsCount).toBe(2); // bonds / real estate never enter the equity views
-    const comp = Object.fromEntries(res._body.composition.map((r: any) => [r.assetClass, r]));
-    expect(comp.GOV_BOND).toMatchObject({ value: 2000, count: 1 });
-    expect(comp.STOCK.value).toBe(1500);
-    expect(comp.INDEX_ETF.value).toBe(1500);
-    expect(comp.REAL_ESTATE).toBeUndefined(); // zero value
-    expect(comp.GOV_BOND.percent).toBe(40);
-    expect(res._body.fixedIncome).toMatchObject({
-      totalFace: 2000, weightedCouponPct: 6, governmentPct: 100, corporatePct: 0, count: 1,
-    });
-    expect(res._body.fixedIncome.avgYearsToMaturity).toBeGreaterThan(0);
-  });
-
-  it('falls back to the native value (converted) when the USD value is missing', async () => {
-    const res = await run({}, [houseWithValue], []);
-    expect(res._body.composition).toEqual([{ assetClass: 'REAL_ESTATE', value: 5000, percent: 100, count: 1 }]);
-    expect(res._body.fixedIncome).toBeNull();
-    expect(res._body.groups).toEqual([]);
-    expect(res._body.summary.totalEquityValue).toBe(0);
+  it('returns only equity data (no portfolio composition or fixed income)', async () => {
+    const res = await run();
+    expect(res._body).not.toHaveProperty('composition');
+    expect(res._body).not.toHaveProperty('fixedIncome');
   });
 
   it('honours an asset class override and lets it win the same-symbol merge', async () => {
@@ -519,7 +491,7 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
   it('places a stock overridden to a non-equity class by its own sector', async () => {
     const res = await run({}, [{ ...ko, assetClassOverride: 'GOV_BOND' }], [koSm]);
     expect(values(res._body.groups)).toEqual({ 'Consumer Defensive': 1500 });
-    expect(res._body.composition[0].assetClass).toBe('GOV_BOND');
+    expect(res._body.holdings[0].assetClass).toBe('GOV_BOND');
   });
 
   it('rejects an unknown groupBy', async () => {

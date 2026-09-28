@@ -12,10 +12,10 @@ This document specifies the frontend page for stock portfolio analysis.
 
 | Layer | File | Description |
 |-------|------|-------------|
-| Types | `src/types/equity-analysis.ts` | `EquityAnalysisResponse`, `EquityAnalysisSummary`, `EquityGroup`, `EquityHolding`, `AssetClass` / `ASSET_CLASSES`, `AssetClassCompositionRow`, `FixedIncomeSummary`, `EtfComposition` |
+| Types | `src/types/equity-analysis.ts` | `EquityAnalysisResponse`, `EquityAnalysisSummary`, `EquityGroup`, `EquityHolding`, `AssetClass` / `ASSET_CLASSES`, `EtfComposition` |
 | API client | `src/lib/api.ts` | `api.getEquityAnalysis({ groupBy, lookThrough })`, `api.setAssetClass(itemId, assetClass, { applyToSymbol })` |
 | Hooks | `src/hooks/use-equity-analysis.ts` | `useEquityAnalysis(groupBy, { lookThrough })` — React Query wrapper; `useSetAssetClass()` — override mutation, invalidates `equity-analysis` |
-| Components | `src/components/equity-analysis/` | `CompositionCard` (+ `ASSET_CLASS_COLORS`), `FixedIncomeCard`, `AssetClassEditor` |
+| Components | `src/components/equity-analysis/` | `AssetClassEditor`, `ASSET_CLASS_COLORS` (`asset-class-colors.ts`) |
 
 ## 19.3. Page Structure
 
@@ -27,11 +27,6 @@ This document specifies the frontend page for stock portfolio analysis.
 │  │Total Val │ │Holdings  │ │Avg P/E   │ │Yield ││
 │  │$150,000  │ │12        │ │22.5      │ │1.80% ││
 │  └──────────┘ └──────────┘ └──────────┘ └──────┘│
-│                                                  │
-│  ┌──────────────────────┐ ┌─────────────────────┐│
-│  │ Portfolio composition│ │ Fixed income (bonds)││
-│  │ donut + class table  │ │ 5 stat tiles        ││
-│  └──────────────────────┘ └─────────────────────┘│
 │                                                  │
 │  Group by: [Sector] [Industry] [Country] [Asset  │
 │  class]            (●) Look through ETFs         │
@@ -60,10 +55,9 @@ Four-card grid layout:
 | Avg P/E Ratio | `summary.weightedPeRatio` | 1 decimal place, or "—" if null |
 | Avg Dividend Yield | `summary.weightedDividendYield` | Percentage (2 decimal places), or "—" if null |
 
-## 19.4a. Portfolio Composition & Fixed Income (#79)
+## 19.4a. Scope: stocks and ETFs only
 
-- **Portfolio composition** (`CompositionCard`): donut + table of `composition` rows (asset class, value, share, count) across every investment (cash and debt excluded). Colors come from `ASSET_CLASS_COLORS = buildGroupColorMap(ASSET_CLASSES, new Set())`, so a class always has the same dataviz color (also used for the badges and the donut when grouping by asset class). On mobile the table becomes a stacked list.
-- **Fixed income** (`FixedIncomeCard`): five tiles — total face value, weighted coupon, average years to maturity, government / corporate split, number of bonds. Hidden when `fixedIncome` is `null`. The two cards sit side by side on `lg`, stacked below.
+Every card, chart and table on this page covers only stock and ETF holdings, matching the summary cards. The page briefly had a whole-portfolio "Portfolio composition" card and a bonds "Fixed income" card (#79). Both were removed: they measured a different set of holdings from the rest of the page, and the Portfolio page (breakdown by category group) and the Passive Income page (bond rates, maturity ladder) already show that data. Asset class colors come from `ASSET_CLASS_COLORS = buildGroupColorMap(ASSET_CLASSES, new Set())`, so a class keeps the same dataviz color in the badges and the asset class donut.
 
 ## 19.5. Grouping Selector & Look-through Toggle
 

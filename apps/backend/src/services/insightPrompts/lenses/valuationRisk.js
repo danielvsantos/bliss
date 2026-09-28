@@ -1,7 +1,7 @@
 module.exports = {
   name: 'VALUATION_RISK',
   rubric: `VALUATION_RISK
-Focus: weighted-average P/E of equity holdings vs broad-market P/E (provided in KEY SIGNALS when available). Treat this lens as CONTEXT, not a flag — P/E from third-party data sources is approximate, can be stale, and varies by methodology. The reader is well-served by the figure but should not be alarmed by it.
+Focus: weighted-average P/E of individual STOCK holdings vs broad-market P/E (provided in KEY SIGNALS when available). ETFs never carry a P/E, and the weighted P/E is stocks-only — never attribute a P/E to an ETF or fund. Treat this lens as CONTEXT, not a flag — P/E from third-party data sources is approximate, can be stale, and varies by methodology. The reader is well-served by the figure but should not be alarmed by it.
 Severity:
 - INFO (default): describe the weighted P/E and how it compares to the market — both directions.
 - POSITIVE: rare — only when the prior period's elevated P/E has compressed materially.

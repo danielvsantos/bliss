@@ -95,10 +95,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 3,154 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 1,057 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,165 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 932 tests |
+| All | `pnpm test` | -- | 3,108 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 1,031 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,223 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 854 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -220,7 +220,8 @@ AI-generated financial insights with 4 cadence tiers (DAILY was retired in v1.1 
 
 The daily 6 AM UTC cron is retained purely as a scheduling heartbeat for the calendar-gated tiers. All tiers use the configured LLM provider's insight model — defaults are `gemini-3.1-pro-preview` (Gemini), `gpt-4.1` (OpenAI), `claude-sonnet-4-6` (Anthropic). Override via `INSIGHT_MODEL`.
 
-- 15 financial lenses across 6 categories (SPENDING, INCOME, SAVINGS, PORTFOLIO, DEBT, NET_WORTH)
+- 16 financial lenses across 6 categories (SPENDING, INCOME, SAVINGS, PORTFOLIO, DEBT, NET_WORTH)
+- **Passive income & asset classes (#80):** `PASSIVE_INCOME_OUTLOOK` (PORTFOLIO/QUARTERLY/ANNUAL) is fed by `project()` → `summarize()` from `@bliss/shared/portfolio` via the backend `loadPassiveIncomeInputs` (twin of the API's `loadInputs()`); `asOf` comes from the period (Monday of the PORTFOLIO week, day after the quarter/year) so the dedup hash stays stable. Portfolio lenses use the #79 classifier: asset-class mix + fixed income, sector allocation over the whole equity book (stocks/REITs by sector; ETFs split only when `etfComposition` exists — optional, usually absent — otherwise counted as unclassified, never a sector), stocks-only P/E. `PASSIVE_INCOME_SETUP` action deep-links to `/reports/passive-income`. See [`docs/specs/backend/15-insights-engine.md`](docs/specs/backend/15-insights-engine.md#1542-passive-income-summary-80)
 - Data completeness gating: each tier checks period coverage before generation
 - Additive persistence: old insights preserved, not replaced. Dedup by `(tenantId, tier, periodKey, dataHash)`
 - TTL retention: MONTHLY=2y, QUARTERLY=5y, ANNUAL=forever, PORTFOLIO=1y
@@ -280,7 +281,7 @@ to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
 
 ### Equity Analysis: asset classes & ETF look-through
 
-`/reports/equity-analysis` groups stock + ETF holdings by sector, industry, country or **asset class**, and shows a **Portfolio composition** card (every investment by class, cash and debt excluded) and a **Fixed income** card (direct bonds with income terms). See [`docs/specs/api/06-portfolio-api.md`](docs/specs/api/06-portfolio-api.md#67-equity-analysis).
+`/reports/equity-analysis` groups stock + ETF holdings by sector, industry, country or **asset class**. The page is equity-only (it matches its KPI cards); the whole-portfolio breakdown lives on the Portfolio page and bond details on Passive Income. See [`docs/specs/api/06-portfolio-api.md`](docs/specs/api/06-portfolio-api.md#67-equity-analysis).
 
 - **One classifier**: `classifyAssetClass()` in **`@bliss/shared/portfolio`** (12 classes: STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER). The API uses it now and backend insights (#80) must `require` the same function — never re-derive classes locally.
 - **Override**: `PortfolioItem.assetClassOverride` (String, validated against `ASSET_CLASSES`, not an enum), set via `PUT /api/portfolio/items/:assetId/asset-class`; carried to the replacement item by `income-terms-preserver.js` on a re-keying rebuild.

@@ -70,23 +70,6 @@ export interface EquityAnalysisSummary {
   weightedDividendYield: number | null;
 }
 
-export interface AssetClassCompositionRow {
-  assetClass: AssetClass;
-  value: number;
-  /** 0–100 */
-  percent: number;
-  count: number;
-}
-
-export interface FixedIncomeSummary {
-  totalFace: number;
-  weightedCouponPct: number | null;
-  avgYearsToMaturity: number | null;
-  governmentPct: number;
-  corporatePct: number;
-  count: number;
-}
-
 export interface EquityAnalysisResponse {
   portfolioCurrency: string;
   lookThrough?: boolean;
@@ -99,8 +82,6 @@ export interface EquityAnalysisResponse {
   groupings?: Partial<Record<EquityGroupBy, EquityGroup[]>>;
   /** Every holding once (#79) — render rows from this, not from the groups. */
   holdings?: EquityHolding[];
-  composition?: AssetClassCompositionRow[];
-  fixedIncome?: FixedIncomeSummary | null;
 }
 
 export interface SetAssetClassResponse {

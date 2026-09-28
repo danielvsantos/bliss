@@ -4,7 +4,7 @@
 // surfaces deltas, top movers, anomalies, and the savings-rate decomposition
 // the model relies on for accurate output.
 
-const { computeKeySignals } = require('../../../../services/insightPrompts/keySignals');
+const { computeKeySignals, passiveIncomeSignals } = require('../../../../services/insightPrompts/keySignals');
 
 function buildMonthlyData() {
   return {
@@ -240,6 +240,128 @@ describe('computeKeySignals — PORTFOLIO', () => {
     const signals = computeKeySignals(data, 'PORTFOLIO');
     expect(signals.passiveIncomeRecent.total).toBe(1050);
     expect(signals.passiveIncomeRecent.monthsCovered).toBe(3);
+  });
+});
+
+// ─── Passive income & asset classes (#80) ────────────────────────────────────
+
+function passiveIncomeSummary(overrides = {}) {
+  return {
+    asOf: '2026-09-21',
+    next12m: { total: 9600, investment: 8400, other: 1200, bySource: { dividend: 2400, coupon: 3000, rent: 3000, interest: 0, other: 1200 } },
+    trailing12mActual: 8900,
+    trailing12mEssentials: 43600,
+    essentialsCoveragePct: 22,
+    essentialsCoverageInvestmentPct: 19.3,
+    topContributors: [{ label: 'Flat', kind: 'ASSET', next12m: 3000, sharePct: 31.3 }],
+    largestSharePct: 31.3,
+    endingWithin12m: { monthlyAmountLost: 250, sharePct: 31.3, items: [{ label: 'Treasury 2027', endDate: '2027-03-15', reason: 'MATURITY' }] },
+    coverage: { configured: 4, total: 6, pct: 66.7, missingLabels: ['MSFT', 'VWCE'] },
+    assumedRates: { count: 1, labels: ['Floater'] },
+    streamCount: 1,
+    dividendsNext12m: 2400,
+    priorEssentialsCoveragePct: 21,
+    ...overrides,
+  };
+}
+
+describe('passiveIncomeSignals()', () => {
+  it('returns null without a summary', () => {
+    expect(passiveIncomeSignals(null)).toBeNull();
+  });
+
+  it('pre-computes the severity triggers', () => {
+    const s = passiveIncomeSignals(passiveIncomeSummary());
+    expect(s.triggers).toEqual({
+      endingIncomeWarning: true,
+      singleSourceWarning: false,
+      coverageMilestoneCrossed: null,
+      incompleteData: true,
+      usesAssumedRates: true,
+    });
+    expect(s.next12m.total).toBe(9600);
+  });
+
+  it('flags a single source above 50% and ending income only at ≥20%', () => {
+    const s = passiveIncomeSignals(passiveIncomeSummary({
+      largestSharePct: 50.1,
+      endingWithin12m: { monthlyAmountLost: 10, sharePct: 19.9, items: [] },
+      coverage: { configured: 5, total: 5, pct: 100, missingLabels: [] },
+      assumedRates: { count: 0, labels: [] },
+    }));
+    expect(s.triggers.singleSourceWarning).toBe(true);
+    expect(s.triggers.endingIncomeWarning).toBe(false);
+    expect(s.triggers.incompleteData).toBe(false);
+    expect(s.triggers.usesAssumedRates).toBe(false);
+  });
+
+  it.each([
+    [21, 26, 25],
+    [46, 52, 50],
+    [24, 101, 100], // several crossed → the highest
+    [52, 55, null], // no milestone between
+    [55, 48, null], // falling never counts
+    [null, 60, null], // no prior insight
+  ])('coverage %p → %p crosses milestone %p', (prior, current, expected) => {
+    const s = passiveIncomeSignals(passiveIncomeSummary({ priorEssentialsCoveragePct: prior, essentialsCoveragePct: current }));
+    expect(s.triggers.coverageMilestoneCrossed).toBe(expected);
+  });
+});
+
+describe('computeKeySignals — passive income & asset classes (#80)', () => {
+  it('PORTFOLIO: engine dividend figure, asset-class mix, fixed income, look-through top sector', () => {
+    const signals = computeKeySignals({
+      totalEquityValue: 100000,
+      sectorBaseValue: 89000,
+      unclassifiedEquityValue: 22250,
+      equityHoldings: [
+        { symbol: 'NVDA', assetClass: 'STOCK', currentValue: 30000, peRatio: 50, dividendYield: 0.0003 },
+        { symbol: 'QQQ', assetClass: 'INDEX_ETF', currentValue: 50000, peRatio: 99, dividendYield: 0.006 },
+        { symbol: 'O', assetClass: 'REIT', currentValue: 5000, peRatio: 55, dividendYield: 0.055 },
+        { symbol: 'BND', assetClass: 'BOND_ETF', currentValue: 15000, peRatio: null, dividendYield: 0.035 },
+      ],
+      sectorAllocation: {
+        Technology: { value: 59500, percent: 66.85, holdings: ['NVDA'], viaEtfs: [{ symbol: 'QQQ', weightPct: 59 }] },
+      },
+      assetClassAllocation: [{ assetClass: 'INDEX_ETF', percent: 58.8, count: 1 }],
+      fixedIncome: { totalFace: 15000, weightedCouponPct: 6.67, avgYearsToMaturity: 4.3, governmentPct: 66.67, corporatePct: 33.33, count: 2 },
+      passiveIncome: passiveIncomeSummary(),
+    }, 'PORTFOLIO');
+
+    expect(signals.dividendsNext12m).toBe(2400);
+    expect(signals.assetClassAllocation).toHaveLength(1);
+    expect(signals.fixedIncome.totalFace).toBe(15000);
+    expect(signals.sectorBaseValue).toBe(89000);
+    expect(signals.unclassifiedSharePct).toBe(25);
+    expect(signals.topSector).toEqual({
+      sector: 'Technology', sharePct: 66.9, holdings: ['NVDA'], viaEtfs: [{ symbol: 'QQQ', weightPct: 59 }],
+    });
+    // Stocks-only P/E: ETFs and REITs never count
+    expect(signals.weightedPe).toBe(50);
+    expect(signals.trustedHoldingsCount).toBe(1);
+    // Bond ETF distributions don't count toward the equity dividend base
+    expect(signals.dividendPayingStockValue).toBe(85000);
+    expect(signals.passiveIncome.triggers.endingIncomeWarning).toBe(true);
+  });
+
+  it('PORTFOLIO without a passive income summary', () => {
+    const signals = computeKeySignals({ equityHoldings: [], sectorAllocation: {} }, 'PORTFOLIO');
+    expect(signals.dividendsNext12m).toBeNull();
+    expect(signals.passiveIncome).toBeNull();
+    expect(signals.fixedIncome).toBeNull();
+    expect(signals.assetClassAllocation).toEqual([]);
+  });
+
+  it('QUARTERLY / ANNUAL carry the passive income summary and the income mix', () => {
+    const mix = { totalIncome: 30000, passiveIncome: 1200, passiveIncomeSharePct: 4, otherPassiveIncomeSharePct: 1 };
+    for (const [tier, targetPeriod] of [['QUARTERLY', '2026-Q3'], ['ANNUAL', '2026']]) {
+      const signals = computeKeySignals({
+        targetPeriod, monthlyData: {}, months: [], quarterTotals: { income: 30000, expenses: 20000, groups: {} },
+        incomeMix: mix, passiveIncome: passiveIncomeSummary(),
+      }, tier);
+      expect(signals.income.mix).toEqual(mix);
+      expect(signals.passiveIncome.essentialsCoveragePct).toBe(22);
+    }
   });
 });
 

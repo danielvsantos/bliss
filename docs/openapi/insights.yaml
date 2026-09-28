@@ -64,6 +64,7 @@ components:
         - UNUSUAL_SPENDING
         - INCOME_STABILITY
         - INCOME_DIVERSIFICATION
+        - PASSIVE_INCOME_OUTLOOK
         - SAVINGS_RATE
         - SAVINGS_TREND
         - PORTFOLIO_EXPOSURE
@@ -87,6 +88,7 @@ components:
         - TRAVEL_PLANNING
         - EMERGENCY_FUND
         - INCOME_GROWTH
+        - PASSIVE_INCOME_SETUP
 
     InsightMetadata:
       type: object

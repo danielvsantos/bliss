@@ -140,53 +140,6 @@ components:
             type: number
           example: { stocks: 0.9995, bonds: 0, cash: 0.0005 }
 
-    AssetClassCompositionRow:
-      type: object
-      properties:
-        assetClass:
-          $ref: '#/components/schemas/AssetClass'
-        value:
-          type: number
-          description: Value in the portfolio currency.
-          example: 42000
-        percent:
-          type: number
-          description: Share of all investments, 0–100.
-          example: 38.5
-        count:
-          type: integer
-          example: 3
-
-    FixedIncomeSummary:
-      type: object
-      description: Direct government and corporate bonds with income terms (face value set).
-      properties:
-        totalFace:
-          type: number
-          description: Σ faceValuePerUnit × quantity, in the portfolio currency.
-          example: 40000
-        weightedCouponPct:
-          type: number
-          nullable: true
-          description: >
-            Face-weighted current rate in percent. FIXED_COUPON uses couponRate;
-            FLOATING_COUPON assumedIndexRate + spread; INFLATION_LINKED couponRate + assumedIndexRate.
-          example: 4.5
-        avgYearsToMaturity:
-          type: number
-          nullable: true
-          description: Face-weighted average years to maturity (matured bonds count as 0).
-          example: 5.75
-        governmentPct:
-          type: number
-          example: 75
-        corporatePct:
-          type: number
-          example: 25
-        count:
-          type: integer
-          example: 2
-
     EquityGroup:
       type: object
       properties:
@@ -269,20 +222,6 @@ components:
           description: Every equity holding once, largest first. Render rows from this list.
           items:
             $ref: '#/components/schemas/EquityHolding'
-        composition:
-          type: array
-          description: >
-            Portfolio composition by asset class across every investment item with
-            a positive quantity (stocks, ETFs, funds, bonds, real estate, crypto…;
-            cash and debt excluded). Equity holdings use live values, others the
-            stored valuation. Largest first.
-          items:
-            $ref: '#/components/schemas/AssetClassCompositionRow'
-        fixedIncome:
-          allOf:
-            - $ref: '#/components/schemas/FixedIncomeSummary'
-          nullable: true
-          description: null when there are no bonds with income terms.
 
 paths:
   /api/portfolio/equity-analysis:
@@ -301,8 +240,9 @@ paths:
         `Other`; no composition or empty country list → `Diversified`; bond
         ETFs → `Fixed Income`); industry never looks through. Holdings are
         listed once each. Dividend yield honours a user dividend override
-        (IncomeTerms) and "doesn't distribute". Also returns the Portfolio
-        composition by asset class and the Fixed income summary (#79).
+        (IncomeTerms) and "doesn't distribute". Stocks and ETFs only: the
+        all-investment breakdown lives on the Portfolio page and bonds on
+        Passive Income.
       security:
         - cookieAuth: []
       parameters:

@@ -33,6 +33,9 @@ const mockInsightFindFirst = jest.fn();
 const mockInsightFindMany = jest.fn();
 const mockInsightCreateMany = jest.fn();
 const mockInsightDeleteMany = jest.fn().mockResolvedValue({ count: 0 });
+const mockIncomeTermsFindMany = jest.fn().mockResolvedValue([]);
+const mockCategoryFindMany = jest.fn().mockResolvedValue([]);
+const mockTransactionGroupBy = jest.fn().mockResolvedValue([]);
 jest.mock('../../../../prisma/prisma.js', () => ({
   tenant: {
     findUnique: (...args) => mockTenantFindUnique(...args),
@@ -57,6 +60,17 @@ jest.mock('../../../../prisma/prisma.js', () => ({
     findMany: (...args) => mockInsightFindMany(...args),
     createMany: (...args) => mockInsightCreateMany(...args),
     deleteMany: (...args) => mockInsightDeleteMany(...args),
+  },
+  // Passive income (#80): income streams, stream-eligible categories and
+  // their transactions (INCOME_DIVERSIFICATION's other-passive-income share).
+  incomeTerms: {
+    findMany: (...args) => mockIncomeTermsFindMany(...args),
+  },
+  category: {
+    findMany: (...args) => mockCategoryFindMany(...args),
+  },
+  transaction: {
+    groupBy: (...args) => mockTransactionGroupBy(...args),
   },
   $transaction: jest.fn((ops) => Promise.all(ops)),
 }));
@@ -168,6 +182,9 @@ describe('insightService (v1)', () => {
     mockInsightFindFirst.mockResolvedValue(null);
     mockInsightFindMany.mockResolvedValue([]);
     mockInsightCreateMany.mockResolvedValue({ count: 0 });
+    mockIncomeTermsFindMany.mockResolvedValue([]);
+    mockCategoryFindMany.mockResolvedValue([]);
+    mockTransactionGroupBy.mockResolvedValue([]);
   });
 
   // ── Constants & static exports ───────────────────────────────────────────
@@ -698,6 +715,7 @@ describe('insightService (v1)', () => {
         {
           id: 1, symbol: 'AAPL', currency: 'USD',
           currentValue: 1000, costBasis: 800, quantity: 5, realizedPnL: 50,
+          category: { name: 'Stocks', processingHint: 'API_STOCK' },
         },
       ]);
       mockSecurityMasterFindMany.mockResolvedValue([
@@ -785,12 +803,15 @@ describe('insightService (v1)', () => {
       expect(h.costBasis).toBe(800);
     });
 
-    it('uses category processingHint as sector fallback when SecurityMaster has no record', async () => {
+    // #80: no more made-up fallback sectors ("ETFs & Funds", "Alternative
+    // Assets") — holdings are classified by the shared #79 classifier and only
+    // equities count toward sector allocation.
+    it('classifies holdings and never invents fallback sectors', async () => {
       mockPortfolioItemFindMany.mockResolvedValue([
         {
           id: 1, symbol: 'SPY', currency: 'USD',
           currentValue: 5000, costBasis: 4500, quantity: 10, realizedPnL: 0,
-          category: { name: 'ETFs', processingHint: 'API_FUND' },
+          category: { name: 'ETFs', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS', group: 'ETFs' },
         },
         {
           id: 2, symbol: 'BTC', currency: 'USD',
@@ -800,34 +821,27 @@ describe('insightService (v1)', () => {
         {
           id: 3, symbol: 'HOUSE', currency: 'USD',
           currentValue: 200000, costBasis: 180000, quantity: 1, realizedPnL: 0,
-          category: { name: 'Real Estate', processingHint: 'MANUAL' },
+          category: { name: 'Real Estate', processingHint: 'MANUAL', defaultCategoryCode: 'REAL_ESTATE', group: 'Real Estate' },
         },
       ]);
-      // No SecurityMaster records for any of these
       mockSecurityMasterFindMany.mockResolvedValue([]);
 
       const result = await gatherEquityFundamentals('tenant-1', 'USD', {});
 
-      expect(result.holdings).toHaveLength(3);
-      // ETF → 'ETFs & Funds' from processingHint map
-      expect(result.holdings[0].sector).toBe('ETFs & Funds');
-      // Crypto → 'Cryptocurrency' from processingHint map
-      expect(result.holdings[1].sector).toBe('Cryptocurrency');
-      // Manual → 'Alternative Assets' from processingHint map
-      expect(result.holdings[2].sector).toBe('Alternative Assets');
-      // Country fallback should be 'Global', not 'Unknown'
-      expect(result.holdings[0].country).toBe('Global');
-      // Sector allocation should use the derived labels
-      expect(result.sectorAllocation['ETFs & Funds']).toBeDefined();
-      expect(result.sectorAllocation['Cryptocurrency']).toBeDefined();
-      expect(result.sectorAllocation['Alternative Assets']).toBeDefined();
-      expect(result.sectorAllocation['Unknown']).toBeUndefined();
+      expect(result.holdings.map((h) => h.assetClass)).toEqual(['FUND', 'CRYPTO', 'REAL_ESTATE']);
+      expect(result.holdings.map((h) => h.sector)).toEqual([null, null, null]);
+      // Nothing here is an equity with a sector → no sector buckets at all
+      expect(result.sectorAllocation).toEqual({});
+      expect(result.sectorAllocation['Alternative Assets']).toBeUndefined();
+      expect(result.sectorAllocation['ETFs & Funds']).toBeUndefined();
+      // …but the asset-class mix covers everything
+      expect(result.assetClassAllocation.map((a) => a.assetClass)).toEqual(['REAL_ESTATE', 'FUND', 'CRYPTO']);
     });
 
     // Passive Income #77 regression: once ETFs are refreshed nightly they have
     // SecurityMaster rows with no sector/industry/country (the profile values
     // are ignored for ETFs) and earningsTrusted = false (no /earnings call).
-    it('ETF SecurityMaster rows (no sector, untrusted earnings) still fall back and hide EPS', async () => {
+    it('ETF SecurityMaster rows (no composition, untrusted earnings) never carry a P/E or a sector', async () => {
       mockPortfolioItemFindMany.mockResolvedValue([
         {
           id: 1, symbol: 'VWCE', currency: 'EUR',
@@ -837,7 +851,7 @@ describe('insightService (v1)', () => {
       ]);
       mockSecurityMasterFindMany.mockResolvedValue([
         { symbol: 'VWCE', name: 'Vanguard FTSE All-World', sector: null, industry: null, country: null,
-          peRatio: 12.3, trailingEps: 9.9, earningsTrusted: false,
+          peRatio: 12.3, trailingEps: 9.9, earningsTrusted: true,
           dividendYield: 0, dividendTrusted: true, assetType: 'ETF',
           week52High: null, week52Low: null, averageVolume: null },
       ]);
@@ -845,11 +859,14 @@ describe('insightService (v1)', () => {
       const result = await gatherEquityFundamentals('tenant-1', 'EUR', {});
 
       const [h] = result.holdings;
-      expect(h.sector).toBe('ETFs & Funds');
-      expect(h.country).toBe('Global');
+      expect(h.assetClass).toBe('INDEX_ETF');
+      expect(h.sector).toBeNull();
       expect(h.peRatio).toBeNull();
       expect(h.trailingEps).toBeNull();
-      expect(result.sectorAllocation['Unknown']).toBeUndefined();
+      // No composition → "Diversified": in the equity base, never a sector
+      expect(result.sectorAllocation).toEqual({});
+      expect(result.equityValue).toBe(5000);
+      expect(result.unclassifiedEquityValue).toBe(5000);
     });
   });
 });
