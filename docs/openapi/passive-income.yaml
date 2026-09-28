@@ -109,6 +109,13 @@ components:
             trailingEssentials: { type: number }
             coverage:
               type: object
+              description: '"N of M" — counts holding groups since #83 (configured = no holding of the group is missing).'
+              properties:
+                configured: { type: integer }
+                total: { type: integer }
+            coverageByHolding:
+              type: object
+              description: The pre-#83 per-holding count.
               properties:
                 configured: { type: integer }
                 total: { type: integer }
@@ -139,23 +146,14 @@ components:
                   year: { type: integer, example: 1 }
         items:
           type: array
-          items:
-            type: object
-            properties:
-              kind: { type: string, enum: [ASSET, STREAM] }
-              portfolioItemId: { type: integer, nullable: true }
-              streamId: { type: integer, nullable: true }
-              label: { type: string }
-              incomeType: { $ref: '#/components/schemas/IncomeType' }
-              source: { type: string, enum: [AUTO, OVERRIDE, MANUAL] }
-              rateOrYield: { type: number, nullable: true }
-              amountPerPayment: { type: number, nullable: true }
-              frequency: { type: string, description: 'IncomeFrequency, or IRREGULAR / NONE for automatic dividends.' }
-              nextPaymentDate: { type: string, format: date, nullable: true }
-              endDate: { type: string, format: date, nullable: true }
-              status: { type: string, enum: [OK, MATURED_UNREDEEMED, ENDED, STALE_RATE] }
-              horizonTotal: { type: number }
-              next12mTotal: { type: number }
+          description: One row per holding (symbol × account) and per stream — unchanged by #83.
+          items: { $ref: '#/components/schemas/PassiveIncomeItem' }
+        groups:
+          type: array
+          description: >
+            #83 — one row per symbol + asset class (cash therefore per currency),
+            sorted by horizonTotal. Streams are not grouped.
+          items: { $ref: '#/components/schemas/PassiveIncomeGroup' }
         upcomingPayments:
           type: array
           maxItems: 10
@@ -168,6 +166,22 @@ components:
               label: { type: string }
               amount: { type: number }
               source: { type: string, enum: [dividend, coupon, rent, interest, other] }
+        upcomingPaymentsGrouped:
+          type: array
+          maxItems: 10
+          description: '#83 — the same symbol, date and source merged into one line before the top 10 is taken; streams stay one line each.'
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              kind: { type: string, enum: [ASSET, STREAM] }
+              groupKey: { type: string, nullable: true, description: 'The symbol (null for streams).' }
+              refId: { type: integer, nullable: true, description: 'Stream id (null for holdings).' }
+              refIds: { type: array, items: { type: integer } }
+              label: { type: string }
+              amount: { type: number }
+              source: { type: string, enum: [dividend, coupon, rent, interest, other] }
+              accounts: { type: array, items: { type: string } }
         maturityLadder:
           type: array
           description: Bond principal returning per year within the horizon (not income).
@@ -196,6 +210,72 @@ components:
               label: { type: string }
               assetClass: { type: string, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE] }
               reason: { type: string, enum: [NO_TERMS, UNTRUSTED_DIVIDEND] }
+              accountName: { type: string, nullable: true }
+        missingGroups:
+          type: array
+          description: '#83 — one entry per symbol (NO_TERMS wins over UNTRUSTED_DIVIDEND).'
+          items:
+            type: object
+            properties:
+              groupKey: { type: string }
+              symbol: { type: string }
+              label: { type: string }
+              assetClass: { type: string, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE] }
+              portfolioItemIds: { type: array, items: { type: integer } }
+              reason: { type: string, enum: [NO_TERMS, UNTRUSTED_DIVIDEND] }
+    PassiveIncomeItem:
+      type: object
+      properties:
+        kind: { type: string, enum: [ASSET, STREAM] }
+        portfolioItemId: { type: integer, nullable: true }
+        streamId: { type: integer, nullable: true }
+        label: { type: string }
+        symbol: { type: string, nullable: true }
+        securityName: { type: string, nullable: true, description: '#83 — SecurityMaster name.' }
+        assetClass: { type: string, nullable: true, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER] }
+        accountId: { type: integer, nullable: true, description: '#83' }
+        accountName: { type: string, nullable: true, description: '#83' }
+        quantity: { type: number, nullable: true, description: '#83' }
+        currentValue: { type: number, nullable: true, description: '#83 — display currency.' }
+        currency: { type: string, nullable: true, description: "#83 — the holding's own currency." }
+        incomeType: { $ref: '#/components/schemas/IncomeType' }
+        source: { type: string, enum: [AUTO, OVERRIDE, MANUAL, MISSING], description: 'MISSING only on group children.' }
+        rateOrYield: { type: number, nullable: true }
+        amountPerPayment: { type: number, nullable: true }
+        frequency: { type: string, description: 'IncomeFrequency, or IRREGULAR / NONE for automatic dividends.' }
+        nextPaymentDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        status: { type: string, enum: [OK, MATURED_UNREDEEMED, ENDED, STALE_RATE] }
+        horizonTotal: { type: number }
+        next12mTotal: { type: number }
+    PassiveIncomeGroup:
+      type: object
+      properties:
+        groupKey: { type: string, example: GOOG, description: The symbol. }
+        kind: { type: string, enum: [SECURITY, CASH] }
+        label: { type: string, example: Alphabet Inc. }
+        symbol: { type: string }
+        assetClass: { type: string, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER] }
+        accountCount: { type: integer }
+        portfolioItemIds: { type: array, items: { type: integer } }
+        quantity: { type: number }
+        currentValue: { type: number }
+        currency: { type: string, nullable: true, description: 'Shared currency or MIXED.' }
+        incomeType: { type: string, description: 'Shared IncomeType or MIXED.' }
+        source: { type: string, enum: [AUTO, OVERRIDE, MANUAL, MISSING, MIXED] }
+        frequency: { type: string, nullable: true, description: 'Shared frequency or MIXED.' }
+        rateOrYield: { type: number, nullable: true, description: 'Next-12-month income ÷ value; bonds/cash: the shared rate.' }
+        rateRange: { type: array, nullable: true, items: { type: number }, minItems: 2, maxItems: 2, description: 'Bonds/cash whose accounts differ.' }
+        amountPerPayment: { type: number, nullable: true }
+        nextPaymentDate: { type: string, format: date, nullable: true, description: Earliest among the holdings. }
+        endDate: { type: string, format: date, nullable: true, description: Latest among the holdings. }
+        status: { type: string, enum: [OK, MATURED_UNREDEEMED, ENDED, STALE_RATE], description: Most severe among the holdings. }
+        statusCount: { type: integer, description: Holdings whose status is not OK. }
+        configured: { type: boolean, description: No holding is missing income data. }
+        inCoverage: { type: boolean }
+        horizonTotal: { type: number }
+        next12mTotal: { type: number }
+        children: { type: array, items: { $ref: '#/components/schemas/PassiveIncomeItem' } }
     Error:
       type: object
       properties:
@@ -251,6 +331,21 @@ paths:
                       assetClass: { type: string, nullable: true, enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER] }
                       defaultIncomeType: { $ref: '#/components/schemas/IncomeType' }
                   terms: { $ref: '#/components/schemas/IncomeTerms' }
+                  siblings:
+                    type: array
+                    description: >
+                      #83 — every open holding (quantity > 0, plus this one) of the same
+                      symbol and asset class in the tenant, for group editing.
+                    items:
+                      type: object
+                      properties:
+                        assetId: { type: integer }
+                        accountName: { type: string, nullable: true }
+                        currency: { type: string }
+                        quantity: { type: number }
+                        costBasis: { type: number, nullable: true }
+                        terms: { $ref: '#/components/schemas/IncomeTerms' }
+                        source: { type: string, enum: [AUTO, OVERRIDE, MANUAL, MISSING] }
                   auto:
                     type: object
                     nullable: true
@@ -271,10 +366,11 @@ paths:
       tags: [Passive Income]
       summary: Upsert an asset's income terms
       description: >
-        Validated per incomeType. `applyToSymbol: true` (DIVIDEND only) copies the
-        dividend override onto every PortfolioItem of the tenant with that symbol,
-        in one transaction. Crypto, collectibles, vehicles, commodities and debt
-        cannot hold income terms.
+        Validated per incomeType. `applyToSymbol: true` writes the same terms to
+        every open holding of the tenant with that symbol and asset class, in one
+        transaction, for every income type except INTEREST (cash APY is set per
+        account → 400). Without a body `currency`, each holding keeps its own.
+        Crypto, collectibles, vehicles, commodities and debt cannot hold income terms.
       requestBody:
         required: true
         content:
@@ -295,14 +391,28 @@ paths:
                 properties:
                   terms: { $ref: '#/components/schemas/IncomeTerms' }
                   appliedTo: { type: array, items: { type: integer } }
-        '400': { description: Validation error or asset cannot hold income terms }
+        '400': { description: 'Validation error, asset cannot hold income terms, or applyToSymbol with cash interest' }
         '404': { description: Not found in this tenant }
     delete:
       tags: [Passive Income]
       summary: Remove an asset's income terms (stocks/ETFs fall back to automatic data)
+      parameters:
+        - name: applyToSymbol
+          in: query
+          description: '#83 — remove from every holding of the symbol with the same asset class (not for cash).'
+          schema: { type: string, enum: ['true'] }
       responses:
+        '200':
+          description: Removed from every holding of the symbol (applyToSymbol=true)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: integer }
         '204': { description: Deleted }
-        '404': { description: No terms }
+        '400': { description: applyToSymbol on a cash holding }
+        '404': { description: No terms / not found in this tenant }
 
   /api/passive-income/streams:
     get:

@@ -14,11 +14,15 @@ const FIXTURE = {
   displayCurrency: 'USD',
   assets: [
     {
-      id: 1, label: 'KO', assetClass: 'STOCK', quantity: 100, currentValue: 7000, fxRate: 1,
+      id: 1, label: 'KO · IBKR', symbol: 'KO', accountName: 'IBKR', assetClass: 'STOCK', quantity: 100, currentValue: 7000, fxRate: 1,
       recentDividends: [
         { exDate: '2026-09-15', amount: 0.53 }, { exDate: '2026-06-13', amount: 0.51 },
         { exDate: '2026-03-14', amount: 0.51 }, { exDate: '2025-11-29', amount: 0.51 },
       ],
+    },
+    {
+      id: 3, label: 'KO · XP', symbol: 'KO', accountName: 'XP', assetClass: 'STOCK', quantity: 20, currentValue: 1400, fxRate: 1,
+      recentDividends: [{ exDate: '2026-09-15', amount: 0.53 }],
     },
     {
       id: 2, label: 'Bond', assetClass: 'BOND', quantity: 10, currentValue: 10000, fxRate: 1,
@@ -33,6 +37,7 @@ const FIXTURE = {
 describe('@bliss/shared/portfolio (CJS build)', () => {
   it('exports project() and the constants', () => {
     expect(typeof shared.project).toBe('function');
+    expect(typeof shared.groupItems).toBe('function');
     expect(shared.PAYMENT_LAG_DAYS).toBe(14);
     expect(shared.INCOME_TYPES).toHaveLength(9);
   });
@@ -47,6 +52,9 @@ describe('@bliss/shared/portfolio (CJS build)', () => {
     }));
     expect(cjs).toEqual(esm);
     expect(cjs.totals.next12mIncome).toBeGreaterThan(0);
+    // Grouped view (#83): KO held in two accounts is one group.
+    expect(cjs.groups).toEqual(esm.groups);
+    expect(cjs.groups.find((g) => g.groupKey === 'KO').accountCount).toBe(2);
   });
 });
 
@@ -93,20 +101,20 @@ describe('@bliss/shared/portfolio asset class helpers (CJS build)', () => {
 });
 
 describe('@bliss/shared/portfolio Manage Assets helpers (#81)', () => {
-  const { incomeDataSource, MANUAL_PRICE_STALE_DAYS, MANUAL_PRICE_WARNING_DAYS, MANUAL_PRICE_CRITICAL_DAYS } = shared;
+  const { resolveIncomeSource, MANUAL_PRICE_STALE_DAYS, MANUAL_PRICE_WARNING_DAYS, MANUAL_PRICE_CRITICAL_DAYS } = shared;
 
   it('exports the manual price staleness thresholds', () => {
     expect([MANUAL_PRICE_STALE_DAYS, MANUAL_PRICE_WARNING_DAYS, MANUAL_PRICE_CRITICAL_DAYS]).toEqual([30, 60, 90]);
   });
 
-  it('incomeDataSource follows the projection priority', () => {
-    expect(incomeDataSource({ assetClass: 'STOCK', terms: null, recentDividends: [{ exDate: '2026-01-01', amount: 1 }] })).toBe('AUTO');
-    expect(incomeDataSource({ assetClass: 'ETF', terms: null, recentDividends: [] })).toBe('AUTO');
-    expect(incomeDataSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', dividendPerUnit: '1.9' }, recentDividends: [] })).toBe('OVERRIDE');
-    expect(incomeDataSource({ assetClass: 'FUND', terms: { incomeType: 'DIVIDEND', dividendPerUnit: '1.9' } })).toBe('MANUAL');
-    expect(incomeDataSource({ assetClass: 'BOND', terms: { incomeType: 'FIXED_COUPON' } })).toBe('MANUAL');
-    expect(incomeDataSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', isDistributing: false } })).toBe('MANUAL');
-    expect(incomeDataSource({ assetClass: 'STOCK', terms: null, recentDividends: null })).toBe('MISSING');
-    expect(incomeDataSource()).toBe('MISSING');
+  it('resolveIncomeSource follows the projection priority', () => {
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: null, recentDividends: [{ exDate: '2026-01-01', amount: 1 }] })).toBe('AUTO');
+    expect(resolveIncomeSource({ assetClass: 'ETF', terms: null, recentDividends: [] })).toBe('AUTO');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', dividendPerUnit: '1.9' }, recentDividends: [] })).toBe('OVERRIDE');
+    expect(resolveIncomeSource({ assetClass: 'FUND', terms: { incomeType: 'DIVIDEND', dividendPerUnit: '1.9' } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'BOND', terms: { incomeType: 'FIXED_COUPON' } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', isDistributing: false } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: null, recentDividends: null })).toBe('MISSING');
+    expect(resolveIncomeSource()).toBe('MISSING');
   });
 });

@@ -190,7 +190,8 @@ export function toRequest(v: IncomeTermsFormValues): IncomeTermsRequest & { cate
       body[field] = NUMERIC_SET.has(field) ? Number(raw) : raw;
     }
   }
-  if (v.mode === 'asset' && v.applyToSymbol && v.incomeType === 'DIVIDEND') body.applyToSymbol = true;
+  // Every income type except cash interest can apply to all holdings of a symbol (#83).
+  if (v.mode === 'asset' && v.applyToSymbol && v.incomeType !== 'INTEREST') body.applyToSymbol = true;
   if (v.mode === 'stream') {
     body.categoryId = Number(v.categoryId);
     body.name = v.name;

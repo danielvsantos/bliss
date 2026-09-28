@@ -229,6 +229,24 @@ describe('GET /api/portfolio/assets', () => {
     expect(byId(1)).not.toHaveProperty('currentValueInUSD');
   });
 
+  it('classifies ETFs without composition data (plans without /etfs/world/composition)', async () => {
+    mockPrisma.portfolioItem.findMany.mockImplementation(async (args: any) =>
+      args.select.id
+        ? [
+            item({ id: 1, symbol: 'AGGH', category: cat({ name: 'ETFs', group: 'ETFs', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' }) }),
+            item({ id: 2, symbol: 'VWCE', category: cat({ name: 'ETFs', group: 'ETFs', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' }) }),
+          ]
+        : []);
+    mockPrisma.securityMaster.findMany.mockResolvedValue([
+      { symbol: 'AGGH', name: 'iShares Core Global Aggregate Bond', assetType: 'ETF', etfComposition: null, dividendTrusted: false, recentDividends: null },
+      { symbol: 'VWCE', name: 'Vanguard FTSE All-World', assetType: 'ETF', etfComposition: null, dividendTrusted: false, recentDividends: null },
+    ]);
+    const res = await call();
+    expect(res._status).toBe(200);
+    expect(res._body.items.map((r: any) => [r.symbol, r.assetClass])).toEqual([['AGGH', 'BOND_ETF'], ['VWCE', 'INDEX_ETF']]);
+    expect((await call({ assetClass: 'BOND_ETF' }))._body.items.map((r: any) => r.id)).toEqual([1]);
+  });
+
   it('reports NONE (not missing) for cash without terms', async () => {
     mockPrisma.portfolioItem.findMany.mockImplementation(async (args: any) =>
       args.select.id ? [item({ id: 1, symbol: 'EUR', category: cat({ name: 'Operating Cash', type: 'Asset', group: 'Cash', processingHint: 'CASH', defaultCategoryCode: 'OPERATING_CASH' }) })] : []);

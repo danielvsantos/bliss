@@ -11,6 +11,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
   useAssetIncomeTerms,
@@ -28,10 +38,11 @@ import {
   REFERENCE_INDICES,
   STREAM_FREQUENCIES,
   previewIncome,
+  siblingsDiffer,
 } from '@/lib/passive-income';
 import { translateCategoryName } from '@/lib/category-i18n';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import type { IncomeAssetClass, IncomeStream, IncomeType } from '@/types/passive-income';
+import type { IncomeAssetClass, IncomeStream, IncomeTerms, IncomeTermsSibling, IncomeType } from '@/types/passive-income';
 import {
   collectErrors,
   emptyFormValues,
@@ -55,7 +66,16 @@ export interface IncomeTermsModalProps {
   stream?: IncomeStream | null;
   /** stream mode: default currency for a new stream */
   defaultCurrency?: string;
+  /**
+   * asset mode (#83): 'symbol' edits every holding of the asset's symbol (a
+   * group row on Passive Income); 'single' (default) edits one holding.
+   */
+  scope?: IncomeTermsScope;
+  /** asset mode, single scope: pre-tick "apply to all holdings" (symbol held in >1 account). */
+  defaultApplyToSymbol?: boolean;
 }
+
+export type IncomeTermsScope = 'single' | 'symbol';
 
 type FieldName = keyof IncomeTermsFormValues;
 
@@ -83,7 +103,30 @@ export function IncomeTermsModal(props: IncomeTermsModalProps) {
   );
 }
 
-function IncomeTermsModalBody({
+/** Holds which holding / scope is being edited: the Mixed step can switch to one account. */
+function IncomeTermsModalBody(props: IncomeTermsModalProps) {
+  const [target, setTarget] = useState({
+    assetId: props.assetId ?? null,
+    scope: props.scope ?? 'single',
+    label: props.assetLabel,
+  });
+  return (
+    <IncomeTermsForm
+      key={`${target.assetId}-${target.scope}`}
+      {...props}
+      assetId={target.assetId}
+      scope={target.scope}
+      assetLabel={target.label}
+      onEditOne={(sibling, symbol) => setTarget({
+        assetId: sibling.assetId,
+        scope: 'single',
+        label: sibling.accountName ? `${symbol} · ${sibling.accountName}` : symbol,
+      })}
+    />
+  );
+}
+
+function IncomeTermsForm({
   onOpenChange,
   mode,
   assetId = null,
@@ -91,7 +134,10 @@ function IncomeTermsModalBody({
   currentValue,
   stream,
   defaultCurrency,
-}: IncomeTermsModalProps) {
+  scope = 'single',
+  defaultApplyToSymbol = false,
+  onEditOne,
+}: IncomeTermsModalProps & { onEditOne: (sibling: IncomeTermsSibling, symbol: string) => void }) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const locale = i18n.language || 'en-US';
@@ -109,6 +155,18 @@ function IncomeTermsModalBody({
   const existingTerms = mode === 'asset' ? assetQuery.data?.terms ?? null : stream ?? null;
   const auto = assetQuery.data?.auto ?? null;
 
+  // Group editing (#83): every holding of this symbol and asset class. Cash
+  // interest (APY) always stays per account.
+  const siblings = useMemo(() => assetQuery.data?.siblings ?? [], [assetQuery.data?.siblings]);
+  const groupable = mode === 'asset' && assetClass !== null && assetClass !== 'CASH' && siblings.length > 1;
+  const symbolScope = scope === 'symbol' && groupable;
+  const needsMixedStep = symbolScope && siblingsDiffer(siblings);
+  const [mixedResolved, setMixedResolved] = useState(false);
+  const [prefillFrom, setPrefillFrom] = useState<number | null>(null);
+  const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
+  const symbol = assetInfo?.symbol ?? '';
+  const groupUnits = siblings.reduce((sum, s) => sum + (s.quantity > 0 ? s.quantity : 0), 0);
+
   const [values, setValues] = useState<IncomeTermsFormValues | null>(null);
   // Bonds are entered as a TOTAL face value (what the user sees on their
   // statement); IncomeTerms stores it per unit so partial sells scale it.
@@ -117,6 +175,37 @@ function IncomeTermsModalBody({
   const unitsHeld = assetInfo?.quantity && assetInfo.quantity > 0 ? assetInfo.quantity : 1;
   const [override, setOverride] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Asset form values from stored terms (this holding's, or — in the Mixed
+  // step — the account the user picked to pre-fill from).
+  const initAsset = (terms: IncomeTerms | null) => {
+    if (!assetQuery.data) return;
+    const fallbackType: IncomeType = assetQuery.data.asset.defaultIncomeType
+      ?? (assetClass ? INCOME_TYPES_BY_CLASS[assetClass][0] : 'CUSTOM_YIELD');
+    const qty = assetQuery.data.asset.quantity > 0 ? assetQuery.data.asset.quantity : 1;
+    const applyToSymbol = symbolScope || (groupable && defaultApplyToSymbol);
+    if (terms) {
+      const init = formValuesFromTerms(terms, 'asset');
+      if (terms.incomeType === 'NONE') init.incomeType = fallbackType;
+      init.applyToSymbol = applyToSymbol;
+      setValues(init);
+      setOverride(terms.incomeType === 'DIVIDEND' && terms.dividendPerUnit != null);
+      if (terms.faceValuePerUnit != null) setFaceTotal(String(roundMoney(terms.faceValuePerUnit * qty)));
+    } else {
+      const init = emptyFormValues('asset', fallbackType);
+      init.applyToSymbol = applyToSymbol;
+      // Default a bond's face value to what was paid for it.
+      const cost = symbolScope
+        ? siblings.reduce((sum, s) => sum + (s.costBasis ?? 0), 0)
+        : assetQuery.data.asset.costBasis;
+      const units = symbolScope ? (groupUnits > 0 ? groupUnits : 1) : qty;
+      if (assetClass === 'BOND' && cost != null && cost > 0) {
+        init.faceValuePerUnit = String(cost / units);
+        setFaceTotal(String(roundMoney(symbolScope ? (cost / units) * qty : cost)));
+      }
+      setValues(init);
+    }
+  };
 
   // Initialise once the data the form depends on is available.
   useEffect(() => {
@@ -129,27 +218,20 @@ function IncomeTermsModalBody({
       return;
     }
     if (!assetQuery.data) return;
-    const fallbackType: IncomeType = assetQuery.data.asset.defaultIncomeType
-      ?? (assetClass ? INCOME_TYPES_BY_CLASS[assetClass][0] : 'CUSTOM_YIELD');
-    const terms = assetQuery.data.terms;
-    const qty = assetQuery.data.asset.quantity > 0 ? assetQuery.data.asset.quantity : 1;
-    if (terms) {
-      const init = formValuesFromTerms(terms, 'asset');
-      if (terms.incomeType === 'NONE') init.incomeType = fallbackType;
-      setValues(init);
-      setOverride(terms.incomeType === 'DIVIDEND' && terms.dividendPerUnit != null);
-      if (terms.faceValuePerUnit != null) setFaceTotal(String(roundMoney(terms.faceValuePerUnit * qty)));
-    } else {
-      const init = emptyFormValues('asset', fallbackType);
-      // Default a bond's face value to what was paid for it.
-      const cost = assetQuery.data.asset.costBasis;
-      if (assetClass === 'BOND' && cost != null && cost > 0) {
-        init.faceValuePerUnit = String(cost / qty);
-        setFaceTotal(String(roundMoney(cost)));
-      }
-      setValues(init);
-    }
-  }, [mode, stream, defaultCurrency, assetQuery.data, assetClass, values]);
+    // A Mixed group asks which account's terms to start from first (R4.2).
+    if (needsMixedStep && !mixedResolved) return;
+    initAsset(assetQuery.data.terms);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initAsset reads the same inputs
+  }, [mode, stream, defaultCurrency, assetQuery.data, assetClass, values, needsMixedStep, mixedResolved]);
+
+  const pickedSibling = siblings.find((s) => s.assetId === prefillFrom)
+    ?? siblings.find((s) => s.terms)
+    ?? siblings[0];
+
+  const useSameForAll = () => {
+    setMixedResolved(true);
+    initAsset(pickedSibling?.terms ?? null);
+  };
 
   const setFaceTotalValue = (raw: string) => {
     setFaceTotal(raw);
@@ -176,9 +258,12 @@ function IncomeTermsModalBody({
     if (isEquity && !override && values.isDistributing !== false) return null;
     return previewIncome(
       { ...values, incomeType: values.incomeType },
-      { quantity: assetInfo?.quantity ?? 0, currentValue },
+      { quantity: symbolScope ? groupUnits : assetInfo?.quantity ?? 0, currentValue },
     );
-  }, [values, isEquity, override, assetInfo?.quantity, currentValue]);
+  }, [values, isEquity, override, assetInfo?.quantity, currentValue, symbolScope, groupUnits]);
+
+  const applyAll = mode === 'asset' && groupable && values?.applyToSymbol === true;
+  const anySiblingTerms = siblings.some((s) => s.terms);
 
   const currency = values?.currency || assetInfo?.currency || defaultCurrency || 'USD';
   const busy = saveAsset.isPending || saveStream.isPending || deleteAsset.isPending || deleteStream.isPending;
@@ -189,9 +274,9 @@ function IncomeTermsModalBody({
     if (!values) return;
     // Stocks/ETFs without an override and still distributing → automatic data.
     if (mode === 'asset' && isEquity && !override && values.isDistributing !== false) {
-      if (existingTerms && assetId != null) {
+      if ((existingTerms || (applyAll && anySiblingTerms)) && assetId != null) {
         try {
-          await deleteAsset.mutateAsync(assetId);
+          await deleteAsset.mutateAsync(applyAll ? { assetId, applyToSymbol: true } : assetId);
         } catch {
           toast({ title: t('common.error'), description: t('incomeTerms.saveFailed'), variant: 'destructive' });
           return;
@@ -221,8 +306,16 @@ function IncomeTermsModalBody({
   };
 
   const handleDelete = async () => {
+    // Removing from every holding of the symbol asks first (R4.4).
+    if (applyAll && !confirmRemoveAll) {
+      setConfirmRemoveAll(true);
+      return;
+    }
+    setConfirmRemoveAll(false);
     try {
-      if (mode === 'asset' && assetId != null) await deleteAsset.mutateAsync(assetId);
+      if (mode === 'asset' && assetId != null) {
+        await deleteAsset.mutateAsync(applyAll ? { assetId, applyToSymbol: true } : assetId);
+      }
       else if (mode === 'stream' && stream) await deleteStream.mutateAsync(stream.id);
       toast({ title: t('incomeTerms.deleted') });
       close();
@@ -233,9 +326,31 @@ function IncomeTermsModalBody({
 
   const title = mode === 'stream'
     ? (stream ? t('incomeTerms.editStreamTitle') : t('incomeTerms.addStreamTitle'))
-    : t('incomeTerms.title', { name: assetLabel || assetInfo?.symbol || '' });
+    : symbolScope
+      ? t('incomeTerms.groupTitle', { name: assetLabel || symbol, count: siblings.length })
+      : t('incomeTerms.title', { name: assetLabel || assetInfo?.symbol || '' });
+
+  const showMixedStep = needsMixedStep && !mixedResolved;
+
+  /** One-line summary of a holding's current terms for the Mixed step ("Override $3.00"). */
+  const siblingSummary = (s: IncomeTermsSibling) => {
+    const source = t(`passiveIncome.source.${s.source}`);
+    const terms = s.terms;
+    if (!terms) return source;
+    if (terms.isDistributing === false || terms.incomeType === 'NONE') return t('passiveIncome.incomeType.NONE');
+    const ccy = terms.currency || s.currency;
+    const pctText = (v: number | null) => (v == null ? null : `${v}%`);
+    let detail: string | null = null;
+    if (terms.dividendPerUnit != null) detail = formatCurrency(terms.dividendPerUnit, ccy, locale, { maximumFractionDigits: 4 });
+    else if (terms.monthlyRent != null) detail = formatCurrency(terms.monthlyRent, ccy, locale);
+    else if (BOND_TYPES.includes(terms.incomeType)) detail = pctText(terms.couponRate ?? terms.assumedIndexRate);
+    else detail = pctText(terms.yieldPct);
+    const freqText = terms.frequency ? t(`passiveIncome.frequency.${terms.frequency}`) : null;
+    return [source, detail, freqText].filter(Boolean).join(' · ');
+  };
 
   const loading = mode === 'asset' ? assetQuery.isLoading : streamsQuery.isLoading;
+  const formLoading = loading || (!values && !showMixedStep);
 
   // ── Field helpers ───────────────────────────────────────────────────────
   const fieldError = (field: string) =>
@@ -351,6 +466,34 @@ function IncomeTermsModalBody({
               { value: 'GOVERNMENT', label: t('incomeTerms.issuer.GOVERNMENT') },
               { value: 'CORPORATE', label: t('incomeTerms.issuer.CORPORATE') },
             ] })}
+          {symbolScope ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="it-faceValuePerUnit">{t('incomeTerms.fields.faceValuePerUnit')}</Label>
+              <div className="relative">
+                <Input
+                  id="it-faceValuePerUnit"
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={values.faceValuePerUnit ?? ''}
+                  onChange={(e) => set('faceValuePerUnit', e.target.value)}
+                  className="pr-12"
+                  aria-invalid={Boolean(errors.faceValuePerUnit)}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{currency}</span>
+              </div>
+              <p className="text-xs text-muted-foreground" data-testid="face-value-hint">
+                {t('incomeTerms.faceValuePerUnitGroupHint', {
+                  count: siblings.length,
+                  units: groupUnits.toLocaleString(locale, { maximumFractionDigits: 4 }),
+                  total: values.faceValuePerUnit
+                    ? formatCurrency(Number(values.faceValuePerUnit) * groupUnits, currency, locale, { maximumFractionDigits: 2 })
+                    : '—',
+                })}
+              </p>
+              {fieldError('faceValuePerUnit')}
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <Label htmlFor="it-faceTotal">{t('incomeTerms.fields.faceValueTotal')}</Label>
             <div className="relative">
@@ -377,6 +520,7 @@ function IncomeTermsModalBody({
             </p>
             {fieldError('faceValuePerUnit')}
           </div>
+          )}
           {type !== 'FLOATING_COUPON' && (
             numberField({ field: 'couponRate', label: type === 'INFLATION_LINKED' ? t('incomeTerms.fields.realCoupon') : t('incomeTerms.fields.couponRate'), suffix: '%' })
           )}
@@ -481,7 +625,52 @@ function IncomeTermsModalBody({
         </DialogDescription>
       </DialogHeader>
 
-      {loading || !values ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label={t('common.loading')} />
+        </div>
+      ) : showMixedStep ? (
+        <div className="space-y-4" data-testid="mixed-step">
+          <div className="rounded-md border border-warning/20 bg-warning/10 p-3">
+            <p className="text-sm font-medium text-brand-deep">{t('incomeTerms.mixedTitle')}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('incomeTerms.mixedDescription', { symbol })}</p>
+          </div>
+          <ul className="divide-y divide-gray-100 rounded-md border border-gray-200" data-testid="mixed-siblings">
+            {siblings.map((s) => (
+              <li key={s.assetId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                <span className="text-brand-deep truncate">{s.accountName ?? symbol}</span>
+                <span className="text-xs text-muted-foreground text-right">{siblingSummary(s)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="space-y-1.5">
+            <Label htmlFor="it-mixed-account">{t('incomeTerms.mixedAccount')}</Label>
+            <Select value={pickedSibling ? String(pickedSibling.assetId) : undefined} onValueChange={(v) => setPrefillFrom(Number(v))}>
+              <SelectTrigger id="it-mixed-account">
+                <SelectValue placeholder={t('incomeTerms.select')} />
+              </SelectTrigger>
+              <SelectContent>
+                {siblings.map((s) => (
+                  <SelectItem key={s.assetId} value={String(s.assetId)}>{s.accountName ?? symbol}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button type="button" className="flex-1" onClick={useSameForAll}>
+              {t('incomeTerms.mixedUseSame')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => pickedSibling && onEditOne(pickedSibling, symbol)}
+            >
+              {t('incomeTerms.mixedEditOne')}
+            </Button>
+          </div>
+        </div>
+      ) : formLoading || !values ? (
         <div className="flex items-center justify-center py-10">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label={t('common.loading')} />
         </div>
@@ -542,7 +731,11 @@ function IncomeTermsModalBody({
             </>
           )}
 
-          {mode === 'asset' && isEquity && override && values.isDistributing !== false && (
+          {symbolScope ? (
+            <p className="text-xs text-muted-foreground" data-testid="applies-to-holdings">
+              {t('incomeTerms.appliesToHoldings', { count: siblings.length, symbol })}
+            </p>
+          ) : groupable && (
             <div className="flex items-center gap-2">
               <Checkbox
                 id="it-apply-symbol"
@@ -550,7 +743,7 @@ function IncomeTermsModalBody({
                 onCheckedChange={(v) => set('applyToSymbol', v === true)}
               />
               <Label htmlFor="it-apply-symbol" className="text-sm">
-                {t('incomeTerms.applyToSymbol', { symbol: assetInfo?.symbol ?? '' })}
+                {t('incomeTerms.applyToAllHoldings', { count: siblings.length, symbol })}
               </Label>
             </div>
           )}
@@ -568,7 +761,7 @@ function IncomeTermsModalBody({
       )}
 
       <DialogFooter className="gap-2 sm:gap-2 max-sm:mt-auto max-sm:flex-col-reverse">
-        {existingTerms && (
+        {!showMixedStep && (applyAll ? anySiblingTerms : existingTerms) && (
           <Button
             type="button"
             variant="outline"
@@ -581,11 +774,28 @@ function IncomeTermsModalBody({
           </Button>
         )}
         <Button type="button" variant="outline" onClick={close} disabled={busy}>{t('common.cancel')}</Button>
-        <Button type="button" onClick={handleSave} disabled={busy || !values || (mode === 'asset' && !assetClass)}>
-          {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-          {t('common.save')}
-        </Button>
+        {!showMixedStep && (
+          <Button type="button" onClick={handleSave} disabled={busy || !values || (mode === 'asset' && !assetClass)}>
+            {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            {t('common.save')}
+          </Button>
+        )}
       </DialogFooter>
+
+      <AlertDialog open={confirmRemoveAll} onOpenChange={setConfirmRemoveAll}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('incomeTerms.removeTerms')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('incomeTerms.removeFromAllConfirm', { count: siblings.length, symbol })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>{t('incomeTerms.removeTerms')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

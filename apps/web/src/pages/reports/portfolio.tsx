@@ -1032,6 +1032,9 @@ export default function PortfolioHoldingsPage() {
         assetId={incomeTermsItem?.id ?? null}
         assetLabel={incomeTermsItem?.symbol}
         currentValue={incomeTermsItem ? parseDecimal(incomeTermsItem.native?.marketValue) : undefined}
+        // #83 R5: pre-ticks "apply to all holdings" when the symbol is held in
+        // more than one account (the modal checks the server-side siblings; cash excluded).
+        defaultApplyToSymbol
       />
     </div>
   );

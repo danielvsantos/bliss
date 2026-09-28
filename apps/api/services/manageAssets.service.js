@@ -2,7 +2,7 @@ import prisma from '../prisma/prisma.js';
 import {
   classifyAssetClass,
   classifyIncomeAsset,
-  incomeDataSource,
+  resolveIncomeSource,
   isValidAssetClass,
   COVERAGE_ASSET_CLASSES,
   MANUAL_PRICE_STALE_DAYS,
@@ -161,7 +161,7 @@ function toRow(item, sm) {
   let incomeDataStatus = 'NOT_APPLICABLE';
   if (incomeAssetClass) {
     const trusted = sm?.dividendTrusted === true;
-    incomeDataStatus = incomeDataSource({
+    incomeDataStatus = resolveIncomeSource({
       assetClass: incomeAssetClass,
       terms,
       recentDividends: trusted ? (Array.isArray(sm.recentDividends) ? sm.recentDividends : []) : null,

@@ -57,7 +57,15 @@ The same helper covers the early-return path (no investment/debt transactions le
 - **Rent**: net monthly rent, × (1 + indexation) per full year since `startDate`/anchor, stopping at `leaseEndDate`. **Cash interest**: `value × APY / 12` monthly. **Streams**: `amountPerPayment` at frequency (weekly…annual) from the anchor/`startDate` to `endDate`, indexed on `startDate` anniversaries, bucket `other`.
 - **Statuses**: `MATURED_UNREDEEMED` (bond past maturity with quantity), `ENDED` (lease/stream/end date passed), `STALE_RATE` (floating/inflation terms not updated in 180 days).
 - **Frequency label** for automatic dividends: 11–13 → MONTHLY, 4 → QUARTERLY, 2 → SEMIANNUAL, 1 → ANNUAL, 0 → NONE, else IRREGULAR.
-- Also exports `classifyIncomeAsset`, `validateIncomeTerms`, `isStreamEligibleCategory`, `frequencyFromDividendCount` and the constants used by the API.
+- Also exports `classifyIncomeAsset`, `validateIncomeTerms`, `isStreamEligibleCategory`, `frequencyFromDividendCount`, `resolveIncomeSource` (#83) and the constants used by the API.
+
+**Grouped view (#83).** Assets may carry `accountId`, `accountName`, `currency` and `securityName`; item rows echo them plus `quantity` and `currentValue`. `project()` then returns:
+
+- `groups` = `groupItems(items, missing)` — one group per `assetClass + symbol` (cash therefore groups by currency: its symbol is `Cash EUR`). Missing holdings become `source: 'MISSING'` children with zero totals. Sums for totals, quantity and value; `rateOrYield` = next-12-month income ÷ value, except bonds/cash (shared rate, or `rateRange`); earliest next payment, latest end date; `incomeType`/`source`/`frequency` are the shared value or `MIXED`; status severity `MATURED_UNREDEEMED > STALE_RATE > ENDED > OK`, `statusCount` = children not OK. O(n).
+- `upcomingPaymentsGrouped` — events merged by `(group, date, source)` over the **full** event list, then the top 10.
+- `missingGroups` = `groupMissing(missing)`; `totals.coverage` counts groups (configured = no missing child), `totals.coverageByHolding` keeps the old count.
+
+Monthly/yearly buckets, totals and the maturity ladder are unaffected (a regression test compares them with and without the grouping fields). #80's insights should read `groups` when describing holdings.
 
 The backend loads it with `require('@bliss/shared/portfolio')` (CJS build); a unit test asserts the CJS and ESM builds return identical results (#80 depends on it).
 
@@ -68,4 +76,4 @@ The backend loads it with `require('@bliss/shared/portfolio')` (CJS build); a un
 - `securityMasterService.test.js` / `securityMasterWorker.test.js` — ETF profile fields ignored, `recentDividends` stored/preserved, ETF selection, `/earnings` skipped, tenant refresh + lock release.
 - `eventSchedulerWorker.test.js`, `rebuild.test.js`, `rebuildLock.test.js` — wiring and the `security-data` scope.
 - `insightService.test.js` — PORTFOLIO-tier regression with ETF SecurityMaster rows.
-- `shared/portfolioProjection.test.js` — CJS/ESM parity.
+- `shared/portfolioProjection.test.js` — CJS/ESM parity (incl. `groups`).

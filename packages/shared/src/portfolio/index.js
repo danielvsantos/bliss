@@ -396,16 +396,11 @@ function resolveAssetMode(asset) {
 }
 
 /**
- * Where an asset's projected income comes from (Manage Assets #81), using the
- * same priority as the projection: 'AUTO' (trusted SecurityMaster dividends),
- * 'OVERRIDE' (a stock/ETF dividend override), 'MANUAL' (any other user-entered
- * terms) or 'MISSING' (nothing to project from).
- *
- * @param {Object} asset  { assetClass, terms, recentDividends } — as `project()` takes them
- * @returns {'AUTO'|'OVERRIDE'|'MANUAL'|'MISSING'}
+ * Data source of one holding's projection: 'AUTO' | 'OVERRIDE' | 'MANUAL' | 'MISSING'.
+ * Same rules as the breakdown row. `recentDividends` must be null unless trusted.
  */
-export function incomeDataSource(asset = {}) {
-  return resolveAssetMode(asset).source;
+export function resolveIncomeSource({ assetClass, terms = null, recentDividends = null } = {}) {
+  return resolveAssetMode({ assetClass, terms, recentDividends }).source;
 }
 
 function bondRate(mode, t) {
@@ -600,6 +595,198 @@ function streamStatus(stream, asOf) {
   return end && end < asOf ? 'ENDED' : 'OK';
 }
 
+// ─── Grouping (#83) ──────────────────────────────────────────────────────────
+
+/** Most severe first: the group shows the worst status among its holdings. */
+export const STATUS_SEVERITY = ['MATURED_UNREDEEMED', 'STALE_RATE', 'ENDED', 'OK'];
+
+/** Asset classes whose group rate is the shared coupon / APY (or a range), not income ÷ value. */
+const RATE_CLASSES = ['BOND', 'CASH'];
+
+function severity(status) {
+  const i = STATUS_SEVERITY.indexOf(status);
+  return i === -1 ? STATUS_SEVERITY.length : i;
+}
+
+/** The shared value when every entry agrees, 'MIXED' when they don't, `empty` when there's none. */
+function sharedOrMixed(values, empty = null) {
+  if (values.length === 0) return empty;
+  return values.every((v) => v === values[0]) ? values[0] : 'MIXED';
+}
+
+/** Internal grouping key: one group per symbol (and asset class, so an oddly named manual asset never joins a security). */
+function groupId(row) {
+  return `${row.assetClass || ''}::${row.symbol || row.label}`;
+}
+
+/** A breakdown child row for a holding with no usable data (`missing[]` entry). */
+function missingChildRow(m) {
+  return {
+    kind: 'ASSET',
+    portfolioItemId: m.portfolioItemId,
+    streamId: null,
+    incomeTermsId: null,
+    label: m.label,
+    symbol: m.symbol,
+    securityName: m.securityName ?? null,
+    assetClass: m.assetClass,
+    accountId: m.accountId ?? null,
+    accountName: m.accountName ?? null,
+    quantity: m.quantity ?? null,
+    currentValue: m.currentValue ?? null,
+    currency: m.currency ?? null,
+    incomeType: DEFAULT_INCOME_TYPE_BY_CLASS[m.assetClass] || 'DIVIDEND',
+    source: 'MISSING',
+    rateOrYield: null,
+    amountPerPayment: null,
+    frequency: null,
+    nextPaymentDate: null,
+    endDate: null,
+    status: 'OK',
+    horizonTotal: 0,
+    next12mTotal: 0,
+  };
+}
+
+/**
+ * Group breakdown rows by holding: one group per symbol (securities, bonds,
+ * real estate, other) and — because a cash holding's symbol is "Cash EUR" —
+ * one per cash currency. Streams are not grouped (the caller keeps them flat).
+ * Holdings with no usable data (`missing`) become MISSING children, so a group
+ * can be partly configured.
+ *
+ * @param {Array} items    `project().items` (streams are ignored)
+ * @param {Array} [missing] `project().missing`
+ * @returns {Array} groups sorted by horizonTotal desc, then label
+ */
+export function groupItems(items = [], missing = []) {
+  const map = new Map();
+  const add = (row) => {
+    const id = groupId(row);
+    if (!map.has(id)) map.set(id, []);
+    map.get(id).push(row);
+  };
+  for (const row of items) if (row.kind === 'ASSET') add(row);
+  for (const m of missing) add(missingChildRow(m));
+
+  const groups = [];
+  for (const children of map.values()) {
+    children.sort((a, b) => b.horizonTotal - a.horizonTotal
+      || String(a.accountName ?? '').localeCompare(String(b.accountName ?? '')));
+    const first = children[0];
+    const assetClass = first.assetClass;
+    const configured = children.filter((c) => c.source !== 'MISSING');
+    const sum = (key) => children.reduce((s, c) => s + (num(c[key]) ?? 0), 0);
+    const horizonTotal = round2(sum('horizonTotal'));
+    const next12mTotal = round2(sum('next12mTotal'));
+    const currentValue = round2(sum('currentValue'));
+
+    let rateOrYield = null;
+    let rateRange = null;
+    if (RATE_CLASSES.includes(assetClass)) {
+      const rates = configured.map((c) => c.rateOrYield).filter((r) => r != null);
+      if (rates.length > 0) {
+        const min = Math.min(...rates);
+        const max = Math.max(...rates);
+        if (min === max) rateOrYield = min;
+        else rateRange = [min, max];
+      }
+    } else if (currentValue > 0) {
+      rateOrYield = Math.round((next12mTotal / currentValue) * 1e6) / 1e6;
+    } else if (children.length === 1) {
+      rateOrYield = first.rateOrYield;
+    }
+
+    const nextDates = children.map((c) => c.nextPaymentDate).filter(Boolean).sort();
+    const endDates = children.map((c) => c.endDate).filter(Boolean).sort();
+    const worst = children.reduce((w, c) => (severity(c.status) < severity(w) ? c.status : w), 'OK');
+    const names = [...new Set(children.map((c) => c.securityName).filter(Boolean))];
+
+    groups.push({
+      groupKey: first.symbol || first.label,
+      kind: assetClass === 'CASH' ? 'CASH' : 'SECURITY',
+      label: names[0] || first.symbol || first.label,
+      symbol: first.symbol,
+      assetClass,
+      accountCount: children.length,
+      portfolioItemIds: children.map((c) => c.portfolioItemId),
+      quantity: Math.round(sum('quantity') * 1e8) / 1e8,
+      currentValue,
+      currency: sharedOrMixed(children.map((c) => c.currency).filter(Boolean)),
+      incomeType: sharedOrMixed(configured.map((c) => c.incomeType), first.incomeType),
+      source: sharedOrMixed(children.map((c) => c.source)),
+      frequency: sharedOrMixed(configured.map((c) => c.frequency).filter(Boolean)),
+      rateOrYield,
+      rateRange,
+      amountPerPayment: children.length === 1 ? first.amountPerPayment : null,
+      nextPaymentDate: nextDates[0] ?? null,
+      endDate: endDates[endDates.length - 1] ?? null,
+      status: worst,
+      statusCount: children.filter((c) => c.status !== 'OK').length,
+      configured: configured.length === children.length,
+      inCoverage: children.some((c) => COVERAGE_ASSET_CLASSES.includes(c.assetClass)),
+      horizonTotal,
+      next12mTotal,
+      children,
+    });
+  }
+  groups.sort((a, b) => b.horizonTotal - a.horizonTotal || String(a.label).localeCompare(String(b.label)));
+  return groups;
+}
+
+/** One missing-data entry per symbol (opens the Income Terms modal in group mode). */
+export function groupMissing(missing = []) {
+  const map = new Map();
+  for (const m of missing) {
+    const id = groupId(m);
+    if (!map.has(id)) {
+      map.set(id, {
+        groupKey: m.symbol || m.label,
+        symbol: m.symbol,
+        label: m.securityName || m.symbol || m.label,
+        assetClass: m.assetClass,
+        portfolioItemIds: [],
+        reason: m.reason,
+      });
+    }
+    const g = map.get(id);
+    g.portfolioItemIds.push(m.portfolioItemId);
+    // "No terms" is the more actionable reason when accounts disagree.
+    if (m.reason === 'NO_TERMS') g.reason = 'NO_TERMS';
+  }
+  return [...map.values()];
+}
+
+/**
+ * Merge upcoming payment events of the same holding group (symbol), date and
+ * source into one line with the summed amount and the accounts that pay it.
+ * Streams stay one line each. Call on the FULL event list, before taking the top N.
+ */
+function mergeUpcoming(events) {
+  const map = new Map();
+  for (const e of events) {
+    const key = e.kind === 'STREAM' ? `S:${e.refId}:${e.date}:${e.source}` : `A:${e.groupId}:${e.date}:${e.source}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        date: e.date,
+        kind: e.kind,
+        groupKey: e.kind === 'STREAM' ? null : e.groupKey,
+        refId: e.kind === 'STREAM' ? e.refId : null,
+        refIds: [],
+        label: e.kind === 'STREAM' ? e.label : e.groupLabel,
+        amount: 0,
+        source: e.source,
+        accounts: [],
+      });
+    }
+    const m = map.get(key);
+    m.amount += e.amount;
+    if (!m.refIds.includes(e.refId)) m.refIds.push(e.refId);
+    if (e.accountName && !m.accounts.includes(e.accountName)) m.accounts.push(e.accountName);
+  }
+  return [...map.values()];
+}
+
 // ─── project() ───────────────────────────────────────────────────────────────
 
 function emptyBuckets() {
@@ -618,13 +805,17 @@ function roundBuckets(b) {
  * @param {Object}  input
  * @param {Array}   input.assets   [{ id, label, symbol?, assetClass, quantity, currentValue (display ccy),
  *                                    fxRate (terms ccy → display), dividendFxRate? (dividend ccy → display),
- *                                    terms: IncomeTerms|null, recentDividends: [{exDate, amount}]|null }]
+ *                                    terms: IncomeTerms|null, recentDividends: [{exDate, amount}]|null,
+ *                                    accountId?, accountName?, currency?, securityName? }]
  *                                  `recentDividends` must be null unless SecurityMaster marks them trusted.
+ *                                  The optional fields feed the grouped view (#83): `groups`,
+ *                                  `upcomingPaymentsGrouped`, `missingGroups`, group-level coverage.
  * @param {Array}   input.streams  [{ id, name, categoryName?, fxRate, terms: IncomeTerms (FIXED_AMOUNT) }]
  * @param {Date|string} input.asOf
  * @param {number}  input.horizon  12 | 24 | 36
  * @param {string}  [input.displayCurrency]
- * @returns {Object} see docs/specs/api — monthly, yearly, items, upcomingPayments, maturityLadder, totals
+ * @returns {Object} see docs/specs/api — monthly, yearly, items, groups, upcomingPayments,
+ *                   upcomingPaymentsGrouped, maturityLadder, missing, missingGroups, totals
  */
 export function project({ assets = [], streams = [], asOf, horizon = 12, displayCurrency = null } = {}) {
   const today = toDay(asOf || new Date());
@@ -663,7 +854,18 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
         }
       }
       if (!row.nextPaymentDate || e.date < toDay(row.nextPaymentDate)) row.nextPaymentDate = fmtDay(e.date);
-      upcoming.push({ date: fmtDay(e.date), kind: ref.kind, refId: ref.refId, label: ref.label, amount: e.amount, source: e.bucket });
+      upcoming.push({
+        date: fmtDay(e.date),
+        kind: ref.kind,
+        refId: ref.refId,
+        label: ref.label,
+        amount: e.amount,
+        source: e.bucket,
+        groupId: ref.groupId ?? null,
+        groupKey: ref.groupKey ?? null,
+        groupLabel: ref.groupLabel ?? null,
+        accountName: ref.accountName ?? null,
+      });
     }
   };
 
@@ -672,6 +874,15 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
     const inCoverage = COVERAGE_ASSET_CLASSES.includes(asset.assetClass);
     const value = num(asset.currentValue) ?? 0;
     const qty = num(asset.quantity) ?? 0;
+    // Per-holding fields the grouped view needs (#83).
+    const holding = {
+      securityName: asset.securityName ?? null,
+      accountId: asset.accountId ?? null,
+      accountName: asset.accountName ?? null,
+      quantity: qty,
+      currentValue: round2(value),
+      currency: asset.currency ?? null,
+    };
     if (value > 0) investmentValue += value;
     if (inCoverage && qty > 0) {
       coverageTotal += 1;
@@ -685,6 +896,7 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
           label: asset.label,
           assetClass: asset.assetClass,
           reason: asset.hasSecurityData ? 'UNTRUSTED_DIVIDEND' : 'NO_TERMS',
+          ...holding,
         });
       }
       continue;
@@ -702,6 +914,7 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
       label: asset.label,
       symbol: asset.symbol || null,
       assetClass: asset.assetClass || null,
+      ...holding,
       incomeType,
       source: resolved.source,
       rateOrYield: meta.rateOrYield,
@@ -713,7 +926,15 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
       horizonTotal: 0,
       next12mTotal: 0,
     };
-    accumulate(events, row, { kind: 'ASSET', refId: asset.id, label: asset.label });
+    accumulate(events, row, {
+      kind: 'ASSET',
+      refId: asset.id,
+      label: asset.label,
+      groupId: groupId(row),
+      groupKey: asset.symbol || asset.label,
+      groupLabel: holding.securityName || asset.symbol || asset.label,
+      accountName: holding.accountName,
+    });
     for (const p of principal) {
       const y = p.date.getUTCFullYear();
       if (!ladder.has(y)) ladder.set(y, { year: y, principal: 0, items: [] });
@@ -761,8 +982,15 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
   const next12mOtherIncome = first12.reduce((s, m) => s + m.other, 0);
   const next12mInvestmentIncome = next12mIncome - next12mOtherIncome;
 
-  upcoming.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : b.amount - a.amount));
+  const byDateThenAmount = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : b.amount - a.amount);
+  upcoming.sort(byDateThenAmount);
   items.sort((a, b) => b.horizonTotal - a.horizonTotal || String(a.label).localeCompare(String(b.label)));
+
+  // Grouped view (#83): one row per symbol / cash currency. Coverage counts
+  // groups; a group is configured only when none of its holdings is missing.
+  const groups = groupItems(items, missing);
+  const coverageGroups = groups.filter((g) => g.inCoverage && g.quantity > 0);
+  const upcomingGrouped = mergeUpcoming(upcoming).sort(byDateThenAmount);
 
   return {
     displayCurrency,
@@ -776,12 +1004,26 @@ export function project({ assets = [], streams = [], asOf, horizon = 12, display
       monthlyAverage: round2(next12mIncome / 12),
       investmentValue: round2(investmentValue),
       yieldOnValue: investmentValue > 0 ? Math.round((next12mInvestmentIncome / investmentValue) * 1e6) / 1e6 : null,
-      coverage: { configured, total: coverageTotal },
+      coverage: {
+        configured: coverageGroups.filter((g) => g.configured).length,
+        total: coverageGroups.length,
+      },
+      coverageByHolding: { configured, total: coverageTotal },
     },
     monthly: monthlyArr,
     yearly: yearly.map(roundBuckets),
     items,
-    upcomingPayments: upcoming.slice(0, 10).map((u) => ({ ...u, amount: round2(u.amount) })),
+    groups,
+    upcomingPayments: upcoming.slice(0, 10).map((u) => ({
+      date: u.date,
+      kind: u.kind,
+      refId: u.refId,
+      label: u.label,
+      amount: round2(u.amount),
+      source: u.source,
+    })),
+    upcomingPaymentsGrouped: upcomingGrouped.slice(0, 10).map((u) => ({ ...u, amount: round2(u.amount) })),
+    missingGroups: groupMissing(missing),
     maturityLadder: [...ladder.values()]
       .sort((a, b) => a.year - b.year)
       .map((l) => ({ ...l, principal: round2(l.principal) })),

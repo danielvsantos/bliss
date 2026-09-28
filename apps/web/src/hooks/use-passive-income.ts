@@ -82,7 +82,10 @@ export function useSaveAssetIncomeTerms() {
 export function useDeleteAssetIncomeTerms() {
   const invalidate = useInvalidatePassiveIncome();
   return useMutation({
-    mutationFn: (assetId: number) => api.deleteAssetIncomeTerms(assetId),
+    mutationFn: (arg: number | { assetId: number; applyToSymbol?: boolean }) =>
+      typeof arg === 'number'
+        ? api.deleteAssetIncomeTerms(arg)
+        : api.deleteAssetIncomeTerms(arg.assetId, { applyToSymbol: arg.applyToSymbol }),
     onSuccess: invalidate,
   });
 }

@@ -417,6 +417,9 @@ export default function ManageAssetsPage() {
         assetId={modal === "income" ? modalAsset?.id ?? null : null}
         assetLabel={modalAsset?.symbol}
         currentValue={modalAsset?.currentValue != null ? Number(modalAsset.currentValue) : undefined}
+        // #83: pre-ticks "apply to all holdings" when the symbol is held in more
+        // than one account (the modal checks the server-side siblings; cash excluded).
+        defaultApplyToSymbol
       />
       <ManualValueModal asset={assetRef} {...modalProps("price")} />
       <ManualPriceHistoryDialog asset={modal === "history" ? assetRef : null} {...modalProps("history")} />
