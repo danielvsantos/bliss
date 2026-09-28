@@ -118,7 +118,7 @@ function stripInternalFlags(tenantData) {
     // eslint-disable-next-line no-unused-vars
     tier, hasTransactions, hasPortfolio, hasDebt, comparisonAvailable,
     // eslint-disable-next-line no-unused-vars
-    passiveIncome, incomeMix, assetClassAllocation, fixedIncome, sectorBaseValue,
+    passiveIncome, incomeMix, assetClassAllocation, fixedIncome, sectorBaseValue, unclassifiedEquityValue,
     ...rest
   } = tenantData;
   return rest;

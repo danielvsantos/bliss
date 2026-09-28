@@ -221,7 +221,7 @@ If a future refactor reintroduces the write-through path — directly, transitiv
 2. **`project()`** (12-month horizon) and **`summarize()`** from `@bliss/shared/portfolio` (CJS build).
 3. Returns `null` when nothing produces passive income (no coverage-eligible holding, no stream, no projected income). A load error is logged at `warn` and also returns `null` — the tier run continues without the signal.
 
-`summarize(projection, actuals, essentials)` output (all amounts whole units of the display currency, percentages 1 decimal, arrays bounded and deterministically ordered):
+`summarize(projection, actuals, essentials)` output — contributors and coverage are per **holding** (one symbol across several accounts is one, via `project().groups`, #83) (all amounts whole units of the display currency, percentages 1 decimal, arrays bounded and deterministically ordered):
 
 | Field | Meaning |
 |---|---|
@@ -242,8 +242,9 @@ If a future refactor reintroduces the write-through path — directly, transitiv
 
 `gatherEquityFundamentals` classifies every investment holding with the shared `classifyAssetClass` (#79: override → bond issuer / category → REIT → ETF composition → stock / fund). The pre-#80 fallback sectors (`HINT_TO_SECTOR`: "ETFs & Funds", "Cryptocurrency", "Alternative Assets") are gone — a holding without a real sector has `sector: null`.
 
-- **`sectorAllocation`** uses `lookThrough(…, 'sector')` over `EQUITY_ASSET_CLASSES` (STOCK, REIT, INDEX_ETF, SECTOR_ETF): stocks and REITs by their own sector, equity ETFs split by composition weight. The "Diversified" (ETF without composition), "Other" (unassigned ETF weight) and "Unknown" buckets are dropped, and bond ETFs, bonds, real estate, crypto, funds and cash never enter. Percentages are over what remains (`equityValue`, exposed as `sectorBaseValue`). Each sector carries `holdings` (direct symbols) and `viaEtfs` (`[{ symbol, weightPct }]`).
+- **`sectorAllocation`** uses `lookThrough(…, 'sector')` over `EQUITY_ASSET_CLASSES` (STOCK, REIT, INDEX_ETF, SECTOR_ETF). Stocks and REITs count by their own sector. An equity ETF is split by composition weight **only when `SecurityMaster.etfComposition` exists** — composition depends on the Twelve Data plan and is usually absent, and nothing in #80 requires it. Without it the ETF is "Diversified". "Diversified", "Other" (unassigned ETF weight) and "Unknown" (stock without sector) **stay in the base** (`equityValue`, exposed as `sectorBaseValue`) but are never listed as a sector; their total is `unclassifiedEquityValue` (KEY SIGNALS `unclassifiedSharePct`). So a portfolio that is 90% VWCE + 10% NVDA reads "Technology 10%", never 100%. Bond ETFs, bonds, real estate, crypto, funds and cash never enter. Each sector carries `holdings` (direct symbols) and `viaEtfs` (`[{ symbol, weightPct }]`, empty without composition).
 - **`industryAllocation`** counts STOCK and REIT only (no industry look-through), as a share of the same base.
+- Without composition, ETFs classify as INDEX_ETF, or BOND_ETF when the name matches the bond pattern (#79 classifier fallback); SECTOR_ETF needs composition.
 - **`assetClassAllocation`** — `buildComposition` over every holding except cash: `[{ assetClass, percent, count }]`.
 - **`fixedIncome`** — `buildFixedIncome` over GOV_BOND / CORP_BOND holdings with face value (converted via `rateCache`), anchored on `asOf`.
 - ETFs never carry `peRatio` / `trailingEps`; KEY SIGNALS' weighted P/E is stocks-only.

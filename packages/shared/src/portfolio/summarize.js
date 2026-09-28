@@ -76,8 +76,13 @@ export function summarize(projection, actuals = [], essentials = null) {
     : Number(actuals) || 0;
   const essentialSpend = Number(essentials) > 0 ? Number(essentials) : null;
 
-  // Top contributors over the next 12 months
-  const earning = items
+  // Top contributors over the next 12 months, per holding: the same symbol
+  // held in several accounts is one contributor (`project().groups`, #83),
+  // streams stay individual.
+  const holdings = Array.isArray(projection?.groups)
+    ? projection.groups.map((g) => ({ label: g.label, kind: 'ASSET', next12mTotal: g.next12mTotal }))
+    : items.filter((i) => i.kind === 'ASSET');
+  const earning = [...holdings, ...items.filter((i) => i.kind === 'STREAM')]
     .filter((i) => (Number(i.next12mTotal) || 0) > 0)
     .sort((a, b) => b.next12mTotal - a.next12mTotal || byLabel(a, b));
   const topContributors = earning.slice(0, SUMMARY_LIMITS.topContributors).map((i) => ({

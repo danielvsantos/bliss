@@ -813,12 +813,16 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
 
   const totalValue = enrichedHoldings.reduce((sum, h) => sum + Math.abs(h.currentValue), 0);
 
-  // Sector allocation — look-through (#80, using #79's `lookThrough`):
-  // stocks and REITs by their own sector, equity ETFs split by their
-  // composition weights. ETFs without composition ("Diversified"), the
-  // unassigned remainder of an ETF's weights ("Other"), stocks with no sector
-  // data ("Unknown"), bond ETFs, bonds, real estate, crypto, funds and cash
-  // are left out, and percentages are over what remains (`equityValue`).
+  // Sector allocation (#80, using #79's `lookThrough`) over the equity book:
+  // stocks, REITs and equity ETFs. Stocks and REITs count by their own
+  // sector. An ETF is split by its composition weights only when
+  // SecurityMaster has composition data — which is optional (it depends on
+  // the Twelve Data plan) and absent for most deployments. Without it the ETF
+  // lands in "Diversified". "Diversified", the unassigned remainder of an
+  // ETF's weights ("Other") and stocks with no sector data ("Unknown") stay
+  // in the base (`equityValue`) but are never listed as a sector, so a
+  // portfolio that is mostly a world ETF never reads as "100% Technology".
+  // Bond ETFs, bonds, real estate, crypto, funds and cash are not equities.
   const equityRows = enrichedHoldings
     .filter((h) => EQUITY_ASSET_CLASSES.includes(h.assetClass))
     .map((h) => ({
@@ -829,8 +833,10 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
       composition: compositionBySymbol.get(h.symbol) || null,
     }));
   const EXCLUDED_SECTOR_BUCKETS = new Set(['Diversified', 'Other', 'Unknown']);
-  const sectorGroups = lookThrough(equityRows, 'sector').filter((g) => !EXCLUDED_SECTOR_BUCKETS.has(g.name));
-  const equityValue = sectorGroups.reduce((s, g) => s + g.value, 0);
+  const allSectorGroups = lookThrough(equityRows, 'sector');
+  const sectorGroups = allSectorGroups.filter((g) => !EXCLUDED_SECTOR_BUCKETS.has(g.name));
+  const equityValue = allSectorGroups.reduce((s, g) => s + g.value, 0);
+  const unclassifiedEquityValue = equityValue - sectorGroups.reduce((s, g) => s + g.value, 0);
   const round2 = (n) => Math.round(n * 100) / 100;
   const shareOf = (v) => (equityValue > 0 ? Math.round((v / equityValue) * 10000) / 100 : 0);
 
@@ -909,6 +915,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
     industryAllocation,
     totalValue: round2(totalValue),
     equityValue: round2(equityValue),
+    unclassifiedEquityValue: round2(unclassifiedEquityValue),
     assetClassAllocation,
     fixedIncome,
   };
@@ -952,6 +959,7 @@ async function loadPassiveIncomeInputs(tenantId, portfolioCurrency, rateCache, a
         category: {
           select: { name: true, type: true, group: true, processingHint: true, defaultCategoryCode: true },
         },
+        accountId: true,
         account: { select: { name: true } },
         incomeTerms: true,
       },
@@ -978,7 +986,9 @@ async function loadPassiveIncomeInputs(tenantId, portfolioCurrency, rateCache, a
   const smRows = apiSymbols.length
     ? await prisma.securityMaster.findMany({
         where: { symbol: { in: apiSymbols } },
-        select: { symbol: true, assetType: true, currency: true, dividendTrusted: true, recentDividends: true },
+        select: {
+          symbol: true, name: true, assetType: true, currency: true, dividendTrusted: true, recentDividends: true,
+        },
       })
     : [];
   const smMap = new Map(smRows.map((r) => [r.symbol, r]));
@@ -1013,6 +1023,11 @@ async function loadPassiveIncomeInputs(tenantId, portfolioCurrency, rateCache, a
       id: item.id,
       label: item.account?.name ? `${item.symbol} · ${item.account.name}` : item.symbol,
       symbol: item.symbol,
+      // Holding grouping (#83): coverage and contributors are per symbol.
+      securityName: sm?.name || null,
+      accountId: item.accountId ?? null,
+      accountName: item.account?.name || null,
+      currency: item.currency,
       categoryName: item.category?.name || null,
       assetClass,
       quantity: toNumber(item.quantity),
@@ -1513,6 +1528,7 @@ async function gatherPortfolioIntelligenceData(tenantId) {
     industryAllocation: equityData.industryAllocation,
     totalEquityValue: equityData.totalValue,
     sectorBaseValue: equityData.equityValue,
+    unclassifiedEquityValue: equityData.unclassifiedEquityValue,
     assetClassAllocation: equityData.assetClassAllocation,
     fixedIncome: equityData.fixedIncome,
     passiveIncomeRecent,

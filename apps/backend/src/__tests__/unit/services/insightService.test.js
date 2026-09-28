@@ -863,9 +863,10 @@ describe('insightService (v1)', () => {
       expect(h.sector).toBeNull();
       expect(h.peRatio).toBeNull();
       expect(h.trailingEps).toBeNull();
-      // No composition → "Diversified", which is excluded from sector allocation
+      // No composition → "Diversified": in the equity base, never a sector
       expect(result.sectorAllocation).toEqual({});
-      expect(result.equityValue).toBe(0);
+      expect(result.equityValue).toBe(5000);
+      expect(result.unclassifiedEquityValue).toBe(5000);
     });
   });
 });

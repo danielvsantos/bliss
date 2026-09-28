@@ -23,13 +23,13 @@ const examples = {
 
   SECTOR_CONCENTRATION: {
     lens: 'SECTOR_CONCENTRATION',
-    title: 'Technology at 44% Once ETFs Are Looked Through',
-    body: "Looking through ETFs, Technology is 44% of the $268,000 equity book, above the 40% single-sector flag. It comes from direct holdings NVDA and AAPL plus 59% of QQQ and 31% of VTI. Inside that, Semiconductors alone is 17% of equity (NVDA, AMD). Financials follow at 13% and Healthcare at 11%; bonds and property are outside this view by design.",
+    title: 'Technology at 42% of the Equity Book',
+    body: "Technology is 42% of the $268,000 equity book, just above the 40% single-sector flag, driven by NVDA, AAPL and MSFT. Inside that, Semiconductors alone is 17% of equity (NVDA, AMD). Financials follow at 13% and Healthcare at 11%. Another 30% sits in diversified ETFs (VWCE, VTI), which spread across sectors and aren't counted toward any one; bonds and property are outside this view by design.",
     severity: 'WARNING',
     priority: 75,
     category: 'PORTFOLIO',
     metadata: {
-      dataPoints: { current: 44, prior: 43, yoy: null, deltaPct: 2.3 },
+      dataPoints: { current: 42, prior: 41, yoy: null, deltaPct: 2.4 },
       actionTypes: ['PORTFOLIO_REBALANCE'],
       relatedLenses: ['PORTFOLIO_EXPOSURE', 'VALUATION_RISK'],
       suggestedAction: 'Directing new contributions to non-tech exposure would dilute the sector share without selling.',

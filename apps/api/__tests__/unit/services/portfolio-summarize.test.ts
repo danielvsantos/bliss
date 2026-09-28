@@ -117,6 +117,21 @@ describe('summarize()', () => {
     expect(s.dividendsNext12m).toBe(Math.round(ko.next12mTotal));
   });
 
+  it('counts the same symbol held in two accounts as one contributor (#83 grouping)', () => {
+    const r = summarize(project({
+      asOf: AS_OF,
+      horizon: 12,
+      assets: [
+        asset({ id: 1, label: 'KO · A', symbol: 'KO', securityName: 'Coca-Cola', accountName: 'A', recentDividends: KO }),
+        asset({ id: 2, label: 'KO · B', symbol: 'KO', securityName: 'Coca-Cola', accountName: 'B', recentDividends: KO }),
+        asset({ id: 3, label: 'PEP', symbol: 'PEP', recentDividends: KO.map((d) => ({ ...d, amount: d.amount * 1.5 })) }),
+      ],
+    }), [], null);
+    expect(r.topContributors.map((c: any) => c.label)).toEqual(['Coca-Cola', 'PEP']);
+    expect(r.largestSharePct).toBe(57.1);
+    expect(r.coverage.total).toBe(2);
+  });
+
   it('caps missing labels and ending items', () => {
     const many = {
       asOf: AS_OF,

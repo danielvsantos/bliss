@@ -182,8 +182,8 @@ describe('insightPrompts/builder', () => {
 
     it('SECTOR_CONCENTRATION describes look-through and never flags non-equity buckets', () => {
       const text = buildSystemString('PORTFOLIO', ['SECTOR_CONCENTRATION']);
-      expect(text).toMatch(/LOOK-THROUGH/);
-      expect(text).toMatch(/59% of QQQ/);
+      expect(text).toMatch(/only when Bliss has its composition/);
+      expect(text).toMatch(/unclassifiedSharePct/);
       expect(text).toMatch(/NEVER flag them/);
     });
 

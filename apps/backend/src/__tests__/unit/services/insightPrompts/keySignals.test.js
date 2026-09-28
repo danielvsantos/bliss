@@ -313,6 +313,7 @@ describe('computeKeySignals — passive income & asset classes (#80)', () => {
     const signals = computeKeySignals({
       totalEquityValue: 100000,
       sectorBaseValue: 89000,
+      unclassifiedEquityValue: 22250,
       equityHoldings: [
         { symbol: 'NVDA', assetClass: 'STOCK', currentValue: 30000, peRatio: 50, dividendYield: 0.0003 },
         { symbol: 'QQQ', assetClass: 'INDEX_ETF', currentValue: 50000, peRatio: 99, dividendYield: 0.006 },
@@ -331,6 +332,7 @@ describe('computeKeySignals — passive income & asset classes (#80)', () => {
     expect(signals.assetClassAllocation).toHaveLength(1);
     expect(signals.fixedIncome.totalFace).toBe(15000);
     expect(signals.sectorBaseValue).toBe(89000);
+    expect(signals.unclassifiedSharePct).toBe(25);
     expect(signals.topSector).toEqual({
       sector: 'Technology', sharePct: 66.9, holdings: ['NVDA'], viaEtfs: [{ symbol: 'QQQ', weightPct: 59 }],
     });

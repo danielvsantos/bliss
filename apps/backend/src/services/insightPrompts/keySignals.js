@@ -413,9 +413,13 @@ function portfolioSignals(tenantData) {
     // Asset-class mix (#79 classifier) and fixed income, for PORTFOLIO_EXPOSURE.
     assetClassAllocation: tenantData.assetClassAllocation || [],
     fixedIncome: tenantData.fixedIncome || null,
-    // Sector shares are look-through over equities only (stocks, REITs and
-    // ETF sector weights); `sectorBaseValue` is the value they're a share of.
+    // Sector shares are of the equity book (stocks, REITs, equity ETFs).
+    // ETFs are split by sector only when composition data exists; otherwise
+    // they're part of `unclassifiedSharePct` and never a sector.
     sectorBaseValue: round2(sectorBase || 0),
+    unclassifiedSharePct: sectorBase > 0 && tenantData.unclassifiedEquityValue != null
+      ? round1((tenantData.unclassifiedEquityValue / sectorBase) * 100)
+      : null,
     topSector: topSector
       ? {
           sector: topSector[0],

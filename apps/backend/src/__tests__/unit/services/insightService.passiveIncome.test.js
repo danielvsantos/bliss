@@ -196,7 +196,8 @@ describe('loadPassiveIncomeInputs()', () => {
     expect(inputs.assets.map((a) => a.symbol)).toEqual(['KO', 'MSFT', 'Tesouro 2027']);
     const [ko, msft, bond] = inputs.assets;
     expect(ko).toEqual({
-      id: 1, label: 'KO · Broker', symbol: 'KO', categoryName: 'Stocks', assetClass: 'STOCK',
+      id: 1, label: 'KO · Broker', symbol: 'KO', securityName: null, accountId: null, accountName: 'Broker', currency: 'USD',
+      categoryName: 'Stocks', assetClass: 'STOCK',
       quantity: 100, currentValue: 7000, fxRate: 1, dividendFxRate: 1, hasSecurityData: true,
       recentDividends: KO_DIVIDENDS, terms: null,
     });
@@ -351,18 +352,20 @@ describe('gatherEquityFundamentals() — asset classes & look-through', () => {
     expect(mockSecurityMasterFindMany.mock.calls[0][0].select.etfComposition).toBe(true);
   });
 
-  it('builds sector allocation by look-through, excluding non-equities and uncomposed ETFs', async () => {
+  it('builds sector allocation by look-through when ETF composition exists, never flagging non-equities', async () => {
     mockPortfolioItemFindMany.mockResolvedValue(portfolio());
     mockSecurityMasterFindMany.mockResolvedValue(securities());
 
     const r = await gatherEquityFundamentals('t1', 'USD', {}, ASOF);
 
-    // Base = NVDA 30k + JPM 10k + O 5k + QQQ's composed 88% (44k) = 89k
-    expect(r.equityValue).toBe(89000);
+    // Base = the equity book: NVDA 30k + JPM 10k + O 5k + QQQ 50k + VWCE 20k = 115k.
+    // QQQ's 12% remainder (6k) and uncomposed VWCE (20k) are unclassified.
+    expect(r.equityValue).toBe(115000);
+    expect(r.unclassifiedEquityValue).toBe(26000);
     const tech = r.sectorAllocation.Technology;
     // NVDA 30k + 59% of QQQ (29.5k)
     expect(tech.value).toBe(59500);
-    expect(tech.percent).toBe(66.85);
+    expect(tech.percent).toBe(51.74);
     expect(tech.holdings).toEqual(['NVDA']);
     expect(tech.viaEtfs).toEqual([{ symbol: 'QQQ', weightPct: 59 }]);
     expect(r.sectorAllocation['Real Estate']).toEqual(expect.objectContaining({ value: 5000, holdings: ['O'] }));
@@ -371,7 +374,29 @@ describe('gatherEquityFundamentals() — asset classes & look-through', () => {
       expect(r.sectorAllocation[bucket]).toBeUndefined();
     }
     const pctSum = Object.values(r.sectorAllocation).reduce((s, g) => s + g.percent, 0);
-    expect(pctSum).toBeCloseTo(100, 1);
+    expect(pctSum).toBeCloseTo(((115000 - 26000) / 115000) * 100, 1);
+  });
+
+  // ETF composition is optional (Twelve Data plan-dependent) and usually
+  // absent: ETFs must stay in the base, not vanish from it.
+  it('without ETF composition, a mostly-ETF portfolio never reads as concentrated', async () => {
+    mockPortfolioItemFindMany.mockResolvedValue([
+      { id: 1, symbol: 'VWCE', currency: 'USD', currentValue: 90000, costBasis: 80000, quantity: 700, realizedPnL: 0, category: { name: 'ETFs', processingHint: 'API_FUND' } },
+      { id: 2, symbol: 'NVDA', currency: 'USD', currentValue: 10000, costBasis: 5000, quantity: 60, realizedPnL: 0, category: STOCK_CAT },
+    ]);
+    mockSecurityMasterFindMany.mockResolvedValue([
+      { symbol: 'VWCE', name: 'Vanguard FTSE All-World', assetType: 'ETF', etfComposition: null, earningsTrusted: false, dividendTrusted: true },
+      { symbol: 'NVDA', name: 'NVIDIA', sector: 'Technology', industry: 'Semiconductors', assetType: 'Common Stock', earningsTrusted: true, peRatio: 50 },
+    ]);
+
+    const r = await gatherEquityFundamentals('t1', 'USD', {}, ASOF);
+
+    expect(r.holdings.map((h) => h.assetClass)).toEqual(['INDEX_ETF', 'STOCK']);
+    expect(r.equityValue).toBe(100000);
+    expect(r.unclassifiedEquityValue).toBe(90000);
+    expect(Object.keys(r.sectorAllocation)).toEqual(['Technology']);
+    expect(r.sectorAllocation.Technology).toEqual(expect.objectContaining({ percent: 10, holdings: ['NVDA'], viaEtfs: [] }));
+    expect(r.industryAllocation.Semiconductors.percent).toBe(10);
   });
 
   it('keeps industries to stocks and REITs, as a share of the equity base', async () => {
@@ -382,7 +407,7 @@ describe('gatherEquityFundamentals() — asset classes & look-through', () => {
 
     expect(Object.keys(r.industryAllocation).sort()).toEqual(['Banks', 'REIT - Retail', 'Semiconductors']);
     expect(r.industryAllocation.Semiconductors).toEqual(
-      expect.objectContaining({ value: 30000, sector: 'Technology', holdings: ['NVDA'], percent: 33.71 }),
+      expect.objectContaining({ value: 30000, sector: 'Technology', holdings: ['NVDA'], percent: 26.09 }),
     );
   });
 
