@@ -272,7 +272,12 @@ export default function EquityAnalysisPage() {
           transition={{ duration: 0.4, delay: 0.03 }}
           className={`grid grid-cols-1 gap-6 ${data?.fixedIncome ? 'lg:grid-cols-2' : ''}`}
         >
-          <CompositionCard rows={data?.composition ?? []} currency={portfolioCurrency} isLoading={isLoading} />
+          <CompositionCard
+            rows={data?.composition ?? []}
+            currency={portfolioCurrency}
+            isLoading={isLoading}
+            sharesRow={!!data?.fixedIncome}
+          />
           {data?.fixedIncome && <FixedIncomeCard summary={data.fixedIncome} currency={portfolioCurrency} />}
         </motion.div>
 

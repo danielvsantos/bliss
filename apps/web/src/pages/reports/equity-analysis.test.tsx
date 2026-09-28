@@ -97,6 +97,16 @@ describe('EquityAnalysisPage — asset classes & look-through (#79)', () => {
     expect(fi.getByText('100% / 0%')).toBeInTheDocument();
   });
 
+  it('stacks the composition donut above the table while sharing the row with Fixed income', () => {
+    setup();
+    expect(screen.getByTestId('composition-layout').className).toContain('lg:flex-col');
+  });
+
+  it('keeps the composition side by side when it has the row to itself', () => {
+    setup(response({ fixedIncome: null }));
+    expect(screen.getByTestId('composition-layout').className).not.toContain('lg:flex-col');
+  });
+
   it('hides the Fixed income card without bonds and shows an empty composition', () => {
     setup(response({ fixedIncome: null, composition: [] }));
     expect(screen.queryByTestId('fixed-income-card')).not.toBeInTheDocument();

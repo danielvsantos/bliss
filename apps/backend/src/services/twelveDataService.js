@@ -442,8 +442,14 @@ async function getDividends(symbol, { micCode } = {}) {
  * @param {string} [options.micCode] ISO-10383 MIC code
  * @returns {Promise<{ sectors: Array<{sector: string, weight: number}>,
  *   countries: Array<{country: string, weight: number}>, assetAllocation: Object,
- *   creditsUsed: number|null }|null>} null when unavailable
+ *   creditsUsed: number|null }|{ unavailable: true, status: number, message: string|null }|null>}
+ *   `{ unavailable: true }` when Twelve Data refuses the request outright
+ *   (401/403/404 — e.g. the endpoint isn't on the API plan, or the symbol isn't
+ *   covered); null on a transient failure.
  */
+/** Twelve Data codes meaning "this request will keep being refused" (plan / auth / coverage). */
+const COMPOSITION_REFUSED_CODES = new Set([401, 403, 404]);
+
 async function getEtfComposition(symbol, { micCode } = {}) {
     if (!TWELVE_DATA_API_KEY) {
         logger.warn('[TwelveData] TWELVE_DATA_API_KEY is not set. Skipping ETF composition fetch.');
@@ -462,8 +468,11 @@ async function getEtfComposition(symbol, { micCode } = {}) {
         });
 
         if (response.data.status === 'error') {
-            logger.warn(`[TwelveData] ETF composition error for ${symbol}: ${response.data.message}`);
-            return null;
+            const code = Number(response.data.code) || null;
+            logger.warn(`[TwelveData] ETF composition error for ${symbol}: ${response.data.message}`, { code });
+            return COMPOSITION_REFUSED_CODES.has(code)
+                ? { unavailable: true, status: code, message: response.data.message || null }
+                : null;
         }
 
         const composition = response.data.etf?.composition || response.data.composition || null;
@@ -493,7 +502,14 @@ async function getEtfComposition(symbol, { micCode } = {}) {
 
         return { sectors, countries, assetAllocation, creditsUsed };
     } catch (error) {
-        logger.error(`[TwelveData] Error fetching ETF composition for ${symbol}`, { error: error.message });
+        // Axios throws on HTTP 4xx/5xx; Twelve Data's reason is in the body.
+        const status = error.response?.status || null;
+        const message = error.response?.data?.message || null;
+        if (COMPOSITION_REFUSED_CODES.has(status)) {
+            logger.warn(`[TwelveData] ETF composition refused for ${symbol} (HTTP ${status}): ${message || error.message}`);
+            return { unavailable: true, status, message };
+        }
+        logger.error(`[TwelveData] Error fetching ETF composition for ${symbol}`, { error: error.message, status, message });
         return null;
     }
 }

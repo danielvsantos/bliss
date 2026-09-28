@@ -107,6 +107,19 @@ async function upsertEtfComposition(symbol, composition) {
     });
 }
 
+/**
+ * Record a composition attempt that Twelve Data refused (#79): stamps
+ * `lastCompositionUpdate` so the refresh waits the usual 7 days before asking
+ * again, and leaves any stored `etfComposition` untouched.
+ * @param {string} symbol
+ */
+async function markEtfCompositionAttempt(symbol) {
+    await prisma.securityMaster.updateMany({
+        where: { symbol },
+        data: { lastCompositionUpdate: new Date() },
+    });
+}
+
 /** Twelve Data /profile `type` for exchange-traded funds (confirmed by the #77 spike). */
 const ETF_ASSET_TYPE = 'ETF';
 
@@ -202,7 +215,7 @@ function isDividendTrustworthy({ rawDividends, recentDividends, currentPrice }) 
  * @param {Object|null} params.dividends — From twelveDataService.getDividends()
  * @param {Object|null} params.quote — From twelveDataService.getLatestPrice({ extended: true })
  */
-async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
+async function upsertFundamentals(symbol, { earnings, dividends, quote, isEtf = false }) {
     const data = {
         lastFundamentalsUpdate: new Date(),
         earningsTrusted: false,
@@ -255,7 +268,10 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote }) {
             logger.warn(`[SecurityMaster] ${symbol}: no past earnings with actual EPS — preserving previous values, marking earnings untrusted`);
         }
     } else {
-        logger.warn(`[SecurityMaster] ${symbol}: no earnings data available — preserving previous values, marking earnings untrusted`);
+        // ETFs never fetch /earnings (meaningless EPS for funds) — expected, not a warning.
+        if (!isEtf) {
+            logger.warn(`[SecurityMaster] ${symbol}: no earnings data available — preserving previous values, marking earnings untrusted`);
+        }
     }
 
     // --- Dividend-derived fields ---
@@ -427,6 +443,7 @@ module.exports = {
     upsertFromProfile,
     upsertFundamentals,
     upsertEtfComposition,
+    markEtfCompositionAttempt,
     getAllActiveSecuritySymbols,
     getTenantSecuritySymbols,
     getAllSecurityMasterSymbols,
