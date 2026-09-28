@@ -27,6 +27,7 @@ const {
   upsertFromProfile,
   upsertFundamentals,
   upsertEtfComposition,
+  markEtfCompositionAttempt,
   getAllActiveSecuritySymbols,
   getTenantSecuritySymbols,
   getAllSecurityMasterSymbols,
@@ -87,6 +88,17 @@ describe('securityMasterService', () => {
   });
 
   // ─── upsertEtfComposition (#79) ─────────────────────────────────────────────
+  describe('markEtfCompositionAttempt', () => {
+    it('stamps lastCompositionUpdate without touching the stored composition', async () => {
+      prisma.securityMaster.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      await markEtfCompositionAttempt('VOO');
+      const { where, data } = prisma.securityMaster.updateMany.mock.calls[0][0];
+      expect(where).toEqual({ symbol: 'VOO' });
+      expect(Object.keys(data)).toEqual(['lastCompositionUpdate']);
+      expect(data.lastCompositionUpdate).toBeInstanceOf(Date);
+    });
+  });
+
   describe('upsertEtfComposition', () => {
     it('stores a normalized composition and stamps lastCompositionUpdate', async () => {
       prisma.securityMaster.upsert.mockResolvedValue({});
@@ -204,6 +216,15 @@ describe('securityMasterService', () => {
   // ─── upsertFundamentals ───────────────────────────────────────────────────
   describe('upsertFundamentals', () => {
     const today = new Date().toISOString().split('T')[0];
+
+    it('warns about missing earnings for a stock but not for an ETF (#79)', async () => {
+      const logger = require('../../../utils/logger');
+      prisma.securityMaster.upsert.mockResolvedValue({});
+      await upsertFundamentals('VGK', { earnings: null, dividends: null, quote: null, isEtf: true });
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('no earnings data available'));
+      await upsertFundamentals('KO', { earnings: null, dividends: null, quote: null });
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('KO: no earnings data available'));
+    });
 
     it('computes trailingEps correctly from last 4 quarters', async () => {
       prisma.securityMaster.upsert.mockResolvedValue({});

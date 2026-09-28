@@ -439,6 +439,7 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
   it('looks through ETFs in the sector view by default', async () => {
     const res = await run({ groupBy: 'sector' });
     expect(res._body.lookThrough).toBe(true);
+    expect(res._body.lookThroughAvailable).toBe(true); // QQQ has sector weights
     const groups = values(res._body.groups);
     expect(groups.Technology).toBeCloseTo(1500 * 0.5915, 1);
     expect(groups['Consumer Defensive']).toBe(1500);
@@ -464,6 +465,12 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
     const groups = values(res._body.groups);
     expect(groups['United States']).toBeCloseTo(1500 + 900, 1);
     expect(groups.Other).toBeCloseTo(600, 1);
+  });
+
+  it('reports look-through as unavailable when no ETF has composition data', async () => {
+    const res = await run({}, [ko, qqq], [koSm, { ...qqqSm, etfComposition: null }]);
+    expect(res._body.lookThroughAvailable).toBe(false);
+    expect(values(res._body.groups)).toEqual({ Diversified: 1500, 'Consumer Defensive': 1500 });
   });
 
   it('with lookThrough=false matches the #77 "Diversified" buckets', async () => {

@@ -272,7 +272,12 @@ export default function EquityAnalysisPage() {
           transition={{ duration: 0.4, delay: 0.03 }}
           className={`grid grid-cols-1 gap-6 ${data?.fixedIncome ? 'lg:grid-cols-2' : ''}`}
         >
-          <CompositionCard rows={data?.composition ?? []} currency={portfolioCurrency} isLoading={isLoading} />
+          <CompositionCard
+            rows={data?.composition ?? []}
+            currency={portfolioCurrency}
+            isLoading={isLoading}
+            sharesRow={!!data?.fixedIncome}
+          />
           {data?.fixedIncome && <FixedIncomeCard summary={data.fixedIncome} currency={portfolioCurrency} />}
         </motion.div>
 
@@ -297,14 +302,17 @@ export default function EquityAnalysisPage() {
               ))}
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground" title={t('equityAnalysis.lookThroughHint')}>
-            <Switch
-              checked={lookThrough}
-              onCheckedChange={setLookThrough}
-              aria-label={t('equityAnalysis.lookThrough')}
-            />
-            {t('equityAnalysis.lookThrough')}
-          </label>
+          {/* Only when some ETF has composition data — otherwise the switch would do nothing. */}
+          {data?.lookThroughAvailable && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground" title={t('equityAnalysis.lookThroughHint')}>
+              <Switch
+                checked={lookThrough}
+                onCheckedChange={setLookThrough}
+                aria-label={t('equityAnalysis.lookThrough')}
+              />
+              {t('equityAnalysis.lookThrough')}
+            </label>
+          )}
           </div>
         </motion.div>
 

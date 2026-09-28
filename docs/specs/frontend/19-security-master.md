@@ -69,7 +69,7 @@ Four-card grid layout:
 
 Pill-toggle with four options: Sector (default), Industry, Country, Asset class. The hook fetches once per look-through setting (`queryKey: ['equity-analysis', { lookThrough }]`) and picks `groupings[groupBy]` from the response — the API computes every grouping because sector and country look through ETFs server-side. Switching tabs never refetches. (Responses without `groupings` are still re-grouped client-side.)
 
-**Look through ETFs** switch (default on, persisted in the URL as `?lookThrough=0` when off): with it on, the sector and country views split each ETF's value across its sectors / countries by weight; the uncovered remainder shows as "Other", bond ETFs as "Fixed income", and ETFs without composition (or with no country data, e.g. QQQ) stay "Diversified". Off restores the pre-#79 "Diversified" buckets. Industry never looks through. Group labels `Diversified` / `Other` / `Fixed Income` and asset class keys are translated.
+**Look through ETFs** switch (default on, persisted in the URL as `?lookThrough=0` when off; **only rendered when the response's `lookThroughAvailable` is true**, i.e. some ETF has composition data — the Twelve Data plan may not include `/etfs/world/composition`): with it on, the sector and country views split each ETF's value across its sectors / countries by weight; the uncovered remainder shows as "Other", bond ETFs as "Fixed income", and ETFs without composition (or with no country data, e.g. QQQ) stay "Diversified". Off restores the pre-#79 "Diversified" buckets. Industry never looks through. Group labels `Diversified` / `Other` / `Fixed Income` and asset class keys are translated.
 
 ## 19.5a. Asset Class Badge & Override (#79)
 

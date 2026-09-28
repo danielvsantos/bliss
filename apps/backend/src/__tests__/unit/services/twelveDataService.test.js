@@ -438,6 +438,30 @@ describe('twelveDataService', () => {
       await expect(twelveDataService.getEtfComposition('QQQ')).resolves.toBeNull();
     });
 
+    it('reports an HTTP 403 as unavailable with Twelve Data\'s message', async () => {
+      const axios = require('axios');
+      const err = new Error('Request failed with status code 403');
+      err.response = { status: 403, data: { code: 403, message: '/etfs/world/composition is available exclusively with pro or higher plans', status: 'error' } };
+      axios.get.mockRejectedValue(err);
+      await expect(twelveDataService.getEtfComposition('VOO')).resolves.toEqual({
+        unavailable: true, status: 403, message: '/etfs/world/composition is available exclusively with pro or higher plans',
+      });
+    });
+
+    it('reports a 404 error payload as unavailable', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: { status: 'error', code: 404, message: 'symbol not found' } });
+      await expect(twelveDataService.getEtfComposition('XYZ')).resolves.toEqual({ unavailable: true, status: 404, message: 'symbol not found' });
+    });
+
+    it('returns null on a 5xx (transient)', async () => {
+      const axios = require('axios');
+      const err = new Error('Request failed with status code 502');
+      err.response = { status: 502, data: {} };
+      axios.get.mockRejectedValue(err);
+      await expect(twelveDataService.getEtfComposition('VOO')).resolves.toBeNull();
+    });
+
     it('returns null on a network error', async () => {
       const axios = require('axios');
       axios.get.mockRejectedValue(new Error('timeout'));

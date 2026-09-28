@@ -47,11 +47,13 @@ const mockGetAllActiveSecuritySymbols = jest.fn();
 const mockGetAllSecurityMasterSymbols = jest.fn();
 const mockGetTenantSecuritySymbols = jest.fn();
 const mockUpsertEtfComposition = jest.fn();
+const mockMarkEtfCompositionAttempt = jest.fn();
 jest.mock('../../../services/securityMasterService', () => ({
   getBySymbol: (...args) => mockGetBySymbol(...args),
   upsertFromProfile: (...args) => mockUpsertFromProfile(...args),
   upsertFundamentals: (...args) => mockUpsertFundamentals(...args),
   upsertEtfComposition: (...args) => mockUpsertEtfComposition(...args),
+  markEtfCompositionAttempt: (...args) => mockMarkEtfCompositionAttempt(...args),
   getAllActiveSecuritySymbols: (...args) => mockGetAllActiveSecuritySymbols(...args),
   getTenantSecuritySymbols: (...args) => mockGetTenantSecuritySymbols(...args),
   getAllSecurityMasterSymbols: (...args) => mockGetAllSecurityMasterSymbols(...args),
@@ -318,6 +320,30 @@ describe('securityMasterWorker', () => {
       expect(mockGetBySymbol).toHaveBeenCalledWith('QQQ');
       expect(mockGetEtfComposition).not.toHaveBeenCalled();
       expect(result.composition).toBe(false);
+    });
+
+    it('waits 7 days after Twelve Data refuses the request (e.g. HTTP 403 plan restriction)', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: null });
+      mockGetEtfComposition.mockResolvedValue({ unavailable: true, status: 403, message: 'not on your plan' });
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'VOO', exchange: null }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockMarkEtfCompositionAttempt).toHaveBeenCalledWith('VOO');
+      expect(mockUpsertEtfComposition).not.toHaveBeenCalled();
+    });
+
+    it('does not stamp the attempt on a transient failure', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: null });
+      mockGetEtfComposition.mockResolvedValue(null);
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'VOO', exchange: null }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockMarkEtfCompositionAttempt).not.toHaveBeenCalled();
+    });
+
+    it('tells upsertFundamentals the symbol is an ETF', async () => {
+      mockGetBySymbol.mockResolvedValue({ assetType: 'ETF', lastProfileUpdate: new Date(), lastCompositionUpdate: new Date() });
+      mockGetAllActiveSecuritySymbols.mockResolvedValue([{ symbol: 'VGK', exchange: null }]);
+      await workerCallback(makeJob('refresh-all-fundamentals'));
+      expect(mockUpsertFundamentals).toHaveBeenCalledWith('VGK', expect.objectContaining({ earnings: null, isEtf: true }));
     });
 
     it('logs and swallows a storage error', async () => {
