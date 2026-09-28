@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { canHoldIncomeTerms, classifyIncomeCategory, nextScheduledDate, previewIncome } from './passive-income';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  BREAKDOWN_VIEW_KEY,
+  canHoldIncomeTerms,
+  classifyIncomeCategory,
+  nextScheduledDate,
+  previewIncome,
+  readBreakdownView,
+  siblingsDiffer,
+  writeBreakdownView,
+} from './passive-income';
+import type { IncomeTerms, IncomeTermsSibling } from '@/types/passive-income';
 
 const TODAY = new Date(Date.UTC(2026, 8, 27)); // 2026-09-27
 
@@ -69,5 +79,49 @@ describe('previewIncome', () => {
 
   it('drops the next payment after the end date', () => {
     expect(previewIncome({ incomeType: 'FIXED_AMOUNT', amountPerPayment: 10, frequency: 'MONTHLY', startDate: '2020-01-01', endDate: '2026-01-01' }, { today: TODAY })!.nextPayment).toBeNull();
+  });
+});
+
+describe('breakdown view persistence (#83)', () => {
+  it('defaults to grouped and remembers "flat"', () => {
+    window.localStorage.removeItem(BREAKDOWN_VIEW_KEY);
+    expect(readBreakdownView()).toBe('grouped');
+    writeBreakdownView('flat');
+    expect(readBreakdownView()).toBe('flat');
+    writeBreakdownView('grouped');
+    expect(readBreakdownView()).toBe('grouped');
+  });
+
+  it('survives storage that throws', () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('x'); });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('x'); });
+    expect(readBreakdownView()).toBe('grouped');
+    expect(() => writeBreakdownView('flat')).not.toThrow();
+    get.mockRestore();
+    set.mockRestore();
+  });
+});
+
+describe('siblingsDiffer (#83)', () => {
+  const terms = (over: Partial<IncomeTerms>) => ({ incomeType: 'DIVIDEND', isDistributing: true, ...over }) as IncomeTerms;
+  const sib = (assetId: number, over: Partial<IncomeTermsSibling>): IncomeTermsSibling => ({
+    assetId, accountName: `A${assetId}`, currency: 'USD', quantity: 1, costBasis: null, terms: null, source: 'AUTO', ...over,
+  });
+
+  it('is false for one holding or identical terms (dates compared by day)', () => {
+    expect(siblingsDiffer([sib(1, {})])).toBe(false);
+    expect(siblingsDiffer([sib(1, {}), sib(2, {})])).toBe(false);
+    expect(siblingsDiffer([
+      sib(1, { source: 'OVERRIDE', terms: terms({ dividendPerUnit: 3, anchorPaymentDate: '2026-10-01T00:00:00.000Z' }) }),
+      sib(2, { source: 'OVERRIDE', terms: terms({ dividendPerUnit: 3, anchorPaymentDate: '2026-10-01' }) }),
+    ])).toBe(false);
+  });
+
+  it('is true when the source or a term differs', () => {
+    expect(siblingsDiffer([sib(1, {}), sib(2, { source: 'MISSING' })])).toBe(true);
+    expect(siblingsDiffer([
+      sib(1, { source: 'OVERRIDE', terms: terms({ dividendPerUnit: 3 }) }),
+      sib(2, { source: 'OVERRIDE', terms: terms({ dividendPerUnit: 2 }) }),
+    ])).toBe(true);
   });
 });

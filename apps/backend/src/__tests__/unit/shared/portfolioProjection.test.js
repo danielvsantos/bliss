@@ -14,11 +14,15 @@ const FIXTURE = {
   displayCurrency: 'USD',
   assets: [
     {
-      id: 1, label: 'KO', assetClass: 'STOCK', quantity: 100, currentValue: 7000, fxRate: 1,
+      id: 1, label: 'KO · IBKR', symbol: 'KO', accountName: 'IBKR', assetClass: 'STOCK', quantity: 100, currentValue: 7000, fxRate: 1,
       recentDividends: [
         { exDate: '2026-09-15', amount: 0.53 }, { exDate: '2026-06-13', amount: 0.51 },
         { exDate: '2026-03-14', amount: 0.51 }, { exDate: '2025-11-29', amount: 0.51 },
       ],
+    },
+    {
+      id: 3, label: 'KO · XP', symbol: 'KO', accountName: 'XP', assetClass: 'STOCK', quantity: 20, currentValue: 1400, fxRate: 1,
+      recentDividends: [{ exDate: '2026-09-15', amount: 0.53 }],
     },
     {
       id: 2, label: 'Bond', assetClass: 'BOND', quantity: 10, currentValue: 10000, fxRate: 1,
@@ -33,6 +37,7 @@ const FIXTURE = {
 describe('@bliss/shared/portfolio (CJS build)', () => {
   it('exports project() and the constants', () => {
     expect(typeof shared.project).toBe('function');
+    expect(typeof shared.groupItems).toBe('function');
     expect(shared.PAYMENT_LAG_DAYS).toBe(14);
     expect(shared.INCOME_TYPES).toHaveLength(9);
   });
@@ -47,6 +52,9 @@ describe('@bliss/shared/portfolio (CJS build)', () => {
     }));
     expect(cjs).toEqual(esm);
     expect(cjs.totals.next12mIncome).toBeGreaterThan(0);
+    // Grouped view (#83): KO held in two accounts is one group.
+    expect(cjs.groups).toEqual(esm.groups);
+    expect(cjs.groups.find((g) => g.groupKey === 'KO').accountCount).toBe(2);
   });
 });
 

@@ -6,13 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePassiveIncome, useIncomeStreams } from '@/hooks/use-passive-income';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { INCOME_BUCKETS } from '@/lib/passive-income';
+import { INCOME_BUCKETS, readBreakdownView, writeBreakdownView } from '@/lib/passive-income';
 import { IncomeTermsModal } from '@/components/income/income-terms-modal';
 import { PassiveIncomeChart } from '@/components/passive-income/income-chart';
 import { IncomeBreakdown } from '@/components/passive-income/income-breakdown';
 import { IncomeStreamsCard } from '@/components/passive-income/streams-card';
 import { DetachedTermsSection } from '@/components/passive-income/detached-terms';
-import type { IncomeStream, PassiveIncomeItem } from '@/types/passive-income';
+import type { BreakdownView, IncomeStream, PassiveIncomeGroup, PassiveIncomeItem } from '@/types/passive-income';
 
 type Horizon = 12 | 24 | 36;
 const HORIZONS: Horizon[] = [12, 24, 36];
@@ -20,7 +20,7 @@ const HORIZONS: Horizon[] = [12, 24, 36];
 const MISSING_PREVIEW = 8;
 
 type ModalState =
-  | { mode: 'asset'; assetId: number; label: string }
+  | { mode: 'asset'; assetId: number; label: string; scope?: 'single' | 'symbol'; currentValue?: number }
   | { mode: 'stream'; stream: IncomeStream | null }
   | null;
 
@@ -35,6 +35,11 @@ export default function PassiveIncomePage() {
   const [horizon, setHorizon] = useState<Horizon>(12);
   const [modal, setModal] = useState<ModalState>(null);
   const [showAllMissing, setShowAllMissing] = useState(false);
+  const [view, setViewState] = useState<BreakdownView>(readBreakdownView);
+  const setView = (next: BreakdownView) => {
+    setViewState(next);
+    writeBreakdownView(next);
+  };
 
   const { data, isLoading, isFetching, error } = usePassiveIncome(horizon);
   const { data: streamsData } = useIncomeStreams();
@@ -49,6 +54,12 @@ export default function PassiveIncomePage() {
 
   const openAsset = (item: { portfolioItemId: number | null; label: string }) => {
     if (item.portfolioItemId != null) setModal({ mode: 'asset', assetId: item.portfolioItemId, label: item.label });
+  };
+  /** A symbol's group (or its missing-data button): edit every holding at once (#83 R4.1). */
+  const openGroup = (group: { portfolioItemIds: number[]; symbol: string | null; label: string; currentValue?: number }) => {
+    const [first] = group.portfolioItemIds;
+    if (first == null) return;
+    setModal({ mode: 'asset', assetId: first, label: group.symbol || group.label, scope: 'symbol', currentValue: group.currentValue });
   };
   const openStream = (item: PassiveIncomeItem) => {
     const stream = item.streamId != null ? streamsById.get(item.streamId) : undefined;
@@ -65,6 +76,28 @@ export default function PassiveIncomePage() {
 
   const kpis = data?.kpis;
   const isRefreshing = isFetching && !isLoading;
+  // Older APIs have no groups → the flat view is the only one (#83).
+  const hasGroups = Array.isArray(data?.groups);
+  const effectiveView: BreakdownView = hasGroups ? view : 'flat';
+  const grouped = effectiveView === 'grouped';
+  const missingButtons = data
+    ? grouped && data.missingGroups
+      ? data.missingGroups.map((m) => ({
+        key: `${m.assetClass}-${m.groupKey}`,
+        label: m.label,
+        onClick: () => openGroup({ portfolioItemIds: m.portfolioItemIds, symbol: m.symbol, label: m.label }),
+      }))
+      : data.missing.map((m) => ({
+        key: String(m.portfolioItemId),
+        label: m.label,
+        onClick: () => openAsset({ portfolioItemId: m.portfolioItemId, label: m.label }),
+      }))
+    : [];
+  const upcoming = data
+    ? grouped && data.upcomingPaymentsGrouped
+      ? data.upcomingPaymentsGrouped.map((p, i) => ({ ...p, key: `${p.date}-${p.kind}-${p.groupKey ?? p.refId}-${i}` }))
+      : data.upcomingPayments.map((p, i) => ({ ...p, accounts: [] as string[], key: `${p.date}-${p.kind}-${p.refId}-${i}` }))
+    : [];
 
   const kpiTiles = [
     {
@@ -150,29 +183,29 @@ export default function PassiveIncomePage() {
         </div>
 
         {/* ── Missing data prompt ── */}
-        {data && data.missing.length > 0 && (
+        {data && missingButtons.length > 0 && (
           <Card className="border-warning/30 bg-warning/5" data-testid="missing-data">
             <CardContent className="py-4 space-y-2">
               <div className="flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-brand-deep">{t('passiveIncome.missing.title', { count: data.missing.length })}</p>
+                  <p className="text-sm font-medium text-brand-deep">{t('passiveIncome.missing.title', { count: missingButtons.length })}</p>
                   <p className="text-xs text-muted-foreground">{t('passiveIncome.missing.description')}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 pl-6">
-                {(showAllMissing ? data.missing : data.missing.slice(0, MISSING_PREVIEW)).map((m) => (
+                {(showAllMissing ? missingButtons : missingButtons.slice(0, MISSING_PREVIEW)).map((m) => (
                   <Button
-                    key={m.portfolioItemId}
+                    key={m.key}
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs"
-                    onClick={() => openAsset({ portfolioItemId: m.portfolioItemId, label: m.label })}
+                    onClick={m.onClick}
                   >
                     {m.label}
                   </Button>
                 ))}
-                {data.missing.length > MISSING_PREVIEW && (
+                {missingButtons.length > MISSING_PREVIEW && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -181,7 +214,7 @@ export default function PassiveIncomePage() {
                   >
                     {showAllMissing
                       ? t('passiveIncome.missing.showLess')
-                      : t('passiveIncome.missing.showAll', { count: data.missing.length })}
+                      : t('passiveIncome.missing.showAll', { count: missingButtons.length })}
                   </Button>
                 )}
               </div>
@@ -254,16 +287,21 @@ export default function PassiveIncomePage() {
             <CardContent>
               {isLoading || !data ? (
                 <Skeleton className="h-24 w-full" />
-              ) : data.upcomingPayments.length === 0 ? (
+              ) : upcoming.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">{t('passiveIncome.upcoming.empty')}</p>
               ) : (
                 <ul className="divide-y divide-gray-100" data-testid="upcoming-payments">
-                  {data.upcomingPayments.map((p, i) => (
-                    <li key={`${p.date}-${p.kind}-${p.refId}-${i}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  {upcoming.map((p) => (
+                    <li
+                      key={p.key}
+                      className="flex items-center justify-between gap-3 py-2 text-sm"
+                      title={p.accounts.length > 1 ? p.accounts.join(', ') : undefined}
+                    >
                       <div className="min-w-0">
                         <p className="truncate text-brand-deep">{p.label}</p>
                         <p className="text-xs text-muted-foreground">
                           {formatDate(p.date, undefined, locale)} · {t(`passiveIncome.bucket.${p.source}`)}
+                          {p.accounts.length > 1 ? ` · ${t('passiveIncome.breakdown.accounts', { count: p.accounts.length })}` : ''}
                         </p>
                       </div>
                       <span className="tabular-nums font-medium shrink-0">{money(p.amount)}</span>
@@ -287,9 +325,13 @@ export default function PassiveIncomePage() {
             ) : (
               <IncomeBreakdown
                 items={data.items}
+                groups={data.groups}
+                view={effectiveView}
+                onViewChange={setView}
                 currency={currency}
                 onEditAsset={openAsset}
                 onEditStream={openStream}
+                onEditGroup={(g: PassiveIncomeGroup) => openGroup(g)}
               />
             )}
           </CardContent>
@@ -345,6 +387,8 @@ export default function PassiveIncomePage() {
         mode={modal?.mode ?? 'asset'}
         assetId={modal?.mode === 'asset' ? modal.assetId : null}
         assetLabel={modal?.mode === 'asset' ? modal.label : undefined}
+        scope={modal?.mode === 'asset' ? modal.scope ?? 'single' : 'single'}
+        currentValue={modal?.mode === 'asset' ? modal.currentValue : undefined}
         stream={modal?.mode === 'stream' ? modal.stream : null}
         defaultCurrency={currency}
       />

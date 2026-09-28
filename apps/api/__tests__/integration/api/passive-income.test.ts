@@ -4,6 +4,8 @@
  *   - /api/passive-income/streams (+ /:id)
  *   - /api/portfolio/income-terms/detached, /:id (discard), /:id/attach
  *   - GET /api/portfolio/passive-income
+ *   - Grouped view (#83): siblings, applyToSymbol for every non-cash type,
+ *     DELETE ?applyToSymbol=true, groups / missingGroups / grouped upcoming payments
  *
  * Calls the Next.js handlers directly against the real bliss_test Postgres
  * (so the IncomeTerms owner CHECK constraint and unique assetId index are
@@ -31,6 +33,7 @@ import attachHandler from '../../../pages/api/portfolio/income-terms/[id]/attach
 import passiveIncomeHandler from '../../../pages/api/portfolio/passive-income.js';
 import prisma from '../../../prisma/prisma.js';
 import { createIsolatedTenant, teardownTenant } from '../../helpers/tenant.js';
+import { ensureReferenceData } from '../../helpers/referenceData.js';
 
 function makeReq(token: string, overrides: Partial<NextApiRequest> = {}): NextApiRequest {
   return {
@@ -333,6 +336,151 @@ describe('Passive Income API (integration)', () => {
       const override = body.items.find((i: any) => i.portfolioItemId === stockA);
       expect(override.source).toBe('OVERRIDE');
       expect(body.items.filter((i: any) => i.kind === 'STREAM')).toHaveLength(2);
+    });
+  });
+
+  // ─── Grouped view (#83) ──────────────────────────────────────────────────
+
+  describe('grouped view (#83)', () => {
+    const GSYM = `PITEST-GOOG-${SUFFIX}`;
+    const BOND = `Government Bonds - PITEST ${SUFFIX}`;
+    const CASH = `Cash EUR ${SUFFIX}`;
+    let goog1: number;
+    let goog2: number;
+    let googClosed: number;
+    let googOther: number;
+    let googManual: number;
+    let bond1: number;
+    let bond2: number;
+    let cash1: number;
+    let cash2: number;
+
+    beforeAll(async () => {
+      const { countryId, currencyCode, bankId } = await ensureReferenceData();
+      const account = (name: string) => prisma.account.create({
+        data: { tenantId, name, accountNumber: `PI-${name}-${SUFFIX}`, bankId, countryId, currencyCode },
+      });
+      const [ibkr, xp, bankA, bankB] = await Promise.all([account('IBKR'), account('XP'), account('Bank A'), account('Bank B')]);
+      const cat = (data: any) => prisma.category.create({ data: { tenantId, ...data } });
+      const stocks = await cat({ name: 'Stocks #83', group: 'Stocks', type: 'Investments', processingHint: 'API_STOCK' });
+      const other = await cat({ name: 'Other #83', group: 'Other', type: 'Asset', processingHint: 'MANUAL' });
+      const bonds = await cat({ name: 'Bonds #83', group: 'Bonds', type: 'Investments', processingHint: 'MANUAL', defaultCategoryCode: 'CORPORATE_BONDS' });
+      const cash = await cat({ name: 'Cash #83', group: 'Cash', type: 'Asset', processingHint: 'CASH' });
+      const item = (data: any) => prisma.portfolioItem.create({ data: { tenantId, currency: 'USD', source: 'SYNCED', ...data } });
+
+      goog1 = (await item({ categoryId: stocks.id, symbol: GSYM, accountId: ibkr.id, quantity: 20, currentValue: 4000, currentValueInUSD: 4000 })).id;
+      goog2 = (await item({ categoryId: stocks.id, symbol: GSYM, accountId: xp.id, currency: 'BRL', quantity: 15, currentValue: 3000, currentValueInUSD: 3000 })).id;
+      // Sold out: not a sibling, not a PUT target.
+      googClosed = (await item({ categoryId: stocks.id, symbol: GSYM, accountId: bankA.id, quantity: 0 })).id;
+      // Same symbol, different asset class: never part of the group.
+      googManual = (await item({ categoryId: other.id, symbol: GSYM, accountId: bankB.id, quantity: 1, currentValue: 10 })).id;
+      const otherCat = await prisma.category.create({ data: { tenantId: otherTenantId, name: 'Stocks #83', group: 'Stocks', type: 'Investments', processingHint: 'API_STOCK' } });
+      googOther = (await prisma.portfolioItem.create({ data: { tenantId: otherTenantId, categoryId: otherCat.id, symbol: GSYM, currency: 'USD', source: 'SYNCED', quantity: 5 } })).id;
+
+      bond1 = (await item({ categoryId: bonds.id, symbol: BOND, accountId: ibkr.id, source: 'MANUAL', quantity: 10, currentValue: 10000, currentValueInUSD: 10000 })).id;
+      bond2 = (await item({ categoryId: bonds.id, symbol: BOND, accountId: xp.id, source: 'MANUAL', quantity: 30, currentValue: 30000, currentValueInUSD: 30000 })).id;
+      cash1 = (await item({ categoryId: cash.id, symbol: CASH, accountId: bankA.id, currency: 'EUR', quantity: 5000, currentValue: 5000, currentValueInUSD: 5000 })).id;
+      cash2 = (await item({ categoryId: cash.id, symbol: CASH, accountId: bankB.id, currency: 'EUR', quantity: 10000, currentValue: 10000, currentValueInUSD: 10000 })).id;
+    });
+
+    it('GET returns open siblings of the same symbol and class, tenant-isolated', async () => {
+      const res = await call(incomeTermsHandler, token, { query: { assetId: String(goog1) } });
+      expect(res._status).toBe(200);
+      const ids = res._body.siblings.map((s: any) => s.assetId).sort();
+      expect(ids).toEqual([goog1, goog2].sort());
+      expect(ids).not.toContain(googOther);
+      expect(ids).not.toContain(googManual);
+      expect(ids).not.toContain(googClosed);
+      expect(res._body.siblings.find((s: any) => s.assetId === goog2)).toMatchObject({
+        accountName: 'XP', quantity: 15, currency: 'BRL', terms: null, source: 'MISSING',
+      });
+    });
+
+    it('GET on a closed holding still lists it as its own sibling', async () => {
+      const res = await call(incomeTermsHandler, token, { query: { assetId: String(googClosed) } });
+      expect(res._body.siblings.map((s: any) => s.assetId)).toContain(googClosed);
+    });
+
+    it('PUT applyToSymbol writes FIXED_COUPON to every holding of the bond, per unit', async () => {
+      const body = { incomeType: 'FIXED_COUPON', faceValuePerUnit: 1000, couponRate: 5, frequency: 'SEMIANNUAL', maturityDate: '2031-06-15', applyToSymbol: true };
+      const res = await call(incomeTermsHandler, token, { method: 'PUT', query: { assetId: String(bond1) }, body });
+      expect(res._status).toBe(200);
+      expect(res._body.appliedTo.sort()).toEqual([bond1, bond2].sort());
+      const rows = await prisma.incomeTerms.findMany({ where: { assetId: { in: [bond1, bond2] } } });
+      expect(rows.map((r) => Number(r.faceValuePerUnit))).toEqual([1000, 1000]);
+    });
+
+    it('PUT applyToSymbol keeps each target\'s own currency and skips other classes, closed holdings and tenants', async () => {
+      const res = await call(incomeTermsHandler, token, {
+        method: 'PUT',
+        query: { assetId: String(goog1) },
+        body: { incomeType: 'DIVIDEND', dividendPerUnit: 3, frequency: 'QUARTERLY', applyToSymbol: true },
+      });
+      expect(res._status).toBe(200);
+      expect(res._body.appliedTo.sort()).toEqual([goog1, goog2].sort());
+      const rows = await prisma.incomeTerms.findMany({ where: { assetId: { in: [goog1, goog2, googClosed, googManual, googOther] } } });
+      expect(rows).toHaveLength(2);
+      const byAsset = new Map(rows.map((r) => [r.assetId, r]));
+      expect(byAsset.get(goog1)?.currency).toBe('USD');
+      expect(byAsset.get(goog2)?.currency).toBe('BRL');
+    });
+
+    it('PUT applyToSymbol with INTEREST (cash) is rejected; per-account cash terms still work', async () => {
+      const bad = await call(incomeTermsHandler, token, {
+        method: 'PUT', query: { assetId: String(cash1) }, body: { incomeType: 'INTEREST', apyPct: 4, applyToSymbol: true },
+      });
+      expect(bad._status).toBe(400);
+      expect(bad._body.error).toBe('Cash interest is set per account');
+      const a = await call(incomeTermsHandler, token, { method: 'PUT', query: { assetId: String(cash1) }, body: { incomeType: 'INTEREST', apyPct: 0 } });
+      const b = await call(incomeTermsHandler, token, { method: 'PUT', query: { assetId: String(cash2) }, body: { incomeType: 'INTEREST', apyPct: 4 } });
+      expect([a._status, b._status]).toEqual([200, 200]);
+      expect(b._body.appliedTo).toEqual([cash2]);
+    });
+
+    it('GET /passive-income returns groups, missingGroups, grouped upcoming payments and the new item fields', async () => {
+      const res = await call(passiveIncomeHandler, token, { query: { horizon: '12' } });
+      expect(res._status).toBe(200);
+      const body = res._body;
+      const goog = body.groups.find((g: any) => g.groupKey === GSYM && g.assetClass === 'STOCK');
+      expect(goog).toMatchObject({ kind: 'SECURITY', accountCount: 2, source: 'OVERRIDE', quantity: 35 });
+      expect(goog.children.map((c: any) => c.accountName).sort()).toEqual(['IBKR', 'XP']);
+      const bond = body.groups.find((g: any) => g.groupKey === BOND);
+      expect(bond).toMatchObject({ accountCount: 2, rateOrYield: 0.05, endDate: '2031-06-15' });
+      const [b1, b2] = [bond1, bond2].map((id) => body.items.find((i: any) => i.portfolioItemId === id));
+      expect(b2.next12mTotal).toBeCloseTo(b1.next12mTotal * 3, 2);
+      const cash = body.groups.find((g: any) => g.groupKey === CASH);
+      expect(cash).toMatchObject({ kind: 'CASH', accountCount: 2, currentValue: 15000, rateRange: [0, 0.04] });
+      // The manual asset sharing the ticker is its own (missing) group.
+      expect(body.missingGroups.some((m: any) => m.groupKey === GSYM && m.assetClass === 'OTHER')).toBe(false);
+      expect(body.items.find((i: any) => i.portfolioItemId === goog2)).toMatchObject({
+        accountName: 'XP', currency: 'BRL', quantity: 15, currentValue: 3000,
+      });
+      expect(Array.isArray(body.upcomingPaymentsGrouped)).toBe(true);
+      const googLines = body.upcomingPaymentsGrouped.filter((u: any) => u.groupKey === GSYM);
+      expect(new Set(googLines.map((u: any) => u.date)).size).toBe(googLines.length);
+      expect(body.kpis.coverage.total).toBeLessThanOrEqual(body.kpis.coverageByHolding.total);
+      expect(body.kpis.coverageByHolding).toBeDefined();
+    });
+
+    it('DELETE ?applyToSymbol=true removes the terms from every holding of the symbol', async () => {
+      const res = await call(incomeTermsHandler, token, {
+        method: 'DELETE', query: { assetId: String(goog2), applyToSymbol: 'true' },
+      });
+      expect(res._status).toBe(200);
+      expect(res._body).toEqual({ deleted: 2 });
+      expect(await prisma.incomeTerms.count({ where: { assetId: { in: [goog1, goog2] } } })).toBe(0);
+    });
+
+    it('DELETE ?applyToSymbol=true is rejected for cash and 404s for another tenant', async () => {
+      const cash = await call(incomeTermsHandler, token, {
+        method: 'DELETE', query: { assetId: String(cash1), applyToSymbol: 'true' },
+      });
+      expect(cash._status).toBe(400);
+      const foreign = await call(incomeTermsHandler, otherToken, {
+        method: 'DELETE', query: { assetId: String(bond1), applyToSymbol: 'true' },
+      });
+      expect(foreign._status).toBe(404);
+      expect(await prisma.incomeTerms.count({ where: { assetId: { in: [bond1, bond2, cash1] } } })).toBe(3);
     });
   });
 });

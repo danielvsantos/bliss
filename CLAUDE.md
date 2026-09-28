@@ -276,6 +276,7 @@ to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
 - **Stock/ETF dividends** replay `SecurityMaster.recentDividends` (last 12 months, trusted only) at ex-date + 14 days each year; an empty trusted list is a trusted zero (accumulating ETFs). A `dividendPerUnit` override wins; `isDistributing = false` projects zero.
 - **Terms survive re-keying**: before the rebuild prune in `process-portfolio-changes`, `income-terms-preserver.js` moves `IncomeTerms`/`DebtTerms` to a single clear new item (same category + same account or symbol) or **detaches** the IncomeTerms — never silently deletes them. Intentional deletions still cascade.
 - The Income Terms modal opens from Portfolio holdings rows, Asset Price Updates and the Passive Income page.
+- **Grouped breakdown (#83).** `project()` also returns `groups` (`groupItems()`: one row per symbol + asset class — cash therefore per currency — with per-account `children`, MIXED source/frequency, most severe status), `upcomingPaymentsGrouped` and `missingGroups`; `kpis.coverage` counts groups (`coverageByHolding` keeps the old count). The flat `items` are unchanged. The page has a "By holding / By account" toggle (localStorage). Terms stay per holding: group edits fan out via `applyToSymbol` (every type except cash `INTEREST`, same asset class, open positions, each target keeps its currency) and `DELETE ?applyToSymbol=true`; the income-terms GET returns `siblings` for the modal's Mixed step.
 
 ### Equity Analysis: asset classes & ETF look-through
 

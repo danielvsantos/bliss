@@ -122,6 +122,7 @@ export async function loadInputs(tenantId, asOf = new Date()) {
         category: {
           select: { name: true, type: true, group: true, processingHint: true, defaultCategoryCode: true },
         },
+        accountId: true,
         account: { select: { name: true } },
         incomeTerms: true,
       },
@@ -144,7 +145,14 @@ export async function loadInputs(tenantId, asOf = new Date()) {
   const smRows = apiSymbols.length
     ? await prisma.securityMaster.findMany({
         where: { symbol: { in: apiSymbols } },
-        select: { symbol: true, assetType: true, currency: true, dividendTrusted: true, recentDividends: true },
+        select: {
+          symbol: true,
+          name: true,
+          assetType: true,
+          currency: true,
+          dividendTrusted: true,
+          recentDividends: true,
+        },
       })
     : [];
   const smMap = new Map(smRows.map((r) => [r.symbol, r]));
@@ -174,6 +182,11 @@ export async function loadInputs(tenantId, asOf = new Date()) {
       id: item.id,
       label: item.account?.name ? `${item.symbol} · ${item.account.name}` : item.symbol,
       symbol: item.symbol,
+      // Grouped view (#83): the security name labels a symbol's group row.
+      securityName: sm?.name || null,
+      accountId: item.accountId ?? null,
+      accountName: item.account?.name || null,
+      currency: item.currency,
       categoryName: item.category?.name || null,
       assetClass,
       quantity: toNumber(item.quantity),
@@ -257,14 +270,18 @@ export async function getPassiveIncome(tenantId, { horizon = 12, asOf = new Date
       essentialsCoveragePct,
       trailingEssentials: inputs.trailingEssentials,
       coverage: totals.coverage,
+      coverageByHolding: totals.coverageByHolding,
     },
     actuals: inputs.actuals,
     projected: result.monthly,
     yearly: result.yearly,
     items: result.items,
+    groups: result.groups,
     upcomingPayments: result.upcomingPayments,
+    upcomingPaymentsGrouped: result.upcomingPaymentsGrouped,
     maturityLadder: result.maturityLadder,
     detached: inputs.detached,
     missing: result.missing,
+    missingGroups: result.missingGroups,
   };
 }
