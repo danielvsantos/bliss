@@ -76,6 +76,15 @@ async function refreshEtfComposition(symbol, existing, micOpts) {
         if (last && (Date.now() - last) <= COMPOSITION_STALE_DAYS * 86400000) return false;
 
         const composition = await getEtfComposition(symbol, micOpts);
+        if (composition?.unavailable) {
+            // Refused outright (e.g. endpoint not on the Twelve Data plan): wait
+            // the usual 7 days instead of asking again every night.
+            await securityMasterService.markEtfCompositionAttempt(symbol);
+            logger.warn(`[SecurityMaster] ETF composition unavailable for ${symbol} (HTTP ${composition.status}) — retrying in ${COMPOSITION_STALE_DAYS} days`, {
+                message: composition.message,
+            });
+            return false;
+        }
         if (!composition) {
             logger.warn(`[SecurityMaster] No ETF composition for ${symbol} — keeping the previous value`);
             return false;
@@ -202,7 +211,7 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         // Dividends — 20 credits
         const dividends = await getDividends(symbol, micOpts);
 
-        await securityMasterService.upsertFundamentals(symbol, { earnings, dividends, quote });
+        await securityMasterService.upsertFundamentals(symbol, { earnings, dividends, quote, isEtf });
         result.fundamentals = true;
     } catch (error) {
         result.fundamentalsError = error.message;

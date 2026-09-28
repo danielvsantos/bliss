@@ -90,6 +90,8 @@ export interface FixedIncomeSummary {
 export interface EquityAnalysisResponse {
   portfolioCurrency: string;
   lookThrough?: boolean;
+  /** Whether any ETF has composition data; the look-through switch is hidden otherwise. */
+  lookThroughAvailable?: boolean;
   summary: EquityAnalysisSummary;
   /** Groups for the requested groupBy. */
   groups: EquityGroup[];

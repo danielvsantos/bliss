@@ -51,6 +51,7 @@ function response(over: Partial<EquityAnalysisResponse> = {}): EquityAnalysisRes
   return {
     portfolioCurrency: 'USD',
     lookThrough: true,
+    lookThroughAvailable: true,
     summary: { totalEquityValue: 3000, holdingsCount: 2, weightedPeRatio: 25, weightedDividendYield: 0.03 },
     groups: [
       { name: 'Consumer Defensive', totalValue: 1500, weight: 0.5, holdingsCount: 1, holdings: [KO] },
@@ -97,6 +98,16 @@ describe('EquityAnalysisPage — asset classes & look-through (#79)', () => {
     expect(fi.getByText('100% / 0%')).toBeInTheDocument();
   });
 
+  it('stacks the composition donut above the table while sharing the row with Fixed income', () => {
+    setup();
+    expect(screen.getByTestId('composition-layout').className).toContain('lg:flex-col');
+  });
+
+  it('keeps the composition side by side when it has the row to itself', () => {
+    setup(response({ fixedIncome: null }));
+    expect(screen.getByTestId('composition-layout').className).not.toContain('lg:flex-col');
+  });
+
   it('hides the Fixed income card without bonds and shows an empty composition', () => {
     setup(response({ fixedIncome: null, composition: [] }));
     expect(screen.queryByTestId('fixed-income-card')).not.toBeInTheDocument();
@@ -114,6 +125,11 @@ describe('EquityAnalysisPage — asset classes & look-through (#79)', () => {
     expect(Hooks.useEquityAnalysis).toHaveBeenLastCalledWith('sector', { lookThrough: true });
     fireEvent.click(screen.getByRole('button', { name: 'equityAnalysis.assetClass' }));
     expect(Hooks.useEquityAnalysis).toHaveBeenLastCalledWith('assetClass', { lookThrough: true });
+  });
+
+  it('hides the look-through switch when no ETF has composition data', () => {
+    setup(response({ lookThroughAvailable: false }));
+    expect(screen.queryByRole('switch', { name: 'equityAnalysis.lookThrough' })).not.toBeInTheDocument();
   });
 
   it('toggles look-through off and reads it from the URL', () => {
