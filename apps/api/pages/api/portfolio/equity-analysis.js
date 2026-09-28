@@ -395,6 +395,12 @@ export default withAuth(async function handler(req, res) {
     res.status(StatusCodes.OK).json({
       portfolioCurrency,
       lookThrough: lookThroughEnabled,
+      // True when at least one ETF has composition data to look through. The
+      // web hides the "Look through ETFs" switch otherwise (e.g. when the
+      // Twelve Data plan doesn't include /etfs/world/composition).
+      lookThroughAvailable: mergedHoldings.some(
+        (h) => h.composition && (h.composition.sectors.length > 0 || h.composition.countries.length > 0),
+      ),
       summary: {
         totalEquityValue: round2(totalEquityValue),
         holdingsCount: mergedHoldings.length,
