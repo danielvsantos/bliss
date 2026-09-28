@@ -4,7 +4,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IncomeTermsModal } from './income-terms-modal';
 import * as Hooks from '@/hooks/use-passive-income';
 import { mockQueryResult, mockMutationResult } from '@/test/mock-helpers';
-import type { AssetIncomeTermsResponse, IncomeStreamsResponse, IncomeStream } from '@/types/passive-income';
+import type {
+  AssetIncomeTermsResponse,
+  IncomeStreamsResponse,
+  IncomeStream,
+  IncomeTerms,
+  IncomeTermsSibling,
+} from '@/types/passive-income';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'en' } }),
@@ -37,6 +43,21 @@ function assetResponse(over: Partial<AssetIncomeTermsResponse> = {}): AssetIncom
     auto: null,
     ...over,
   };
+}
+
+function terms(over: Partial<IncomeTerms> = {}): IncomeTerms {
+  return {
+    id: 9, assetId: 5, categoryId: null, name: null, orphanedAt: null, orphanedLabel: null,
+    incomeType: 'DIVIDEND', frequency: null, currency: 'USD', anchorPaymentDate: null, startDate: null, endDate: null,
+    isDistributing: true, amountPerPayment: null, dividendPerUnit: null, yieldPct: null, issuerType: null,
+    faceValuePerUnit: null, couponRate: null, referenceIndex: null, spread: null, assumedIndexRate: null,
+    maturityDate: null, monthlyRent: null, leaseEndDate: null, annualIndexationPct: null, apyPct: null,
+    ...over,
+  };
+}
+
+function sibling(assetId: number, accountName: string, over: Partial<IncomeTermsSibling> = {}): IncomeTermsSibling {
+  return { assetId, accountName, currency: 'USD', quantity: 10, costBasis: null, terms: null, source: 'MISSING', ...over };
 }
 
 const streams: IncomeStreamsResponse = {
@@ -169,6 +190,7 @@ describe('IncomeTermsModal — asset mode', () => {
         trusted: true, currency: 'USD', frequency: 'QUARTERLY', annualDividend: 2.06, dividendYield: 0.03,
         lastUpdated: null, recentDividends: [{ exDate: '2026-09-15', amount: 0.53 }],
       },
+      siblings: [sibling(7, 'IBKR', { source: 'AUTO' }), sibling(8, 'XP', { source: 'AUTO' })],
     }));
     render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={7} />);
 
@@ -178,7 +200,9 @@ describe('IncomeTermsModal — asset mode', () => {
 
     fireEvent.click(screen.getByRole('switch'));
     fireEvent.change(screen.getByLabelText('incomeTerms.fields.dividendPerUnit'), { target: { value: '2.2' } });
-    fireEvent.click(screen.getByLabelText('incomeTerms.applyToSymbol'));
+    // Not pre-ticked without defaultApplyToSymbol.
+    expect(screen.getByLabelText('incomeTerms.applyToAllHoldings')).not.toBeChecked();
+    fireEvent.click(screen.getByLabelText('incomeTerms.applyToAllHoldings'));
     fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
 
     await waitFor(() => expect(saveAsset).toHaveBeenCalled());
@@ -214,6 +238,148 @@ describe('IncomeTermsModal — asset mode', () => {
     render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} />);
     expect(screen.getByText('incomeTerms.notIncomeCapable')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'common.save' })).toBeDisabled();
+  });
+});
+
+describe('IncomeTermsModal — group editing (#83)', () => {
+  const stock = (over: Partial<AssetIncomeTermsResponse> = {}) => assetResponse({
+    asset: { id: 7, symbol: 'GOOG', currency: 'USD', quantity: 20, categoryName: 'Stocks', assetClass: 'STOCK', defaultIncomeType: 'DIVIDEND' },
+    auto: null,
+    ...over,
+  });
+
+  it('Portfolio Holdings: a multi-account symbol opens with "apply to all holdings" ticked', async () => {
+    setup(stock({ siblings: [sibling(7, 'IBKR'), sibling(8, 'XP')] }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={7} defaultApplyToSymbol />);
+    const box = screen.getByLabelText('incomeTerms.applyToAllHoldings');
+    expect(box).toBeChecked();
+    fireEvent.click(screen.getByLabelText('incomeTerms.notDistributing'));
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(saveAsset).toHaveBeenCalled());
+    expect(saveAsset.mock.calls[0][0].body).toEqual({ incomeType: 'DIVIDEND', isDistributing: false, applyToSymbol: true });
+  });
+
+  it('a single-account symbol, and cash, never show the apply-to-all option', () => {
+    setup(stock({ siblings: [sibling(7, 'IBKR')] }));
+    const { unmount } = render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={7} defaultApplyToSymbol />);
+    expect(screen.queryByLabelText('incomeTerms.applyToAllHoldings')).not.toBeInTheDocument();
+    unmount();
+
+    setup(assetResponse({
+      asset: { id: 8, symbol: 'Cash EUR', currency: 'EUR', quantity: 5000, categoryName: 'Cash', assetClass: 'CASH', defaultIncomeType: 'INTEREST' },
+      siblings: [sibling(8, 'Bank A'), sibling(9, 'Bank B')],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={8} scope="symbol" defaultApplyToSymbol />);
+    expect(screen.queryByLabelText('incomeTerms.applyToAllHoldings')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('applies-to-holdings')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('incomeTerms.fields.apyPct')).toBeInTheDocument();
+  });
+
+  it('symbol scope with matching holdings: goes straight to the form and saves to all', async () => {
+    const rent = terms({ incomeType: 'RENT', monthlyRent: 1200 });
+    setup(assetResponse({
+      asset: { id: 5, symbol: 'Real Estate - Flat', currency: 'EUR', quantity: 1, categoryName: 'Real Estate', assetClass: 'REAL_ESTATE', defaultIncomeType: 'RENT' },
+      terms: rent,
+      siblings: [
+        sibling(5, 'A', { terms: rent, source: 'MANUAL' }),
+        sibling(6, 'B', { terms: { ...rent, id: 10, assetId: 6 }, source: 'MANUAL' }),
+      ],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} assetLabel="Flat" scope="symbol" />);
+    expect(screen.queryByTestId('mixed-step')).not.toBeInTheDocument();
+    expect(screen.getByText('incomeTerms.groupTitle')).toBeInTheDocument();
+    expect(screen.getByTestId('applies-to-holdings')).toHaveTextContent('incomeTerms.appliesToHoldings');
+    expect(screen.getByLabelText('incomeTerms.fields.monthlyRent')).toHaveValue(1200);
+    fireEvent.change(screen.getByLabelText('incomeTerms.fields.monthlyRent'), { target: { value: '1300' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(saveAsset).toHaveBeenCalled());
+    expect(saveAsset.mock.calls[0][0]).toEqual({
+      assetId: 5,
+      body: expect.objectContaining({ incomeType: 'RENT', monthlyRent: 1300, applyToSymbol: true }),
+    });
+  });
+
+  it('Mixed group: shows each account\'s terms first, then "use the same terms for all" pre-fills from one', async () => {
+    const override = terms({ assetId: 8, dividendPerUnit: 3, frequency: 'QUARTERLY' });
+    setup(stock({
+      siblings: [sibling(7, 'IBKR', { source: 'AUTO' }), sibling(8, 'XP', { terms: override, source: 'OVERRIDE' })],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={7} assetLabel="GOOG" scope="symbol" />);
+
+    const list = screen.getByTestId('mixed-siblings');
+    expect(list).toHaveTextContent('IBKR');
+    expect(list).toHaveTextContent('passiveIncome.source.AUTO');
+    expect(list).toHaveTextContent('passiveIncome.source.OVERRIDE');
+    expect(list).toHaveTextContent('$3.00');
+    // No save until a choice is made.
+    expect(screen.queryByRole('button', { name: 'common.save' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'incomeTerms.mixedUseSame' }));
+    expect(screen.queryByTestId('mixed-step')).not.toBeInTheDocument();
+    // Pre-filled from XP (the account with terms): override on, $3.
+    expect(screen.getByLabelText('incomeTerms.fields.dividendPerUnit')).toHaveValue(3);
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(saveAsset).toHaveBeenCalled());
+    expect(saveAsset.mock.calls[0][0].body).toEqual(expect.objectContaining({ dividendPerUnit: 3, applyToSymbol: true }));
+  });
+
+  it('Mixed group: "edit one account" switches to that holding only', () => {
+    const override = terms({ assetId: 8, dividendPerUnit: 3 });
+    setup(stock({
+      siblings: [sibling(7, 'IBKR', { source: 'AUTO' }), sibling(8, 'XP', { terms: override, source: 'OVERRIDE' })],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={7} assetLabel="GOOG" scope="symbol" />);
+    fireEvent.click(screen.getByRole('button', { name: 'incomeTerms.mixedEditOne' }));
+    expect(vi.mocked(Hooks.useAssetIncomeTerms)).toHaveBeenLastCalledWith(8);
+    expect(screen.queryByTestId('mixed-step')).not.toBeInTheDocument();
+    expect(screen.getByText('incomeTerms.title')).toBeInTheDocument();
+    // Single scope: the apply-to-all option is offered, unticked.
+    expect(screen.getByLabelText('incomeTerms.applyToAllHoldings')).not.toBeChecked();
+  });
+
+  it('bond in symbol scope: face value per unit, with the combined total as a hint', async () => {
+    setup(assetResponse({
+      siblings: [sibling(5, 'A', { quantity: 10, costBasis: 10000 }), sibling(6, 'B', { quantity: 30, costBasis: 30000 })],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} scope="symbol" />);
+    const perUnit = screen.getByLabelText('incomeTerms.fields.faceValuePerUnit');
+    expect(perUnit).toHaveValue(1000); // 40,000 paid ÷ 40 units
+    expect(screen.queryByLabelText('incomeTerms.fields.faceValueTotal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('face-value-hint')).toHaveTextContent('incomeTerms.faceValuePerUnitGroupHint');
+    fireEvent.change(perUnit, { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('incomeTerms.fields.couponRate'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    expect((await screen.findAllByText('incomeTerms.errors.required')).length).toBe(2); // frequency + maturity
+    expect(saveAsset).not.toHaveBeenCalled();
+  });
+
+  it('removing terms from a group asks for confirmation, then deletes from every holding', async () => {
+    const rent = terms({ incomeType: 'RENT', monthlyRent: 1200 });
+    setup(assetResponse({
+      asset: { id: 5, symbol: 'Flat', currency: 'EUR', quantity: 1, categoryName: 'Real Estate', assetClass: 'REAL_ESTATE', defaultIncomeType: 'RENT' },
+      terms: rent,
+      siblings: [sibling(5, 'A', { terms: rent, source: 'MANUAL' }), sibling(6, 'B', { terms: rent, source: 'MANUAL' })],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={5} scope="symbol" />);
+    fireEvent.click(screen.getByRole('button', { name: /incomeTerms.removeTerms/ }));
+    expect(deleteAsset).not.toHaveBeenCalled();
+    expect(await screen.findByText('incomeTerms.removeFromAllConfirm')).toBeInTheDocument();
+    const confirm = screen.getAllByRole('button', { name: 'incomeTerms.removeTerms' }).at(-1) as HTMLElement;
+    fireEvent.click(confirm);
+    await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith({ assetId: 5, applyToSymbol: true }));
+  });
+
+  it('a stock group without an override falls back to automatic data for every holding', async () => {
+    const override = terms({ assetId: 7, dividendPerUnit: 3 });
+    setup(stock({
+      terms: override,
+      siblings: [sibling(7, 'IBKR', { terms: override, source: 'OVERRIDE' }), sibling(8, 'XP', { terms: override, source: 'OVERRIDE' })],
+    }));
+    render(<IncomeTermsModal open onOpenChange={vi.fn()} mode="asset" assetId={7} scope="symbol" />);
+    fireEvent.click(screen.getByRole('switch')); // turn the override off
+    fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith({ assetId: 7, applyToSymbol: true }));
+    expect(saveAsset).not.toHaveBeenCalled();
   });
 });
 

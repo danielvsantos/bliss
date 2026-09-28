@@ -1110,8 +1110,11 @@ class APIClient {
     return response.data;
   }
 
-  async deleteAssetIncomeTerms(assetId: number): Promise<void> {
-    await this.client.delete(`/api/portfolio/items/${assetId}/income-terms`);
+  /** `applyToSymbol` removes the terms from every holding of the symbol (#83). */
+  async deleteAssetIncomeTerms(assetId: number, opts: { applyToSymbol?: boolean } = {}): Promise<void> {
+    await this.client.delete(`/api/portfolio/items/${assetId}/income-terms`, {
+      params: opts.applyToSymbol ? { applyToSymbol: 'true' } : undefined,
+    });
   }
 
   async getIncomeStreams(): Promise<IncomeStreamsResponse> {

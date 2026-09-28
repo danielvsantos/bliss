@@ -14,6 +14,9 @@ import {
   classifyIncomeAsset,
   validateIncomeTerms,
   isStreamEligibleCategory,
+  groupItems,
+  groupMissing,
+  resolveIncomeSource,
   PAYMENT_LAG_DAYS,
 } from '@bliss/shared/portfolio';
 
@@ -461,5 +464,279 @@ describe('helpers', () => {
     expect(fields({ incomeType: 'FLOATING_COUPON', faceValuePerUnit: 1, assumedIndexRate: 10, frequency: 'ANNUAL', maturityDate: 'nope', referenceIndex: 'LIBOR' }))
       .toEqual(['referenceIndex', 'maturityDate']);
     expect(validateIncomeTerms(null)).toHaveLength(1);
+  });
+});
+
+// ─── Grouped view (#83) ─────────────────────────────────────────────────────
+
+const holding = (id: number, symbol: string, accountName: string, overrides: any = {}) => asset({
+  id,
+  symbol,
+  label: `${symbol} · ${accountName}`,
+  accountId: id * 10,
+  accountName,
+  currency: 'USD',
+  ...overrides,
+});
+
+const bond = (overrides: any = {}) => ({
+  incomeType: 'FIXED_COUPON', faceValuePerUnit: 1000, couponRate: 5, frequency: 'SEMIANNUAL',
+  maturityDate: '2030-06-15', ...overrides,
+});
+
+describe('project() — groups (#83)', () => {
+  const googAuto = [
+    { exDate: '2026-09-08', amount: 0.2 }, { exDate: '2026-06-09', amount: 0.2 },
+    { exDate: '2026-03-10', amount: 0.2 }, { exDate: '2025-12-09', amount: 0.2 },
+  ];
+
+  it('groups the same symbol across accounts: sums, yield = income ÷ value, account count', () => {
+    const r = project({
+      asOf: AS_OF,
+      horizon: 12,
+      assets: [
+        holding(1, 'GOOG', 'IBKR', { quantity: 20, currentValue: 4000, recentDividends: googAuto, securityName: 'Alphabet Inc.' }),
+        holding(2, 'GOOG', 'XP', { quantity: 15, currentValue: 3000, recentDividends: googAuto, securityName: 'Alphabet Inc.' }),
+        holding(3, 'KO', 'IBKR', { recentDividends: KO }),
+      ],
+    });
+    expect(r.items).toHaveLength(3); // flat list unchanged
+    expect(r.groups).toHaveLength(2);
+    const goog = r.groups.find((g: any) => g.groupKey === 'GOOG');
+    expect(goog).toMatchObject({
+      kind: 'SECURITY',
+      label: 'Alphabet Inc.',
+      assetClass: 'STOCK',
+      accountCount: 2,
+      portfolioItemIds: [1, 2],
+      quantity: 35,
+      currentValue: 7000,
+      source: 'AUTO',
+      incomeType: 'DIVIDEND',
+      frequency: 'QUARTERLY',
+      status: 'OK',
+      statusCount: 0,
+      configured: true,
+    });
+    const rows = r.items.filter((i: any) => i.symbol === 'GOOG');
+    expect(goog.horizonTotal).toBeCloseTo(sumBy(rows, 'horizonTotal'), 2);
+    expect(goog.next12mTotal).toBeCloseTo(sumBy(rows, 'next12mTotal'), 2);
+    expect(goog.rateOrYield).toBeCloseTo(goog.next12mTotal / 7000, 5);
+    expect(goog.children.map((c: any) => c.accountName)).toEqual(['IBKR', 'XP']); // sorted by income
+    const ko = r.groups.find((g: any) => g.groupKey === 'KO');
+    expect(ko).toMatchObject({ accountCount: 1, label: 'KO' }); // no SecurityMaster name → symbol
+    expect(ko.children[0].accountName).toBe('IBKR');
+  });
+
+  it('items carry the account, value, quantity and currency', () => {
+    const r = project({ asOf: AS_OF, assets: [holding(1, 'KO', 'IBKR', { recentDividends: KO })] });
+    expect(r.items[0]).toMatchObject({ accountId: 10, accountName: 'IBKR', quantity: 100, currentValue: 10000, currency: 'USD' });
+  });
+
+  it('frequency and source are MIXED when accounts disagree; the earliest next payment and latest end date win', () => {
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        holding(1, 'GOOG', 'IBKR', { recentDividends: googAuto }),
+        holding(2, 'GOOG', 'XP', {
+          recentDividends: googAuto,
+          terms: { incomeType: 'DIVIDEND', dividendPerUnit: 1.2, frequency: 'MONTHLY', anchorPaymentDate: '2026-10-05' },
+        }),
+        holding(3, 'BND', 'A', { assetClass: 'BOND', terms: bond({ maturityDate: '2028-01-15' }) }),
+        holding(4, 'BND', 'B', { assetClass: 'BOND', terms: bond({ maturityDate: '2031-01-15' }) }),
+      ],
+    });
+    const goog = r.groups.find((g: any) => g.groupKey === 'GOOG');
+    expect(goog.source).toBe('MIXED');
+    expect(goog.frequency).toBe('MIXED');
+    expect(goog.incomeType).toBe('DIVIDEND');
+    const dates = goog.children.map((c: any) => c.nextPaymentDate).sort();
+    expect(goog.nextPaymentDate).toBe(dates[0]);
+    const bnd = r.groups.find((g: any) => g.groupKey === 'BND');
+    expect(bnd.endDate).toBe('2031-01-15');
+    expect(bnd.source).toBe('MANUAL');
+    expect(bnd.rateOrYield).toBe(0.05); // shared coupon rate
+    expect(bnd.rateRange).toBeNull();
+  });
+
+  it('the most severe status wins and statusCount counts the holdings that need attention', () => {
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        holding(1, 'BND', 'A', { assetClass: 'BOND', terms: bond() }),
+        holding(2, 'BND', 'B', { assetClass: 'BOND', terms: bond({ maturityDate: '2026-01-15' }) }),
+        holding(3, 'BND', 'C', {
+          assetClass: 'BOND',
+          terms: bond({ incomeType: 'FLOATING_COUPON', couponRate: null, assumedIndexRate: 4, spread: 1, updatedAt: '2025-01-01' }),
+        }),
+      ],
+    });
+    const g = r.groups[0];
+    expect(g.children.map((c: any) => c.status).sort()).toEqual(['MATURED_UNREDEEMED', 'OK', 'STALE_RATE']);
+    expect(g.status).toBe('MATURED_UNREDEEMED');
+    expect(g.statusCount).toBe(2);
+    expect(g.incomeType).toBe('MIXED');
+  });
+
+  it('bonds with different coupons show a rate range', () => {
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        holding(1, 'BND', 'A', { assetClass: 'BOND', terms: bond({ couponRate: 4 }) }),
+        holding(2, 'BND', 'B', { assetClass: 'BOND', terms: bond({ couponRate: 6 }) }),
+      ],
+    });
+    expect(r.groups[0].rateOrYield).toBeNull();
+    expect(r.groups[0].rateRange).toEqual([0.04, 0.06]);
+  });
+
+  it('bond coupons scale with each account\'s quantity (face value per unit)', () => {
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        holding(1, 'BND', 'A', { assetClass: 'BOND', quantity: 10, terms: bond() }),
+        holding(2, 'BND', 'B', { assetClass: 'BOND', quantity: 30, terms: bond() }),
+      ],
+    });
+    const [a, b] = ['A', 'B'].map((n) => r.items.find((i: any) => i.accountName === n));
+    expect(b.next12mTotal).toBeCloseTo(a.next12mTotal * 3, 2);
+  });
+
+  it('cash groups by currency (the symbol) with total balance and an APY range', () => {
+    const cash = (id: number, bank: string, symbol: string, apyPct: number, currentValue: number) =>
+      holding(id, symbol, bank, { assetClass: 'CASH', quantity: currentValue, currentValue, terms: { incomeType: 'INTEREST', apyPct } });
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        cash(1, 'Bank A', 'Cash EUR', 0, 5000),
+        cash(2, 'Bank B', 'Cash EUR', 4, 10000),
+        cash(3, 'Bank C', 'Cash USD', 3, 2000),
+      ],
+    });
+    const eur = r.groups.find((g: any) => g.groupKey === 'Cash EUR');
+    expect(eur).toMatchObject({ kind: 'CASH', accountCount: 2, currentValue: 15000, rateOrYield: null, rateRange: [0, 0.04] });
+    const usd = r.groups.find((g: any) => g.groupKey === 'Cash USD');
+    expect(usd).toMatchObject({ kind: 'CASH', accountCount: 1, rateOrYield: 0.03, rateRange: null });
+    // Cash is not part of the coverage count.
+    expect(r.totals.coverage.total).toBe(0);
+  });
+
+  it('streams are never grouped', () => {
+    const r = project({
+      asOf: AS_OF,
+      streams: [{ id: 9, name: 'Pension', fxRate: 1, terms: { incomeType: 'FIXED_AMOUNT', amountPerPayment: 500, frequency: 'MONTHLY', startDate: '2026-01-05' } }],
+    });
+    expect(r.groups).toEqual([]);
+    expect(r.items).toHaveLength(1);
+  });
+
+  it('missing holdings become MISSING children: the group is Mixed and not configured', () => {
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        holding(1, 'VFIAX', 'IBKR', { assetClass: 'FUND', terms: { incomeType: 'CUSTOM_YIELD', yieldPct: 1.5 } }),
+        holding(2, 'VFIAX', 'XP', { assetClass: 'FUND' }),
+        holding(3, 'VTI', 'IBKR', { assetClass: 'ETF' }),
+        holding(4, 'VTI', 'XP', { assetClass: 'ETF', hasSecurityData: true }),
+        holding(5, 'KO', 'IBKR', { recentDividends: KO }),
+      ],
+    });
+    const vfiax = r.groups.find((g: any) => g.groupKey === 'VFIAX');
+    expect(vfiax.source).toBe('MIXED');
+    expect(vfiax.configured).toBe(false);
+    expect(vfiax.children.find((c: any) => c.accountName === 'XP')).toMatchObject({
+      source: 'MISSING', horizonTotal: 0, status: 'OK', incomeType: 'DIVIDEND',
+    });
+    const vti = r.groups.find((g: any) => g.groupKey === 'VTI');
+    expect(vti).toMatchObject({ source: 'MISSING', accountCount: 2, horizonTotal: 0 });
+    // Coverage counts groups (3 groups, 1 fully configured); per holding keeps the old meaning.
+    expect(r.totals.coverage).toEqual({ configured: 1, total: 3 });
+    expect(r.totals.coverageByHolding).toEqual({ configured: 2, total: 5 });
+    // One missing-data entry per symbol; "no terms" wins over "untrusted".
+    expect(r.missing).toHaveLength(3);
+    expect(r.missingGroups).toEqual([
+      expect.objectContaining({ groupKey: 'VFIAX', portfolioItemIds: [2], reason: 'NO_TERMS' }),
+      expect.objectContaining({ groupKey: 'VTI', portfolioItemIds: [3, 4], reason: 'NO_TERMS', assetClass: 'ETF' }),
+    ]);
+  });
+
+  it('a manual asset sharing a symbol with a different asset class is not grouped with it', () => {
+    const r = project({
+      asOf: AS_OF,
+      assets: [
+        holding(1, 'X', 'A', { recentDividends: KO }),
+        holding(2, 'X', 'B', { assetClass: 'OTHER', terms: { incomeType: 'CUSTOM_YIELD', yieldPct: 2 } }),
+      ],
+    });
+    expect(r.groups).toHaveLength(2);
+  });
+
+  it('upcoming payments merge the same symbol on the same date before taking the top 10', () => {
+    const assets = Array.from({ length: 12 }, (_, i) =>
+      holding(i + 1, 'GOOG', `Broker ${i + 1}`, { quantity: 10, recentDividends: googAuto }));
+    assets.push(holding(99, 'KO', 'IBKR', { recentDividends: KO }));
+    const r = project({ asOf: AS_OF, assets });
+    // The flat list is crowded out by GOOG's 12 accounts on its first date.
+    expect(r.upcomingPayments).toHaveLength(10);
+    expect(r.upcomingPayments.filter((u: any) => u.label.startsWith('GOOG')).length).toBeGreaterThanOrEqual(9);
+    // Grouped: one GOOG line per date, summed, with every account.
+    const first = r.upcomingPaymentsGrouped.find((u: any) => u.groupKey === 'GOOG');
+    expect(first).toMatchObject({ groupKey: 'GOOG', kind: 'ASSET', source: 'dividend' });
+    expect(first.accounts).toHaveLength(12);
+    expect(first.refIds).toHaveLength(12);
+    expect(first.amount).toBeCloseTo(0.2 * 10 * 12, 2);
+    const keys = r.upcomingPaymentsGrouped.map((u: any) => `${u.groupKey}|${u.date}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(r.upcomingPaymentsGrouped.some((u: any) => u.groupKey === 'KO')).toBe(true);
+  });
+
+  it('page totals are identical with and without the grouping fields (regression)', () => {
+    const base = [
+      asset({ id: 1, symbol: 'KO', recentDividends: KO }),
+      asset({ id: 2, symbol: 'KO', recentDividends: KO, quantity: 50, currentValue: 5000 }),
+      asset({ id: 3, symbol: 'BND', assetClass: 'BOND', terms: bond() }),
+    ];
+    const plain = project({ asOf: AS_OF, horizon: 36, assets: base });
+    const enriched = project({
+      asOf: AS_OF,
+      horizon: 36,
+      assets: base.map((a, i) => ({ ...a, accountName: `Acc ${i}`, accountId: i, currency: 'USD', securityName: 'N' })),
+    });
+    expect(enriched.monthly).toEqual(plain.monthly);
+    expect(enriched.yearly).toEqual(plain.yearly);
+    expect(enriched.maturityLadder).toEqual(plain.maturityLadder);
+    expect({ ...enriched.totals, coverage: null }).toEqual({ ...plain.totals, coverage: null });
+    expect(sumBy(enriched.groups, 'horizonTotal')).toBeCloseTo(sumBy(enriched.items, 'horizonTotal'), 2);
+  });
+});
+
+describe('groupItems() / groupMissing() / resolveIncomeSource()', () => {
+  it('works on plain rows and ignores streams', () => {
+    const row = (overrides: any) => ({
+      kind: 'ASSET', symbol: 'A', label: 'A', assetClass: 'STOCK', source: 'AUTO', incomeType: 'DIVIDEND',
+      frequency: 'QUARTERLY', status: 'OK', horizonTotal: 10, next12mTotal: 10, currentValue: 100, quantity: 1,
+      nextPaymentDate: null, endDate: null, rateOrYield: 0.1, amountPerPayment: 2.5, ...overrides,
+    });
+    const groups = groupItems([
+      row({ portfolioItemId: 1 }),
+      row({ portfolioItemId: 2, currentValue: 0, horizonTotal: 5, next12mTotal: 5 }),
+      { kind: 'STREAM', streamId: 9, label: 'Pension', horizonTotal: 1000 },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ horizonTotal: 15, next12mTotal: 15, currentValue: 100, rateOrYield: 0.15, amountPerPayment: null });
+    expect(groupItems()).toEqual([]);
+    expect(groupMissing()).toEqual([]);
+    // A single holding keeps its own rate / amount per payment when the value is unknown.
+    const single = groupItems([row({ portfolioItemId: 3, currentValue: 0 })])[0];
+    expect(single).toMatchObject({ rateOrYield: 0.1, amountPerPayment: 2.5 });
+  });
+
+  it('resolveIncomeSource mirrors the breakdown source', () => {
+    expect(resolveIncomeSource({ assetClass: 'STOCK', recentDividends: [] })).toBe('AUTO');
+    expect(resolveIncomeSource({ assetClass: 'STOCK' })).toBe('MISSING');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', dividendPerUnit: 1 } })).toBe('OVERRIDE');
+    expect(resolveIncomeSource({ assetClass: 'FUND', terms: { incomeType: 'DIVIDEND', dividendPerUnit: 1 } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', isDistributing: false } })).toBe('MANUAL');
+    expect(resolveIncomeSource()).toBe('MISSING');
   });
 });

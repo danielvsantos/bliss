@@ -38,8 +38,8 @@ if (typeof window.PointerEvent === 'undefined') {
 vi.mock('@/hooks/use-portfolio-items');
 // Passive Income #77: the modal has its own tests; here we only check it opens.
 vi.mock('@/components/income/income-terms-modal', () => ({
-  IncomeTermsModal: (p: { open: boolean; assetId?: number | null }) =>
-    p.open ? <div data-testid="income-terms-modal">{`asset:${p.assetId}`}</div> : null,
+  IncomeTermsModal: (p: { open: boolean; assetId?: number | null; defaultApplyToSymbol?: boolean }) =>
+    p.open ? <div data-testid="income-terms-modal">{`asset:${p.assetId}:${p.defaultApplyToSymbol ? 'applyAll' : 'one'}`}</div> : null,
 }));
 vi.mock('@/hooks/use-portfolio-history');
 vi.mock('@/hooks/use-metadata');
@@ -206,7 +206,8 @@ describe('PortfolioHoldingsPage', () => {
     // Crypto can't produce passive income → no action.
     expect(screen.queryByTestId('income-terms-8')).not.toBeInTheDocument();
     await user.click(screen.getByTestId('income-terms-7'));
-    expect(screen.getByTestId('income-terms-modal')).toHaveTextContent('asset:7');
+    // #83 R5: defaults to "apply to all holdings" (the modal shows it only for a multi-account, non-cash symbol).
+    expect(screen.getByTestId('income-terms-modal')).toHaveTextContent('asset:7:applyAll');
   });
 
   it('scopes the holdings graph to the selected account', async () => {

@@ -113,7 +113,6 @@ const PASSIVE_INCOME_KEYS = [
   'incomeTerms.action',
   'incomeTerms.override',
   'incomeTerms.notDistributing',
-  'incomeTerms.applyToSymbol',
   'incomeTerms.fields.faceValuePerUnit',
   'incomeTerms.fields.monthlyRent',
   'incomeTerms.errors.required',
@@ -122,6 +121,39 @@ const PASSIVE_INCOME_KEYS = [
   'maintenance.globalFundamentals.title',
   'maintenance.fullRebuildSecuritiesStep',
   'equityAnalysis.diversified',
+];
+
+// Keys introduced by task #83 (group holdings by symbol, cash by currency).
+const PASSIVE_INCOME_GROUP_KEYS = [
+  'passiveIncome.source.MIXED',
+  'passiveIncome.frequency.MIXED',
+  'passiveIncome.breakdown.mixed',
+  'passiveIncome.breakdown.accounts_one',
+  'passiveIncome.breakdown.accounts_other',
+  'passiveIncome.breakdown.showAccounts_one',
+  'passiveIncome.breakdown.showAccounts_other',
+  'passiveIncome.breakdown.hideAccounts',
+  'passiveIncome.breakdown.editGroup',
+  'passiveIncome.breakdown.cashSummary',
+  'passiveIncome.breakdown.quantity',
+  'passiveIncome.breakdown.view.label',
+  'passiveIncome.breakdown.view.grouped',
+  'passiveIncome.breakdown.view.flat',
+  'incomeTerms.groupTitle_one',
+  'incomeTerms.groupTitle_other',
+  'incomeTerms.applyToAllHoldings_one',
+  'incomeTerms.applyToAllHoldings_other',
+  'incomeTerms.appliesToHoldings_one',
+  'incomeTerms.appliesToHoldings_other',
+  'incomeTerms.mixedTitle',
+  'incomeTerms.mixedDescription',
+  'incomeTerms.mixedAccount',
+  'incomeTerms.mixedUseSame',
+  'incomeTerms.mixedEditOne',
+  'incomeTerms.removeFromAllConfirm_one',
+  'incomeTerms.removeFromAllConfirm_other',
+  'incomeTerms.faceValuePerUnitGroupHint_one',
+  'incomeTerms.faceValuePerUnitGroupHint_other',
 ];
 
 const FREQUENCY_KEYS = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL', 'AT_MATURITY', 'IRREGULAR', 'NONE']
@@ -145,6 +177,20 @@ describe('i18n parity — task #77 passive income keys', () => {
       const enValue = resolve(en, key) as string;
       for (const lang of NON_EN) {
         expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(enValue);
+      }
+    });
+  }
+});
+
+describe('i18n parity — task #83 grouped passive income keys', () => {
+  for (const key of PASSIVE_INCOME_GROUP_KEYS) {
+    it(`"${key}" is a non-empty, translated string in every locale`, () => {
+      const enValue = resolve(en, key) as string;
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+        if (lang !== 'en') expect(v, `${lang}:${key}`).not.toBe(enValue);
       }
     });
   }

@@ -1,6 +1,9 @@
 import type {
+  BreakdownView,
   IncomeAssetClass,
   IncomeFrequency,
+  IncomeTerms,
+  IncomeTermsSibling,
   IncomeType,
   IncomeSourceBucket,
 } from '@/types/passive-income';
@@ -232,4 +235,50 @@ export function previewIncome(
     nextPayment: next && (!end || next <= end) ? next.toISOString().slice(0, 10) : null,
     endDate,
   };
+}
+
+// ─── Grouped view (#83) ────────────────────────────────────────────────────
+
+export const BREAKDOWN_VIEW_KEY = 'bliss.passiveIncome.breakdownView';
+
+/** The remembered breakdown view (per browser). Grouped by default; storage may be unavailable. */
+export function readBreakdownView(): BreakdownView {
+  try {
+    return window.localStorage.getItem(BREAKDOWN_VIEW_KEY) === 'flat' ? 'flat' : 'grouped';
+  } catch {
+    return 'grouped';
+  }
+}
+
+export function writeBreakdownView(view: BreakdownView): void {
+  try {
+    window.localStorage.setItem(BREAKDOWN_VIEW_KEY, view);
+  } catch {
+    // Private mode / blocked storage: the choice just isn't remembered.
+  }
+}
+
+/** Term fields compared to decide whether a symbol's holdings disagree (the "Mixed" step). */
+const COMPARED_TERM_FIELDS: (keyof IncomeTerms)[] = [
+  'incomeType', 'isDistributing', 'frequency', 'anchorPaymentDate', 'startDate', 'endDate',
+  'dividendPerUnit', 'yieldPct', 'faceValuePerUnit', 'couponRate', 'referenceIndex', 'spread',
+  'assumedIndexRate', 'maturityDate', 'monthlyRent', 'leaseEndDate', 'annualIndexationPct', 'apyPct',
+  'issuerType',
+];
+
+function termsSignature(s: IncomeTermsSibling): string {
+  if (!s.terms) return s.source;
+  const t = s.terms;
+  return [s.source, ...COMPARED_TERM_FIELDS.map((f) => {
+    const v = t[f];
+    if (v == null || v === '') return '';
+    return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : String(v);
+  })].join('|');
+}
+
+/** True when the holdings of a symbol don't all share the same source and terms. */
+export function siblingsDiffer(siblings: IncomeTermsSibling[]): boolean {
+  if (siblings.length < 2) return false;
+  const first = termsSignature(siblings[0]);
+  return siblings.some((s) => termsSignature(s) !== first);
 }
