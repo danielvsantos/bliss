@@ -15,13 +15,18 @@ interface CompositionCardProps {
   rows: AssetClassCompositionRow[];
   currency: string;
   isLoading?: boolean;
+  /**
+   * The card shares its row with the Fixed income card (half width from `lg`):
+   * stack the donut above the table there, side by side again from `2xl`.
+   */
+  sharesRow?: boolean;
 }
 
 /**
  * Portfolio composition by asset class (#79): donut + table on desktop, donut +
  * stacked list on mobile. Covers every investment (cash and debt excluded).
  */
-export function CompositionCard({ rows, currency, isLoading }: CompositionCardProps) {
+export function CompositionCard({ rows, currency, isLoading, sharesRow = false }: CompositionCardProps) {
   const { t } = useTranslation();
   const data = useMemo(
     () => rows.map((r) => ({ ...r, name: t(`equityAnalysis.assetClasses.${r.assetClass}`) })),
@@ -42,8 +47,13 @@ export function CompositionCard({ rows, currency, isLoading }: CompositionCardPr
             {t('equityAnalysis.compositionEmpty')}
           </div>
         ) : (
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <div className="h-[200px] w-full md:w-[220px] shrink-0">
+          <div
+            data-testid="composition-layout"
+            className={`flex flex-col gap-4 md:flex-row md:items-center ${
+              sharesRow ? 'lg:flex-col lg:items-stretch 2xl:flex-row 2xl:items-center' : ''
+            }`}
+          >
+            <div className={`h-[200px] w-full shrink-0 md:w-[220px] ${sharesRow ? 'lg:w-full 2xl:w-[220px]' : ''}`}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={data} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85} paddingAngle={1}>
@@ -59,7 +69,8 @@ export function CompositionCard({ rows, currency, isLoading }: CompositionCardPr
             </div>
 
             {/* Desktop table */}
-            <table className="hidden sm:table w-full text-sm">
+            <div className="hidden sm:block min-w-0 flex-1 overflow-x-auto">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-2 py-1.5 text-left font-medium">{t('equityAnalysis.assetClass')}</th>
@@ -84,6 +95,7 @@ export function CompositionCard({ rows, currency, isLoading }: CompositionCardPr
                 ))}
               </tbody>
             </table>
+            </div>
 
             {/* Mobile list */}
             <ul className="sm:hidden w-full divide-y divide-gray-100 text-sm" data-testid="composition-list">
