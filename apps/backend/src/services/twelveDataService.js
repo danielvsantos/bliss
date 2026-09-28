@@ -430,6 +430,75 @@ async function getDividends(symbol, { micCode } = {}) {
 }
 
 /**
+ * Fetches an ETF's composition from Twelve Data /etfs/world/composition
+ * (Equity Analysis #79). Keeps sector weights, country allocation and asset
+ * allocation; `top_holdings` is dropped. Uses the fundamentals throttle slot.
+ *
+ * Weights are returned as Twelve Data sends them; consumers normalize them
+ * with `normalizeEtfComposition` from @bliss/shared/portfolio.
+ *
+ * @param {string} symbol
+ * @param {Object} [options]
+ * @param {string} [options.micCode] ISO-10383 MIC code
+ * @returns {Promise<{ sectors: Array<{sector: string, weight: number}>,
+ *   countries: Array<{country: string, weight: number}>, assetAllocation: Object,
+ *   creditsUsed: number|null }|null>} null when unavailable
+ */
+async function getEtfComposition(symbol, { micCode } = {}) {
+    if (!TWELVE_DATA_API_KEY) {
+        logger.warn('[TwelveData] TWELVE_DATA_API_KEY is not set. Skipping ETF composition fetch.');
+        return null;
+    }
+
+    const url = `${BASE_URL}/etfs/world/composition`;
+
+    await acquireFundamentalsSlot();
+    logger.info(`[TwelveData] Fetching ETF composition for ${symbol}`);
+
+    try {
+        const response = await axios.get(url, {
+            timeout: 10000,
+            params: { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
+        });
+
+        if (response.data.status === 'error') {
+            logger.warn(`[TwelveData] ETF composition error for ${symbol}: ${response.data.message}`);
+            return null;
+        }
+
+        const composition = response.data.etf?.composition || response.data.composition || null;
+        if (!composition) {
+            logger.warn(`[TwelveData] ETF composition for ${symbol}: empty response`);
+            return null;
+        }
+
+        const sectors = (composition.major_market_sectors || [])
+            .map((s) => ({ sector: s.sector || null, weight: safeParseFloat(s.weight) }))
+            .filter((s) => s.sector && s.weight != null);
+        const countries = (composition.country_allocation || [])
+            .map((c) => ({ country: c.country || null, weight: safeParseFloat(c.allocation ?? c.weight) }))
+            .filter((c) => c.country && c.weight != null);
+        const assetAllocation = {};
+        for (const [key, value] of Object.entries(composition.asset_allocation || {})) {
+            const n = safeParseFloat(value);
+            if (n != null) assetAllocation[key] = n;
+        }
+
+        // Log the credit cost so the first run confirms the ~1-credit estimate (#79 OQ3).
+        const creditsUsed = safeParseFloat(response.headers?.['api-credits-used']);
+        logger.info(`[TwelveData] ETF composition for ${symbol}: ${sectors.length} sectors, ${countries.length} countries`, {
+            creditsUsed,
+            creditsLeft: safeParseFloat(response.headers?.['api-credits-left']),
+        });
+
+        return { sectors, countries, assetAllocation, creditsUsed };
+    } catch (error) {
+        logger.error(`[TwelveData] Error fetching ETF composition for ${symbol}`, { error: error.message });
+        return null;
+    }
+}
+
+/**
  * Resolves a single Twelve Data forex symbol (e.g. 'EUR/USD') to a numeric
  * rate. Tries the dedicated `/exchange_rate` endpoint first (real-time, or
  * historical via the `date` param), then falls back to a `/time_series`
@@ -549,5 +618,6 @@ module.exports = {
     getSymbolProfile,
     getEarnings,
     getDividends,
+    getEtfComposition,
     getFxRate,
 };

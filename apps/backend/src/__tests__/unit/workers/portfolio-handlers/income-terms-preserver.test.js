@@ -10,11 +10,15 @@ const {
   pruneItemsPreservingTerms,
 } = require('../../../../workers/portfolio-handlers/income-terms-preserver');
 
-function makeTx({ income = [], debt = [] } = {}) {
+function makeTx({ income = [], debt = [], overrides = [] } = {}) {
   return {
     incomeTerms: { findMany: jest.fn().mockResolvedValue(income), update: jest.fn().mockResolvedValue({}) },
     debtTerms: { findMany: jest.fn().mockResolvedValue(debt), update: jest.fn().mockResolvedValue({}) },
-    portfolioItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    portfolioItem: {
+      findMany: jest.fn().mockResolvedValue(overrides),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   };
 }
 
@@ -79,6 +83,44 @@ describe('preserveTermsBeforePrune', () => {
     const res = await preserveTermsBeforePrune(tx, [orphan], []);
     expect(res).toEqual({ moved: 0, detached: 0 });
     expect(tx.debtTerms.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('preserveTermsBeforePrune — asset class override (#79)', () => {
+  it('copies the override to the new item when the income terms move', async () => {
+    const tx = makeTx({ income: [{ id: 50, assetId: 1 }], overrides: [{ id: 1, assetClassOverride: 'GOV_BOND' }] });
+    const res = await preserveTermsBeforePrune(tx, [orphan], [
+      { id: 2, symbol: 'Bonds - New', accountId: 5, categoryId: 20 },
+    ]);
+    expect(res).toEqual({ moved: 1, detached: 0 });
+    expect(tx.portfolioItem.findMany).toHaveBeenCalledWith({
+      where: { id: { in: [1] }, assetClassOverride: { not: null } },
+      select: { id: true, assetClassOverride: true },
+    });
+    expect(tx.portfolioItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 2, assetClassOverride: null },
+      data: { assetClassOverride: 'GOV_BOND' },
+    });
+  });
+
+  it('moves an override even when the item has no terms', async () => {
+    const tx = makeTx({ overrides: [{ id: 1, assetClassOverride: 'FUND' }] });
+    const res = await preserveTermsBeforePrune(tx, [orphan], [
+      { id: 2, symbol: 'Bonds - Old', accountId: 6, categoryId: 20 },
+    ]);
+    expect(res).toEqual({ moved: 1, detached: 0 });
+    expect(tx.incomeTerms.update).not.toHaveBeenCalled();
+    expect(tx.portfolioItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 2, assetClassOverride: null },
+      data: { assetClassOverride: 'FUND' },
+    });
+  });
+
+  it('drops the override with the item when the terms are detached', async () => {
+    const tx = makeTx({ income: [{ id: 50, assetId: 1 }], overrides: [{ id: 1, assetClassOverride: 'GOV_BOND' }] });
+    const res = await preserveTermsBeforePrune(tx, [orphan], []);
+    expect(res).toEqual({ moved: 0, detached: 1 });
+    expect(tx.portfolioItem.updateMany).not.toHaveBeenCalled();
   });
 });
 

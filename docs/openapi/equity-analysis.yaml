@@ -25,7 +25,26 @@ components:
         assetType:
           type: string
           enum: [STOCK, ETF]
-          description: ETFs are bucketed as "Diversified" and never carry P/E or EPS.
+          description: ETFs have "Diversified" as their own sector/industry/country and never carry P/E or EPS.
+        assetClass:
+          $ref: '#/components/schemas/AssetClass'
+        assetClassSource:
+          type: string
+          enum: [OVERRIDE, AUTO]
+          description: OVERRIDE when the user set the asset class (PortfolioItem.assetClassOverride).
+        autoAssetClass:
+          $ref: '#/components/schemas/AssetClass'
+        itemIds:
+          type: array
+          items:
+            type: integer
+          description: Portfolio item ids merged into this row (same symbol across accounts).
+          example: [12, 31]
+        composition:
+          allOf:
+            - $ref: '#/components/schemas/EtfComposition'
+          nullable: true
+          description: ETF composition (null for stocks and ETFs not fetched yet).
         quantity:
           type: number
           example: 50
@@ -89,12 +108,95 @@ components:
           description: Holding weight within total equity value (0-1).
           example: 0.058
 
+    AssetClass:
+      type: string
+      description: >
+        Asset class from the shared classifier (`classifyAssetClass` in
+        `@bliss/shared/portfolio`).
+      enum: [STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER]
+      example: INDEX_ETF
+
+    EtfComposition:
+      type: object
+      description: Weights are fractions (0.5915 = 59.15%). Refreshed weekly from Twelve Data /etfs/world/composition.
+      properties:
+        sectors:
+          type: array
+          items:
+            type: object
+            properties:
+              sector: { type: string, example: 'Technology' }
+              weight: { type: number, example: 0.5915 }
+        countries:
+          type: array
+          items:
+            type: object
+            properties:
+              country: { type: string, example: 'United States' }
+              weight: { type: number, example: 0.62 }
+        assetAllocation:
+          type: object
+          additionalProperties:
+            type: number
+          example: { stocks: 0.9995, bonds: 0, cash: 0.0005 }
+
+    AssetClassCompositionRow:
+      type: object
+      properties:
+        assetClass:
+          $ref: '#/components/schemas/AssetClass'
+        value:
+          type: number
+          description: Value in the portfolio currency.
+          example: 42000
+        percent:
+          type: number
+          description: Share of all investments, 0–100.
+          example: 38.5
+        count:
+          type: integer
+          example: 3
+
+    FixedIncomeSummary:
+      type: object
+      description: Direct government and corporate bonds with income terms (face value set).
+      properties:
+        totalFace:
+          type: number
+          description: Σ faceValuePerUnit × quantity, in the portfolio currency.
+          example: 40000
+        weightedCouponPct:
+          type: number
+          nullable: true
+          description: >
+            Face-weighted current rate in percent. FIXED_COUPON uses couponRate;
+            FLOATING_COUPON assumedIndexRate + spread; INFLATION_LINKED couponRate + assumedIndexRate.
+          example: 4.5
+        avgYearsToMaturity:
+          type: number
+          nullable: true
+          description: Face-weighted average years to maturity (matured bonds count as 0).
+          example: 5.75
+        governmentPct:
+          type: number
+          example: 75
+        corporatePct:
+          type: number
+          example: 25
+        count:
+          type: integer
+          example: 2
+
     EquityGroup:
       type: object
       properties:
         name:
           type: string
-          description: Group name (sector, industry, or country).
+          description: >
+            Group name (sector, industry, country or asset class). Look-through
+            buckets: `Diversified` (ETF without composition, industry view,
+            toggle off), `Other` (share of an ETF not covered by its weights),
+            `Fixed Income` (bond ETFs in the sector/country views).
           example: 'Technology'
         totalValue:
           type: number
@@ -108,6 +210,7 @@ components:
           example: 5
         holdings:
           type: array
+          description: Holdings contributing to the group. With look-through an ETF can appear in several groups.
           items:
             $ref: '#/components/schemas/EquityHolding'
 
@@ -139,10 +242,41 @@ components:
           example: 'USD'
         summary:
           $ref: '#/components/schemas/EquityAnalysisSummary'
+        lookThrough:
+          type: boolean
+          description: Whether sector and country groups look through ETFs.
         groups:
           type: array
+          description: Groups for the requested `groupBy`.
           items:
             $ref: '#/components/schemas/EquityGroup'
+        groupings:
+          type: object
+          description: Groups for every dimension, so the client can switch without refetching.
+          properties:
+            sector: { type: array, items: { $ref: '#/components/schemas/EquityGroup' } }
+            industry: { type: array, items: { $ref: '#/components/schemas/EquityGroup' } }
+            country: { type: array, items: { $ref: '#/components/schemas/EquityGroup' } }
+            assetClass: { type: array, items: { $ref: '#/components/schemas/EquityGroup' } }
+        holdings:
+          type: array
+          description: Every equity holding once, largest first. Render rows from this list.
+          items:
+            $ref: '#/components/schemas/EquityHolding'
+        composition:
+          type: array
+          description: >
+            Portfolio composition by asset class across every investment item with
+            a positive quantity (stocks, ETFs, funds, bonds, real estate, crypto…;
+            cash and debt excluded). Equity holdings use live values, others the
+            stored valuation. Largest first.
+          items:
+            $ref: '#/components/schemas/AssetClassCompositionRow'
+        fixedIncome:
+          allOf:
+            - $ref: '#/components/schemas/FixedIncomeSummary'
+          nullable: true
+          description: null when there are no bonds with income terms.
 
 paths:
   /api/portfolio/equity-analysis:
@@ -153,12 +287,16 @@ paths:
       description: >
         Returns stock and ETF portfolio composition enriched with fundamental data
         from the SecurityMaster reference table. Holdings are grouped by the
-        requested dimension (sector, industry, or country) with weighted
-        aggregate metrics. ETFs (API_FUND items whose SecurityMaster assetType
-        is `ETF`, or any holding SecurityMaster identifies as an ETF) are always
-        bucketed as `Diversified` for sector, industry and country, and never
-        carry P/E or EPS — weighted P/E stays stock-only. Dividend yield honours
-        a user dividend override (IncomeTerms) and "doesn't distribute".
+        requested dimension (sector, industry, country or asset class) with
+        weighted aggregate metrics. ETFs (API_FUND items whose SecurityMaster
+        assetType is `ETF`) never carry P/E or EPS — weighted P/E stays
+        stock-only. With `lookThrough` (default) the sector and country groups
+        spread each ETF's value by its composition weights (remainder →
+        `Other`; no composition or empty country list → `Diversified`; bond
+        ETFs → `Fixed Income`); industry never looks through. Holdings are
+        listed once each. Dividend yield honours a user dividend override
+        (IncomeTerms) and "doesn't distribute". Also returns the Portfolio
+        composition by asset class and the Fixed income summary (#79).
       security:
         - cookieAuth: []
       parameters:
@@ -167,9 +305,23 @@ paths:
           required: false
           schema:
             type: string
-            enum: [sector, industry, country]
+            enum: [sector, industry, country, assetClass]
             default: sector
-          description: Dimension to group holdings by.
+          description: Dimension returned in `groups` (every dimension is in `groupings`).
+        - name: lookThrough
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+            default: 'true'
+          description: '`false` shows every ETF as one `Diversified` bucket (pre-#79 behaviour).'
+        - name: accountId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Restrict to one account.
       responses:
         '200':
           description: Equity analysis data.
@@ -186,7 +338,7 @@ paths:
                 properties:
                   error:
                     type: string
-                    example: 'Invalid groupBy value. Must be one of: sector, industry, country'
+                    example: 'Invalid groupBy value. Must be one of: sector, industry, country, assetClass'
         '405':
           description: Method not allowed.
         '500':
@@ -199,3 +351,65 @@ paths:
                   error:
                     type: string
                     example: 'Server Error'
+
+  /api/portfolio/items/{assetId}/asset-class:
+    put:
+      tags:
+        - Portfolio
+      summary: Set or clear a holding's asset class override
+      description: >
+        Stores `PortfolioItem.assetClassOverride` (Equity Analysis #79). `null`
+        clears it (back to automatic). With `applyToSymbol: true` the override
+        is set on every holding of the same symbol in the tenant (Equity
+        Analysis merges those into one row). No background job — Equity
+        Analysis classifies on read. A portfolio rebuild that re-keys the item
+        carries the override to the replacement item.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetClass]
+              properties:
+                assetClass:
+                  allOf:
+                    - $ref: '#/components/schemas/AssetClass'
+                  nullable: true
+                applyToSymbol:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Override saved; returns the recomputed class.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assetClass:
+                    $ref: '#/components/schemas/AssetClass'
+                  assetClassSource:
+                    type: string
+                    enum: [OVERRIDE, AUTO]
+                  autoAssetClass:
+                    $ref: '#/components/schemas/AssetClass'
+                  updatedCount:
+                    type: integer
+                    example: 1
+        '400':
+          description: Invalid id or asset class.
+        '404':
+          description: Portfolio item not found in this tenant.
+        '405':
+          description: Method not allowed.
+        '500':
+          description: Internal server error.

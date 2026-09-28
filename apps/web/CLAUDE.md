@@ -40,6 +40,7 @@ apps/web/src/
     settings/           # Settings panels
     income/             # Income Terms modal + zod schema (Passive Income)
     passive-income/     # Passive Income page sections (chart, breakdown, streams, detached terms)
+    equity-analysis/    # Equity Analysis cards (portfolio composition, fixed income) + asset class badge/editor
     onboarding/         # Onboarding flow components
     plaid-connect.tsx   # Plaid connection component (top-level)
     withAuth.tsx        # Auth HOC wrapper (top-level)
@@ -164,7 +165,7 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-user-settings.ts` -- User preferences
 - `use-tags.ts` -- Tag management
 - `use-tag-analytics.ts` -- Per-tag analytics
-- `use-equity-analysis.ts` -- Equity risk metrics
+- `use-equity-analysis.ts` -- Equity analysis (groupings, ETF look-through, composition) + `useSetAssetClass` override mutation
 - `use-passive-income.ts` -- Passive income projection, income terms, income streams, detached terms
 - `use-dashboard-metrics.ts` -- Dashboard summary data
 - `use-dashboard-actions.ts` -- Dashboard quick actions

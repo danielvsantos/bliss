@@ -32,6 +32,7 @@ Before `portfolioItem.deleteMany` on items that are no longer active, `pruneItem
 1. Load orphans owning `IncomeTerms` or `DebtTerms`.
 2. For each, candidates = items **created in this run** with the same `categoryId` **and** the same `accountId` (corrected description) **or** the same `symbol` (corrected account). A candidate claimed by two orphans is ambiguous for both.
 3. Exactly one unambiguous candidate → both rows move (`assetId` updated). Otherwise → the `IncomeTerms` is **detached** (`assetId = null`, `orphanedAt = now`, `orphanedLabel = <old symbol>`); unmatched `DebtTerms` keep today's behaviour (cascade-deleted).
+4. An orphan's `PortfolioItem.assetClassOverride` (#79) is matched the same way (an override alone also counts) and, on a move, copied to the new item unless it already has one. A detached orphan's override is lost with the item.
 
 The same helper covers the early-return path (no investment/debt transactions left in scope). `recalculate-portfolio-item.js` (item with no transactions left) and user deletions are intentional removals and still cascade.
 

@@ -12,9 +12,10 @@ This document specifies the frontend page for stock portfolio analysis.
 
 | Layer | File | Description |
 |-------|------|-------------|
-| Types | `src/types/equity-analysis.ts` | `EquityAnalysisResponse`, `EquityAnalysisSummary`, `EquityGroup`, `EquityHolding` |
-| API client | `src/lib/api.ts` | `api.getEquityAnalysis({ groupBy })` |
-| Hook | `src/hooks/use-equity-analysis.ts` | `useEquityAnalysis(groupBy)` — React Query wrapper |
+| Types | `src/types/equity-analysis.ts` | `EquityAnalysisResponse`, `EquityAnalysisSummary`, `EquityGroup`, `EquityHolding`, `AssetClass` / `ASSET_CLASSES`, `AssetClassCompositionRow`, `FixedIncomeSummary`, `EtfComposition` |
+| API client | `src/lib/api.ts` | `api.getEquityAnalysis({ groupBy, lookThrough })`, `api.setAssetClass(itemId, assetClass, { applyToSymbol })` |
+| Hooks | `src/hooks/use-equity-analysis.ts` | `useEquityAnalysis(groupBy, { lookThrough })` — React Query wrapper; `useSetAssetClass()` — override mutation, invalidates `equity-analysis` |
+| Components | `src/components/equity-analysis/` | `CompositionCard` (+ `ASSET_CLASS_COLORS`), `FixedIncomeCard`, `AssetClassEditor` |
 
 ## 19.3. Page Structure
 
@@ -27,7 +28,13 @@ This document specifies the frontend page for stock portfolio analysis.
 │  │$150,000  │ │12        │ │22.5      │ │1.80% ││
 │  └──────────┘ └──────────┘ └──────────┘ └──────┘│
 │                                                  │
-│  Group by: [Sector] [Industry] [Country]         │
+│  ┌──────────────────────┐ ┌─────────────────────┐│
+│  │ Portfolio composition│ │ Fixed income (bonds)││
+│  │ donut + class table  │ │ 5 stat tiles        ││
+│  └──────────────────────┘ └─────────────────────┘│
+│                                                  │
+│  Group by: [Sector] [Industry] [Country] [Asset  │
+│  class]            (●) Look through ETFs         │
 │                                                  │
 │  ┌────────────────────┐ ┌───────────────────────┐│
 │  │   Allocation Donut │ │  Top 10 Holdings Bar  ││
@@ -53,14 +60,25 @@ Four-card grid layout:
 | Avg P/E Ratio | `summary.weightedPeRatio` | 1 decimal place, or "—" if null |
 | Avg Dividend Yield | `summary.weightedDividendYield` | Percentage (2 decimal places), or "—" if null |
 
-## 19.5. Grouping Selector
+## 19.4a. Portfolio Composition & Fixed Income (#79)
 
-Pill-toggle with three options: Sector (default), Industry, Country. The hook always fetches data once with `groupBy: 'sector'`. When the user switches tabs, the data is re-grouped client-side via `useMemo` -- no additional API calls are made. The `queryKey` is stable (`['equity-analysis']`), so switching tabs does not trigger a refetch.
+- **Portfolio composition** (`CompositionCard`): donut + table of `composition` rows (asset class, value, share, count) across every investment (cash and debt excluded). Colors come from `ASSET_CLASS_COLORS = buildGroupColorMap(ASSET_CLASSES, new Set())`, so a class always has the same dataviz color (also used for the badges and the donut when grouping by asset class). On mobile the table becomes a stacked list.
+- **Fixed income** (`FixedIncomeCard`): five tiles — total face value, weighted coupon, average years to maturity, government / corporate split, number of bonds. Hidden when `fixedIncome` is `null`. The two cards sit side by side on `lg`, stacked below.
+
+## 19.5. Grouping Selector & Look-through Toggle
+
+Pill-toggle with four options: Sector (default), Industry, Country, Asset class. The hook fetches once per look-through setting (`queryKey: ['equity-analysis', { lookThrough }]`) and picks `groupings[groupBy]` from the response — the API computes every grouping because sector and country look through ETFs server-side. Switching tabs never refetches. (Responses without `groupings` are still re-grouped client-side.)
+
+**Look through ETFs** switch (default on, persisted in the URL as `?lookThrough=0` when off): with it on, the sector and country views split each ETF's value across its sectors / countries by weight; the uncovered remainder shows as "Other", bond ETFs as "Fixed income", and ETFs without composition (or with no country data, e.g. QQQ) stay "Diversified". Off restores the pre-#79 "Diversified" buckets. Industry never looks through. Group labels `Diversified` / `Other` / `Fixed Income` and asset class keys are translated.
+
+## 19.5a. Asset Class Badge & Override (#79)
+
+Each holding row shows its asset class as a badge (`AssetClassEditor`, `*` when set manually). Clicking it opens a popover (a bottom-sheet `Drawer` on mobile, via `useIsMobile`) with the ETF's top 5 sectors when known and a select: "Automatic (<class>)" clears the override, any class sets it. Saving calls `useSetAssetClass()` → `PUT /api/portfolio/items/{itemId}/asset-class` with `applyToSymbol: true`, toasts, and invalidates `equity-analysis`. Holdings rows come from the response's flat `holdings` list, so a looked-through ETF is still one row.
 
 ## 19.6. Allocation Chart
 
 - Recharts `PieChart` with inner radius (donut style)
-- Uses `dataviz-1` through `dataviz-8` palette colors: `['#6D657A', '#2E8B57', '#E09F12', '#3A3542', '#3A8A8F', '#B8AEC8', '#7E7590', '#9A95A4']`
+- Uses `dataviz-1` through `dataviz-8` palette colors via `buildGroupColorMap()` (stable per group name; `ASSET_CLASS_COLORS` when grouping by asset class)
 - Custom labels showing group name and percentage (hidden for slices < 4%)
 - Custom tooltip showing value and percentage
 
@@ -69,7 +87,7 @@ Pill-toggle with three options: Sector (default), Industry, Country. The hook al
 - Recharts horizontal `BarChart`
 - Top 10 holdings sorted by weight
 - Y-axis: ticker symbol, X-axis: weight percentage
-- Same dataviz palette colors per bar
+- Same dataviz palette via `getGroupColor()` per bar
 
 ## 19.8. Data Table
 
@@ -77,7 +95,7 @@ Sortable columns (click header to toggle sort):
 
 | Column | Field | Format | Sortable |
 |--------|-------|--------|----------|
-| Symbol | `symbol` | Bold, brand-deep | Yes |
+| Symbol | `symbol` + asset class badge / editor | Bold, brand-deep | Yes |
 | Name | `name` | Truncated at 160px | Yes |
 | Sector | `sector` | Small text | No |
 | Industry | `industry` | Small, truncated | No |

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { TrendingUp, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -10,16 +11,21 @@ import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { CompositionCard, ASSET_CLASS_COLORS } from '@/components/equity-analysis/composition-card';
+import { FixedIncomeCard } from '@/components/equity-analysis/fixed-income-card';
+import { AssetClassEditor } from '@/components/equity-analysis/asset-class-editor';
 
 import { useEquityAnalysis } from '@/hooks/use-equity-analysis';
+import { buildGroupColorMap, getGroupColor } from '@/lib/portfolio-utils';
 import { formatCurrency, formatPercentage } from '@/lib/utils';
-import type { EquityHolding } from '@/types/equity-analysis';
+import { ASSET_CLASSES, type EquityHolding } from '@/types/equity-analysis';
 
-/** Bucket the API uses for ETF sector/industry/country (look-through comes in #79). */
+/** Buckets the API uses for ETFs that can't be looked through, and for the look-through remainder (#79). */
 const DIVERSIFIED = 'Diversified';
-
-/* ── Dataviz palette (design tokens) ── */
-const CHART_COLORS = ['#6D657A', '#2E8B57', '#E09F12', '#3A3542', '#3A8A8F', '#B8AEC8', '#7E7590', '#9A95A4'];
+const LOOK_THROUGH_OTHER = 'Other';
+const FIXED_INCOME_BUCKET = 'Fixed Income';
+const ASSET_CLASS_SET = new Set<string>(ASSET_CLASSES);
 
 const fadeUp = {
   initial: { opacity: 0, y: 20 },
@@ -27,7 +33,7 @@ const fadeUp = {
   transition: { duration: 0.4 },
 };
 
-const GROUPING_KEYS = ['sector', 'industry', 'country'] as const;
+const GROUPING_KEYS = ['sector', 'industry', 'country', 'assetClass'] as const;
 
 type SortField = 'symbol' | 'name' | 'currentValue' | 'weight' | 'peRatio' | 'dividendYield' | 'trailingEps' | 'week52High' | 'week52Low';
 
@@ -83,7 +89,17 @@ export default function EquityAnalysisPage() {
   const [sortField, setSortField] = useState<SortField>('currentValue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  const { data, isLoading, isFetching, error } = useEquityAnalysis(groupBy);
+  // "Look through ETFs" (#79), on by default, persisted in the URL (?lookThrough=0).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const lookThrough = searchParams.get('lookThrough') !== '0';
+  const setLookThrough = (on: boolean) => {
+    const next = new URLSearchParams(searchParams);
+    if (on) next.delete('lookThrough');
+    else next.set('lookThrough', '0');
+    setSearchParams(next, { replace: true });
+  };
+
+  const { data, isLoading, isFetching, error } = useEquityAnalysis(groupBy, { lookThrough });
   // Cached equity values are on screen and a background refetch is running.
   const isRefreshing = isFetching && !isLoading;
 
@@ -91,10 +107,11 @@ export default function EquityAnalysisPage() {
   const summary = data?.summary;
   const groups = useMemo(() => data?.groups ?? [], [data?.groups]);
 
-  // Flatten all holdings for the table
-  const allHoldings = useMemo(() => {
-    return groups.flatMap((g) => g.holdings);
-  }, [groups]);
+  // Every holding once (with look-through an ETF can sit in several groups)
+  const allHoldings = useMemo(
+    () => data?.holdings ?? groups.flatMap((g) => g.holdings),
+    [data?.holdings, groups],
+  );
 
   // Sorted holdings
   const sortedHoldings = useMemo(() => {
@@ -108,20 +125,32 @@ export default function EquityAnalysisPage() {
     });
   }, [allHoldings, sortField, sortOrder]);
 
-  // ETFs are bucketed as "Diversified" by the API (sector/industry/country).
+  // API bucket names that need translating: "Diversified" ETFs, the
+  // look-through "Other" remainder, bond ETFs and asset class keys.
   const groupLabel = useCallback(
-    (name: string) => (name === DIVERSIFIED ? t('equityAnalysis.diversified') : name),
-    [t],
+    (name: string) => {
+      if (name === DIVERSIFIED) return t('equityAnalysis.diversified');
+      if (name === LOOK_THROUGH_OTHER) return t('equityAnalysis.lookThroughOther');
+      if (name === FIXED_INCOME_BUCKET) return t('equityAnalysis.fixedIncomeBucket');
+      if (groupBy === 'assetClass' && ASSET_CLASS_SET.has(name)) return t(`equityAnalysis.assetClasses.${name}`);
+      return name;
+    },
+    [t, groupBy],
   );
 
-  // Donut chart data
+  // Donut chart data — dataviz colors, stable per group name (asset classes
+  // share the composition card's colors).
   const donutData = useMemo(() => {
+    const colorMap = groupBy === 'assetClass'
+      ? ASSET_CLASS_COLORS
+      : buildGroupColorMap(groups.map((g) => g.name), new Set());
     return groups.map((g) => ({
       name: groupLabel(g.name),
       value: g.totalValue,
       weight: g.weight,
+      color: colorMap[g.name],
     }));
-  }, [groups, groupLabel]);
+  }, [groups, groupLabel, groupBy]);
 
   // Top 10 bar chart data
   const topHoldings = useMemo(() => {
@@ -237,11 +266,22 @@ export default function EquityAnalysisPage() {
           </Card>
         </motion.div>
 
-        {/* ── Grouping selector ── */}
+        {/* ── Portfolio composition & Fixed income (#79) ── */}
+        <motion.div
+          {...fadeUp}
+          transition={{ duration: 0.4, delay: 0.03 }}
+          className={`grid grid-cols-1 gap-6 ${data?.fixedIncome ? 'lg:grid-cols-2' : ''}`}
+        >
+          <CompositionCard rows={data?.composition ?? []} currency={portfolioCurrency} isLoading={isLoading} />
+          {data?.fixedIncome && <FixedIncomeCard summary={data.fixedIncome} currency={portfolioCurrency} />}
+        </motion.div>
+
+        {/* ── Grouping selector + look-through toggle ── */}
         <motion.div {...fadeUp} transition={{ duration: 0.4, delay: 0.05 }}>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">{t('equityAnalysis.groupBy')}</span>
-            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+            <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-white p-0.5">
               {GROUPING_KEYS.map((key) => (
                 <button
                   key={key}
@@ -256,6 +296,15 @@ export default function EquityAnalysisPage() {
                 </button>
               ))}
             </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground" title={t('equityAnalysis.lookThroughHint')}>
+            <Switch
+              checked={lookThrough}
+              onCheckedChange={setLookThrough}
+              aria-label={t('equityAnalysis.lookThrough')}
+            />
+            {t('equityAnalysis.lookThrough')}
+          </label>
           </div>
         </motion.div>
 
@@ -288,8 +337,8 @@ export default function EquityAnalysisPage() {
                       label={renderCustomLabel}
                       labelLine={false}
                     >
-                      {donutData.map((_, idx) => (
-                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                      {donutData.map((d, idx) => (
+                        <Cell key={idx} fill={d.color} />
                       ))}
                     </Pie>
                     <Tooltip content={<ChartTooltip currency={portfolioCurrency} />} />
@@ -325,8 +374,8 @@ export default function EquityAnalysisPage() {
                       }}
                     />
                     <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
-                      {topHoldings.map((_, idx) => (
-                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                      {topHoldings.map((h, idx) => (
+                        <Cell key={h.symbol} fill={getGroupColor(h.symbol, false, idx)} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -386,12 +435,16 @@ export default function EquityAnalysisPage() {
                       {sortedHoldings.map((h: EquityHolding) => (
                         <tr key={h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
                           <td className="px-3 py-2.5 font-medium text-brand-deep whitespace-nowrap">
+                            <span className="inline-flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
                             {h.symbol}
-                            {h.assetType === 'ETF' && (
+                            {h.assetClass ? (
+                              <AssetClassEditor holding={h} />
+                            ) : h.assetType === 'ETF' && (
                               <Badge variant="outline" className="ml-1.5 px-1.5 py-0 text-[10px] bg-brand-primary/10 text-brand-primary border-brand-primary/20">
                                 {t('equityAnalysis.etfBadge')}
                               </Badge>
                             )}
+                            </span>
                           </td>
                           <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">{h.name}</td>
                           <td className="hidden md:table-cell px-3 py-2.5 text-muted-foreground text-xs">{groupLabel(h.sector)}</td>

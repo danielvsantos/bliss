@@ -1,36 +1,47 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api } from '@/lib/api';
-import type { EquityAnalysisResponse, EquityGroup } from '@/types/equity-analysis';
+import type {
+  AssetClass,
+  EquityAnalysisResponse,
+  EquityGroup,
+  EquityGroupBy,
+  EquityHolding,
+} from '@/types/equity-analysis';
 import { PORTFOLIO_STALE_TIME_MS } from '@/lib/query-config';
 
 export const EQUITY_ANALYSIS_QUERY_KEY = 'equity-analysis';
 
 /**
- * Fetches equity analysis data once (grouped by sector as default),
- * then re-groups client-side when the user switches tabs.
- * This avoids redundant API calls for each groupBy change.
+ * Fetches equity analysis data once per look-through setting, then picks the
+ * requested grouping client-side. The API returns every grouping
+ * (`groupings`, #79) because sector / country look through ETFs, which needs
+ * the server-side composition data; older responses without `groupings` are
+ * re-grouped here.
  */
-export function useEquityAnalysis(groupBy: string = 'sector') {
+export function useEquityAnalysis(groupBy: string = 'sector', { lookThrough = true }: { lookThrough?: boolean } = {}) {
   const query = useQuery<EquityAnalysisResponse>({
-    queryKey: [EQUITY_ANALYSIS_QUERY_KEY],
-    queryFn: () => api.getEquityAnalysis({ groupBy: 'sector' }),
+    queryKey: [EQUITY_ANALYSIS_QUERY_KEY, { lookThrough }],
+    queryFn: () => api.getEquityAnalysis(lookThrough ? { groupBy: 'sector' } : { groupBy: 'sector', lookThrough: false }),
     staleTime: PORTFOLIO_STALE_TIME_MS,
   });
 
-  // Re-group client-side when groupBy changes (no refetch needed)
   const regrouped = useMemo<EquityAnalysisResponse | undefined>(() => {
     if (!query.data) return undefined;
+    const data = query.data;
+    const holdings: EquityHolding[] = data.holdings ?? data.groups.flatMap((g) => g.holdings);
+
+    const serverGroups = data.groupings?.[groupBy as EquityGroupBy];
+    if (serverGroups) return { ...data, holdings, groups: serverGroups };
 
     // If already grouped by the requested field, return as-is
-    if (groupBy === 'sector') return query.data;
+    if (groupBy === 'sector') return { ...data, holdings };
 
     // Flatten all holdings and re-group by the requested field
-    const allHoldings = query.data.groups.flatMap((g) => g.holdings);
-    const totalEquityValue = query.data.summary.totalEquityValue;
+    const totalEquityValue = data.summary.totalEquityValue;
 
     const groupMap: Record<string, EquityGroup> = {};
-    for (const h of allHoldings) {
+    for (const h of holdings) {
       const key = (h[groupBy as keyof typeof h] as string) || 'Unknown';
       if (!groupMap[key]) {
         groupMap[key] = { name: key, totalValue: 0, holdingsCount: 0, weight: 0, holdings: [] };
@@ -48,8 +59,22 @@ export function useEquityAnalysis(groupBy: string = 'sector') {
       }))
       .sort((a, b) => b.totalValue - a.totalValue);
 
-    return { ...query.data, groups };
+    return { ...data, holdings, groups };
   }, [query.data, groupBy]);
 
   return { ...query, data: regrouped };
+}
+
+/**
+ * Set or clear (`assetClass: null`) a holding's asset class override (#79).
+ * Applies to every holding of the same symbol (the page merges them) and
+ * refetches Equity Analysis.
+ */
+export function useSetAssetClass() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ portfolioItemId, assetClass }: { portfolioItemId: number; assetClass: AssetClass | null }) =>
+      api.setAssetClass(portfolioItemId, assetClass, { applyToSymbol: true }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [EQUITY_ANALYSIS_QUERY_KEY] }),
+  });
 }

@@ -16,6 +16,11 @@ const logger = require('../../utils/logger');
  *        orphanedLabel = old symbol). DebtTerms keep today's behaviour and are
  *        deleted with the item by cascade.
  *
+ * The item's asset class override (#79) travels with it: an orphan that owns
+ * one is matched the same way, and on a move the override is copied to the new
+ * item (unless that item already has its own). A detached orphan's override is
+ * lost with the item.
+ *
  * Intentional deletions (the user deletes an asset, or recalculate-portfolio-item
  * removes an item with no transactions left) are NOT routed through here, so
  * their terms still cascade away.
@@ -29,17 +34,24 @@ async function preserveTermsBeforePrune(tx, orphans, newItems = []) {
     if (!orphans || orphans.length === 0) return { moved: 0, detached: 0 };
     const orphanIds = orphans.map((o) => o.id);
 
-    const [incomeRows, debtRows] = await Promise.all([
+    const [incomeRows, debtRows, overrideRows] = await Promise.all([
         tx.incomeTerms.findMany({ where: { assetId: { in: orphanIds } }, select: { id: true, assetId: true } }),
         tx.debtTerms.findMany({ where: { assetId: { in: orphanIds } }, select: { id: true, assetId: true } }),
+        tx.portfolioItem.findMany({
+            where: { id: { in: orphanIds }, assetClassOverride: { not: null } },
+            select: { id: true, assetClassOverride: true },
+        }),
     ]);
     const incomeByAsset = new Map(incomeRows.map((r) => [r.assetId, r]));
     const debtByAsset = new Map(debtRows.map((r) => [r.assetId, r]));
-    if (incomeByAsset.size === 0 && debtByAsset.size === 0) return { moved: 0, detached: 0 };
+    const overrideByAsset = new Map((overrideRows || []).map((r) => [r.id, r.assetClassOverride]));
+    if (incomeByAsset.size === 0 && debtByAsset.size === 0 && overrideByAsset.size === 0) {
+        return { moved: 0, detached: 0 };
+    }
 
     // Decide matches first so "each candidate is used once" holds across orphans:
     // a candidate claimed by two orphans is ambiguous for both.
-    const withTerms = orphans.filter((o) => incomeByAsset.has(o.id) || debtByAsset.has(o.id));
+    const withTerms = orphans.filter((o) => incomeByAsset.has(o.id) || debtByAsset.has(o.id) || overrideByAsset.has(o.id));
     const candidatesFor = new Map();
     const claims = new Map();
     for (const o of withTerms) {
@@ -60,10 +72,17 @@ async function preserveTermsBeforePrune(tx, orphans, newItems = []) {
         const target = candidates.length === 1 && claims.get(candidates[0].id) === 1 ? candidates[0] : null;
         const income = incomeByAsset.get(o.id);
         const debt = debtByAsset.get(o.id);
+        const override = overrideByAsset.get(o.id);
 
         if (target) {
             if (income) await tx.incomeTerms.update({ where: { id: income.id }, data: { assetId: target.id } });
             if (debt) await tx.debtTerms.update({ where: { id: debt.id }, data: { assetId: target.id } });
+            if (override) {
+                await tx.portfolioItem.updateMany({
+                    where: { id: target.id, assetClassOverride: null },
+                    data: { assetClassOverride: override },
+                });
+            }
             moved += 1;
             logger.info(`[Sync] Moved income/debt terms from pruned item ${o.id} (${o.symbol}) to new item ${target.id} (${target.symbol}).`);
         } else if (income) {

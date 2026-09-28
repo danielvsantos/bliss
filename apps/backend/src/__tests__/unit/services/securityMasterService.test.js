@@ -26,6 +26,7 @@ const {
   getBySymbols,
   upsertFromProfile,
   upsertFundamentals,
+  upsertEtfComposition,
   getAllActiveSecuritySymbols,
   getTenantSecuritySymbols,
   getAllSecurityMasterSymbols,
@@ -82,6 +83,27 @@ describe('securityMasterService', () => {
 
       expect(prisma.securityMaster.findMany).not.toHaveBeenCalled();
       expect(result).toEqual([]);
+    });
+  });
+
+  // ─── upsertEtfComposition (#79) ─────────────────────────────────────────────
+  describe('upsertEtfComposition', () => {
+    it('stores a normalized composition and stamps lastCompositionUpdate', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+      await upsertEtfComposition('VWCE', {
+        sectors: [{ sector: 'Technology', weight: 25 }, { sector: 'Financials', weight: 15 }],
+        countries: [{ country: 'United States', weight: 62 }],
+        assetAllocation: { stocks: 99.5, cash: 0.5 },
+        creditsUsed: 1,
+      });
+      const { where, update, create } = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(where).toEqual({ symbol: 'VWCE' });
+      expect(update.etfComposition.sectors[0]).toEqual({ sector: 'Technology', weight: 0.25 });
+      expect(update.etfComposition.countries).toEqual([{ country: 'United States', weight: 0.62 }]);
+      expect(update.etfComposition.assetAllocation.stocks).toBeCloseTo(0.995);
+      expect(update.etfComposition).not.toHaveProperty('creditsUsed');
+      expect(update.lastCompositionUpdate).toBeInstanceOf(Date);
+      expect(create.symbol).toBe('VWCE');
     });
   });
 

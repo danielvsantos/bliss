@@ -1000,8 +1000,23 @@ class APIClient {
     groupBy?: string;
     /** Filter to a specific brokerage account */
     accountId?: number;
+    /** Spread ETFs across their sectors / countries (#79). Server default: true. */
+    lookThrough?: boolean;
   } = {}): Promise<import('@/types/equity-analysis').EquityAnalysisResponse> {
     const response = await this.client.get('/api/portfolio/equity-analysis', { params });
+    return response.data;
+  }
+
+  /** Set (or clear with `null`) a holding's asset class override (#79). */
+  async setAssetClass(
+    portfolioItemId: number,
+    assetClass: import('@/types/equity-analysis').AssetClass | null,
+    { applyToSymbol = true }: { applyToSymbol?: boolean } = {},
+  ): Promise<import('@/types/equity-analysis').SetAssetClassResponse> {
+    const response = await this.client.put(`/api/portfolio/items/${portfolioItemId}/asset-class`, {
+      assetClass,
+      applyToSymbol,
+    });
     return response.data;
   }
 

@@ -22,6 +22,10 @@
  *     current month.
  */
 
+// Asset classes & ETF look-through (Equity Analysis #79).
+export * from './assetClass.js';
+export * from './lookThrough.js';
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Projected payment date for an automatic dividend = ex-date + this many days. */

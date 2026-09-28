@@ -420,6 +420,11 @@ model PortfolioItem {
   // Surfaced in the UI as a data quality warning; never auto-corrected.
   hasLotMismatch Boolean @default(false)
 
+  // User override of the automatic asset class (Equity Analysis #79). One of
+  // ASSET_CLASSES in @bliss/shared/portfolio; null = automatic. A String, not
+  // an enum, so classes can change without a migration.
+  assetClassOverride String?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -911,6 +916,13 @@ model SecurityMaster {
   // dividend fetch succeeded; consumers treat it as empty unless dividendTrusted.
   // Replayed by the passive income projection (@bliss/shared/portfolio).
   recentDividends        Json?
+
+  // ETF composition (Twelve Data /etfs/world/composition, refreshed weekly for
+  // ETFs). Fractions: { sectors: [{sector, weight}], countries: [{country, weight}],
+  // assetAllocation: {stocks, bonds, cash, ...} }. Drives asset class
+  // (BOND_ETF / SECTOR_ETF) and the Equity Analysis look-through (#79).
+  etfComposition         Json?
+  lastCompositionUpdate  DateTime?
 
   // ── Meta ──
   lastProfileUpdate      DateTime?

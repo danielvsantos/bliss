@@ -378,6 +378,80 @@ describe('twelveDataService', () => {
   // Without range=full Twelve Data returns only the latest dividend, which
   // collapses the trailing-12-month sum to a single payment.
 
+  // ─── getEtfComposition (#79) ─────────────────────────────────────────────
+
+  describe('getEtfComposition()', () => {
+    // Shape of /etfs/world/composition (QQQ, #77 spike).
+    const QQQ_RESPONSE = {
+      etf: {
+        symbol: 'QQQ',
+        composition: {
+          major_market_sectors: [
+            { sector: 'Technology', weight: 0.5915 },
+            { sector: 'Communication Services', weight: 0.1581 },
+            { sector: 'Consumer Cyclical', weight: 0.1304 },
+          ],
+          country_allocation: [],
+          asset_allocation: { cash: 0.0005, stocks: 0.9995, preferred_stocks: 0, convertables: 0, bonds: 0, others: 0 },
+          top_holdings: [{ symbol: 'NVDA', weight: 0.09 }],
+        },
+      },
+      status: 'ok',
+    };
+
+    it('maps sectors, countries and asset allocation, dropping top holdings', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: QQQ_RESPONSE, headers: { 'api-credits-used': '1', 'api-credits-left': '376' } });
+
+      const result = await twelveDataService.getEtfComposition('QQQ', { micCode: 'XNAS' });
+
+      const [url, config] = axios.get.mock.calls[0];
+      expect(url).toMatch(/\/etfs\/world\/composition$/);
+      expect(config.params).toEqual({ symbol: 'QQQ', mic_code: 'XNAS', apikey: 'test-api-key' });
+      expect(result.sectors[0]).toEqual({ sector: 'Technology', weight: 0.5915 });
+      expect(result.sectors).toHaveLength(3);
+      expect(result.countries).toEqual([]);
+      expect(result.assetAllocation).toMatchObject({ stocks: 0.9995, bonds: 0, cash: 0.0005 });
+      expect(result.creditsUsed).toBe(1);
+      expect(result).not.toHaveProperty('topHoldings');
+    });
+
+    it('maps country allocation entries', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({
+        data: { etf: { composition: { country_allocation: [{ country: 'United States', allocation: '0.62' }, { country: '', allocation: 0.1 }] } } },
+      });
+      const result = await twelveDataService.getEtfComposition('VWCE');
+      expect(result.countries).toEqual([{ country: 'United States', weight: 0.62 }]);
+      expect(result.creditsUsed).toBeNull();
+    });
+
+    it('returns null on an API error payload', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: { status: 'error', message: 'not an ETF' } });
+      await expect(twelveDataService.getEtfComposition('KO')).resolves.toBeNull();
+    });
+
+    it('returns null on an empty payload', async () => {
+      const axios = require('axios');
+      axios.get.mockResolvedValue({ data: { status: 'ok' } });
+      await expect(twelveDataService.getEtfComposition('QQQ')).resolves.toBeNull();
+    });
+
+    it('returns null on a network error', async () => {
+      const axios = require('axios');
+      axios.get.mockRejectedValue(new Error('timeout'));
+      await expect(twelveDataService.getEtfComposition('QQQ')).resolves.toBeNull();
+    });
+
+    it('returns null without an API key', async () => {
+      delete process.env.TWELVE_DATA_API_KEY;
+      jest.resetModules();
+      const svc = require('../../../services/twelveDataService');
+      await expect(svc.getEtfComposition('QQQ')).resolves.toBeNull();
+    });
+  });
+
   describe('getDividends()', () => {
     it('requests the full dividend history (range=full)', async () => {
       const axios = require('axios');
