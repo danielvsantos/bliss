@@ -16,7 +16,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { useSetAssetClass } from '@/hooks/use-equity-analysis';
 import { ASSET_CLASSES, type AssetClass, type EquityHolding } from '@/types/equity-analysis';
-import { ASSET_CLASS_COLORS } from './composition-card';
+import { ASSET_CLASS_COLORS } from './asset-class-colors';
 
 const AUTO = 'AUTO';
 

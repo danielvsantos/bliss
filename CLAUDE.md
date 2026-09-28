@@ -95,9 +95,9 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 3,100 tests |
+| All | `pnpm test` | -- | 3,108 tests |
 | API | `pnpm test:api` | Vitest (ESM) | 1,031 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,215 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,223 tests (unit + integration) |
 | Frontend | `pnpm test:web` | Vitest + RTL | 854 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
@@ -281,7 +281,7 @@ to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
 
 ### Equity Analysis: asset classes & ETF look-through
 
-`/reports/equity-analysis` groups stock + ETF holdings by sector, industry, country or **asset class**, and shows a **Portfolio composition** card (every investment by class, cash and debt excluded) and a **Fixed income** card (direct bonds with income terms). See [`docs/specs/api/06-portfolio-api.md`](docs/specs/api/06-portfolio-api.md#67-equity-analysis).
+`/reports/equity-analysis` groups stock + ETF holdings by sector, industry, country or **asset class**. The page is equity-only (it matches its KPI cards); the whole-portfolio breakdown lives on the Portfolio page and bond details on Passive Income. See [`docs/specs/api/06-portfolio-api.md`](docs/specs/api/06-portfolio-api.md#67-equity-analysis).
 
 - **One classifier**: `classifyAssetClass()` in **`@bliss/shared/portfolio`** (12 classes: STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER). The API uses it now and backend insights (#80) must `require` the same function — never re-derive classes locally.
 - **Override**: `PortfolioItem.assetClassOverride` (String, validated against `ASSET_CLASSES`, not an enum), set via `PUT /api/portfolio/items/:assetId/asset-class`; carried to the replacement item by `income-terms-preserver.js` on a re-keying rebuild.

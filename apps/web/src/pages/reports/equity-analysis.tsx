@@ -12,8 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { CompositionCard, ASSET_CLASS_COLORS } from '@/components/equity-analysis/composition-card';
-import { FixedIncomeCard } from '@/components/equity-analysis/fixed-income-card';
+import { ASSET_CLASS_COLORS } from '@/components/equity-analysis/asset-class-colors';
 import { AssetClassEditor } from '@/components/equity-analysis/asset-class-editor';
 
 import { useEquityAnalysis } from '@/hooks/use-equity-analysis';
@@ -264,21 +263,6 @@ export default function EquityAnalysisPage() {
               )}
             </CardContent>
           </Card>
-        </motion.div>
-
-        {/* ── Portfolio composition & Fixed income (#79) ── */}
-        <motion.div
-          {...fadeUp}
-          transition={{ duration: 0.4, delay: 0.03 }}
-          className={`grid grid-cols-1 gap-6 ${data?.fixedIncome ? 'lg:grid-cols-2' : ''}`}
-        >
-          <CompositionCard
-            rows={data?.composition ?? []}
-            currency={portfolioCurrency}
-            isLoading={isLoading}
-            sharesRow={!!data?.fixedIncome}
-          />
-          {data?.fixedIncome && <FixedIncomeCard summary={data.fixedIncome} currency={portfolioCurrency} />}
         </motion.div>
 
         {/* ── Grouping selector + look-through toggle ── */}

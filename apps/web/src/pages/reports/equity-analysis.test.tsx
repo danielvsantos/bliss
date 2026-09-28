@@ -59,12 +59,6 @@ function response(over: Partial<EquityAnalysisResponse> = {}): EquityAnalysisRes
       { name: 'Other', totalValue: 612.75, weight: 0.20425, holdingsCount: 1, holdings: [QQQ] },
     ],
     holdings: [KO, QQQ],
-    composition: [
-      { assetClass: 'GOV_BOND', value: 2000, percent: 40, count: 1 },
-      { assetClass: 'STOCK', value: 1500, percent: 30, count: 1 },
-      { assetClass: 'INDEX_ETF', value: 1500, percent: 30, count: 1 },
-    ],
-    fixedIncome: { totalFace: 2000, weightedCouponPct: 6, avgYearsToMaturity: 8.3, governmentPct: 100, corporatePct: 0, count: 1 },
     ...over,
   };
 }
@@ -87,31 +81,11 @@ beforeEach(() => {
 });
 
 describe('EquityAnalysisPage — asset classes & look-through (#79)', () => {
-  it('renders the Portfolio composition and Fixed income cards', () => {
+  it('keeps the page equity-only: no portfolio composition or fixed income cards', () => {
     setup();
-    const comp = within(screen.getByTestId('composition-card'));
-    expect(comp.getAllByText('equityAnalysis.assetClasses.GOV_BOND').length).toBeGreaterThan(0);
-    expect(comp.getAllByText('40.0%').length).toBeGreaterThan(0);
-    const fi = within(screen.getByTestId('fixed-income-card'));
-    expect(fi.getByText('6.00%')).toBeInTheDocument();
-    expect(fi.getByText('equityAnalysis.yearsValue:8.3')).toBeInTheDocument();
-    expect(fi.getByText('100% / 0%')).toBeInTheDocument();
-  });
-
-  it('stacks the composition donut above the table while sharing the row with Fixed income', () => {
-    setup();
-    expect(screen.getByTestId('composition-layout').className).toContain('lg:flex-col');
-  });
-
-  it('keeps the composition side by side when it has the row to itself', () => {
-    setup(response({ fixedIncome: null }));
-    expect(screen.getByTestId('composition-layout').className).not.toContain('lg:flex-col');
-  });
-
-  it('hides the Fixed income card without bonds and shows an empty composition', () => {
-    setup(response({ fixedIncome: null, composition: [] }));
-    expect(screen.queryByTestId('fixed-income-card')).not.toBeInTheDocument();
-    expect(screen.getByText('equityAnalysis.compositionEmpty')).toBeInTheDocument();
+    expect(screen.queryByText('equityAnalysis.compositionTitle')).not.toBeInTheDocument();
+    expect(screen.queryByText('equityAnalysis.fixedIncomeTitle')).not.toBeInTheDocument();
+    expect(screen.getByText('equityAnalysis.totalEquityValue')).toBeInTheDocument();
   });
 
   it('lists each holding once even when an ETF is split across groups', () => {
@@ -177,12 +151,10 @@ describe('EquityAnalysisPage — asset classes & look-through (#79)', () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it('uses a bottom sheet and a stacked composition list on mobile (375px)', () => {
+  it('uses a bottom sheet for the asset class editor on mobile (375px)', () => {
     vi.mocked(MobileHook.useIsMobile).mockReturnValue(true);
     window.innerWidth = 375;
     setup();
-    const list = screen.getByTestId('composition-list');
-    expect(list).toMatchSnapshot();
     fireEvent.click(screen.getByRole('button', { name: 'equityAnalysis.editAssetClass:KO' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByLabelText('equityAnalysis.assetClass')).toBeInTheDocument();

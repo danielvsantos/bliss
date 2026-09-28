@@ -40,7 +40,7 @@ apps/web/src/
     settings/           # Settings panels
     income/             # Income Terms modal + zod schema (Passive Income)
     passive-income/     # Passive Income page sections (chart, breakdown, streams, detached terms)
-    equity-analysis/    # Equity Analysis cards (portfolio composition, fixed income) + asset class badge/editor
+    equity-analysis/    # Equity Analysis asset class badge/editor + asset class colors
     onboarding/         # Onboarding flow components
     plaid-connect.tsx   # Plaid connection component (top-level)
     withAuth.tsx        # Auth HOC wrapper (top-level)
