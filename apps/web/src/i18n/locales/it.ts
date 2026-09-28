@@ -2000,6 +2000,13 @@ const it = {
       annual: "Rapporto annuale",
       portfolio: "Intelligenza portafoglio",
     },
+    lens: {
+      passiveIncomeOutlook: "Prospettive del reddito passivo",
+    },
+    actions: {
+      passiveIncomeSetup: "Configura le condizioni di reddito",
+      portfolioHoldings: "Portafoglio investimenti",
+    },
     period: {
       selectPlaceholder: "Seleziona periodo",
       q: "T",

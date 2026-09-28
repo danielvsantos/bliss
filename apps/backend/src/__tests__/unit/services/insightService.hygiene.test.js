@@ -94,6 +94,13 @@ jest.mock('../../../../prisma/prisma.js', () => ({
     count: jest.fn().mockResolvedValue(0),
     groupBy: jest.fn().mockResolvedValue([]),
   },
+  // Passive income (#80): income streams + stream-eligible categories.
+  incomeTerms: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
+  category: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
   currencyRate: {
     // Reads that the planner is allowed to make — return empty map-compatible rows
     findMany: jest.fn().mockResolvedValue([]),

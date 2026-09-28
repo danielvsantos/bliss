@@ -14,6 +14,20 @@ const { insightArraySchema } = require('./insightPrompts/schema');
 // See insights-v2 refactor: docs/specs/backend/15-insights-engine.md
 const { getRatesForDateRange } = require('./currencyService');
 const { checkTierCompleteness, getPeriodKey, getQuarterMonths, getQuarterFromMonth } = require('./dataCompletenessService');
+// Pure portfolio math shared with the API (CJS build): passive income
+// projection (#77), asset classes + ETF look-through (#79), insights summary (#80).
+const {
+  classifyIncomeAsset,
+  isStreamEligibleCategory,
+  project,
+  summarize,
+  classifyAssetClass,
+  lookThrough,
+  buildComposition,
+  buildFixedIncome,
+  bondCouponPct,
+  EQUITY_ASSET_CLASSES,
+} = require('@bliss/shared/portfolio');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -26,7 +40,7 @@ const VALID_SEVERITIES = ['POSITIVE', 'INFO', 'WARNING', 'CRITICAL'];
 const VALID_ACTION_TYPES = [
   'BUDGET_OPTIMIZATION', 'TAX_EFFICIENCY', 'PORTFOLIO_REBALANCE',
   'DEBT_REDUCTION', 'SAVINGS_GOAL', 'TRAVEL_PLANNING',
-  'EMERGENCY_FUND', 'INCOME_GROWTH',
+  'EMERGENCY_FUND', 'INCOME_GROWTH', 'PASSIVE_INCOME_SETUP',
 ];
 
 // Map lens -> category for automatic assignment
@@ -36,6 +50,7 @@ const LENS_CATEGORY_MAP = {
   UNUSUAL_SPENDING: 'SPENDING',
   INCOME_STABILITY: 'INCOME',
   INCOME_DIVERSIFICATION: 'INCOME',
+  PASSIVE_INCOME_OUTLOOK: 'INCOME',
   SAVINGS_RATE: 'SAVINGS',
   SAVINGS_TREND: 'SAVINGS',
   PORTFOLIO_EXPOSURE: 'PORTFOLIO',
@@ -59,6 +74,7 @@ const TIER_LENSES = {
     'SPENDING_VELOCITY', 'CATEGORY_CONCENTRATION',
     'INCOME_STABILITY', 'INCOME_DIVERSIFICATION',
     'SAVINGS_RATE', 'SAVINGS_TREND',
+    'PASSIVE_INCOME_OUTLOOK',
     'DEBT_HEALTH', 'DEBT_PAYOFF_TRAJECTORY',
     'NET_WORTH_TRAJECTORY', 'NET_WORTH_MILESTONES',
   ],
@@ -66,12 +82,14 @@ const TIER_LENSES = {
     'SPENDING_VELOCITY', 'CATEGORY_CONCENTRATION',
     'INCOME_STABILITY', 'INCOME_DIVERSIFICATION',
     'SAVINGS_RATE', 'SAVINGS_TREND',
+    'PASSIVE_INCOME_OUTLOOK',
     'DEBT_HEALTH', 'DEBT_PAYOFF_TRAJECTORY',
     'NET_WORTH_TRAJECTORY', 'NET_WORTH_MILESTONES',
   ],
   PORTFOLIO: [
     'PORTFOLIO_EXPOSURE', 'SECTOR_CONCENTRATION',
     'VALUATION_RISK', 'DIVIDEND_OPPORTUNITY',
+    'PASSIVE_INCOME_OUTLOOK',
   ],
 };
 
@@ -201,6 +219,58 @@ async function prefetchRatesForTier({ tenantId, portfolioCurrency, startDate, en
   });
 }
 
+/**
+ * Top up the rate cache with `currency → portfolioCurrency` pairs that
+ * prefetchRatesForTier didn't cover (income-stream, dividend and transaction
+ * currencies aren't always portfolio-item currencies). Same bulk read as
+ * prefetchRatesForTier over [asOf − 30 days, asOf]; pairs already in the
+ * cache are skipped.
+ */
+async function prefetchExtraCurrencies({ currencies, portfolioCurrency, asOf, rateCache }) {
+  const hasPair = (from) => Object.keys(rateCache).some((k) => k.endsWith(`_${from}_${portfolioCurrency}`));
+  const missing = [...new Set(currencies)].filter((c) => c && c !== portfolioCurrency && !hasPair(c));
+  if (!missing.length) return;
+  const start = new Date(asOf);
+  start.setUTCDate(start.getUTCDate() - 30);
+  await Promise.all(
+    missing.map(async (from) => {
+      const rates = await getRatesForDateRange(start, asOf, from, portfolioCurrency);
+      for (const [dateStr, rate] of rates.entries()) {
+        rateCache[`${dateStr}_${from}_${portfolioCurrency}`] = rate;
+      }
+    }),
+  );
+}
+
+// ─── Period anchors ──────────────────────────────────────────────────────────
+//
+// The skip-if-unchanged check hashes tenantData, and the passive income
+// projection depends on the date it's computed for. So the projection's
+// `asOf` comes from the insight's period, never the clock: two runs in the
+// same period with unchanged data must hash the same (#80).
+
+/**
+ * PORTFOLIO: the Monday (UTC) of the week `now` falls in. The PORTFOLIO
+ * periodKey (`getPeriodKey`) counts weeks from Sunday, so a Sunday maps to
+ * the following Monday — every day of one periodKey gets the same anchor.
+ */
+function portfolioAsOf(now = new Date()) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const dow = d.getUTCDay(); // 0 = Sunday
+  d.setUTCDate(d.getUTCDate() + (dow === 0 ? 1 : 1 - dow));
+  return d;
+}
+
+/** QUARTERLY: first day after the quarter ends. */
+function quarterlyAsOf(year, quarter) {
+  return new Date(Date.UTC(year, quarter * 3, 1));
+}
+
+/** ANNUAL: first day after the year ends. */
+function annualAsOf(year) {
+  return new Date(Date.UTC(year + 1, 0, 1));
+}
+
 // ─── Data Gathering Functions ────────────────────────────────────────────────
 
 /**
@@ -252,6 +322,9 @@ async function gatherAnalyticsData(tenantId, months, portfolioCurrency) {
   // drift away from what users see on the Financial Summary page. We mirror
   // FS's signed math here so the two surfaces always agree.
   const monthlyData = {};
+  // "Passive Income" group per month, kept outside monthlyData so the
+  // per-month shape the prompt sees is unchanged (INCOME_DIVERSIFICATION, #80).
+  const passiveIncomeByMonth = {};
   for (const entry of analyticsData) {
     const key = `${entry.year}-${String(entry.month).padStart(2, '0')}`;
     if (!monthlyData[key]) monthlyData[key] = { income: 0, expenses: 0, groups: {} };
@@ -261,6 +334,9 @@ async function gatherAnalyticsData(tenantId, months, portfolioCurrency) {
       // Income balance is signed positive in the normal case; preserve sign
       // so a clawback row reduces income totals.
       monthlyData[key].income += signedBalance;
+      if (entry.group === 'Passive Income') {
+        passiveIncomeByMonth[key] = (passiveIncomeByMonth[key] || 0) + signedBalance;
+      }
     } else if (['Essentials', 'Lifestyle', 'Growth'].includes(entry.type)) {
       // Expense balance is signed negative in the normal case. Negate to
       // accumulate expenses as a positive magnitude — but a refund-positive
@@ -275,6 +351,7 @@ async function gatherAnalyticsData(tenantId, months, portfolioCurrency) {
   return {
     monthlyData,
     sortedMonths: Object.keys(monthlyData).sort(),
+    passiveIncomeByMonth,
     hasTransactions: analyticsData.length > 0,
   };
 }
@@ -592,7 +669,7 @@ async function gatherNetWorthBreakdown(tenantId, periodStart, periodEnd, portfol
  * `rateCache` (populated by `prefetchRatesForTier`) before building the
  * sector allocation, total value, and returned holdings array.
  */
-async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) {
+async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, asOf = new Date()) {
   // `PortfolioItem` has no `name` column — only `symbol`, `isin`, `exchange`.
   // The human-readable asset name comes from the joined `SecurityMaster.name`
   // (e.g. "Apple Inc"), which is already selected below. For holdings without
@@ -611,12 +688,34 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       costBasis: true,
       quantity: true,
       realizedPnL: true,
-      category: { select: { name: true, processingHint: true } },
+      assetClassOverride: true,
+      category: {
+        select: { name: true, group: true, processingHint: true, defaultCategoryCode: true },
+      },
+      // Bond issuer type drives GOV_BOND / CORP_BOND; face + coupon feed the
+      // fixed-income summary (#79 / #80).
+      incomeTerms: {
+        select: {
+          incomeType: true,
+          issuerType: true,
+          currency: true,
+          faceValuePerUnit: true,
+          couponRate: true,
+          spread: true,
+          assumedIndexRate: true,
+          maturityDate: true,
+        },
+      },
     },
   });
 
   const symbols = holdings.map((h) => h.symbol).filter(Boolean);
-  if (symbols.length === 0) return { holdings: [], sectorAllocation: {}, industryAllocation: {}, totalValue: 0 };
+  if (symbols.length === 0) {
+    return {
+      holdings: [], sectorAllocation: {}, industryAllocation: {}, totalValue: 0, equityValue: 0,
+      assetClassAllocation: [], fixedIncome: null,
+    };
+  }
 
   const fundamentals = await prisma.securityMaster.findMany({
     where: { symbol: { in: symbols } },
@@ -635,6 +734,9 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
       week52Low: true,
       averageVolume: true,
       assetType: true,
+      // ETF sector / country / asset-allocation weights for the classifier
+      // and the sector look-through (#79).
+      etfComposition: true,
       // Trust flags decide whether earnings- and dividend-derived fields
       // can be passed to the LLM. When false, those fields are nulled out
       // below — wrong data is worse than missing data for portfolio insights.
@@ -653,17 +755,14 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
   // from SecurityMaster that are already quoted in the security's listing
   // currency and don't get rolled up into tenant-level totals. We pass them
   // through as-is for context, tagged with the holding's native currency.
+  //
+  // Asset class (#80): every holding is classified by the shared #79
+  // classifier. There are no made-up fallback sectors any more ("ETFs &
+  // Funds", "Alternative Assets") — a holding without a real sector simply
+  // has none, and only equities count toward the sector views below.
   const fundamentalsMap = new Map(fundamentals.map((f) => [f.symbol, f]));
   const today = new Date();
-  // Derive a human-readable sector label from the category when SecurityMaster
-  // has no data (e.g. ETFs, funds, crypto, manual assets). This prevents the
-  // LLM from lumping everything without fundamentals into a single "Unknown"
-  // bucket and flagging it as a concentration risk.
-  const HINT_TO_SECTOR = {
-    API_FUND: 'ETFs & Funds',
-    API_CRYPTO: 'Cryptocurrency',
-    MANUAL: 'Alternative Assets',
-  };
+  const compositionBySymbol = new Map();
   const enrichedHoldings = holdings.map((h) => {
     const f = fundamentalsMap.get(h.symbol) || {};
     const nativeCurrency = h.currency || portfolioCurrency;
@@ -673,70 +772,379 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache) 
     const convertedCurrentValue = convertAmount(rawCurrentValue, nativeCurrency, portfolioCurrency, today, rateCache);
     const convertedCostBasis = convertAmount(rawCostBasis, nativeCurrency, portfolioCurrency, today, rateCache);
     const convertedRealizedPnL = convertAmount(rawRealizedPnL, nativeCurrency, portfolioCurrency, today, rateCache);
-    const fallbackSector = HINT_TO_SECTOR[h.category?.processingHint] || h.category?.name || 'Other';
+    const { assetClass } = classifyAssetClass({
+      override: h.assetClassOverride,
+      processingHint: h.category?.processingHint,
+      defaultCategoryCode: h.category?.defaultCategoryCode,
+      categoryGroup: h.category?.group,
+      security: f.symbol ? { assetType: f.assetType, name: f.name, composition: f.etfComposition } : null,
+      incomeTerms: h.incomeTerms,
+    });
+    if (f.etfComposition) compositionBySymbol.set(h.symbol, f.etfComposition);
+    const isEtfClass = ['INDEX_ETF', 'SECTOR_ETF', 'BOND_ETF'].includes(assetClass);
     return {
       symbol: h.symbol,
       name: f.name || h.symbol,
+      assetClass,
       nativeCurrency,
       currentValue: Math.round(convertedCurrentValue * 100) / 100,
       costBasis: Math.round(convertedCostBasis * 100) / 100,
       quantity: Number(h.quantity || 0),
       unrealizedPnL: Math.round((convertedCurrentValue - convertedCostBasis) * 100) / 100,
       realizedPnL: Math.round(convertedRealizedPnL * 100) / 100,
-      sector: f.sector || fallbackSector,
-      industry: f.industry || fallbackSector,
-      country: f.country || 'Global',
+      // ETF profile sector/industry/country are never stored (#77); stocks and
+      // REITs carry their own.
+      sector: isEtfClass ? null : f.sector || null,
+      industry: isEtfClass ? null : f.industry || null,
+      country: f.country || null,
       // Earnings-derived fields are gated on earningsTrusted: when Twelve Data
       // returned inconsistent data (off-by-one timezone, sparse history, stale
       // last quarter), the upsert flagged the row untrusted. Hide those fields
-      // from the LLM rather than feed it numbers we know to be wrong.
-      peRatio: f.earningsTrusted && f.peRatio ? Number(f.peRatio) : null,
-      trailingEps: f.earningsTrusted && f.trailingEps ? Number(f.trailingEps) : null,
+      // from the LLM rather than feed it numbers we know to be wrong. ETFs
+      // never carry a P/E (VALUATION_RISK is stocks-only).
+      peRatio: !isEtfClass && f.earningsTrusted && f.peRatio ? Number(f.peRatio) : null,
+      trailingEps: !isEtfClass && f.earningsTrusted && f.trailingEps ? Number(f.trailingEps) : null,
       dividendYield: f.dividendTrusted && f.dividendYield ? Number(f.dividendYield) : null,
       week52High: f.week52High ? Number(f.week52High) : null,
       week52Low: f.week52Low ? Number(f.week52Low) : null,
-      assetType: f.assetType || fallbackSector,
+      assetType: f.assetType || null,
     };
   });
 
-  // Compute sector + industry allocation using the already-converted values.
-  // Industry-level breakdown lets the LLM go one layer deeper than "Technology
-  // is 47%" — e.g. "Semiconductors carry 28% of the equity book inside that."
-  // Industry rows carry their parent sector so the prompt can group them.
   const totalValue = enrichedHoldings.reduce((sum, h) => sum + Math.abs(h.currentValue), 0);
+
+  // Sector allocation (#80, using #79's `lookThrough`) over the equity book:
+  // stocks, REITs and equity ETFs. Stocks and REITs count by their own
+  // sector. An ETF is split by its composition weights only when
+  // SecurityMaster has composition data — which is optional (it depends on
+  // the Twelve Data plan) and absent for most deployments. Without it the ETF
+  // lands in "Diversified". "Diversified", the unassigned remainder of an
+  // ETF's weights ("Other") and stocks with no sector data ("Unknown") stay
+  // in the base (`equityValue`) but are never listed as a sector, so a
+  // portfolio that is mostly a world ETF never reads as "100% Technology".
+  // Bond ETFs, bonds, real estate, crypto, funds and cash are not equities.
+  const equityRows = enrichedHoldings
+    .filter((h) => EQUITY_ASSET_CLASSES.includes(h.assetClass))
+    .map((h) => ({
+      symbol: h.symbol,
+      value: Math.abs(h.currentValue),
+      assetClass: h.assetClass,
+      sector: h.sector,
+      composition: compositionBySymbol.get(h.symbol) || null,
+    }));
+  const EXCLUDED_SECTOR_BUCKETS = new Set(['Diversified', 'Other', 'Unknown']);
+  const allSectorGroups = lookThrough(equityRows, 'sector');
+  const sectorGroups = allSectorGroups.filter((g) => !EXCLUDED_SECTOR_BUCKETS.has(g.name));
+  const equityValue = allSectorGroups.reduce((s, g) => s + g.value, 0);
+  const unclassifiedEquityValue = equityValue - sectorGroups.reduce((s, g) => s + g.value, 0);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const shareOf = (v) => (equityValue > 0 ? Math.round((v / equityValue) * 10000) / 100 : 0);
+
   const sectorAllocation = {};
+  for (const g of sectorGroups) {
+    const direct = [];
+    const viaEtfs = [];
+    for (const { index, value } of g.holdings) {
+      const row = equityRows[index];
+      if (row.assetClass === 'INDEX_ETF' || row.assetClass === 'SECTOR_ETF') {
+        viaEtfs.push({ symbol: row.symbol, weightPct: row.value > 0 ? Math.round((value / row.value) * 1000) / 10 : 0 });
+      } else {
+        direct.push(row.symbol);
+      }
+    }
+    sectorAllocation[g.name] = {
+      value: round2(g.value),
+      percent: shareOf(g.value),
+      count: g.holdings.length,
+      holdings: direct,
+      viaEtfs,
+    };
+  }
+
+  // Industry allocation: stocks and REITs only (there's no industry
+  // look-through). Shares are of the same equity base as the sectors.
   const industryAllocation = {};
   for (const h of enrichedHoldings) {
-    const sector = h.sector || 'Unknown';
-    if (!sectorAllocation[sector]) sectorAllocation[sector] = { value: 0, count: 0, holdings: [] };
-    sectorAllocation[sector].value += Math.abs(h.currentValue);
-    sectorAllocation[sector].count++;
-    sectorAllocation[sector].holdings.push(h.symbol);
-
-    const industry = h.industry || sector;
-    if (!industryAllocation[industry]) industryAllocation[industry] = { value: 0, count: 0, sector, holdings: [] };
+    if (!['STOCK', 'REIT'].includes(h.assetClass) || !h.industry) continue;
+    const industry = h.industry;
+    if (!industryAllocation[industry]) {
+      industryAllocation[industry] = { value: 0, count: 0, sector: h.sector || null, holdings: [] };
+    }
     industryAllocation[industry].value += Math.abs(h.currentValue);
     industryAllocation[industry].count++;
     industryAllocation[industry].holdings.push(h.symbol);
   }
-  for (const sector of Object.keys(sectorAllocation)) {
-    sectorAllocation[sector].value = Math.round(sectorAllocation[sector].value * 100) / 100;
-    sectorAllocation[sector].percent = totalValue > 0
-      ? Math.round((sectorAllocation[sector].value / totalValue) * 10000) / 100
-      : 0;
-  }
   for (const industry of Object.keys(industryAllocation)) {
-    industryAllocation[industry].value = Math.round(industryAllocation[industry].value * 100) / 100;
-    industryAllocation[industry].percent = totalValue > 0
-      ? Math.round((industryAllocation[industry].value / totalValue) * 10000) / 100
-      : 0;
+    industryAllocation[industry].value = round2(industryAllocation[industry].value);
+    industryAllocation[industry].percent = shareOf(industryAllocation[industry].value);
   }
+
+  // Asset class mix (PORTFOLIO_EXPOSURE) and the fixed-income summary, both
+  // from #79's shared aggregations. Cash is never in this list (type Asset).
+  const assetClassAllocation = buildComposition(
+    enrichedHoldings
+      .filter((h) => h.assetClass !== 'CASH')
+      .map((h) => ({ assetClass: h.assetClass, value: Math.abs(h.currentValue) })),
+  ).map(({ assetClass, percent, count }) => ({ assetClass, percent, count }));
+
+  const bonds = [];
+  holdings.forEach((h, i) => {
+    const { assetClass } = enrichedHoldings[i];
+    const t = h.incomeTerms;
+    if ((assetClass !== 'GOV_BOND' && assetClass !== 'CORP_BOND') || t?.faceValuePerUnit == null) return;
+    const faceNative = Number(t.faceValuePerUnit) * Number(h.quantity || 0);
+    bonds.push({
+      assetClass,
+      face: convertAmount(faceNative, t.currency || h.currency, portfolioCurrency, today, rateCache),
+      couponPct: bondCouponPct({
+        incomeType: t.incomeType,
+        couponRate: t.couponRate != null ? Number(t.couponRate) : null,
+        spread: t.spread != null ? Number(t.spread) : null,
+        assumedIndexRate: t.assumedIndexRate != null ? Number(t.assumedIndexRate) : null,
+      }),
+      maturityDate: t.maturityDate,
+    });
+  });
+  // `asOf` (from the period, not the clock) keeps years-to-maturity stable
+  // within a period for the skip-if-unchanged hash.
+  const fixedIncome = buildFixedIncome(bonds, { asOf });
 
   return {
     holdings: enrichedHoldings,
     sectorAllocation,
     industryAllocation,
-    totalValue: Math.round(totalValue * 100) / 100,
+    totalValue: round2(totalValue),
+    equityValue: round2(equityValue),
+    unclassifiedEquityValue: round2(unclassifiedEquityValue),
+    assetClassAllocation,
+    fixedIncome,
+  };
+}
+
+// ─── Passive income (#80) ────────────────────────────────────────────────────
+
+/** `count` complete calendar months before `asOf`'s month, oldest first. */
+function monthsBefore(asOf, count) {
+  const out = [];
+  for (let i = count; i >= 1; i--) {
+    const d = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - i, 1));
+    out.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, key: d.toISOString().slice(0, 7) });
+  }
+  return out;
+}
+
+/**
+ * Load every passive income projection input for a tenant — the backend twin
+ * of the API's `loadInputs()` (apps/api/services/passiveIncome.service.js,
+ * #77). Same reads and the same asset / stream shape, but FX goes through the
+ * pipeline's `rateCache` (convertAmount) instead of per-request lookups, and
+ * actuals are the 12 COMPLETE months before `asOf` (not month-to-date) so the
+ * result is stable within an insight period.
+ *
+ * @returns {Promise<{ assets, streams, actuals: Array<{month, total}>, trailingEssentials: number }>}
+ */
+async function loadPassiveIncomeInputs(tenantId, portfolioCurrency, rateCache, asOf) {
+  const months = monthsBefore(asOf, 12);
+  const [items, streamRows, analyticsRows] = await Promise.all([
+    prisma.portfolioItem.findMany({
+      where: { tenantId, quantity: { gt: 0 } },
+      select: {
+        id: true,
+        symbol: true,
+        currency: true,
+        assetCurrency: true,
+        quantity: true,
+        currentValue: true,
+        currentValueInUSD: true,
+        category: {
+          select: { name: true, type: true, group: true, processingHint: true, defaultCategoryCode: true },
+        },
+        accountId: true,
+        account: { select: { name: true } },
+        incomeTerms: true,
+      },
+      orderBy: { symbol: 'asc' },
+    }),
+    prisma.incomeTerms.findMany({
+      where: { tenantId, categoryId: { not: null } },
+      include: { category: { select: { name: true } } },
+      orderBy: { id: 'asc' },
+    }),
+    prisma.analyticsCacheMonthly.findMany({
+      where: {
+        tenantId,
+        currency: portfolioCurrency,
+        OR: months.map(({ year, month }) => ({ year, month })),
+      },
+      select: { year: true, month: true, type: true, group: true, balance: true },
+    }),
+  ]);
+
+  const apiSymbols = [
+    ...new Set(items.filter((i) => i.category?.processingHint?.startsWith('API_')).map((i) => i.symbol)),
+  ];
+  const smRows = apiSymbols.length
+    ? await prisma.securityMaster.findMany({
+        where: { symbol: { in: apiSymbols } },
+        select: {
+          symbol: true, name: true, assetType: true, currency: true, dividendTrusted: true, recentDividends: true,
+        },
+      })
+    : [];
+  const smMap = new Map(smRows.map((r) => [r.symbol, r]));
+
+  // Terms / dividend / stream currencies aren't always portfolio-item
+  // currencies, so make sure their rates are in the cache before converting.
+  await prefetchExtraCurrencies({
+    currencies: [
+      'USD',
+      ...items.map((i) => i.incomeTerms?.currency),
+      ...items.map((i) => smMap.get(i.symbol)?.currency || i.assetCurrency),
+      ...streamRows.map((r) => r.currency),
+    ],
+    portfolioCurrency,
+    asOf,
+    rateCache,
+  });
+  const fx = (from) => convertAmount(1, from || portfolioCurrency, portfolioCurrency, asOf, rateCache);
+  const toNumber = (v) => (v == null ? null : Number(v));
+
+  const assets = [];
+  for (const item of items) {
+    const sm = smMap.get(item.symbol);
+    const assetClass = classifyIncomeAsset({ ...item.category, securityAssetType: sm?.assetType });
+    if (!assetClass) continue;
+    const currentValue = item.currentValueInUSD != null
+      ? toNumber(item.currentValueInUSD) * fx('USD')
+      : (toNumber(item.currentValue) || 0) * fx(item.currency);
+    // Only trusted dividend history is replayed; untrusted → null (not "zero").
+    const trusted = sm?.dividendTrusted === true;
+    assets.push({
+      id: item.id,
+      label: item.account?.name ? `${item.symbol} · ${item.account.name}` : item.symbol,
+      symbol: item.symbol,
+      // Holding grouping (#83): coverage and contributors are per symbol.
+      securityName: sm?.name || null,
+      accountId: item.accountId ?? null,
+      accountName: item.account?.name || null,
+      currency: item.currency,
+      categoryName: item.category?.name || null,
+      assetClass,
+      quantity: toNumber(item.quantity),
+      currentValue,
+      fxRate: fx(item.incomeTerms?.currency || item.currency),
+      dividendFxRate: fx(sm?.currency || item.assetCurrency || item.currency),
+      hasSecurityData: Boolean(sm),
+      recentDividends: trusted ? (Array.isArray(sm.recentDividends) ? sm.recentDividends : []) : null,
+      terms: item.incomeTerms || null,
+    });
+  }
+
+  const streams = streamRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    categoryName: row.category?.name || null,
+    fxRate: fx(row.currency || portfolioCurrency),
+    terms: row,
+  }));
+
+  // Actual passive income (whole "Passive Income" group) and essential
+  // spending over the same 12 months, signed like gatherAnalyticsData.
+  const income = new Map(months.map((m) => [m.key, 0]));
+  let trailingEssentials = 0;
+  for (const r of analyticsRows) {
+    const key = `${r.year}-${String(r.month).padStart(2, '0')}`;
+    const balance = Number(r.balance || 0);
+    if (r.type === 'Income' && r.group === 'Passive Income') {
+      if (income.has(key)) income.set(key, income.get(key) + balance);
+    } else if (r.type === 'Essentials') {
+      trailingEssentials -= balance;
+    }
+  }
+
+  return {
+    assets,
+    streams,
+    actuals: months.map((m) => ({ month: m.key, total: Math.round(income.get(m.key) * 100) / 100 })),
+    trailingEssentials: Math.round(trailingEssentials * 100) / 100,
+  };
+}
+
+/**
+ * Passive income summary for the PASSIVE_INCOME_OUTLOOK lens (and the
+ * DIVIDEND_OPPORTUNITY dividend figure): loader → `project()` → `summarize()`.
+ * Returns null when the tenant has nothing that produces passive income, and
+ * never fails the tier run — a projection error drops the signal with a warning.
+ */
+async function gatherPassiveIncomeSummary(tenantId, portfolioCurrency, rateCache, asOf) {
+  try {
+    const inputs = await loadPassiveIncomeInputs(tenantId, portfolioCurrency, rateCache, asOf);
+    const projection = project({
+      assets: inputs.assets,
+      streams: inputs.streams,
+      asOf,
+      horizon: 12,
+      displayCurrency: portfolioCurrency,
+    });
+    const summary = summarize(projection, inputs.actuals, inputs.trailingEssentials);
+    const hasIncomeSource = summary.coverage.total > 0 || summary.streamCount > 0 || summary.next12m.total > 0;
+    return hasIncomeSource ? { asOf: projection.asOf, ...summary } : null;
+  } catch (err) {
+    logger.warn('Passive income summary failed — continuing without it', { tenantId, error: err.message });
+    return null;
+  }
+}
+
+/**
+ * Passive income share of the period's total income (INCOME_DIVERSIFICATION,
+ * quarterly/annual). `passiveIncome` is the whole "Passive Income" group from
+ * AnalyticsCacheMonthly; the "other" (non-investment: allowance, welfare, …)
+ * part comes from transactions in stream-eligible categories, since the
+ * analytics cache has no per-category split.
+ */
+async function gatherPeriodIncomeMix({
+  tenantId, portfolioCurrency, rateCache, monthKeys, passiveIncomeByMonth, totalIncome, periodStart, periodEnd,
+}) {
+  const passiveIncome = monthKeys.reduce((s, k) => s + (passiveIncomeByMonth[k] || 0), 0);
+
+  const categories = await prisma.category.findMany({
+    where: { tenantId, type: 'Income', group: 'Passive Income' },
+    select: {
+      id: true, type: true, group: true, processingHint: true, portfolioItemKeyStrategy: true, defaultCategoryCode: true,
+    },
+  });
+  const streamCategoryIds = categories.filter(isStreamEligibleCategory).map((c) => c.id);
+
+  let otherPassiveIncome = 0;
+  if (streamCategoryIds.length) {
+    const sums = await prisma.transaction.groupBy({
+      by: ['currency'],
+      where: {
+        tenantId,
+        categoryId: { in: streamCategoryIds },
+        transaction_date: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { credit: true, debit: true },
+    });
+    await prefetchExtraCurrencies({
+      currencies: sums.map((r) => r.currency), portfolioCurrency, asOf: periodEnd, rateCache,
+    });
+    for (const r of sums) {
+      const net = Number(r._sum?.credit || 0) - Number(r._sum?.debit || 0);
+      otherPassiveIncome += convertAmount(net, r.currency, portfolioCurrency, periodEnd, rateCache);
+    }
+  }
+  const investmentPassiveIncome = passiveIncome - otherPassiveIncome;
+  const share = (v) => (totalIncome > 0 ? Math.round((v / totalIncome) * 1000) / 10 : null);
+
+  return {
+    totalIncome: Math.round(totalIncome),
+    passiveIncome: Math.round(passiveIncome),
+    investmentPassiveIncome: Math.round(investmentPassiveIncome),
+    otherPassiveIncome: Math.round(otherPassiveIncome),
+    passiveIncomeSharePct: share(passiveIncome),
+    investmentPassiveIncomeSharePct: share(investmentPassiveIncome),
+    otherPassiveIncomeSharePct: share(otherPassiveIncome),
   };
 }
 
@@ -902,6 +1310,22 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
   const targetQuarterEndUTC = new Date(Date.UTC(year, lastTargetMonth, 0));
   const netWorthBreakdown = await gatherNetWorthBreakdown(tenantId, priorQuarterEndUTC, targetQuarterEndUTC, ctx.portfolioCurrency, ctx.rateCache);
 
+  // Passive income (#80): the projection as of the day after the quarter
+  // closes, and the quarter's passive income share of total income.
+  const passiveIncome = await gatherPassiveIncomeSummary(
+    tenantId, ctx.portfolioCurrency, ctx.rateCache, quarterlyAsOf(year, quarter),
+  );
+  const incomeMix = await gatherPeriodIncomeMix({
+    tenantId,
+    portfolioCurrency: ctx.portfolioCurrency,
+    rateCache: ctx.rateCache,
+    monthKeys: targetMonths.map((m) => `${year}-${String(m).padStart(2, '0')}`),
+    passiveIncomeByMonth: analytics.passiveIncomeByMonth,
+    totalIncome: quarterTotals.income,
+    periodStart: new Date(Date.UTC(year, firstTargetMonth - 1, 1)),
+    periodEnd: new Date(Date.UTC(year, lastTargetMonth, 0, 23, 59, 59, 999)),
+  });
+
   return {
     tier: 'QUARTERLY',
     portfolioCurrency: ctx.portfolioCurrency,
@@ -915,6 +1339,8 @@ async function gatherQuarterlyData(tenantId, year, quarter, comparisonAvailable)
     ...portfolio,
     netWorthHistory,
     netWorthBreakdown,
+    passiveIncome,
+    incomeMix,
     hasTransactions: analytics.hasTransactions,
     comparisonAvailable,
   };
@@ -985,6 +1411,22 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
   const targetYearEndUTC = new Date(Date.UTC(year, 12, 0));
   const netWorthBreakdown = await gatherNetWorthBreakdown(tenantId, priorYearEndUTC, targetYearEndUTC, ctx.portfolioCurrency, ctx.rateCache);
 
+  // Passive income (#80): the projection as of Jan 1 after the target year,
+  // and the year's passive income share of total income.
+  const passiveIncome = await gatherPassiveIncomeSummary(
+    tenantId, ctx.portfolioCurrency, ctx.rateCache, annualAsOf(year),
+  );
+  const incomeMix = await gatherPeriodIncomeMix({
+    tenantId,
+    portfolioCurrency: ctx.portfolioCurrency,
+    rateCache: ctx.rateCache,
+    monthKeys: Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`),
+    passiveIncomeByMonth: analytics.passiveIncomeByMonth,
+    totalIncome: yearlyTotals[year].income,
+    periodStart: new Date(Date.UTC(year, 0, 1)),
+    periodEnd: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
+  });
+
   return {
     tier: 'ANNUAL',
     portfolioCurrency: ctx.portfolioCurrency,
@@ -997,6 +1439,8 @@ async function gatherAnnualData(tenantId, year, comparisonAvailable) {
     ...portfolio,
     netWorthHistory,
     netWorthBreakdown,
+    passiveIncome,
+    incomeMix,
     hasTransactions: analytics.hasTransactions,
     comparisonAvailable,
   };
@@ -1067,9 +1511,13 @@ async function gatherPortfolioIntelligenceData(tenantId) {
     rateCache: ctx.rateCache,
   });
 
+  // Projection anchor: Monday of the ISO week, matching the PORTFOLIO
+  // periodKey, so reruns within the week hash the same (#80).
+  const asOf = portfolioAsOf(now);
   const portfolio = await gatherPortfolioData(tenantId, ctx.portfolioCurrency, ctx.rateCache);
-  const equityData = await gatherEquityFundamentals(tenantId, ctx.portfolioCurrency, ctx.rateCache);
+  const equityData = await gatherEquityFundamentals(tenantId, ctx.portfolioCurrency, ctx.rateCache, asOf);
   const passiveIncomeRecent = await gatherPassiveIncomeRecent(tenantId, ctx.portfolioCurrency, 3);
+  const passiveIncome = await gatherPassiveIncomeSummary(tenantId, ctx.portfolioCurrency, ctx.rateCache, asOf);
 
   return {
     tier: 'PORTFOLIO',
@@ -1079,7 +1527,12 @@ async function gatherPortfolioIntelligenceData(tenantId) {
     sectorAllocation: equityData.sectorAllocation,
     industryAllocation: equityData.industryAllocation,
     totalEquityValue: equityData.totalValue,
+    sectorBaseValue: equityData.equityValue,
+    unclassifiedEquityValue: equityData.unclassifiedEquityValue,
+    assetClassAllocation: equityData.assetClassAllocation,
+    fixedIncome: equityData.fixedIncome,
     passiveIncomeRecent,
+    passiveIncome,
     hasPortfolio: portfolio.hasPortfolio,
   };
 }
@@ -1097,6 +1550,21 @@ function buildTieredPrompt(tier, tenantData, activeLenses) {
   return `${systemBlocks.map((b) => b.text).join('\n\n')}\n\n${userMessage}`;
 }
 
+/**
+ * Essential-spending coverage (%) reported by the latest PASSIVE_INCOME_OUTLOOK
+ * insight of `tier` from a period before `periodKey` (the lens stores it as
+ * `metadata.dataPoints.current`). Period keys of one tier sort as strings.
+ */
+async function findPriorEssentialsCoverage(tenantId, tier, periodKey) {
+  const prior = await prisma.insight.findFirst({
+    where: { tenantId, tier, lens: 'PASSIVE_INCOME_OUTLOOK', periodKey: { lt: periodKey } },
+    orderBy: [{ periodKey: 'desc' }, { createdAt: 'desc' }],
+    select: { metadata: true },
+  });
+  const value = prior?.metadata?.dataPoints?.current;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 // ─── Filter Active Lenses ────────────────────────────────────────────────────
 
 function filterActiveLenses(tier, tenantData) {
@@ -1110,6 +1578,11 @@ function filterActiveLenses(tier, tenantData) {
       case 'DIVIDEND_OPPORTUNITY':
         return (tenantData.portfolioExposure?.length > 0) ||
                (tenantData.equityHoldings?.length > 0);
+      case 'PASSIVE_INCOME_OUTLOOK':
+        // At least one income-producing holding or stream (#80).
+        return Boolean(tenantData.passiveIncome) &&
+               (tenantData.passiveIncome.coverage?.total > 0 || tenantData.passiveIncome.streamCount > 0 ||
+                tenantData.passiveIncome.next12m?.total > 0);
       case 'DEBT_HEALTH':
       case 'DEBT_PAYOFF_TRAJECTORY':
         return tenantData.hasDebt || tenantData.debtHealth?.length > 0;
@@ -1212,13 +1685,22 @@ async function generateTieredInsights(tenantId, tier, params = {}) {
     return { skipped: true, reason: 'No equity holdings with fundamentals' };
   }
 
-  // 3. Compute data hash for dedup
-  const hashInput = JSON.stringify(tenantData);
-  const dataHash = crypto.createHash('sha256').update(hashInput).digest('hex');
   // Derive from explicit params first — see derivePeriodKey JSDoc for why
   // falling back to `new Date()` was causing the "April 2026 → March 2026"
   // off-by-one reported by the v1.1 period-selector bug.
   const periodKey = derivePeriodKey(tier, params);
+
+  // PASSIVE_INCOME_OUTLOOK is POSITIVE when essential-spending coverage
+  // crosses a 25/50/75/100% milestone, so it needs the value the previous
+  // insight of this tier reported. Only EARLIER periods are read, so the
+  // value (and the hash below) stays stable across reruns of this period.
+  if (tenantData.passiveIncome) {
+    tenantData.passiveIncome.priorEssentialsCoveragePct = await findPriorEssentialsCoverage(tenantId, tier, periodKey);
+  }
+
+  // 3. Compute data hash for dedup
+  const hashInput = JSON.stringify(tenantData);
+  const dataHash = crypto.createHash('sha256').update(hashInput).digest('hex');
 
   // Check dedup: same tier + same period + same data = skip
   const existingInsight = await prisma.insight.findFirst({
@@ -1453,6 +1935,12 @@ module.exports = {
   gatherPortfolioIntelligenceData,
   gatherEquityFundamentals,
   gatherPassiveIncomeRecent,
+  gatherPassiveIncomeSummary,
+  gatherPeriodIncomeMix,
+  loadPassiveIncomeInputs,
+  portfolioAsOf,
+  quarterlyAsOf,
+  annualAsOf,
   buildTieredPrompt,
   filterActiveLenses,
   TIER_LENSES,

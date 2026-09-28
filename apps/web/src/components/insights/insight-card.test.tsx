@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { InsightCard } from './insight-card';
 import type { Insight } from '@/types/api';
 
@@ -106,5 +107,43 @@ describe('InsightCard', () => {
       expect(screen.getByText(label)).toBeInTheDocument();
       unmount();
     }
+  });
+
+  // ── Passive income (#80) ─────────────────────────────────────────────────
+  it('renders the translated PASSIVE_INCOME_OUTLOOK lens label', () => {
+    render(<InsightCard insight={makeInsight({ lens: 'PASSIVE_INCOME_OUTLOOK' })} onDismiss={vi.fn()} />);
+    expect(screen.getByText('insights.lens.passiveIncomeOutlook')).toBeInTheDocument();
+  });
+
+  it('renders no action links for action types without a destination', () => {
+    render(
+      <InsightCard
+        insight={makeInsight({ metadata: { actionTypes: ['INCOME_GROWTH'], suggestedAction: 'Grow income.' } })}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('PASSIVE_INCOME_SETUP links to the Passive Income page and Portfolio holdings', async () => {
+    const insight = makeInsight({
+      lens: 'PASSIVE_INCOME_OUTLOOK',
+      metadata: { actionTypes: ['PASSIVE_INCOME_SETUP'], suggestedAction: 'Add income terms for MSFT.' },
+    });
+    render(
+      <MemoryRouter initialEntries={['/insights']}>
+        <Routes>
+          <Route path="/insights" element={<InsightCard insight={insight} onDismiss={vi.fn()} />} />
+          <Route path="/reports/passive-income" element={<div>Passive income page</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const setup = screen.getByRole('link', { name: 'insights.actions.passiveIncomeSetup' });
+    expect(setup).toHaveAttribute('href', '/reports/passive-income');
+    expect(screen.getByRole('link', { name: 'insights.actions.portfolioHoldings' })).toHaveAttribute('href', '/reports/portfolio');
+
+    await userEvent.click(setup);
+    expect(screen.getByText('Passive income page')).toBeInTheDocument();
   });
 });

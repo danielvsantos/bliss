@@ -1963,6 +1963,13 @@ const fr = {
       annual: "Rapport annuel",
       portfolio: "Intelligence portefeuille",
     },
+    lens: {
+      passiveIncomeOutlook: "Perspectives de revenus passifs",
+    },
+    actions: {
+      passiveIncomeSetup: "Configurer les conditions de revenus",
+      portfolioHoldings: "Portefeuille",
+    },
   },
 
   // Manual Updates page

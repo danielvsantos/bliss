@@ -179,6 +179,35 @@ function netWorthDecomposition(netWorthHistory, netWorthBreakdown) {
   };
 }
 
+/** Essential-spending coverage milestones for PASSIVE_INCOME_OUTLOOK (POSITIVE severity). */
+const COVERAGE_MILESTONES = [25, 50, 75, 100];
+
+/**
+ * PASSIVE_INCOME_OUTLOOK signals (#80): the engine summary plus the
+ * severity triggers pre-computed, so the model never does the comparisons.
+ * Returns null when the tenant has no income-producing holding or stream.
+ */
+function passiveIncomeSignals(passiveIncome) {
+  if (!passiveIncome) return null;
+  const current = passiveIncome.essentialsCoveragePct;
+  const prior = passiveIncome.priorEssentialsCoveragePct ?? null;
+  // Highest milestone crossed upward since the previous insight of this tier.
+  const crossed = current != null && prior != null
+    ? COVERAGE_MILESTONES.filter((m) => prior < m && current >= m).pop() ?? null
+    : null;
+  const endingShare = passiveIncome.endingWithin12m?.sharePct;
+  return {
+    ...passiveIncome,
+    triggers: {
+      endingIncomeWarning: endingShare != null && endingShare >= 20,
+      singleSourceWarning: passiveIncome.largestSharePct != null && passiveIncome.largestSharePct > 50,
+      coverageMilestoneCrossed: crossed,
+      incompleteData: passiveIncome.coverage?.pct != null && passiveIncome.coverage.pct < 80,
+      usesAssumedRates: (passiveIncome.assumedRates?.count || 0) > 0,
+    },
+  };
+}
+
 // ─── Tier-specific signal builders ──────────────────────────────────────────
 
 function monthlySignals(tenantData) {
@@ -261,8 +290,9 @@ function quarterlySignals(tenantData) {
     },
     topCategoryShare: top || null,
     monthlySavingsRates,
-    income: { stability: incomeStability(tenantData.incomeHistory) },
+    income: { stability: incomeStability(tenantData.incomeHistory), mix: tenantData.incomeMix || null },
     netWorth: netWorthDecomposition(tenantData.netWorthHistory, tenantData.netWorthBreakdown),
+    passiveIncome: passiveIncomeSignals(tenantData.passiveIncome),
   };
 }
 
@@ -314,8 +344,9 @@ function annualSignals(tenantData) {
     },
     topCategoryShare: top || null,
     quarterlySavingsRates: quarterRates,
-    income: { stability: incomeStability(tenantData.incomeHistory) },
+    income: { stability: incomeStability(tenantData.incomeHistory), mix: tenantData.incomeMix || null },
     netWorth: netWorthDecomposition(tenantData.netWorthHistory, tenantData.netWorthBreakdown),
+    passiveIncome: passiveIncomeSignals(tenantData.passiveIncome),
   };
 }
 
@@ -334,6 +365,8 @@ function portfolioSignals(tenantData) {
   const sectorAlloc = tenantData.sectorAllocation || {};
   const sectorEntries = Object.entries(sectorAlloc).sort((a, b) => (b[1].value || 0) - (a[1].value || 0));
   const topSector = sectorEntries[0];
+  const sectorBase = tenantData.sectorBaseValue
+    ?? sectorEntries.reduce((s, [, v]) => s + (v.value || 0), 0);
 
   // Industry concentration: sliced one layer below sector. The lens uses this
   // to talk about sub-segments ("Semiconductors at 28%") inside the dominant
@@ -347,15 +380,21 @@ function portfolioSignals(tenantData) {
     holdings: v.holdings || [],
   }));
 
-  // Weighted P/E across trusted holdings
-  const trustedPe = holdings.filter((h) => h.peRatio != null && h.peRatio > 0);
+  // Weighted P/E across trusted holdings — stocks only: ETFs never carry a
+  // P/E, and REIT / fund multiples aren't comparable (#80).
+  const trustedPe = holdings.filter(
+    (h) => h.peRatio != null && h.peRatio > 0 && (h.assetClass == null || h.assetClass === 'STOCK'),
+  );
   const peWeightSum = trustedPe.reduce((s, h) => s + h.currentValue, 0);
   const weightedPe = peWeightSum > 0
     ? trustedPe.reduce((s, h) => s + h.peRatio * (h.currentValue / peWeightSum), 0)
     : null;
 
-  // Weighted dividend yield across trusted holdings
-  const trustedDy = holdings.filter((h) => h.dividendYield != null && h.dividendYield > 0);
+  // Weighted dividend yield across trusted holdings — equities only: bond
+  // ETF distributions are fixed income, not dividends (#80).
+  const trustedDy = holdings.filter(
+    (h) => h.dividendYield != null && h.dividendYield > 0 && h.assetClass !== 'BOND_ETF',
+  );
   const dyWeightSum = trustedDy.reduce((s, h) => s + h.currentValue, 0);
   const weightedDy = dyWeightSum > 0
     ? trustedDy.reduce((s, h) => s + h.dividendYield * (h.currentValue / dyWeightSum), 0)
@@ -371,15 +410,34 @@ function portfolioSignals(tenantData) {
     totalEquity: round2(totalEquity),
     holdingsCount: holdings.length,
     topHoldings: top3,
+    // Asset-class mix (#79 classifier) and fixed income, for PORTFOLIO_EXPOSURE.
+    assetClassAllocation: tenantData.assetClassAllocation || [],
+    fixedIncome: tenantData.fixedIncome || null,
+    // Sector shares are of the equity book (stocks, REITs, equity ETFs).
+    // ETFs are split by sector only when composition data exists; otherwise
+    // they're part of `unclassifiedSharePct` and never a sector.
+    sectorBaseValue: round2(sectorBase || 0),
+    unclassifiedSharePct: sectorBase > 0 && tenantData.unclassifiedEquityValue != null
+      ? round1((tenantData.unclassifiedEquityValue / sectorBase) * 100)
+      : null,
     topSector: topSector
-      ? { sector: topSector[0], sharePct: round1(topSector[1].percent || 0) }
+      ? {
+          sector: topSector[0],
+          sharePct: round1(topSector[1].percent || 0),
+          holdings: topSector[1].holdings || [],
+          viaEtfs: topSector[1].viaEtfs || [],
+        }
       : null,
     topIndustries,
     weightedPe: weightedPe != null ? round1(weightedPe) : null,
     weightedDividendYieldPct: weightedDy != null ? round1(weightedDy * 100) : null,
     dividendPayingStockValue: round2(dividendPayingValue),
+    // Engine figure (#77 12-month replay + overrides, stocks and ETFs):
+    // DIVIDEND_OPPORTUNITY quotes this instead of deriving it from yields.
+    dividendsNext12m: tenantData.passiveIncome?.dividendsNext12m ?? null,
     trustedHoldingsCount: trustedPe.length,
     passiveIncomeRecent: tenantData.passiveIncomeRecent || null,
+    passiveIncome: passiveIncomeSignals(tenantData.passiveIncome),
   };
 }
 
@@ -399,4 +457,4 @@ function computeKeySignals(tenantData, tier) {
   }
 }
 
-module.exports = { computeKeySignals };
+module.exports = { computeKeySignals, passiveIncomeSignals, COVERAGE_MILESTONES };
