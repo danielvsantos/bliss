@@ -21,7 +21,8 @@ apps/web/src/
     smart-import.tsx    # CSV/XLSX import flow
     transaction-review.tsx  # Plaid transaction review
     insights.tsx        # AI insights
-    manual-updates.tsx  # Manual asset value updates
+    assets.tsx          # Manage Assets (#81): every asset, server-filtered list + per-asset modals
+    manual-updates-redirect.tsx  # /manual-updates → /assets (keeps the query string)
     currency-rates.tsx  # Exchange rates
     Categories.tsx      # Category management
     onboarding.tsx      # First-time setup
@@ -40,6 +41,7 @@ apps/web/src/
     settings/           # Settings panels
     income/             # Income Terms modal + zod schema (Passive Income)
     passive-income/     # Passive Income page sections (chart, breakdown, streams, detached terms)
+    manage-assets/      # Manage Assets row pieces (status chips, actions menu, detached terms banner)
     equity-analysis/    # Equity Analysis asset class badge/editor + asset class colors
     onboarding/         # Onboarding flow components
     plaid-connect.tsx   # Plaid connection component (top-level)
@@ -167,6 +169,7 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-tag-analytics.ts` -- Per-tag analytics
 - `use-equity-analysis.ts` -- Equity analysis (groupings, ETF look-through, composition) + `useSetAssetClass` override mutation
 - `use-passive-income.ts` -- Passive income projection, income terms, income streams, detached terms
+- `use-manage-assets.ts` -- Manage Assets list (infinite, server-filtered), single row by id, debt terms + asset class for the modals
 - `use-dashboard-metrics.ts` -- Dashboard summary data
 - `use-dashboard-actions.ts` -- Dashboard quick actions
 - `use-notifications.ts` -- Notification center

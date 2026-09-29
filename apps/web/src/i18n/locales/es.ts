@@ -115,7 +115,7 @@ const es = {
     importAgent: "Agente de importación",
     insightAgent: "Insights de IA",
     travelAgent: "Agente de viajes",
-    assetPriceUpdates: "Actualización de precios",
+    manageAssets: "Gestionar activos",
     assetsLiabilities: "Activos y pasivos",
     transactionReview: "Revisión de transacciones",
     subscriptions: "Suscripciones",
@@ -2468,6 +2468,59 @@ const es = {
     globalFundamentals: {
       title: "Actualizar fundamentales de todos los símbolos (global)",
       description: "Actualiza la tabla SecurityMaster compartida para todos los símbolos de todos los inquilinos, no solo los tuyos. Más pesado que actualizar tus valores; úsalo tras un incidente del proveedor de datos.",
+    },
+  },
+
+  // Manage Assets page (#81)
+  manageAssets: {
+    title: "Gestionar activos",
+    subtitle: "Todos tus activos y pasivos en un solo lugar: precios, términos de ingresos, términos de deuda y clases de activo.",
+    loadFailed: "No se pudieron cargar los activos. Inténtalo de nuevo.",
+    assetClassHint: "Se aplica a todas las posiciones de {{symbol}}. Elige Automático para quitar la modificación.",
+    searchPlaceholder: "Buscar por símbolo o nombre",
+    empty: "Ningún activo coincide con estos filtros.",
+    count: "{{count}} activos",
+    count_one: "{{count}} activo",
+    count_other: "{{count}} activos",
+    loadMore: "Cargar más",
+    loadingMore: "Cargando…",
+    columns: {
+      assetClass: "Clase de activo",
+    },
+    filters: {
+      type: "Tipo",
+      allTypes: "Todos los tipos",
+      account: "Cuenta",
+      allAccounts: "Todas las cuentas",
+      assetClass: "Clase de activo",
+      allAssetClasses: "Todas las clases",
+      includeClosed: "Mostrar posiciones cerradas",
+      clear: "Borrar filtros",
+    },
+    status: {
+      label: "Filtrar por estado",
+      stale: "Precio desactualizado",
+      incomeMissing: "Faltan términos de ingresos",
+      dividendOverride: "Dividendo modificado",
+      lotMismatch: "Discrepancia de lotes",
+      assetClassOverridden: "Clase de activo modificada",
+    },
+    chips: {
+      noPrice: "Sin precio aún",
+    },
+    actions: {
+      menu: "Acciones para {{symbol}}",
+      price: "Actualizar precio",
+      history: "Historial de precios",
+      assetClass: "Clase de activo",
+    },
+    detached: {
+      title: "{{count}} conjuntos de términos de ingresos están desvinculados",
+      title_one: "{{count}} conjunto de términos de ingresos está desvinculado",
+      title_other: "{{count}} conjuntos de términos de ingresos están desvinculados",
+      description: "Una reconstrucción de la cartera no pudo asociarlos a una posición. Vuelve a vincularlos o descártalos.",
+      review: "Revisar",
+      hide: "Ocultar",
     },
   },
 };

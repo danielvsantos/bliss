@@ -38,9 +38,10 @@ import {
   useManualAssetValues,
 } from '@/hooks/use-manual-asset-values';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
+import { MOBILE_SHEET_CLASSES } from '@/lib/manage-assets';
 import { parseDecimal } from '@/lib/portfolio-utils';
 import { formatCurrency } from '@/lib/utils';
-import type { ManualAssetValue, PortfolioItem } from '@/types/api';
+import type { AssetRef, ManualAssetValue } from '@/types/api';
 import { ManualPriceForm } from './manual-price-form';
 
 type View = 'list' | 'add' | 'edit';
@@ -49,7 +50,7 @@ type View = 'list' | 'add' | 'edit';
 const PAGE_SIZE = 12;
 
 interface ManualPriceHistoryDialogProps {
-  asset: PortfolioItem | null;
+  asset: AssetRef | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -151,7 +152,7 @@ export function ManualPriceHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className={`max-h-[90vh] overflow-y-auto sm:max-w-3xl ${MOBILE_SHEET_CLASSES}`}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{t('manualPriceHistory.dialogDescription')}</DialogDescription>

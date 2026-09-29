@@ -195,3 +195,81 @@ describe('i18n parity — task #83 grouped passive income keys', () => {
     });
   }
 });
+
+// Keys introduced by task #81 (Manage Assets). Present and non-empty in every
+// locale, and translated in es/fr/pt/it (except where the word is the same,
+// e.g. "Type" in French).
+const MANAGE_ASSETS_KEYS = [
+  'nav.manageAssets',
+  'manageAssets.title',
+  'manageAssets.subtitle',
+  'manageAssets.loadFailed',
+  'manageAssets.assetClassHint',
+  'manageAssets.searchPlaceholder',
+  'manageAssets.empty',
+  'manageAssets.count_one',
+  'manageAssets.count_other',
+  'manageAssets.loadMore',
+  'manageAssets.loadingMore',
+  'manageAssets.columns.assetClass',
+  'manageAssets.filters.type',
+  'manageAssets.filters.allTypes',
+  'manageAssets.filters.account',
+  'manageAssets.filters.allAccounts',
+  'manageAssets.filters.assetClass',
+  'manageAssets.filters.allAssetClasses',
+  'manageAssets.filters.includeClosed',
+  'manageAssets.filters.clear',
+  'manageAssets.status.label',
+  'manageAssets.status.stale',
+  'manageAssets.status.incomeMissing',
+  'manageAssets.status.dividendOverride',
+  'manageAssets.status.lotMismatch',
+  'manageAssets.status.assetClassOverridden',
+  'manageAssets.chips.noPrice',
+  'manageAssets.actions.menu',
+  'manageAssets.actions.price',
+  'manageAssets.actions.history',
+  'manageAssets.actions.assetClass',
+  'manageAssets.detached.title_one',
+  'manageAssets.detached.title_other',
+  'manageAssets.detached.description',
+  'manageAssets.detached.review',
+  'manageAssets.detached.hide',
+];
+
+const SAME_IN_SOME_LOCALES = new Set(['manageAssets.filters.type', 'manageAssets.count_one', 'manageAssets.count_other']);
+
+describe('i18n parity — task #81 Manage Assets keys', () => {
+  for (const key of MANAGE_ASSETS_KEYS) {
+    it(`"${key}" is a non-empty string in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  it('is translated in es/fr/pt/it', () => {
+    for (const key of MANAGE_ASSETS_KEYS.filter((k) => !SAME_IN_SOME_LOCALES.has(k))) {
+      const enValue = resolve(en, key) as string;
+      for (const lang of NON_EN) {
+        expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(enValue);
+      }
+    }
+  });
+
+  it('keeps interpolation placeholders', () => {
+    for (const lang of Object.keys(LOCALES)) {
+      expect(resolve(LOCALES[lang], 'manageAssets.actions.menu'), lang).toContain('{{symbol}}');
+      expect(resolve(LOCALES[lang], 'manageAssets.assetClassHint'), lang).toContain('{{symbol}}');
+      expect(resolve(LOCALES[lang], 'manageAssets.count_other'), lang).toContain('{{count}}');
+      expect(resolve(LOCALES[lang], 'manageAssets.detached.title_other'), lang).toContain('{{count}}');
+    }
+  });
+
+  it('the old nav.assetPriceUpdates key is gone', () => {
+    for (const lang of Object.keys(LOCALES)) expect(resolve(LOCALES[lang], 'nav.assetPriceUpdates'), lang).toBeUndefined();
+  });
+});

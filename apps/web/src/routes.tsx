@@ -11,7 +11,8 @@ import DashboardPage from "./pages/dashboard";
 import SettingsPage from "./pages/settings";
 import UserManagementPage from "./pages/settings/users";
 import TransactionsPage from "./pages/transactions";
-import ManualUpdatesPage from "./pages/manual-updates";
+import ManageAssetsPage from "./pages/assets";
+import ManualUpdatesRedirect from "./pages/manual-updates-redirect";
 import SmartImportPage from "./pages/smart-import";
 import TransactionReviewPage from "./pages/transaction-review";
 import InsightsPage from "./pages/insights";
@@ -25,7 +26,8 @@ export const routes = [
   { path: "/auth/callback", element: <AuthCallbackPage />, protected: false },
   { path: "/categories", component: CategoriesPage, protected: true },
   { path: "/accounts", component: AccountsPage, protected: true },
-  { path: "/manual-updates", component: ManualUpdatesPage, protected: true },
+  { path: "/assets", component: ManageAssetsPage, protected: true },
+  { path: "/manual-updates", element: <ManualUpdatesRedirect />, protected: true },
   { path: "/reports/expenses", component: ExpenseTrackingPage, protected: true },
   { path: "/reports/financial-summary", component: FinancialSummaryPage, protected: true },
   { path: "/reports/pnl", element: <Navigate to="/reports/financial-summary" replace />, protected: true },

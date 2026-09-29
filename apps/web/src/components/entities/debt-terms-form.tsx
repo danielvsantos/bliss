@@ -11,7 +11,7 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import type { PortfolioItem } from '@/types/api';
+import type { AssetRef } from '@/types/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
 
@@ -25,7 +25,7 @@ const debtTermsSchema = z.object({
 type DebtTermsFormValues = z.infer<typeof debtTermsSchema>;
 
 interface DebtTermsFormProps {
-  asset: PortfolioItem | null;
+  asset: AssetRef | null;
   onClose: (refetch?: boolean) => void;
 }
 

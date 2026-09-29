@@ -227,7 +227,7 @@ export function Sidebar({
     { type: 'link', id: "import-agent", href: "/agents/import", label: t('nav.importAgent'), icon: ImportAgentIcon, badge: 0, exact: false },
     { type: 'link', id: "ai-review", href: "/agents/review", label: t('nav.transactionReview'), icon: AIReviewIcon, badge: totalReviewCount, exact: false },
     { type: 'link', id: "insight-agent", href: "/agents/insight", label: t('nav.insightAgent'), icon: InsightAgentIcon, badge: 0, exact: false },
-    { type: 'link', id: "assets", href: "/manual-updates", label: t('nav.assetPriceUpdates'), icon: AssetsLiabilitiesIcon, badge: 0, exact: false },
+    { type: 'link', id: "assets", href: "/assets", label: t('nav.manageAssets'), icon: AssetsLiabilitiesIcon, badge: 0, exact: false },
     // ── Settings
     { type: 'link', id: "settings", href: "/settings", label: t('nav.settings'), icon: SettingsIcon, badge: 0, exact: false },
   ];

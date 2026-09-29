@@ -63,7 +63,7 @@ An asset is considered stale when:
 - It has `quantity > 0`
 - Either: no `manualValues` entry exists, OR the latest one is >30 days old
 
-This mirrors the detection logic in `src/pages/manual-updates.tsx`.
+This mirrors the stale-price rule of the Manage Assets page (`isPriceStale` in `GET /api/portfolio/assets`, thresholds in `src/lib/manage-assets.ts`).
 
 ### Return Value
 

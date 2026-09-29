@@ -11,7 +11,7 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import type { PortfolioItem, ManualAssetValue } from '@/types/api';
+import type { AssetRef, ManualAssetValue } from '@/types/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { MANUAL_ASSET_VALUES_QUERY_KEY } from '@/hooks/use-manual-asset-values';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
@@ -27,7 +27,7 @@ const priceSchema = z.object({
 type PriceFormValues = z.infer<typeof priceSchema>;
 
 interface ManualPriceFormProps {
-  asset: PortfolioItem | null;
+  asset: AssetRef | null;
   onClose: (refetch?: boolean) => void;
   /**
    * When provided, the form edits this existing history row instead of creating

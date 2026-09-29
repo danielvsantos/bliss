@@ -57,7 +57,22 @@ Without an API key, the portfolio still works — it uses the last known price f
 
 ## Manual value assets
 
-For assets without live pricing (real estate, private equity), use manual value updates in the portfolio page. These are captured as point-in-time valuations.
+For assets without live pricing (real estate, private equity), record their value on the **Manage Assets** page (sidebar → **Manage Assets**, `/assets`). These are captured as point-in-time valuations.
+
+## Manage Assets
+
+**Manage Assets** lists every asset and liability you hold, and is the one place to edit their data:
+
+- **Update price** and **Price history** — for manually priced assets. A "Price stale" chip appears after 30 days without a new value (Warning at 60, Critical at 90).
+- **Add/Edit terms** — interest rate, term and origination date for loans and mortgages.
+- **Income terms** — dividends, coupons, rent or interest for the [passive income projection](/docs/guides/passive-income).
+- **Asset class** — override the automatic class (for example, mark a fund as a Bond ETF). It applies to every holding of that symbol.
+
+Search by symbol or name, filter by type, account or asset class, or tap a status chip (Price stale, Income terms missing, Dividend override, Lot mismatch, Asset class overridden) to see only the rows that need attention. The list loads 50 rows at a time; use **Load more** for the rest. Closed positions are hidden unless you turn on **Show closed positions**.
+
+If a portfolio rebuild detached some income terms from their holding, a banner at the top lets you re-attach them to the right holding or discard them.
+
+On a phone, each asset is a card with its actions in the **⋯** menu, and the filters are behind the **Filter** button.
 
 ## Next steps
 

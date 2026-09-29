@@ -112,7 +112,7 @@ const en = {
     importAgent: "Import Agent",
     insightAgent: "AI Insights",
     travelAgent: "Travel Agent",
-    assetPriceUpdates: "Asset Price Updates",
+    manageAssets: "Manage Assets",
     assetsLiabilities: "Assets & Liabilities",
     transactionReview: "Transaction Review",
     subscriptions: "Subscriptions",
@@ -2516,6 +2516,59 @@ const en = {
     globalFundamentals: {
       title: "Refresh fundamentals for all symbols (global)",
       description: "Refreshes the shared SecurityMaster table for every symbol any tenant holds — not just yours. Heavier than refreshing your own securities; use after a data-provider incident.",
+    },
+  },
+
+  // Manage Assets page (#81)
+  manageAssets: {
+    title: "Manage Assets",
+    subtitle: "Every asset and liability in one place: prices, income terms, debt terms and asset classes.",
+    loadFailed: "Failed to load assets. Please try again.",
+    assetClassHint: "Applies to every holding of {{symbol}}. Choose Automatic to remove the override.",
+    searchPlaceholder: "Search by symbol or name",
+    empty: "No assets match these filters.",
+    count: "{{count}} assets",
+    count_one: "{{count}} asset",
+    count_other: "{{count}} assets",
+    loadMore: "Load more",
+    loadingMore: "Loading…",
+    columns: {
+      assetClass: "Asset class",
+    },
+    filters: {
+      type: "Type",
+      allTypes: "All types",
+      account: "Account",
+      allAccounts: "All accounts",
+      assetClass: "Asset class",
+      allAssetClasses: "All asset classes",
+      includeClosed: "Show closed positions",
+      clear: "Clear filters",
+    },
+    status: {
+      label: "Filter by status",
+      stale: "Price stale",
+      incomeMissing: "Income terms missing",
+      dividendOverride: "Dividend override",
+      lotMismatch: "Lot mismatch",
+      assetClassOverridden: "Asset class overridden",
+    },
+    chips: {
+      noPrice: "No price yet",
+    },
+    actions: {
+      menu: "Actions for {{symbol}}",
+      price: "Update price",
+      history: "Price history",
+      assetClass: "Asset class",
+    },
+    detached: {
+      title: "{{count}} sets of income terms are detached",
+      title_one: "{{count}} set of income terms is detached",
+      title_other: "{{count}} sets of income terms are detached",
+      description: "A portfolio rebuild couldn't match them to a holding. Re-attach or discard them.",
+      review: "Review",
+      hide: "Hide",
     },
   },
 };

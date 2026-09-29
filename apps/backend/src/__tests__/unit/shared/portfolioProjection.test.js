@@ -99,3 +99,22 @@ describe('@bliss/shared/portfolio asset class helpers (CJS build)', () => {
     expect(cjs.groups.find((g) => g.name === 'Technology').value).toBeCloseTo(591.5);
   });
 });
+
+describe('@bliss/shared/portfolio Manage Assets helpers (#81)', () => {
+  const { resolveIncomeSource, MANUAL_PRICE_STALE_DAYS, MANUAL_PRICE_WARNING_DAYS, MANUAL_PRICE_CRITICAL_DAYS } = shared;
+
+  it('exports the manual price staleness thresholds', () => {
+    expect([MANUAL_PRICE_STALE_DAYS, MANUAL_PRICE_WARNING_DAYS, MANUAL_PRICE_CRITICAL_DAYS]).toEqual([30, 60, 90]);
+  });
+
+  it('resolveIncomeSource follows the projection priority', () => {
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: null, recentDividends: [{ exDate: '2026-01-01', amount: 1 }] })).toBe('AUTO');
+    expect(resolveIncomeSource({ assetClass: 'ETF', terms: null, recentDividends: [] })).toBe('AUTO');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', dividendPerUnit: '1.9' }, recentDividends: [] })).toBe('OVERRIDE');
+    expect(resolveIncomeSource({ assetClass: 'FUND', terms: { incomeType: 'DIVIDEND', dividendPerUnit: '1.9' } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'BOND', terms: { incomeType: 'FIXED_COUPON' } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: { incomeType: 'DIVIDEND', isDistributing: false } })).toBe('MANUAL');
+    expect(resolveIncomeSource({ assetClass: 'STOCK', terms: null, recentDividends: null })).toBe('MISSING');
+    expect(resolveIncomeSource()).toBe('MISSING');
+  });
+});

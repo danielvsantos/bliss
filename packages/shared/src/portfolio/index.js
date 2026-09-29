@@ -83,6 +83,15 @@ export const PASSIVE_INCOME_GROUP = 'Passive Income';
 /** A floating / inflation-linked assumed index rate older than this is flagged STALE_RATE. */
 export const STALE_RATE_DAYS = 180;
 
+/**
+ * Manually-priced assets (Manage Assets #81): a price is stale after this many
+ * days without a manual value; the warning / critical urgency levels follow.
+ * Mirrored in apps/web/src/lib/manage-assets.ts.
+ */
+export const MANUAL_PRICE_STALE_DAYS = 30;
+export const MANUAL_PRICE_WARNING_DAYS = 60;
+export const MANUAL_PRICE_CRITICAL_DAYS = 90;
+
 const PAYMENTS_PER_YEAR = {
   WEEKLY: 52,
   MONTHLY: 12,

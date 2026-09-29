@@ -273,10 +273,10 @@ bliss/
 ## Testing
 
 ```bash
-pnpm test              # run all 2,235 tests across all apps
-pnpm test:api          # 676 tests (Vitest) — unit + integration
-pnpm test:backend      # 1,017 tests (Jest) — unit + integration
-pnpm test:web          # 542 tests (Vitest + MSW) — hooks, pages, components, contexts
+pnpm test              # run all 3,230 tests across all apps
+pnpm test:api          # 1,070 tests (Vitest) — unit + integration
+pnpm test:backend      # 1,225 tests (Jest) — unit + integration
+pnpm test:web          # 935 tests (Vitest + MSW) — hooks, pages, components, contexts
 ```
 
 ---

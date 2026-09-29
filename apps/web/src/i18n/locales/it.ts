@@ -112,7 +112,7 @@ const it = {
     importAgent: "Agente di importazione",
     insightAgent: "Insights AI",
     travelAgent: "Agente di viaggio",
-    assetPriceUpdates: "Aggiornamento prezzi asset",
+    manageAssets: "Gestisci asset",
     assetsLiabilities: "Attivi e passivi",
     transactionReview: "Revisione transazioni",
     subscriptions: "Abbonamenti",
@@ -2516,6 +2516,59 @@ const it = {
     globalFundamentals: {
       title: "Aggiorna i fondamentali di tutti i simboli (globale)",
       description: "Aggiorna la tabella SecurityMaster condivisa per tutti i simboli di tutti i tenant, non solo i tuoi. Più pesante dell'aggiornamento dei tuoi titoli; usalo dopo un incidente del fornitore dati.",
+    },
+  },
+
+  // Manage Assets page (#81)
+  manageAssets: {
+    title: "Gestisci asset",
+    subtitle: "Tutti i tuoi asset e passività in un unico posto: prezzi, termini di reddito, termini del debito e classi di asset.",
+    loadFailed: "Impossibile caricare gli asset. Riprova.",
+    assetClassHint: "Si applica a tutte le posizioni di {{symbol}}. Scegli Automatico per rimuovere la modifica.",
+    searchPlaceholder: "Cerca per simbolo o nome",
+    empty: "Nessun asset corrisponde a questi filtri.",
+    count: "{{count}} asset",
+    count_one: "{{count}} asset",
+    count_other: "{{count}} asset",
+    loadMore: "Carica altri",
+    loadingMore: "Caricamento…",
+    columns: {
+      assetClass: "Classe di asset",
+    },
+    filters: {
+      type: "Tipo",
+      allTypes: "Tutti i tipi",
+      account: "Conto",
+      allAccounts: "Tutti i conti",
+      assetClass: "Classe di asset",
+      allAssetClasses: "Tutte le classi",
+      includeClosed: "Mostra posizioni chiuse",
+      clear: "Cancella filtri",
+    },
+    status: {
+      label: "Filtra per stato",
+      stale: "Prezzo non aggiornato",
+      incomeMissing: "Termini di reddito mancanti",
+      dividendOverride: "Dividendo modificato",
+      lotMismatch: "Discrepanza nei lotti",
+      assetClassOverridden: "Classe di asset modificata",
+    },
+    chips: {
+      noPrice: "Nessun prezzo",
+    },
+    actions: {
+      menu: "Azioni per {{symbol}}",
+      price: "Aggiorna prezzo",
+      history: "Storico prezzi",
+      assetClass: "Classe di asset",
+    },
+    detached: {
+      title: "{{count}} insiemi di termini di reddito sono scollegati",
+      title_one: "{{count}} insieme di termini di reddito è scollegato",
+      title_other: "{{count}} insiemi di termini di reddito sono scollegati",
+      description: "Una ricostruzione del portafoglio non è riuscita ad associarli a una posizione. Ricollegali o eliminali.",
+      review: "Esamina",
+      hide: "Nascondi",
     },
   },
 };

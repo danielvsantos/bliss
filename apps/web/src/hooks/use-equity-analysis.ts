@@ -75,6 +75,10 @@ export function useSetAssetClass() {
   return useMutation({
     mutationFn: ({ portfolioItemId, assetClass }: { portfolioItemId: number; assetClass: AssetClass | null }) =>
       api.setAssetClass(portfolioItemId, assetClass, { applyToSymbol: true }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [EQUITY_ANALYSIS_QUERY_KEY] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [EQUITY_ANALYSIS_QUERY_KEY] });
+      // Manage Assets list rows and asset class modal (#81).
+      queryClient.invalidateQueries({ queryKey: ['portfolio-assets'] });
+    },
   });
 }

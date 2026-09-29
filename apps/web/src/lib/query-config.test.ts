@@ -4,6 +4,7 @@ import {
   PORTFOLIO_STALE_TIME_MS,
   PORTFOLIO_PERSIST_MAX_BYTES,
   PORTFOLIO_QUERY_KEY_ROOTS,
+  PORTFOLIO_INVALIDATE_ONLY_ROOTS,
   shouldPersistPortfolioQuery,
   invalidatePortfolioQueries,
   markPortfolioQueriesStale,
@@ -97,16 +98,26 @@ describe('shouldPersistPortfolioQuery', () => {
 });
 
 describe('invalidatePortfolioQueries', () => {
-  it('invalidates every portfolio root exactly once', () => {
+  it('invalidates every portfolio root (and the Manage Assets list) exactly once', () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, 'invalidateQueries');
 
     invalidatePortfolioQueries(client);
 
-    expect(spy).toHaveBeenCalledTimes(PORTFOLIO_QUERY_KEY_ROOTS.length);
-    for (const root of PORTFOLIO_QUERY_KEY_ROOTS) {
+    const roots = [...PORTFOLIO_QUERY_KEY_ROOTS, ...PORTFOLIO_INVALIDATE_ONLY_ROOTS];
+    expect(spy).toHaveBeenCalledTimes(roots.length);
+    for (const root of roots) {
       expect(spy).toHaveBeenCalledWith({ queryKey: [root] });
     }
+  });
+
+  it('never persists the Manage Assets list', () => {
+    expect(
+      shouldPersistPortfolioQuery({
+        queryKey: ['portfolio-assets', 'list', {}],
+        state: { status: 'success', data: { pages: [{ items: [{ id: 1 }] }] } },
+      }),
+    ).toBe(false);
   });
 });
 

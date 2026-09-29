@@ -9,6 +9,7 @@ import { ASSET_CLASSES, classifyAssetClass, isValidAssetClass } from '@bliss/sha
 /**
  * Asset class override for one portfolio item (Equity Analysis, #79).
  *
+ *   GET → { assetClass, assetClassSource, autoAssetClass }   (Manage Assets #81)
  *   PUT { assetClass: AssetClass | null, applyToSymbol?: boolean }
  *     → { assetClass, assetClassSource, autoAssetClass, updatedCount }
  *
@@ -28,8 +29,8 @@ export default withAuth(async function handler(req, res) {
 
   if (cors(req, res)) return;
 
-  if (req.method !== 'PUT') {
-    res.setHeader('Allow', ['PUT']);
+  if (req.method !== 'PUT' && req.method !== 'GET') {
+    res.setHeader('Allow', ['GET', 'PUT']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
 
@@ -37,6 +38,8 @@ export default withAuth(async function handler(req, res) {
   if (Number.isNaN(portfolioItemId)) {
     return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid Portfolio Item ID' });
   }
+
+  if (req.method === 'GET') return handleGet(req, res, portfolioItemId);
 
   const { assetClass, applyToSymbol = false } = req.body || {};
   if (assetClass !== null && !isValidAssetClass(assetClass)) {
@@ -91,3 +94,43 @@ export default withAuth(async function handler(req, res) {
     });
   }
 });
+
+async function handleGet(req, res, portfolioItemId) {
+  try {
+    const item = await prisma.portfolioItem.findFirst({
+      where: { id: portfolioItemId, tenantId: req.user.tenantId },
+      select: {
+        symbol: true,
+        assetClassOverride: true,
+        category: { select: { group: true, processingHint: true, defaultCategoryCode: true } },
+        incomeTerms: { select: { issuerType: true, incomeType: true } },
+      },
+    });
+    if (!item) {
+      return res.status(StatusCodes.NOT_FOUND).json({ error: 'Portfolio item not found' });
+    }
+    const security = await prisma.securityMaster.findUnique({
+      where: { symbol: item.symbol },
+      select: { assetType: true, name: true, etfComposition: true },
+    });
+    const input = {
+      processingHint: item.category?.processingHint,
+      defaultCategoryCode: item.category?.defaultCategoryCode,
+      categoryGroup: item.category?.group,
+      security: security ? { ...security, composition: security.etfComposition } : null,
+      incomeTerms: item.incomeTerms,
+    };
+    const result = classifyAssetClass({ ...input, override: item.assetClassOverride });
+    return res.status(StatusCodes.OK).json({
+      assetClass: result.assetClass,
+      assetClassSource: result.source,
+      autoAssetClass: classifyAssetClass(input).assetClass,
+    });
+  } catch (error) {
+    Sentry.captureException(error);
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Server Error',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+}

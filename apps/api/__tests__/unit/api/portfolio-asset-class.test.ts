@@ -73,9 +73,9 @@ beforeEach(() => {
 
 describe('PUT /api/portfolio/items/:assetId/asset-class', () => {
   it('rejects other methods', async () => {
-    const res = await call(makeReq({ method: 'GET' }));
+    const res = await call(makeReq({ method: 'DELETE' }));
     expect(res._status).toBe(405);
-    expect(res.setHeader).toHaveBeenCalledWith('Allow', ['PUT']);
+    expect(res.setHeader).toHaveBeenCalledWith('Allow', ['GET', 'PUT']);
   });
 
   it('rejects a non-numeric id', async () => {
@@ -132,6 +132,34 @@ describe('PUT /api/portfolio/items/:assetId/asset-class', () => {
     mockPrisma.portfolioItem.updateMany.mockRejectedValue(new Error('db down'));
     const res = await call(makeReq({ body: { assetClass: 'FUND' } }));
     expect(res._status).toBe(500);
+    expect(mockSentry.captureException).toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/portfolio/items/:assetId/asset-class (Manage Assets #81)', () => {
+  it('returns the current class, its source and the automatic class', async () => {
+    mockPrisma.portfolioItem.findFirst.mockResolvedValue({ ...QQQ_ITEM, assetClassOverride: 'SECTOR_ETF' });
+    const res = await call(makeReq({ method: 'GET' }));
+    expect(res._status).toBe(200);
+    expect(res._body).toEqual({ assetClass: 'SECTOR_ETF', assetClassSource: 'OVERRIDE', autoAssetClass: 'INDEX_ETF' });
+    expect(mockPrisma.portfolioItem.findFirst.mock.calls[0][0].where).toEqual({ id: 7, tenantId: 'tenant-a' });
+    expect(mockPrisma.portfolioItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('reports AUTO when there is no override', async () => {
+    mockPrisma.portfolioItem.findFirst.mockResolvedValue({ ...QQQ_ITEM, assetClassOverride: null });
+    const res = await call(makeReq({ method: 'GET' }));
+    expect(res._body).toEqual({ assetClass: 'INDEX_ETF', assetClassSource: 'AUTO', autoAssetClass: 'INDEX_ETF' });
+  });
+
+  it('returns 404 for an item of another tenant', async () => {
+    mockPrisma.portfolioItem.findFirst.mockResolvedValue(null);
+    expect((await call(makeReq({ method: 'GET' })))._status).toBe(404);
+  });
+
+  it('returns 500 on a database error', async () => {
+    mockPrisma.portfolioItem.findFirst.mockRejectedValue(new Error('db down'));
+    expect((await call(makeReq({ method: 'GET' })))._status).toBe(500);
     expect(mockSentry.captureException).toHaveBeenCalled();
   });
 });

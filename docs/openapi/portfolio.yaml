@@ -187,10 +187,135 @@ components:
           type: string
           format: date-time
 
+    ManagedAsset:
+      type: object
+      description: One row of the Manage Assets list (#81). Stored values only — no live pricing, no manual-value history.
+      properties:
+        id: { type: integer }
+        symbol: { type: string }
+        displayName: { type: string, description: SecurityMaster name for listed securities, otherwise the symbol. }
+        categoryName: { type: string, nullable: true }
+        categoryType: { type: string, nullable: true, example: Investments }
+        group: { type: string, nullable: true, example: Stocks }
+        processingHint: { type: string, nullable: true, example: MANUAL }
+        accountId: { type: integer, nullable: true }
+        accountName: { type: string, nullable: true }
+        currency: { type: string, example: EUR }
+        quantity: { type: string, description: Decimal as string. }
+        currentValue: { type: string, nullable: true, description: Stored value in the item currency (Decimal as string). }
+        currentValueInDisplay: { type: number, nullable: true, description: Stored value in the portfolio currency. }
+        lastManualValueDate: { type: string, format: date-time, nullable: true }
+        assetClass:
+          type: string
+          enum: [STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER]
+        assetClassSource: { type: string, enum: [AUTO, OVERRIDE] }
+        incomeAssetClass:
+          type: string
+          nullable: true
+          enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER]
+          description: Passive income class; null when the item cannot hold income terms.
+        hasLotMismatch: { type: boolean }
+        hasIncomeTerms: { type: boolean }
+        hasDividendOverride: { type: boolean }
+        hasDebtTerms: { type: boolean }
+        isPriceStale: { type: boolean, description: "MANUAL item with quantity > 0 and no manual value in 30+ days (or none)." }
+        incomeDataStatus:
+          type: string
+          enum: [AUTO, OVERRIDE, MANUAL, MISSING, NONE, NOT_APPLICABLE]
+    ManageAssetsResponse:
+      type: object
+      properties:
+        portfolioCurrency: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ManagedAsset' }
+        nextCursor: { type: string, nullable: true, description: Opaque; null on the last page. }
+        totals:
+          type: object
+          properties:
+            count: { type: integer, description: Rows matching the filters across all pages. }
+        detachedTermsCount: { type: integer }
+        facets:
+          type: object
+          description: First page only — filter options from the unfiltered list.
+          properties:
+            groups:
+              type: array
+              items:
+                type: object
+                properties:
+                  group: { type: string }
+                  count: { type: integer }
+            accounts:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+
 security:
   - cookieAuth: []
 
 paths:
+  /api/portfolio/assets:
+    get:
+      summary: Manage Assets list
+      description: >
+        Every portfolio item in one lightweight, server-filtered, paginated list
+        (Manage Assets, #81). Stored values only — no live pricing and no
+        manual-value history (one grouped max(date) per page). Sorted by
+        (category group, symbol, id); the cursor is an opaque offset into that order.
+      parameters:
+        - name: type
+          in: query
+          description: A processingHint (upper snake case, e.g. MANUAL) or a category group (e.g. Real Estate).
+          schema: { type: string }
+        - name: accountId
+          in: query
+          schema: { type: integer }
+        - name: assetClass
+          in: query
+          schema:
+            type: string
+            enum: [STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER]
+        - name: search
+          in: query
+          description: Case-insensitive match on symbol or SecurityMaster name.
+          schema: { type: string }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [stale, incomeMissing, dividendOverride, lotMismatch, assetClassOverridden]
+        - name: includeClosed
+          in: query
+          description: Include items with quantity 0 (debts are always included).
+          schema: { type: boolean, default: false }
+        - name: id
+          in: query
+          description: Return only this item (deep links).
+          schema: { type: integer }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+          description: Values above 100 are capped.
+      responses:
+        '200':
+          description: One page of rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManageAssetsResponse'
+        '400':
+          description: Invalid filter, cursor or limit.
+        '405':
+          description: Method not allowed.
+        '500':
+          description: Internal server error.
   /api/portfolio/items:
     get:
       summary: Fetch real-time portfolio items

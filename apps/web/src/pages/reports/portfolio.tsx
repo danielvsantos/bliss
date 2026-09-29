@@ -292,7 +292,7 @@ function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: strin
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 text-xs"
-          onClick={() => navigate("/manual-updates")}
+          onClick={() => navigate(`/assets?item=${item.id}&modal=debt`)}
         >
           <EditIcon className="h-3.5 w-3.5" />
           {item.debtTerms ? t("portfolio.editTerms") : t("portfolio.addTerms")}
