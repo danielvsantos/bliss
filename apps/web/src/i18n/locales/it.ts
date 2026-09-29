@@ -2546,6 +2546,7 @@ const it = {
       clear: "Cancella filtri",
     },
     status: {
+      debtTermsMissing: "Termini del debito mancanti",
       label: "Filtra per stato",
       stale: "Prezzo non aggiornato",
       incomeMissing: "Termini di reddito mancanti",
@@ -2557,10 +2558,28 @@ const it = {
       noPrice: "Nessun prezzo",
     },
     actions: {
+      addIncomeTerms: "Aggiungi termini di reddito",
+      addDebtTerms: "Aggiungi termini del debito",
       menu: "Azioni per {{symbol}}",
       price: "Aggiorna prezzo",
       history: "Storico prezzi",
       assetClass: "Classe di asset",
+    },
+    attention: {
+      title: "{{count}} elementi richiedono la tua attenzione",
+      title_one: "{{count}} elemento richiede la tua attenzione",
+      title_other: "{{count}} elementi richiedono la tua attenzione",
+      allClear: "Tutto in ordine",
+      allClearHint: "I prezzi sono aggiornati e ogni prestito e posizione che genera reddito ha i suoi termini.",
+      stale: "Prezzi da aggiornare",
+      debtTermsMissing: "Prestiti senza termini",
+      incomeMissing: "Termini di reddito mancanti",
+      lotMismatch: "Discrepanze nei lotti da verificare",
+    },
+    sort: {
+      label: "Ordina",
+      attention: "Prima ciò che richiede attenzione",
+      name: "A–Z",
     },
     detached: {
       title: "{{count}} insiemi di termini di reddito sono scollegati",

@@ -6,6 +6,8 @@ import {
   isValidAssetClass,
   COVERAGE_ASSET_CLASSES,
   MANUAL_PRICE_STALE_DAYS,
+  MANUAL_PRICE_WARNING_DAYS,
+  MANUAL_PRICE_CRITICAL_DAYS,
 } from '@bliss/shared/portfolio';
 import { createFxResolver } from './passiveIncome.service.js';
 
@@ -20,19 +22,24 @@ import { createFxResolver } from './passiveIncome.service.js';
  * Two-stage load:
  *   1. One narrow `portfolioItem.findMany` over the tenant (hundreds of rows)
  *      with the SQL-expressible filters, plus one `securityMaster.findMany`.
- *   2. Classify, filter (asset class, search, status) and sort in memory, then
- *      slice the page. Per-row enrichment (FX, last manual value) runs only for
- *      the page — except the `stale` status filter, which needs every manual
- *      item's last value date.
+ *   2. Classify, look up the last manual value date of every manual item (one
+ *      grouped query), count statuses, filter (asset class, search, status)
+ *      and sort in memory, then slice the page. FX runs only for the page.
  *
- * The cursor is an opaque base64 offset into the deterministic sort
- * (category group, symbol, id). If a tenant ever holds thousands of items,
+ * Default sort `attention`: most urgent first (see `urgencyRank`), then
+ * (category group, symbol, id); `sort=name` is the plain A–Z order. The cursor
+ * is an opaque base64 offset into that deterministic sort. If a tenant ever holds thousands of items,
  * store the asset class in a column and move to keyset pagination.
  */
 
 export const DEFAULT_LIMIT = 50;
 export const MAX_LIMIT = 100;
-export const STATUS_FILTERS = ['stale', 'incomeMissing', 'dividendOverride', 'lotMismatch', 'assetClassOverridden'];
+/** Statuses that need the user to do something, in urgency order. */
+export const ACTION_STATUSES = ['stale', 'debtTermsMissing', 'incomeMissing', 'lotMismatch'];
+/** Informational statuses (a user choice, nothing to fix). */
+export const INFO_STATUSES = ['dividendOverride', 'assetClassOverridden'];
+export const STATUS_FILTERS = [...ACTION_STATUSES, ...INFO_STATUSES];
+export const SORTS = ['attention', 'name'];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const PORTFOLIO_CATEGORY_TYPES = ['Investments', 'Asset', 'Debt'];
@@ -86,6 +93,9 @@ export function parseListQuery(query = {}) {
   const assetClass = str(query.assetClass);
   if (assetClass != null && !isValidAssetClass(assetClass)) throw new ValidationError('Invalid assetClass');
 
+  const sort = str(query.sort) ?? 'attention';
+  if (!SORTS.includes(sort)) throw new ValidationError(`Invalid sort. Must be one of: ${SORTS.join(', ')}`);
+
   const status = str(query.status);
   if (status != null && !STATUS_FILTERS.includes(status)) {
     throw new ValidationError(`Invalid status. Must be one of: ${STATUS_FILTERS.join(', ')}`);
@@ -97,6 +107,7 @@ export function parseListQuery(query = {}) {
     accountId,
     assetClass,
     status,
+    sort,
     search: str(query.search)?.toLowerCase() ?? null,
     includeClosed: str(query.includeClosed) === 'true',
     offset: decodeCursor(str(query.cursor)),
@@ -138,6 +149,26 @@ export function isPriceStale(row, lastDate, now = new Date()) {
   if (row.processingHint !== 'MANUAL' || !(row.quantityNumber > 0)) return false;
   if (!lastDate) return true;
   return (now.getTime() - new Date(lastDate).getTime()) / MS_PER_DAY > MANUAL_PRICE_STALE_DAYS;
+}
+
+/**
+ * Urgency rank for the default "attention" sort (lower = more urgent):
+ *   0 price critical (no value, or 90+ days) · 1 price warning (60+) ·
+ *   2 price stale (30+) · 3 debt terms missing · 4 income terms missing ·
+ *   5 lot mismatch · 6 nothing to do.
+ */
+export function urgencyRank(row, lastDate, now = new Date()) {
+  if (row.isPriceStale) {
+    if (!lastDate) return 0;
+    const days = (now.getTime() - new Date(lastDate).getTime()) / MS_PER_DAY;
+    if (days >= MANUAL_PRICE_CRITICAL_DAYS) return 0;
+    if (days >= MANUAL_PRICE_WARNING_DAYS) return 1;
+    return 2;
+  }
+  if (row.debtTermsMissing) return 3;
+  if (row.incomeDataStatus === 'MISSING') return 4;
+  if (row.hasLotMismatch) return 5;
+  return 6;
 }
 
 /** Classify one item into a list row (no per-row I/O). */
@@ -195,7 +226,10 @@ function toRow(item, sm) {
     hasIncomeTerms: terms != null,
     hasDividendOverride: terms?.incomeType === 'DIVIDEND' && terms?.dividendPerUnit != null,
     hasDebtTerms: item.debtTerms != null,
+    // Only amortizing loans use debt terms (the loan processor needs them).
+    debtTermsMissing: category.type === 'Debt' && category.processingHint === 'AMORTIZING_LOAN' && item.debtTerms == null,
     isPriceStale: false,
+    needsAttention: false,
     incomeDataStatus,
     // internal, stripped before responding
     quantityNumber,
@@ -207,6 +241,7 @@ function toRow(item, sm) {
 function matchesStatus(row, status) {
   switch (status) {
     case 'stale': return row.isPriceStale;
+    case 'debtTermsMissing': return row.debtTermsMissing;
     case 'incomeMissing': return row.incomeDataStatus === 'MISSING';
     case 'dividendOverride': return row.hasDividendOverride;
     case 'lotMismatch': return row.hasLotMismatch;
@@ -215,7 +250,7 @@ function matchesStatus(row, status) {
   }
 }
 
-function compareRows(a, b) {
+function compareByName(a, b) {
   return (
     (a.group ?? '').localeCompare(b.group ?? '') ||
     a.symbol.localeCompare(b.symbol) ||
@@ -223,8 +258,12 @@ function compareRows(a, b) {
   );
 }
 
+function compareByAttention(a, b) {
+  return a.urgency - b.urgency || compareByName(a, b);
+}
+
 /**
- * @returns {Promise<{ portfolioCurrency, items, nextCursor, totals, detachedTermsCount, facets? }>}
+ * @returns {Promise<{ portfolioCurrency, items, nextCursor, totals, statusCounts, detachedTermsCount, facets? }>}
  */
 export async function listAssets(tenantId, q, { now = new Date() } = {}) {
   const tenant = await prisma.tenant.findUnique({
@@ -289,34 +328,39 @@ export async function listAssets(tenantId, q, { now = new Date() } = {}) {
   if (q.assetClass) rows = rows.filter((r) => r.assetClass === q.assetClass);
   if (q.search) rows = rows.filter((r) => r.searchText.includes(q.search));
 
-  // The stale filter needs every manual item's last value date up front.
-  let lastDates = null;
-  if (q.status === 'stale') {
-    lastDates = await lastManualValueDates(
-      tenantId,
-      rows.filter((r) => r.processingHint === 'MANUAL').map((r) => r.id),
-    );
-    for (const r of rows) r.isPriceStale = isPriceStale(r, lastDates.get(r.id), now);
+  // Stale flags, status counts and the attention sort all need the last value
+  // date of every manual item in the set: one grouped max(date) query.
+  const lastDates = await lastManualValueDates(
+    tenantId,
+    rows.filter((r) => r.processingHint === 'MANUAL').map((r) => r.id),
+  );
+  for (const r of rows) {
+    r.isPriceStale = isPriceStale(r, lastDates.get(r.id), now);
+    r.urgency = urgencyRank(r, lastDates.get(r.id), now);
+    r.needsAttention = r.urgency < 6;
   }
+
+  // Counts per status over the current filters (before the status filter), so
+  // a summary card's number matches the rows its filter shows.
+  const statusCounts = Object.fromEntries(STATUS_FILTERS.map((s) => [s, 0]));
+  let attentionCount = 0;
+  for (const r of rows) {
+    for (const s of STATUS_FILTERS) if (matchesStatus(r, s)) statusCounts[s] += 1;
+    if (r.needsAttention) attentionCount += 1;
+  }
+
   if (q.status) rows = rows.filter((r) => matchesStatus(r, q.status));
 
-  rows.sort(compareRows);
+  rows.sort(q.sort === 'name' ? compareByName : compareByAttention);
   const total = rows.length;
   const page = rows.slice(q.offset, q.offset + q.limit);
 
   // ── Per-page enrichment ──
-  if (!lastDates) {
-    lastDates = await lastManualValueDates(
-      tenantId,
-      page.filter((r) => r.processingHint === 'MANUAL').map((r) => r.id),
-    );
-  }
   const fx = createFxResolver(portfolioCurrency, now);
   const usdToDisplay = await fx('USD');
   for (const r of page) {
     const last = lastDates.get(r.id) ?? null;
     r.lastManualValueDate = last ? new Date(last).toISOString() : null;
-    r.isPriceStale = isPriceStale(r, last, now);
     const usd = toNumber(r.currentValueInUSD);
     const native = toNumber(r.currentValue);
     let display = null;
@@ -328,9 +372,10 @@ export async function listAssets(tenantId, q, { now = new Date() } = {}) {
   const nextOffset = q.offset + page.length;
   const response = {
     portfolioCurrency,
-    items: page.map(({ quantityNumber, currentValueInUSD, searchText, ...rest }) => rest),
+    items: page.map(({ quantityNumber, currentValueInUSD, searchText, urgency, ...rest }) => rest),
     nextCursor: nextOffset < total ? encodeCursor(nextOffset) : null,
-    totals: { count: total },
+    totals: { count: total, attention: attentionCount },
+    statusCounts,
     detachedTermsCount,
   };
 

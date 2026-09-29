@@ -68,7 +68,9 @@ For assets without live pricing (real estate, private equity), record their valu
 - **Income terms** — dividends, coupons, rent or interest for the [passive income projection](/docs/guides/passive-income).
 - **Asset class** — override the automatic class (for example, mark a fund as a Bond ETF). It applies to every holding of that symbol.
 
-Search by symbol or name, filter by type, account or asset class, or tap a status chip (Price stale, Income terms missing, Dividend override, Lot mismatch, Asset class overridden) to see only the rows that need attention. The list loads 50 rows at a time; use **Load more** for the rest. Closed positions are hidden unless you turn on **Show closed positions**.
+At the top, **Needs attention** shows what to fix, with a count for each: prices to update, loans without terms, holdings missing income terms, and lot mismatches to review. Tap a card to see only those rows; when there's nothing to fix it says **All caught up**. The list puts the most urgent rows first (the oldest prices lead), and each one has a button for its fix — **Update price**, **Add debt terms** or **Add income terms**. Choose **A–Z** in the sort menu for the plain alphabetical list.
+
+Search by symbol or name, filter by type, account or asset class, or tap a status chip to filter. The problem chips (Price stale, Debt terms missing, Income terms missing, Lot mismatch) come first; Dividend override and Asset class overridden are shown in grey because they're your own choices, not problems. The list loads 50 rows at a time; use **Load more** for the rest. Closed positions are hidden unless you turn on **Show closed positions**.
 
 If a portfolio rebuild detached some income terms from their holding, a banner at the top lets you re-attach them to the right holding or discard them.
 

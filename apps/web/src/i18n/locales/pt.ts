@@ -2546,6 +2546,7 @@ const pt = {
       clear: "Limpar filtros",
     },
     status: {
+      debtTermsMissing: "Faltam termos de dívida",
       label: "Filtrar por estado",
       stale: "Preço desatualizado",
       incomeMissing: "Faltam termos de rendimento",
@@ -2557,10 +2558,28 @@ const pt = {
       noPrice: "Ainda sem preço",
     },
     actions: {
+      addIncomeTerms: "Adicionar termos de rendimento",
+      addDebtTerms: "Adicionar termos de dívida",
       menu: "Ações para {{symbol}}",
       price: "Atualizar preço",
       history: "Histórico de preços",
       assetClass: "Classe de ativo",
+    },
+    attention: {
+      title: "{{count}} itens precisam da sua atenção",
+      title_one: "{{count}} item precisa da sua atenção",
+      title_other: "{{count}} itens precisam da sua atenção",
+      allClear: "Tudo em dia",
+      allClearHint: "Os preços estão atualizados e cada empréstimo e posição com rendimento tem os seus termos.",
+      stale: "Preços a atualizar",
+      debtTermsMissing: "Empréstimos sem termos",
+      incomeMissing: "Faltam termos de rendimento",
+      lotMismatch: "Divergências de lotes a rever",
+    },
+    sort: {
+      label: "Ordenar",
+      attention: "Primeiro o que precisa de atenção",
+      name: "A–Z",
     },
     detached: {
       title: "{{count}} conjuntos de termos de rendimento estão desvinculados",

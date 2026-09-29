@@ -236,9 +236,28 @@ const MANAGE_ASSETS_KEYS = [
   'manageAssets.detached.description',
   'manageAssets.detached.review',
   'manageAssets.detached.hide',
+  'manageAssets.status.debtTermsMissing',
+  'manageAssets.actions.addIncomeTerms',
+  'manageAssets.actions.addDebtTerms',
+  'manageAssets.attention.title_one',
+  'manageAssets.attention.title_other',
+  'manageAssets.attention.allClear',
+  'manageAssets.attention.allClearHint',
+  'manageAssets.attention.stale',
+  'manageAssets.attention.debtTermsMissing',
+  'manageAssets.attention.incomeMissing',
+  'manageAssets.attention.lotMismatch',
+  'manageAssets.sort.label',
+  'manageAssets.sort.attention',
+  'manageAssets.sort.name',
 ];
 
-const SAME_IN_SOME_LOCALES = new Set(['manageAssets.filters.type', 'manageAssets.count_one', 'manageAssets.count_other']);
+const SAME_IN_SOME_LOCALES = new Set([
+  'manageAssets.filters.type',
+  'manageAssets.count_one',
+  'manageAssets.count_other',
+  'manageAssets.sort.name', // "A–Z" everywhere
+]);
 
 describe('i18n parity — task #81 Manage Assets keys', () => {
   for (const key of MANAGE_ASSETS_KEYS) {
@@ -266,6 +285,8 @@ describe('i18n parity — task #81 Manage Assets keys', () => {
       expect(resolve(LOCALES[lang], 'manageAssets.assetClassHint'), lang).toContain('{{symbol}}');
       expect(resolve(LOCALES[lang], 'manageAssets.count_other'), lang).toContain('{{count}}');
       expect(resolve(LOCALES[lang], 'manageAssets.detached.title_other'), lang).toContain('{{count}}');
+      expect(resolve(LOCALES[lang], 'manageAssets.attention.title_one'), lang).toContain('{{count}}');
+      expect(resolve(LOCALES[lang], 'manageAssets.attention.title_other'), lang).toContain('{{count}}');
     }
   });
 

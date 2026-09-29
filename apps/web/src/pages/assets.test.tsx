@@ -69,7 +69,9 @@ function makeAsset(over: Partial<ManagedAsset> = {}): ManagedAsset {
     hasIncomeTerms: false,
     hasDividendOverride: false,
     hasDebtTerms: false,
+    debtTermsMissing: false,
     isPriceStale: false,
+    needsAttention: false,
     incomeDataStatus: 'AUTO',
     ...over,
   };
@@ -92,6 +94,7 @@ const FLAT = makeAsset({
   assetClass: 'REAL_ESTATE',
   incomeAssetClass: 'REAL_ESTATE',
   incomeDataStatus: 'MISSING',
+  needsAttention: true,
 });
 
 const MORTGAGE = makeAsset({
@@ -121,14 +124,28 @@ const KO = makeAsset({
   incomeDataStatus: 'OVERRIDE',
   assetClass: 'FUND',
   assetClassSource: 'OVERRIDE',
+  needsAttention: true,
 });
+
+// Mirrors the API's status counting, from the rows in the fixture.
+function countStatuses(items: ManagedAsset[]): ManageAssetsResponse['statusCounts'] {
+  return {
+    stale: items.filter((i) => i.isPriceStale).length,
+    debtTermsMissing: items.filter((i) => i.debtTermsMissing).length,
+    incomeMissing: items.filter((i) => i.incomeDataStatus === 'MISSING').length,
+    lotMismatch: items.filter((i) => i.hasLotMismatch).length,
+    dividendOverride: items.filter((i) => i.hasDividendOverride).length,
+    assetClassOverridden: items.filter((i) => i.assetClassSource === 'OVERRIDE').length,
+  };
+}
 
 function page(items: ManagedAsset[], over: Partial<ManageAssetsResponse> = {}): ManageAssetsResponse {
   return {
     portfolioCurrency: 'USD',
     items,
     nextCursor: null,
-    totals: { count: items.length },
+    totals: { count: items.length, attention: items.filter((i) => i.needsAttention).length },
+    statusCounts: countStatuses(items),
     detachedTermsCount: 0,
     facets: {
       groups: [{ group: 'Real Estate', count: 1 }, { group: 'Stocks', count: 2 }],
@@ -208,8 +225,8 @@ describe('ManageAssetsPage — list', () => {
 
   it('loads more pages with the next cursor', async () => {
     vi.mocked(api.getManageAssets)
-      .mockResolvedValueOnce(page([FLAT], { nextCursor: 'MQ==', totals: { count: 2 } }))
-      .mockResolvedValueOnce(page([KO], { nextCursor: null, totals: { count: 2 }, facets: undefined }));
+      .mockResolvedValueOnce(page([FLAT], { nextCursor: 'MQ==', totals: { count: 2, attention: 2 } }))
+      .mockResolvedValueOnce(page([KO], { nextCursor: null, totals: { count: 2, attention: 2 }, facets: undefined }));
     const user = userEvent.setup();
     renderPage();
     await screen.findByTestId('asset-row-3');
@@ -300,6 +317,137 @@ describe('ManageAssetsPage — list', () => {
     expect(screen.queryByTestId('action-price-4')).not.toBeInTheDocument();
     expect(screen.queryByTestId('action-income-4')).not.toBeInTheDocument();
     expect(screen.queryByTestId('action-assetClass-4')).not.toBeInTheDocument();
+  });
+});
+
+describe('ManageAssetsPage — what needs attention', () => {
+  const LOAN = makeAsset({
+    id: 6,
+    symbol: 'Car loan',
+    displayName: 'Car loan',
+    categoryName: 'Loan',
+    categoryType: 'Debt',
+    group: 'Personal Debt',
+    processingHint: 'AMORTIZING_LOAN',
+    currentValue: '-9000',
+    currentValueInDisplay: -9000,
+    assetClass: 'OTHER',
+    incomeAssetClass: null,
+    incomeDataStatus: 'NOT_APPLICABLE',
+    debtTermsMissing: true,
+    needsAttention: true,
+  });
+
+  it('summarises what needs attention, one card per problem type', async () => {
+    vi.mocked(api.getManageAssets).mockResolvedValue(page([FLAT, LOAN, KO, MORTGAGE]));
+    renderPage();
+    const summary = await screen.findByTestId('attention-summary');
+    expect(within(summary).getByText('manageAssets.attention.title:3')).toBeInTheDocument();
+    expect(within(screen.getByTestId('attention-stale')).getByText('1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('attention-debtTermsMissing')).getByText('manageAssets.attention.debtTermsMissing')).toBeInTheDocument();
+    expect(screen.getByTestId('attention-incomeMissing')).toBeInTheDocument();
+    expect(screen.getByTestId('attention-lotMismatch')).toBeInTheDocument();
+    // Informational statuses never get a card.
+    expect(screen.queryByTestId('attention-dividendOverride')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('attention-all-clear')).not.toBeInTheDocument();
+  });
+
+  it('a summary card filters the list, and tapping it again clears the filter', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const card = await screen.findByTestId('attention-stale');
+    await user.click(card);
+    await waitFor(() => expect(lastListCall()).toMatchObject({ status: 'stale' }));
+    expect(card).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('status-filter-stale')).toHaveAttribute('aria-pressed', 'true');
+    await user.click(card);
+    await waitFor(() => expect(lastListCall()).not.toHaveProperty('status'));
+  });
+
+  it('shows "All caught up" when nothing needs attention', async () => {
+    vi.mocked(api.getManageAssets).mockResolvedValue(page([MORTGAGE, makeAsset({ id: 1 })]));
+    renderPage();
+    expect(await screen.findByTestId('attention-all-clear')).toHaveTextContent('manageAssets.attention.allClear');
+    expect(screen.queryByTestId('attention-summary')).not.toBeInTheDocument();
+  });
+
+  it('shows the fix as a visible button on each problem row', async () => {
+    vi.mocked(api.getManageAssets).mockResolvedValue(page([
+      FLAT,
+      LOAN,
+      makeAsset({ id: 7, symbol: 'VWCE', incomeDataStatus: 'MISSING', incomeAssetClass: 'ETF', needsAttention: true }),
+      KO,
+      MORTGAGE,
+    ]));
+    renderPage();
+    expect(await screen.findByTestId('primary-action-3')).toHaveTextContent('manageAssets.actions.price');
+    expect(screen.getByTestId('primary-action-6')).toHaveTextContent('manageAssets.actions.addDebtTerms');
+    expect(screen.getByTestId('primary-action-7')).toHaveTextContent('manageAssets.actions.addIncomeTerms');
+    // Lot mismatch has no fix on this page; clean rows have no button.
+    expect(screen.queryByTestId('primary-action-5')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('primary-action-4')).not.toBeInTheDocument();
+  });
+
+  it('the fix button opens the right modal', async () => {
+    vi.mocked(api.getManageAssets).mockResolvedValue(page([LOAN]));
+    vi.mocked(api.getDebtTerms).mockResolvedValue(null);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByTestId('primary-action-6'));
+    expect(await screen.findByTestId('debt-terms-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/assets?item=6&modal=debt');
+  });
+
+  it('flags loans without terms with a chip and a filter', async () => {
+    vi.mocked(api.getManageAssets).mockResolvedValue(page([LOAN, MORTGAGE]));
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByTestId('chip-debtTermsMissing-6')).toBeInTheDocument();
+    expect(screen.queryByTestId('chip-debtTermsMissing-4')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('status-filter-debtTermsMissing'));
+    await waitFor(() => expect(lastListCall()).toMatchObject({ status: 'debtTermsMissing' }));
+  });
+
+  it('keeps informational tags quiet and shows counts on the filter chips', async () => {
+    renderPage();
+    await screen.findByTestId('asset-row-5');
+    expect(screen.getByTestId('chip-lotMismatch-5').className).toContain('text-warning');
+    expect(screen.getByTestId('chip-dividendOverride-5').className).toContain('text-muted-foreground');
+    expect(screen.getByTestId('chip-assetClassOverridden-5').className).toContain('text-muted-foreground');
+    expect(screen.getByTestId('status-filter-stale')).toHaveTextContent('(1)');
+    expect(screen.getByTestId('status-filter-dividendOverride')).toHaveTextContent('(1)');
+    // Action filters come before the informational ones.
+    const order = screen.getAllByTestId(/^status-filter-/).map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual([
+      'status-filter-stale', 'status-filter-debtTermsMissing', 'status-filter-incomeMissing', 'status-filter-lotMismatch',
+      'status-filter-dividendOverride', 'status-filter-assetClassOverridden',
+    ]);
+  });
+
+  it('marks rows that need attention', async () => {
+    renderPage();
+    await screen.findByTestId('asset-row-3');
+    expect(within(screen.getByTestId('asset-row-3')).getAllByRole('cell')[0].className).toContain('border-l-warning');
+    expect(within(screen.getByTestId('asset-row-4')).getAllByRole('cell')[0].className).not.toContain('border-l-warning');
+  });
+
+  it('sorts by urgency by default and switches to A–Z on request', async () => {
+    renderPage();
+    await screen.findByTestId('asset-row-3');
+    expect(lastListCall()).not.toHaveProperty('sort');
+    fireEvent.click(screen.getByRole('combobox', { name: 'manageAssets.sort.label' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'manageAssets.sort.name' }));
+    await waitFor(() => expect(lastListCall()).toMatchObject({ sort: 'name' }));
+  });
+
+  it('puts the fix button on mobile cards too', async () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    vi.mocked(api.getManageAssets).mockResolvedValue(page([FLAT, MORTGAGE]));
+    renderPage();
+    const card = await screen.findByTestId('asset-card-3');
+    expect(within(card).getByTestId('primary-action-3')).toBeInTheDocument();
+    expect(card.className).toContain('border-l-warning');
+    expect(within(screen.getByTestId('asset-card-4')).queryByTestId('primary-action-4')).not.toBeInTheDocument();
   });
 });
 

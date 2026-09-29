@@ -2498,6 +2498,7 @@ const es = {
       clear: "Borrar filtros",
     },
     status: {
+      debtTermsMissing: "Faltan términos de deuda",
       label: "Filtrar por estado",
       stale: "Precio desactualizado",
       incomeMissing: "Faltan términos de ingresos",
@@ -2509,10 +2510,28 @@ const es = {
       noPrice: "Sin precio aún",
     },
     actions: {
+      addIncomeTerms: "Añadir términos de ingresos",
+      addDebtTerms: "Añadir términos de deuda",
       menu: "Acciones para {{symbol}}",
       price: "Actualizar precio",
       history: "Historial de precios",
       assetClass: "Clase de activo",
+    },
+    attention: {
+      title: "{{count}} elementos requieren tu atención",
+      title_one: "{{count}} elemento requiere tu atención",
+      title_other: "{{count}} elementos requieren tu atención",
+      allClear: "Todo al día",
+      allClearHint: "Los precios están actualizados y cada préstamo y posición con ingresos tiene sus términos.",
+      stale: "Precios por actualizar",
+      debtTermsMissing: "Préstamos sin términos",
+      incomeMissing: "Faltan términos de ingresos",
+      lotMismatch: "Discrepancias de lotes por revisar",
+    },
+    sort: {
+      label: "Ordenar",
+      attention: "Primero lo que requiere atención",
+      name: "A–Z",
     },
     detached: {
       title: "{{count}} conjuntos de términos de ingresos están desvinculados",

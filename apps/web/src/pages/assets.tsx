@@ -36,15 +36,19 @@ import { AssetClassModal } from "@/components/entities/asset-class-modal";
 import { DetachedTermsBanner } from "@/components/manage-assets/detached-terms-banner";
 import { AssetStatusChips } from "@/components/manage-assets/asset-status-chips";
 import { AssetActionsMenu } from "@/components/manage-assets/asset-actions-menu";
+import { AttentionSummary } from "@/components/manage-assets/attention-summary";
+import { PrimaryActionButton } from "@/components/manage-assets/primary-action-button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MANAGE_ASSETS_QUERY_KEY, useManageAssets, useManagedAsset } from "@/hooks/use-manage-assets";
 import { isAssetModal } from "@/lib/manage-assets";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { ASSET_CLASSES, type AssetClass } from "@/types/equity-analysis";
 import {
-  ASSET_STATUS_FILTERS,
+  ACTION_STATUSES,
+  INFO_STATUSES,
   type AssetModal,
   type AssetStatusFilter,
+  type AssetsSort,
   type ManageAssetsResponse,
   type ManagedAsset,
 } from "@/types/manage-assets";
@@ -113,6 +117,7 @@ export default function ManageAssetsPage() {
   const [assetClass, setAssetClass] = useState<string>(ALL);
   const [status, setStatus] = useState<AssetStatusFilter | null>(null);
   const [includeClosed, setIncludeClosed] = useState(false);
+  const [sort, setSort] = useState<AssetsSort>("attention");
 
   useEffect(() => {
     const id = setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS);
@@ -127,8 +132,9 @@ export default function ManageAssetsPage() {
       assetClass: assetClass === ALL ? undefined : (assetClass as AssetClass),
       status: status ?? undefined,
       includeClosed,
+      sort,
     }),
-    [search, type, accountId, assetClass, status, includeClosed],
+    [search, type, accountId, assetClass, status, includeClosed, sort],
   );
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useManageAssets(filters);
@@ -143,6 +149,12 @@ export default function ManageAssetsPage() {
   useEffect(() => {
     if (firstPage?.facets) setFacets(firstPage.facets);
   }, [firstPage?.facets]);
+
+  // Same for the attention counts, so the summary doesn't flash while filtering.
+  const [summary, setSummary] = useState<Pick<ManageAssetsResponse, "statusCounts" | "totals">>();
+  useEffect(() => {
+    if (firstPage?.statusCounts) setSummary({ statusCounts: firstPage.statusCounts, totals: firstPage.totals });
+  }, [firstPage?.statusCounts, firstPage?.totals]);
 
   const activeFilterCount =
     (type !== ALL ? 1 : 0) + (accountId !== ALL ? 1 : 0) + (assetClass !== ALL ? 1 : 0) + (includeClosed ? 1 : 0);
@@ -245,27 +257,37 @@ export default function ManageAssetsPage() {
     </div>
   );
 
+  const statusChip = (s: AssetStatusFilter, info: boolean) => {
+    const active = status === s;
+    const count = summary?.statusCounts?.[s];
+    return (
+      <button
+        key={s}
+        type="button"
+        aria-pressed={active}
+        onClick={() => setStatus(active ? null : s)}
+        className={cn(
+          "shrink-0 rounded-full border px-3 py-1 text-xs transition-colors",
+          active
+            ? "border-brand-primary bg-brand-primary text-white"
+            : info
+              ? "border-gray-200 bg-muted text-muted-foreground hover:bg-accent/40"
+              : "border-gray-200 bg-white font-medium text-brand-deep hover:bg-accent/40 dark:bg-transparent",
+        )}
+        data-testid={`status-filter-${s}`}
+      >
+        {t(`manageAssets.status.${s}`)}
+        {count != null && <span className="ml-1 tabular-nums opacity-70">({count})</span>}
+      </button>
+    );
+  };
+
+  // Action statuses first (with counts), then the quieter informational ones.
   const statusChips = (
-    <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" role="group" aria-label={t("manageAssets.status.label")}>
-      {ASSET_STATUS_FILTERS.map((s) => {
-        const active = status === s;
-        return (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={active}
-            onClick={() => setStatus(active ? null : s)}
-            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-              active
-                ? "border-brand-primary bg-brand-primary text-white"
-                : "border-gray-200 bg-white text-brand-deep hover:bg-accent/40 dark:bg-transparent"
-            }`}
-            data-testid={`status-filter-${s}`}
-          >
-            {t(`manageAssets.status.${s}`)}
-          </button>
-        );
-      })}
+    <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1" role="group" aria-label={t("manageAssets.status.label")}>
+      {ACTION_STATUSES.map((s) => statusChip(s, false))}
+      <span className="mx-1 h-4 w-px shrink-0 bg-gray-200" aria-hidden />
+      {INFO_STATUSES.map((s) => statusChip(s, true))}
     </div>
   );
 
@@ -300,7 +322,14 @@ export default function ManageAssetsPage() {
     list = (
       <ul className="space-y-2" data-testid="assets-cards">
         {rows.map((asset) => (
-          <li key={asset.id} className="rounded-lg border border-gray-200 p-3 space-y-2" data-testid={`asset-card-${asset.id}`}>
+          <li
+            key={asset.id}
+            className={cn(
+              "rounded-lg border border-gray-200 p-3 space-y-2",
+              asset.needsAttention && "border-l-4 border-l-warning",
+            )}
+            data-testid={`asset-card-${asset.id}`}
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-brand-deep break-words">{asset.symbol}</p>
@@ -315,6 +344,7 @@ export default function ManageAssetsPage() {
               <AssetClassBadge asset={asset} />
               <AssetStatusChips asset={asset} />
             </div>
+            <PrimaryActionButton asset={asset} onOpen={(m) => openModal(asset, m)} className="w-full" />
           </li>
         ))}
       </ul>
@@ -329,13 +359,13 @@ export default function ManageAssetsPage() {
               <TableHead>{t("manageAssets.columns.assetClass")}</TableHead>
               <TableHead>{t("manualUpdates.status")}</TableHead>
               <TableHead className="text-right">{t("manualUpdates.value")}</TableHead>
-              <TableHead className="w-12 text-right"><span className="sr-only">{t("common.actions")}</span></TableHead>
+              <TableHead className="text-right"><span className="sr-only">{t("common.actions")}</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((asset) => (
               <TableRow key={asset.id} className="hover:bg-accent/30" data-testid={`asset-row-${asset.id}`}>
-                <TableCell className="max-w-[18rem]">
+                <TableCell className={cn("max-w-[18rem]", asset.needsAttention && "border-l-4 border-l-warning")}>
                   <div className="font-medium">{asset.symbol}</div>
                   <AssetMeta asset={asset} />
                 </TableCell>
@@ -345,7 +375,10 @@ export default function ManageAssetsPage() {
                   <AssetValue asset={asset} currency={portfolioCurrency} locale={locale} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <AssetActionsMenu asset={asset} onOpen={(m) => openModal(asset, m)} />
+                  <div className="flex items-center justify-end gap-1.5">
+                    <PrimaryActionButton asset={asset} onOpen={(m) => openModal(asset, m)} />
+                    <AssetActionsMenu asset={asset} onOpen={(m) => openModal(asset, m)} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -373,6 +406,15 @@ export default function ManageAssetsPage() {
 
         <DetachedTermsBanner count={firstPage?.detachedTermsCount ?? 0} />
 
+        {summary && (
+          <AttentionSummary
+            counts={summary.statusCounts}
+            attention={summary.totals.attention}
+            active={status}
+            onSelect={setStatus}
+          />
+        )}
+
         <Card>
           <CardContent className="p-4 sm:p-6 space-y-4">
             <div className="flex flex-col gap-3">
@@ -392,9 +434,20 @@ export default function ManageAssetsPage() {
             </div>
 
             {!isLoading && !isError && (
-              <p className="text-xs text-muted-foreground" data-testid="assets-count">
-                {t("manageAssets.count", { count: total })}
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground" data-testid="assets-count">
+                  {t("manageAssets.count", { count: total })}
+                </p>
+                <Select value={sort} onValueChange={(v) => setSort(v as AssetsSort)}>
+                  <SelectTrigger className="h-8 w-auto gap-2 text-xs" aria-label={t("manageAssets.sort.label")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="attention">{t("manageAssets.sort.attention")}</SelectItem>
+                    <SelectItem value="name">{t("manageAssets.sort.name")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
             {list}
