@@ -29,7 +29,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      assetsDir: 'assets',
+      // Not 'assets': that would collide with the /assets (Manage Assets) route,
+      // making direct navigation hit the build directory instead of index.html.
+      assetsDir: 'static',
       sourcemap: true,
       rollupOptions: {
         output: {
