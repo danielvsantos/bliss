@@ -50,6 +50,7 @@ const FEATURE_MAP = {
   'llm-provider-abstraction': { title: 'LLM Provider Abstraction',   order: 20, description: 'Factory-backed adapter layer for Gemini, OpenAI, and Anthropic with a unified contract' },
   'subscriptions':            { title: 'Subscriptions & Recurring Charges', order: 21, description: 'Deterministic recurring-charge detection (category signal + bounded interval heuristic), the Subscriptions page, and the per-merchant Confirm/Dismiss learning loop' },
   'passive-income':           { title: 'Passive Income Projection',  order: 22, description: 'Income terms on assets, allowance/benefit streams, the 12/24/36-month projection engine, ETFs in SecurityMaster, and detached terms' },
+  'integrations':             { title: 'Integrations & API Tokens',  order: 23, description: 'Tenant-scoped, revocable API tokens for AI agents and external systems: Read-only / Read & write role cap, central denylist, attribution log' },
 };
 
 // Maps feature slugs to actual filenames per layer (from docs/specs/)
@@ -76,6 +77,7 @@ const LAYER_FILES = {
   'llm-provider-abstraction': { backend: '20-llm-provider-abstraction.md' },
   'subscriptions':            { api: '21-subscriptions-api.md', backend: '21-subscriptions-detection.md', frontend: '21-subscriptions.md' },
   'passive-income':           { api: '22-passive-income-api.md', backend: '22-passive-income.md', frontend: '22-passive-income.md' },
+  'integrations':             { api: '23-integrations-api.md', frontend: '23-integrations.md' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────

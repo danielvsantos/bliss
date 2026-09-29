@@ -14,7 +14,7 @@ Monorepo with four services behind a single `.env` file:
 | `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
 | `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters, `portfolio` (passive income projection engine, asset class classifier, ETF look-through) |
 
-**Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues.
+**Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues. AI agents and other systems call the API with **integration tokens** (`Authorization: Bearer bliss_…`, see below).
 
 **Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
 
@@ -68,6 +68,10 @@ Never modify the schema without creating a migration. Both API and backend refer
 
 Use BullMQ queues for any CPU-intensive or long-running operation. API routes should validate, enqueue, and return `202 Accepted`.
 
+### Integration tokens: classify every new API route
+
+AI agents, scripts and other systems authenticate with `Authorization: Bearer bliss_<prefix>_<secret>` (#84). `withAuth` turns a token into a normal `req.user` acting as the admin who created the integration, with the role capped (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, **never `admin`**), so existing viewer/admin checks apply unchanged. A central denylist in `apps/api/utils/integrationPolicy.js` (also applied by the root `apps/api/middleware.js`) refuses sessions, users, integrations, the Plaid connection lifecycle and account/category/tenant writes. **Every new route under `apps/api/pages/api` must be added to `apps/api/__tests__/unit/middleware/integrationRouteMatrix.test.ts`** with its expected token outcome — the test fails otherwise. Add the route to `INTEGRATION_DENYLIST` if a token must not reach it, and never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route. Tokens are stored as SHA-256 hash + public prefix only. See [`docs/specs/api/23-integrations-api.md`](docs/specs/api/23-integrations-api.md) and the guide [`docs/guides/connecting-ai-agents.md`](docs/guides/connecting-ai-agents.md).
+
 ### Encryption
 
 Sensitive fields (transaction descriptions, account numbers, Plaid access tokens) are encrypted at rest with AES-256-GCM. Prisma middleware handles encrypt/decrypt transparently. The `@bliss/shared` encryption module is the single implementation.
@@ -95,10 +99,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 3,261 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 1,076 tests (unit + integration) |
+| All | `pnpm test` | -- | 3,913 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 1,634 tests (unit + integration) |
 | Backend | `pnpm test:backend` | Jest (CJS) | 1,225 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 960 tests |
+| Frontend | `pnpm test:web` | Vitest + RTL | 1,054 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -332,6 +336,8 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Storage: `STORAGE_BACKEND`, `LOCAL_STORAGE_DIR`, `GCS_BUCKET_NAME`, `GCS_SERVICE_ACCOUNT_JSON`
 - Key rotation: `ENCRYPTION_SECRET_PREVIOUS`, `JWT_SECRET_PREVIOUS`
 - Observability: `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`
+
+Integration tokens (#84) need **no** environment variables — admins create them in Settings → Integrations.
 
 See `.env.example` for the full reference.
 

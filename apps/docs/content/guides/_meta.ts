@@ -11,6 +11,7 @@ export default {
   'choosing-categories': 'Choosing the Right Category',
   'tracking-subscriptions': 'Tracking Subscriptions',
   'financial-insights': 'Financial Insights',
+  'connecting-ai-agents': 'Connecting AI Agents & Other Systems',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
   maintenance: 'Maintenance',
   'key-rotation': 'Key Rotation',

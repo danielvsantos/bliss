@@ -262,6 +262,10 @@ Two separate APIs are used:
 - `SectionLabel`: "Classification Pipeline" — read-only explanation of the 4-tier waterfall (Exact Match, Vector Match, Global Vector, LLM)
 - Footer: Save button (calls `updateTenantSettings.mutate`) + `SaveConfirmation`. Disabled when thresholds are invalid.
 
+### Tab: Maintenance / Integrations (admin only)
+
+Both tabs render only when `user?.role === 'admin'`. **Maintenance** hosts `MaintenanceTab` (rebuild triggers). **Integrations** (`KeyRound` icon) hosts `IntegrationsTab`, where admins create and revoke integration tokens for AI agents and other systems — see [`23-integrations.md`](./23-integrations.md).
+
 ### Data Flow
 
 1. **Initialization**: State loaded from `localStorage` via `getTenantMeta()` for instant render, then refreshed from API via `updateTenantMetaFromAPI(user.tenant.id)`.
