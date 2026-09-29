@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   availableModals,
+  primaryAction,
   daysSince,
   isAssetModal,
   priceUrgency,
@@ -37,6 +38,15 @@ describe('manage-assets helpers', () => {
     expect(isAssetModal('assetClass')).toBe(true);
     expect(isAssetModal('nope')).toBe(false);
     expect(isAssetModal(null)).toBe(false);
+  });
+
+  it('primaryAction picks the fix for the most urgent problem', () => {
+    expect(primaryAction(asset({ processingHint: 'MANUAL', isPriceStale: true, incomeDataStatus: 'MISSING' }))).toBe('price');
+    expect(primaryAction(asset({ categoryType: 'Debt', processingHint: 'AMORTIZING_LOAN', incomeAssetClass: null, debtTermsMissing: true }))).toBe('debt');
+    expect(primaryAction(asset({ incomeDataStatus: 'MISSING' }))).toBe('income');
+    // Nothing to fix from this page: a lot mismatch, or a clean row.
+    expect(primaryAction(asset({ hasLotMismatch: true }))).toBeNull();
+    expect(primaryAction(asset({}))).toBeNull();
   });
 
   it('availableModals follows the asset type', () => {

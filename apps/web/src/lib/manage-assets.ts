@@ -38,6 +38,18 @@ export function isAssetModal(value: string | null): value is AssetModal {
   return value != null && (ASSET_MODALS as readonly string[]).includes(value);
 }
 
+/**
+ * The one modal that fixes a row's most urgent problem, shown as a visible
+ * button (the ⋯ menu keeps the rest). Null when there is nothing to fix from
+ * this page (a lot mismatch needs the missing transactions, not a modal).
+ */
+export function primaryAction(asset: ManagedAsset): AssetModal | null {
+  if (asset.isPriceStale && asset.processingHint === 'MANUAL') return 'price';
+  if (asset.debtTermsMissing) return 'debt';
+  if (asset.incomeDataStatus === 'MISSING' && asset.incomeAssetClass) return 'income';
+  return null;
+}
+
 /** Which modals apply to a row, in overflow-menu order. */
 export function availableModals(asset: ManagedAsset): AssetModal[] {
   const out: AssetModal[] = [];

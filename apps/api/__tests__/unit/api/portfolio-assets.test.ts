@@ -144,17 +144,82 @@ afterEach(() => {
 const itemsCall = () => mockPrisma.portfolioItem.findMany.mock.calls.find((c: any[]) => c[0].select.id)![0];
 
 describe('GET /api/portfolio/assets', () => {
+  it('sorts by urgency by default: stale price, missing terms, lot mismatch, then A–Z', async () => {
+    const res = await call();
+    // 3 stale (45d) · 2 VWCE income missing · 5 KO lot mismatch · rest by group/symbol.
+    expect(res._body.items.map((r: any) => r.id)).toEqual([3, 2, 5, 6, 4, 1, 7]);
+    expect(res._body.items.map((r: any) => r.needsAttention)).toEqual([true, true, true, false, false, false, false]);
+    expect(res._body.totals).toEqual({ count: 7, attention: 3 });
+    expect(res._body.items[0]).not.toHaveProperty('urgency');
+  });
+
+  it('ranks price urgency critical (no value / 90d+) > warning (60d+) > stale (30d+)', async () => {
+    const manual = cat({ name: 'Real Estate', type: 'Asset', group: 'Real Estate', processingHint: 'MANUAL', defaultCategoryCode: 'REAL_ESTATE' });
+    mockPrisma.portfolioItem.findMany.mockImplementation(async (args: any) =>
+      args.select.id
+        ? [
+            item({ id: 11, symbol: 'A-stale', category: manual, quantity: '1' }),
+            item({ id: 12, symbol: 'B-warning', category: manual, quantity: '1' }),
+            item({ id: 13, symbol: 'C-critical', category: manual, quantity: '1' }),
+            item({ id: 14, symbol: 'D-none', category: manual, quantity: '1' }),
+          ]
+        : []);
+    mockPrisma.manualAssetValue.groupBy.mockResolvedValue([
+      { assetId: 11, _max: { date: daysAgo(40) } },
+      { assetId: 12, _max: { date: daysAgo(70) } },
+      { assetId: 13, _max: { date: daysAgo(120) } },
+    ]);
+    const res = await call();
+    expect(res._body.items.map((r: any) => r.id)).toEqual([13, 14, 12, 11]);
+  });
+
+  it('flags amortizing loans without debt terms (not credit cards, not loans with terms)', async () => {
+    const mortgage = cat({ name: 'Mortgage', type: 'Debt', group: 'Real Estate Loan', processingHint: 'AMORTIZING_LOAN', defaultCategoryCode: 'MORTGAGE' });
+    const card = cat({ name: 'Credit Card Debt', type: 'Debt', group: 'Personal Debt', processingHint: 'SIMPLE_LIABILITY', defaultCategoryCode: 'CREDIT_CARD_DEBT' });
+    mockPrisma.portfolioItem.findMany.mockImplementation(async (args: any) =>
+      args.select.id
+        ? [
+            item({ id: 21, symbol: 'Loan A', category: mortgage, quantity: '0', debtTerms: null }),
+            item({ id: 22, symbol: 'Loan B', category: mortgage, quantity: '0', debtTerms: { id: 1 } }),
+            item({ id: 23, symbol: 'Visa', category: card, quantity: '0', debtTerms: null }),
+          ]
+        : []);
+    const res = await call();
+    const byId = (id: number) => res._body.items.find((r: any) => r.id === id);
+    expect(byId(21)).toMatchObject({ debtTermsMissing: true, needsAttention: true });
+    expect(byId(22)).toMatchObject({ debtTermsMissing: false, needsAttention: false });
+    expect(byId(23)).toMatchObject({ debtTermsMissing: false, needsAttention: false });
+    expect(res._body.items[0].id).toBe(21);
+    expect(res._body.statusCounts.debtTermsMissing).toBe(1);
+    expect((await call({ status: 'debtTermsMissing' }))._body.items.map((r: any) => r.id)).toEqual([21]);
+  });
+
+  it('returns counts per status over the current filters, ignoring the status filter', async () => {
+    const expected = { stale: 1, debtTermsMissing: 0, incomeMissing: 1, lotMismatch: 1, dividendOverride: 1, assetClassOverridden: 1 };
+    expect((await call())._body.statusCounts).toEqual(expected);
+    // Same counts while a status filter is applied, so the summary doesn't collapse.
+    const filtered = await call({ status: 'lotMismatch' });
+    expect(filtered._body.statusCounts).toEqual(expected);
+    expect(filtered._body.totals).toEqual({ count: 1, attention: 3 });
+    // Other filters do narrow the counts.
+    expect((await call({ search: 'coca' }))._body.statusCounts).toMatchObject({ stale: 0, lotMismatch: 1, incomeMissing: 0 });
+  });
+
+  it('rejects an unknown sort', async () => {
+    expect((await call({ sort: 'value' }))._status).toBe(400);
+  });
+
   it('rejects other methods', async () => {
     const res = await call({}, 'POST');
     expect(res._status).toBe(405);
     expect(res.setHeader).toHaveBeenCalledWith('Allow', ['GET']);
   });
 
-  it('lists every asset type in a deterministic order (group, symbol, id)', async () => {
-    const res = await call();
+  it('sort=name lists every asset type in a deterministic order (group, symbol, id)', async () => {
+    const res = await call({ sort: 'name' });
     expect(res._status).toBe(200);
     expect(res._body.items.map((r: any) => r.id)).toEqual([6, 2, 3, 4, 1, 7, 5]);
-    expect(res._body.totals).toEqual({ count: 7 });
+    expect(res._body.totals).toEqual({ count: 7, attention: 3 });
     expect(res._body.nextCursor).toBeNull();
     expect(res._body.portfolioCurrency).toBe('EUR');
     expect(res._body.detachedTermsCount).toBe(2);
@@ -281,7 +346,7 @@ describe('GET /api/portfolio/assets', () => {
 
     it('assetClass filters in memory and is validated', async () => {
       const res = await call({ assetClass: 'STOCK' });
-      expect(res._body.items.map((r: any) => r.id)).toEqual([1, 5]);
+      expect(res._body.items.map((r: any) => r.id)).toEqual([5, 1]);
       expect((await call({ assetClass: 'BANANA' }))._status).toBe(400);
     });
 
@@ -329,13 +394,17 @@ describe('GET /api/portfolio/assets', () => {
         pages += 1;
       } while (cursor && pages < 10);
       expect(pages).toBe(3);
-      expect(seen).toEqual([6, 2, 3, 4, 1, 7, 5]);
+      expect(seen).toEqual([3, 2, 5, 6, 4, 1, 7]);
     });
 
-    it('only enriches the page rows', async () => {
-      await call({ limit: '2' });
-      // Page = [6 (Art, manual), 2 (VWCE)] → only 6 is looked up.
-      expect(mockPrisma.manualAssetValue.groupBy.mock.calls[0][0].where.assetId.in).toEqual([6]);
+    it('looks up the last manual value of every manual row once, and converts FX only for the page', async () => {
+      const { convertCurrency } = await import('../../../utils/currencyConversion.js');
+      const res = await call({ limit: '1' });
+      expect(mockPrisma.manualAssetValue.groupBy).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.manualAssetValue.groupBy.mock.calls[0][0].where.assetId.in.sort()).toEqual([3, 6]);
+      expect(res._body.items).toHaveLength(1);
+      // One USD→display rate for the page, reused across rows.
+      expect(vi.mocked(convertCurrency).mock.calls.length).toBeLessThanOrEqual(2);
     });
 
     it('facets only on the first page', async () => {

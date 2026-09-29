@@ -38,6 +38,8 @@ export function normalizeFilters(filters: ManageAssetsFilters): ManageAssetsFilt
   if (filters.search?.trim()) out.search = filters.search.trim();
   if (filters.status) out.status = filters.status;
   if (filters.includeClosed) out.includeClosed = true;
+  // `attention` is the server default, so only the non-default sort is sent.
+  if (filters.sort === 'name') out.sort = 'name';
   return out;
 }
 

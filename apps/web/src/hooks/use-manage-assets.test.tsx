@@ -35,6 +35,9 @@ describe('normalizeFilters', () => {
     expect(normalizeFilters({ search: ' ko ', accountId: 0, status: 'stale', includeClosed: true, assetClass: 'REIT', type: 'Stocks' }))
       .toEqual({ search: 'ko', accountId: 0, status: 'stale', includeClosed: true, assetClass: 'REIT', type: 'Stocks' });
     expect(manageAssetsKeys.list(normalizeFilters({ search: '' }))).toEqual(['portfolio-assets', 'list', {}]);
+    // `attention` is the server default, so only `name` is sent.
+    expect(normalizeFilters({ sort: 'attention' })).toEqual({});
+    expect(normalizeFilters({ sort: 'name' })).toEqual({ sort: 'name' });
   });
 });
 

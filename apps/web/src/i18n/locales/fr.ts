@@ -2504,6 +2504,7 @@ const fr = {
       clear: "Effacer les filtres",
     },
     status: {
+      debtTermsMissing: "Conditions de dette manquantes",
       label: "Filtrer par statut",
       stale: "Prix obsolète",
       incomeMissing: "Conditions de revenus manquantes",
@@ -2515,10 +2516,28 @@ const fr = {
       noPrice: "Pas encore de prix",
     },
     actions: {
+      addIncomeTerms: "Ajouter les conditions de revenus",
+      addDebtTerms: "Ajouter les conditions de dette",
       menu: "Actions pour {{symbol}}",
       price: "Mettre à jour le prix",
       history: "Historique des prix",
       assetClass: "Classe d'actif",
+    },
+    attention: {
+      title: "{{count}} éléments requièrent votre attention",
+      title_one: "{{count}} élément requiert votre attention",
+      title_other: "{{count}} éléments requièrent votre attention",
+      allClear: "Tout est à jour",
+      allClearHint: "Les prix sont à jour et chaque prêt et position générant des revenus a ses conditions.",
+      stale: "Prix à mettre à jour",
+      debtTermsMissing: "Prêts sans conditions",
+      incomeMissing: "Conditions de revenus manquantes",
+      lotMismatch: "Incohérences de lots à vérifier",
+    },
+    sort: {
+      label: "Trier",
+      attention: "À traiter en premier",
+      name: "A–Z",
     },
     detached: {
       title: "{{count}} ensembles de conditions de revenus sont détachés",

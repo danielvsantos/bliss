@@ -218,6 +218,8 @@ components:
         hasIncomeTerms: { type: boolean }
         hasDividendOverride: { type: boolean }
         hasDebtTerms: { type: boolean }
+        debtTermsMissing: { type: boolean, description: An amortizing loan with no debt terms. }
+        needsAttention: { type: boolean, description: "Any action status: stale price, debt or income terms missing, lot mismatch." }
         isPriceStale: { type: boolean, description: "MANUAL item with quantity > 0 and no manual value in 30+ days (or none)." }
         incomeDataStatus:
           type: string
@@ -234,6 +236,17 @@ components:
           type: object
           properties:
             count: { type: integer, description: Rows matching the filters across all pages. }
+            attention: { type: integer, description: Rows with needsAttention, over the filters but ignoring `status`. }
+        statusCounts:
+          type: object
+          description: Rows per status over the current filters, ignoring the `status` filter.
+          properties:
+            stale: { type: integer }
+            debtTermsMissing: { type: integer }
+            incomeMissing: { type: integer }
+            lotMismatch: { type: integer }
+            dividendOverride: { type: integer }
+            assetClassOverridden: { type: integer }
         detachedTermsCount: { type: integer }
         facets:
           type: object
@@ -287,7 +300,11 @@ paths:
           in: query
           schema:
             type: string
-            enum: [stale, incomeMissing, dividendOverride, lotMismatch, assetClassOverridden]
+            enum: [stale, debtTermsMissing, incomeMissing, lotMismatch, dividendOverride, assetClassOverridden]
+        - name: sort
+          in: query
+          description: "`attention` (default) puts the most urgent rows first (critical/warning/stale price, debt terms missing, income terms missing, lot mismatch); `name` is A–Z by group and symbol."
+          schema: { type: string, enum: [attention, name], default: attention }
         - name: includeClosed
           in: query
           description: Include items with quantity 0 (debts are always included).

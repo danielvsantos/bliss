@@ -2546,6 +2546,7 @@ const en = {
       clear: "Clear filters",
     },
     status: {
+      debtTermsMissing: "Debt terms missing",
       label: "Filter by status",
       stale: "Price stale",
       incomeMissing: "Income terms missing",
@@ -2557,10 +2558,28 @@ const en = {
       noPrice: "No price yet",
     },
     actions: {
+      addIncomeTerms: "Add income terms",
+      addDebtTerms: "Add debt terms",
       menu: "Actions for {{symbol}}",
       price: "Update price",
       history: "Price history",
       assetClass: "Asset class",
+    },
+    attention: {
+      title: "{{count}} items need your attention",
+      title_one: "{{count}} item needs your attention",
+      title_other: "{{count}} items need your attention",
+      allClear: "All caught up",
+      allClearHint: "Prices are current and every loan and income-producing holding has its terms.",
+      stale: "Prices to update",
+      debtTermsMissing: "Loans without terms",
+      incomeMissing: "Missing income terms",
+      lotMismatch: "Lot mismatches to review",
+    },
+    sort: {
+      label: "Sort",
+      attention: "Needs attention first",
+      name: "A–Z",
     },
     detached: {
       title: "{{count}} sets of income terms are detached",

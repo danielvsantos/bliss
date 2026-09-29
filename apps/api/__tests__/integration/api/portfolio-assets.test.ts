@@ -133,6 +133,19 @@ describe('Manage Assets API (integration)', () => {
     expect(fresh.incomeDataStatus).toBe('MISSING');
   });
 
+  it('puts what needs attention first and counts it (Postgres)', async () => {
+    const res = await list(token);
+    // stale price (45d) · mortgage without debt terms · then income terms missing
+    // (the house, and both stocks — no SecurityMaster dividend data) by group/symbol.
+    expect(res._body.items.map((r: any) => r.id)).toEqual([ids.flat, ids.mortgage, ids.freshFlat, ids.stock, ids.override]);
+    expect(res._body.totals).toEqual({ count: 5, attention: 5 });
+    expect(res._body.statusCounts).toEqual({
+      stale: 1, debtTermsMissing: 1, incomeMissing: 3, lotMismatch: 1, dividendOverride: 0, assetClassOverridden: 1,
+    });
+    const byName = await list(token, { sort: 'name' });
+    expect(byName._body.items.map((r: any) => r.id)).not.toEqual(res._body.items.map((r: any) => r.id));
+  });
+
   it('filters on the server', async () => {
     const ids_ = async (q: Record<string, string>) => (await list(token, q))._body.items.map((r: any) => r.id).sort();
     expect(await ids_({ type: 'Real Estate' })).toEqual([ids.flat, ids.freshFlat].sort());
