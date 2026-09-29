@@ -51,9 +51,17 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: vi.fn(() => ({ toast: vi.fn() }))
 }));
 vi.mock('@/components/entities/transaction-form', () => ({
-  TransactionForm: ({ transaction }: { transaction?: { description?: string } }) => (
-    <div data-testid="transaction-form">{transaction?.description}</div>
-  )
+  // Mirrors react-hook-form: the initial values are captured once on mount.
+  TransactionForm: ({ transaction, onClose }: { transaction?: { description?: string } | null; onClose: (refetch?: boolean) => void }) => {
+    const [initial] = React.useState(transaction?.description ?? '');
+    return (
+      <div data-testid="transaction-form">
+        <span data-testid="form-initial">{initial}</span>
+        <span data-testid="form-target">{transaction?.description}</span>
+        <button onClick={() => onClose(true)}>mock-save</button>
+      </div>
+    );
+  }
 }));
 
 describe('TransactionsPage', () => {
@@ -142,6 +150,52 @@ describe('TransactionsPage', () => {
 
     const dialog = await screen.findByTestId('transaction-form');
     expect(dialog).toBeInTheDocument();
+  });
+
+  it('re-initialises the edit form for each transaction even if the previous dialog is still animating out', async () => {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(
+      mockQueryResult({
+        transactions: [
+          { id: 100, transaction_date: '2023-11-20', description: 'Whole Foods Market', debit: 45.5, credit: 0, currency: 'USD', accountId: 1, categoryId: 10 },
+          { id: 101, transaction_date: '2023-11-21', description: 'Trader Joes', debit: 12, credit: 0, currency: 'USD', accountId: 1, categoryId: 10 },
+        ],
+        total: 2, page: 1, limit: 25, totalPages: 1,
+      }),
+    );
+
+    // Simulate a CSS exit animation that has not finished: Radix Presence then
+    // keeps the closed DialogContent (and the form inside it) mounted.
+    const realGetComputedStyle = window.getComputedStyle;
+    const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element, pseudo?: string | null) => {
+      const style = realGetComputedStyle(el, pseudo);
+      return new Proxy(style, {
+        get(target, prop) {
+          if (prop === 'animationName') return el.getAttribute('data-state') === 'closed' ? 'exit' : 'enter';
+          if (prop === 'display') return 'block';
+          const value = Reflect.get(target, prop);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    });
+
+    try {
+      renderPage();
+      fireEvent.click(screen.getByText('Whole Foods Market'));
+      expect(await screen.findByTestId('form-initial')).toHaveTextContent('Whole Foods Market');
+
+      fireEvent.click(screen.getByRole('button', { name: 'mock-save' }));
+      fireEvent.click(screen.getAllByText('Trader Joes')[0]);
+
+      await waitFor(() => {
+        const targets = screen.getAllByTestId('form-target');
+        expect(targets[targets.length - 1]).toHaveTextContent('Trader Joes');
+      });
+      const initials = screen.getAllByTestId('form-initial');
+      expect(initials).toHaveLength(1);
+      expect(initials[0]).toHaveTextContent('Trader Joes');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('has clear filters button when filters are active', async () => {
