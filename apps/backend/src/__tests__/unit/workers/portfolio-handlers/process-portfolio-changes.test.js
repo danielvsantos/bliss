@@ -38,6 +38,7 @@ jest.mock('../../../../../prisma/prisma.js', () => ({
   },
   portfolioItem: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     createMany: jest.fn(),
@@ -119,6 +120,7 @@ function installEmptyTenantMocks() {
   prisma.transaction.findFirst.mockResolvedValue(null);
   prisma.portfolioItem.findMany.mockResolvedValue([]);
   prisma.portfolioItem.findUnique.mockResolvedValue(null);
+  prisma.portfolioItem.findFirst.mockResolvedValue(null);
   prisma.portfolioItem.create.mockResolvedValue({ id: 1 });
   prisma.portfolioItem.createMany.mockResolvedValue({ count: 0 });
   prisma.portfolioItem.update.mockResolvedValue({});
@@ -408,5 +410,97 @@ describe('process-portfolio-changes — income terms & new security symbols', ()
     expect(enqueueEvent).toHaveBeenCalledWith('PORTFOLIO_CHANGES_PROCESSED', expect.objectContaining({
       newSecuritySymbols: ['KO'],
     }));
+  });
+});
+
+// ─── Scoped update re-keys a transaction (#86 ghost items) ──────────────────
+//
+// Editing the description of a `category:description` asset (e.g. Real Estate)
+// moves the transaction to a new item. The old item must not linger as an
+// empty "ghost" still carrying its last market value.
+describe('process-portfolio-changes — scoped update reconciles the previous item', () => {
+  const makeRekeyedTx = (overrides = {}) => ({
+    id: 42, tenantId: 'tenant-1', categoryId: 7, accountId: 5, currency: 'EUR',
+    transaction_date: new Date('2026-03-01'), year: 2026, month: 3,
+    credit: 0, debit: 200000, ticker: 'Real Estate:Flat Lisbon', portfolioItemId: 10,
+    category: { id: 7, type: 'Investments', group: 'Real Estate' },
+    account: { countryId: 'PT' },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    installEmptyTenantMocks();
+  });
+
+  it('prunes the old item when its last transaction moves to a new key, moving its income terms', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeRekeyedTx());
+    prisma.portfolioItem.create.mockResolvedValue({ id: 11, symbol: 'Real Estate:Flat Lisbon', accountId: 5, categoryId: 7, source: 'MANUAL' });
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 11, transactions: [] });
+    prisma.portfolioItem.findFirst.mockResolvedValue({
+      id: 10, symbol: 'Real Estate:Flat', accountId: 5, categoryId: 7,
+      transactions: [], category: { type: 'Investments' },
+    });
+    prisma.incomeTerms.findMany.mockResolvedValue([{ id: 900, assetId: 10 }]);
+
+    await processPortfolioChanges(makeJob({ transactionId: 42 }));
+
+    expect(prisma.portfolioItem.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 10, tenantId: 'tenant-1' },
+    }));
+    expect(prisma.incomeTerms.update).toHaveBeenCalledWith({ where: { id: 900 }, data: { assetId: 11 } });
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [10] } } });
+    const payload = enqueueEvent.mock.calls.find(([t]) => t === 'PORTFOLIO_CHANGES_PROCESSED')[1];
+    expect(payload.portfolioItemIds).toContain(11);
+    expect(payload.portfolioItemIds).not.toContain(10);
+  });
+
+  it('recalculates (does not prune) the old item when it still has transactions', async () => {
+    const { calculatePortfolioItemState } = require('../../../../utils/portfolioItemStateCalculator.js');
+    prisma.transaction.findUnique.mockResolvedValue(makeRekeyedTx());
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce({ id: 11, symbol: 'Real Estate:Flat Lisbon', source: 'MANUAL' })
+      .mockResolvedValueOnce({ id: 11, transactions: [] });
+    prisma.portfolioItem.findFirst.mockResolvedValue({
+      id: 10, symbol: 'Real Estate:Flat', accountId: 5, categoryId: 7,
+      transactions: [{ id: 43, debit: 1000 }], category: { type: 'Investments' },
+    });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42 }));
+
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(calculatePortfolioItemState).toHaveBeenCalledWith([{ id: 43, debit: 1000 }]);
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10 } }));
+    const payload = enqueueEvent.mock.calls.find(([t]) => t === 'PORTFOLIO_CHANGES_PROCESSED')[1];
+    expect(payload.portfolioItemIds).toEqual(expect.arrayContaining([10, 11]));
+  });
+
+  it('does not touch the previous item when the transaction stays on the same item', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeRekeyedTx({ portfolioItemId: 11 }));
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce({ id: 11, symbol: 'Real Estate:Flat Lisbon', source: 'MANUAL' })
+      .mockResolvedValueOnce({ id: 11, transactions: [] });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42 }));
+
+    expect(prisma.portfolioItem.findFirst).not.toHaveBeenCalled();
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('unlinks and prunes the old item when the transaction no longer maps to any asset', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeRekeyedTx({
+      ticker: null, category: { id: 3, type: 'Expense', group: 'Housing' },
+    }));
+    prisma.portfolioItem.findFirst.mockResolvedValue({
+      id: 10, symbol: 'Real Estate:Flat', accountId: 5, categoryId: 7,
+      transactions: [], category: { type: 'Investments' },
+    });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42 }));
+
+    expect(prisma.transaction.update).toHaveBeenCalledWith({ where: { id: 42 }, data: { portfolioItemId: null } });
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [10] } } });
   });
 });
