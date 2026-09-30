@@ -314,6 +314,9 @@ const fr = {
         banks: "Banques",
         connections: "Connexions",
         integrations: "Intégrations",
+        ai_classification: "Classification IA",
+        maintenance: "Maintenance",
+        admin_section: "Administration",
       },
       general: {
         title: "Paramètres généraux",
