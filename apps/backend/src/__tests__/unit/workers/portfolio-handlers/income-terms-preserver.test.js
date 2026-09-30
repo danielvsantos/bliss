@@ -10,10 +10,16 @@ const {
   pruneItemsPreservingTerms,
 } = require('../../../../workers/portfolio-handlers/income-terms-preserver');
 
-function makeTx({ income = [], debt = [], overrides = [] } = {}) {
+// findMany mocks honour `where.assetId.in`, so the orphan lookup and the
+// "does the target already own terms?" lookup see different rows.
+const byAssetIds = (rows) => jest.fn(({ where }) =>
+  Promise.resolve(rows.filter((r) => where.assetId.in.includes(r.assetId))));
+
+function makeTx({ income = [], debt = [], overrides = [], manual = [] } = {}) {
   return {
-    incomeTerms: { findMany: jest.fn().mockResolvedValue(income), update: jest.fn().mockResolvedValue({}) },
-    debtTerms: { findMany: jest.fn().mockResolvedValue(debt), update: jest.fn().mockResolvedValue({}) },
+    incomeTerms: { findMany: byAssetIds(income), update: jest.fn().mockResolvedValue({}) },
+    debtTerms: { findMany: byAssetIds(debt), update: jest.fn().mockResolvedValue({}) },
+    manualAssetValue: { findMany: byAssetIds(manual), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     portfolioItem: {
       findMany: jest.fn().mockResolvedValue(overrides),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -121,6 +127,43 @@ describe('preserveTermsBeforePrune — asset class override (#79)', () => {
     const res = await preserveTermsBeforePrune(tx, [orphan], []);
     expect(res).toEqual({ moved: 0, detached: 1 });
     expect(tx.portfolioItem.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('preserveTermsBeforePrune — manual values & occupied targets (#86)', () => {
+  const target = { id: 2, symbol: 'Real Estate:Flat Lisbon', accountId: 5, categoryId: 20 };
+
+  it('moves user-entered manual values (not auto-seeded ones) to the replacement', async () => {
+    const tx = makeTx({ manual: [{ assetId: 1 }] });
+    const res = await preserveTermsBeforePrune(tx, [orphan], [target]);
+    expect(res).toEqual({ moved: 1, detached: 0 });
+    const userOnly = {
+      assetId: { in: [1] },
+      OR: [{ notes: null }, { notes: { not: 'Auto-seeded from purchase transaction' } }],
+    };
+    expect(tx.manualAssetValue.findMany).toHaveBeenCalledWith({ where: userOnly, select: { assetId: true } });
+    expect(tx.manualAssetValue.updateMany).toHaveBeenCalledWith({ where: userOnly, data: { assetId: 2 } });
+  });
+
+  it('does not move manual values when there is no clear replacement', async () => {
+    const tx = makeTx({ manual: [{ assetId: 1 }] });
+    await preserveTermsBeforePrune(tx, [orphan], []);
+    expect(tx.manualAssetValue.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('detaches income terms instead of colliding with terms the target already owns', async () => {
+    const tx = makeTx({
+      income: [{ id: 50, assetId: 1 }, { id: 70, assetId: 2 }],
+      debt: [{ id: 60, assetId: 1 }, { id: 80, assetId: 2 }],
+    });
+    const res = await preserveTermsBeforePrune(tx, [orphan], [target]);
+    expect(res).toEqual({ moved: 1, detached: 1 });
+    expect(tx.incomeTerms.update).toHaveBeenCalledTimes(1);
+    expect(tx.incomeTerms.update).toHaveBeenCalledWith({
+      where: { id: 50 },
+      data: { assetId: null, orphanedAt: expect.any(Date), orphanedLabel: 'Bonds - Old' },
+    });
+    expect(tx.debtTerms.update).not.toHaveBeenCalled();
   });
 });
 

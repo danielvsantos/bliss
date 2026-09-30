@@ -61,6 +61,18 @@ async function scheduleDebouncedJob(queue, jobName, jobData, aggregationKey, del
             [aggregationKey]: uniqueData,
         };
 
+        // `portfolioItemIds` is the scoped-valuation blast radius threaded through
+        // cash → analytics → value-portfolio-items. Every other field is last-write-
+        // wins, so without this union a later event (e.g. the new-state half of a
+        // transaction edit) silently dropped the items an earlier one needed revalued.
+        // A union only ever adds work.
+        if (aggregationKey !== 'portfolioItemIds' && (existingJob?.portfolioItemIds || jobData.portfolioItemIds)) {
+            aggregatedJobData.portfolioItemIds = [...new Set([
+                ...(existingJob?.portfolioItemIds || []),
+                ...(jobData.portfolioItemIds || []),
+            ])];
+        }
+
         // Schedule the new job with the aggregated data.
         const newJob = await queue.add(jobName, aggregatedJobData, {
             delay: delayInSeconds * 1000,

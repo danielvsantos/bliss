@@ -755,6 +755,10 @@ async function handlePut(req, res) {
         transactionId: existing.id,
         transaction_date: existing.transaction_date,
         portfolioItemId: existing.portfolioItemId,
+        // The item this transaction was linked to before the edit. The update
+        // above has already relinked it, so the portfolio worker needs this to
+        // reconcile the old item (prune it or zero it) instead of leaving a ghost.
+        previousPortfolioItemId: existing.portfolioItemId,
         currency: existing.currency,
         country: existing.account?.countryId,
         categoryType: existing.category?.type,
