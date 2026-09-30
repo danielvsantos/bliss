@@ -61,7 +61,10 @@ import type {
   CreateApiKeyResponse,
   CreateIntegrationRequest,
   CreateIntegrationResponse,
+  IntegrationAccessLevel,
+  KeyExpiryDays,
 } from '../types/integrations';
+import type { OAuthConsentResponse, OAuthDecisionResponse } from '../types/oauth';
 
 export interface AggregatedPortfolioHistory {
   date: string;
@@ -1201,6 +1204,26 @@ class APIClient {
 
   async discardIncomeTerms(id: number): Promise<void> {
     await this.client.delete(`/api/portfolio/income-terms/${id}`);
+  }
+
+  // --- OAuth consent for the MCP server (#89) ---
+
+  async getOAuthRequest(id: string): Promise<OAuthConsentResponse> {
+    const response = await this.client.get(`/api/oauth/requests/${encodeURIComponent(id)}`);
+    return response.data;
+  }
+
+  async approveOAuthRequest(
+    id: string,
+    body: { accessLevel: IntegrationAccessLevel; expiresInDays: KeyExpiryDays },
+  ): Promise<OAuthDecisionResponse> {
+    const response = await this.client.post(`/api/oauth/requests/${encodeURIComponent(id)}/approve`, body);
+    return response.data;
+  }
+
+  async denyOAuthRequest(id: string): Promise<OAuthDecisionResponse> {
+    const response = await this.client.post(`/api/oauth/requests/${encodeURIComponent(id)}/deny`);
+    return response.data;
   }
 
   // --- Integrations & API tokens (#84, admin only) ---

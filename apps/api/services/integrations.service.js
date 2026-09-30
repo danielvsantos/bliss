@@ -12,6 +12,9 @@ export const DESCRIPTION_MAX = 280;
 export const KEY_NAME_MAX = 80;
 export const DEFAULT_KEY_NAME = 'Default key';
 
+/** Relation include for serializeIntegration's `oauth` block (#89). */
+export const OAUTH_CLIENT_INCLUDE = { select: { name: true } };
+
 /** Columns safe to return for a key. keyHash is deliberately absent. */
 export const API_KEY_PUBLIC_SELECT = {
   id: true,
@@ -53,6 +56,10 @@ export function serializeIntegration(integration, now = new Date()) {
     updatedAt: integration.updatedAt,
     revokedAt: integration.revokedAt,
     status: integration.revokedAt ? 'revoked' : 'active',
+    // OAuth (#89): connections created by a consent screen manage their own key.
+    oauth: integration.oauthClientId
+      ? { clientName: integration.oauthClient?.name ?? integration.name, connectionExpiresAt: integration.connectionExpiresAt ?? null }
+      : null,
     keyCount: keys.length,
     activeKeyCount: keys.filter((k) => k.status === 'active').length,
     lastUsedAt,

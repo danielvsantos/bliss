@@ -14,7 +14,7 @@ Monorepo with four services behind a single `.env` file:
 | `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
 | `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters, `portfolio` (passive income projection engine, asset class classifier, ETF look-through) |
 
-**Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues. AI agents and other systems call the API with **integration tokens** (`Authorization: Bearer bliss_…`, see below).
+**Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues. AI agents and other systems call the API with **integration tokens** (`Authorization: Bearer bliss_…`, see below) — directly or through the **MCP server** at `POST /api/mcp`.
 
 **Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
 
@@ -70,7 +70,11 @@ Use BullMQ queues for any CPU-intensive or long-running operation. API routes sh
 
 ### Integration tokens: classify every new API route
 
-AI agents, scripts and other systems authenticate with `Authorization: Bearer bliss_<prefix>_<secret>` (#84). `withAuth` turns a token into a normal `req.user` acting as the admin who created the integration, with the role capped (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, **never `admin`**), so existing viewer/admin checks apply unchanged. A central denylist in `apps/api/utils/integrationPolicy.js` (also applied by the root `apps/api/middleware.js`) refuses sessions, users, integrations, the Plaid connection lifecycle and account/category/tenant writes. **Every new route under `apps/api/pages/api` must be added to `apps/api/__tests__/unit/middleware/integrationRouteMatrix.test.ts`** with its expected token outcome — the test fails otherwise. Add the route to `INTEGRATION_DENYLIST` if a token must not reach it, and never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route. Tokens are stored as SHA-256 hash + public prefix only. See [`docs/specs/api/23-integrations-api.md`](docs/specs/api/23-integrations-api.md) and the guide [`docs/guides/connecting-ai-agents.md`](docs/guides/connecting-ai-agents.md).
+AI agents, scripts and other systems authenticate with `Authorization: Bearer bliss_<prefix>_<secret>` (#84). `withAuth` turns a token into a normal `req.user` acting as the admin who created the integration, with the role capped (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, **never `admin`**), so existing viewer/admin checks apply unchanged. A central denylist in `apps/api/utils/integrationPolicy.js` (also applied by the root `apps/api/middleware.js`) refuses sessions, users, integrations, the Plaid connection lifecycle and account/category/tenant writes. **Every new route under `apps/api/pages/api` must be added to `apps/api/__tests__/unit/middleware/integrationRouteMatrix.data.ts`** with its expected token outcome — `integrationRouteMatrix.test.ts` fails otherwise. Add the route to `INTEGRATION_DENYLIST` if a token must not reach it, and never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route. Tokens are stored as SHA-256 hash + public prefix only. See [`docs/specs/api/23-integrations-api.md`](docs/specs/api/23-integrations-api.md) and the guide [`docs/guides/connecting-ai-agents.md`](docs/guides/connecting-ai-agents.md).
+
+### MCP coverage: every token-reachable route needs a tool or an exclusion
+
+The MCP server (#89) wraps the REST API. **A new route (or method) that an integration key can reach must be wrapped by an MCP tool (`apps/api/lib/mcp/tools/*.js`, listed in the tool's `wraps`) or added to `apps/api/lib/mcp/exclusions.js` with a reason** — `apps/api/__tests__/unit/mcp/coverage.test.ts` fails otherwise. After changing tools, regenerate the tool reference with `pnpm --filter @bliss/api mcp:reference` (a test fails when `docs/guides/mcp-tool-reference.md` is stale). MCP tools never contain business logic or Prisma access: they call REST routes over loopback.
 
 ### Encryption
 
@@ -99,10 +103,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 3,920 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 1,634 tests (unit + integration) |
+| All | `pnpm test` | -- | 4,182 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 1,861 tests (unit + integration) |
 | Backend | `pnpm test:backend` | Jest (CJS) | 1,225 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 1,061 tests |
+| Frontend | `pnpm test:web` | Vitest + RTL | 1,096 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -181,6 +185,19 @@ Key patterns:
 - Price fetching uses a 4-stage waterfall: memory cache -> live API -> 7-day DB lookback -> manual value fallback
 
 **Nightly revaluation:** A `revalue-all-tenants` BullMQ cron runs at 4 AM UTC (after securityMaster refreshes prices at 3 AM). It enqueues per-tenant `value-all-assets`, `process-simple-liability`, and `process-amortizing-loan` jobs. `process-cash-holdings` is intentionally excluded — it would cascade into a full analytics rebuild via `CASH_HOLDINGS_PROCESSED`, and `value-all-assets` already handles cash via forward-fill. This prevents history gaps when no transactions occur for days. Full `value-all-assets` runs are deduplicated per tenant via BullMQ `deduplication` (`fullValuationDedupOpts()` in `queues/portfolioQueue.js`). Concurrent full valuations of the same tenant race each other's delete/rebuild, so any new enqueue site must use it. Don't use a fixed `jobId`: completed jobs are retained for 24h. Admin `_rebuildMeta` rebuilds are exempt. The `GET /api/portfolio/history` endpoint also has an on-access staleness check that fires a `PORTFOLIO_STALE_REVALUATION` event as a fallback for self-hosters.
+
+### MCP server for AI agents (#89)
+
+`POST /api/mcp` in `apps/api` is a tools-only [MCP](https://modelcontextprotocol.io) server for Claude Code, Claude Desktop (via `mcp-remote`) and other MCP clients. See [`docs/specs/api/24-mcp-server.md`](docs/specs/api/24-mcp-server.md) and the guide [`docs/guides/using-bliss-with-claude-mcp.md`](docs/guides/using-bliss-with-claude-mcp.md).
+
+- **Transport:** `@modelcontextprotocol/sdk` (pinned) Streamable HTTP, **stateless JSON mode** — a new `McpServer` + transport per request, no `Mcp-Session-Id`, so any replica answers. `GET`/`DELETE` → 405.
+- **Auth:** integration keys only (cookie sessions / user JWTs → 401). Read-only keys may POST here thanks to an **exact-path** allowance (`VIEWER_POST_ALLOWED = ['/api/mcp']` in `utils/integrationPolicy.js`). `tools/list` is role-filtered: Read-only → 21 read tools, Read & write → all 38.
+- **Execution model:** every tool (`lib/mcp/tools/*.js`: reference, transactions, analytics, plaid review queue, imports review, portfolio, subscriptions) calls existing REST routes **over loopback** (`http://127.0.0.1:$PORT`, override `MCP_LOOPBACK_URL`) with the caller's own key, forwarding the client IP for the rate limiters. withAuth, the denylist, tenant scoping, decryption and events therefore apply to every tool call. REST errors map to one-line tool errors (`isError: true`).
+- **Shaping:** opaque cursors (default 50 / max 100), `{ value, currency }` money, signed transaction amounts (+ in / − out), ISO dates, hashes/raw payloads stripped; default pages < 25k chars, 50k hard cap that drops `nextCursor` when it trims.
+- **Out of scope by design:** file upload, Plaid connection management, reference-data writes, `fullScan`. `search_transactions` has no text filter (descriptions are encrypted with per-value PBKDF2 keys).
+- **OAuth for custom connectors:** Claude Cowork / claude.ai / Claude Desktop connectors can't send a header, so `apps/api` also runs an OAuth 2.1 server (PKCE S256, RFC 9728/8414 discovery via `/.well-known/*` rewrites, dynamic client registration limited by `OAUTH_ALLOWED_REDIRECT_HOSTS`, refresh rotation with reuse detection, RFC 7009 revoke). Every 401 from `/api/mcp` carries a `WWW-Authenticate … resource_metadata` challenge. **The access token is an integration key**: consent at `/oauth/consent` (web, admins only) creates an Integration with `oauthClientId` + `connectionExpiresAt` (default 90 days) whose single ApiKey is re-keyed on each refresh, so everything above applies unchanged and Settings → Integrations revokes it. `/api/oauth` is on `INTEGRATION_DENYLIST` (a key never mints a key). See [`docs/specs/api/25-oauth.md`](docs/specs/api/25-oauth.md).
+- **Observability:** `integration_request` log lines carry `mcpTool` (from the sanitised `x-bliss-mcp-tool` header); one `mcp_tool_call` line per tool call.
+- **Coverage:** 86 token-reachable REST operations, 65 wrapped, 21 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
 
 ### Smart import (CSV/XLSX)
 
@@ -337,7 +354,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Key rotation: `ENCRYPTION_SECRET_PREVIOUS`, `JWT_SECRET_PREVIOUS`
 - Observability: `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`
 
-Integration tokens (#84) need **no** environment variables — admins create them in Settings → Integrations.
+Integration tokens (#84) need **no** environment variables — admins create them in Settings → Integrations. The MCP server (#89) needs none either; `MCP_LOOPBACK_URL` is an optional override for hosts where the API can't reach itself on `127.0.0.1:$PORT`, and `OAUTH_ISSUER_URL` / `OAUTH_ALLOWED_REDIRECT_HOSTS` optionally tune its OAuth server.
 
 See `.env.example` for the full reference.
 

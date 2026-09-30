@@ -87,7 +87,9 @@ extractIntegrationToken(Authorization)   // /^bearer\s+(bliss_.*)$/i
   │                 (optional mode: req.user = null, like the JWT path)
   ├─ isDeniedForIntegration(req.url, method) → 403 NOT_AVAILABLE_TO_INTEGRATIONS
   ├─ role = effectiveRole(creator.role, accessLevel)
-  ├─ role === 'viewer' && method !== 'GET' → 403 READ_ONLY_INTEGRATION
+  ├─ role === 'viewer' && method !== 'GET'
+  │     && !isViewerPostAllowed(url, method)  → 403 READ_ONLY_INTEGRATION
+  │     (exact-path exception: POST /api/mcp, #89)
   ├─ requireRole && role !== requireRole → 403 "Insufficient permissions"
   ├─ touchLastUsed(key, ip)
   └─ req.user = { id: creator.id, tenantId, email: creator.email, role,
@@ -118,7 +120,9 @@ the handler when the response object has no events, as in tests):
 ```
 
 IDs only — never the token, its hash, the query string or the body. Denied
-requests (403) are logged too. Error messages logged on the token path go
+requests (403) are logged too. REST calls made by an MCP tool (#89) carry an
+`x-bliss-mcp-tool` header; a well-formed value (`^[a-z_]{1,64}$`) is added as
+`"mcpTool":"update_transaction"`, anything else is dropped. Error messages logged on the token path go
 through `redactIntegrationTokens()`.
 
 ### Sentry
@@ -142,6 +146,7 @@ match `/api/usersettings`). A token request whose path is unknown is refused
 | `/api/auth` | all | Sessions, sign-in, password change |
 | `/api/users` | all | A member can edit their own profile; a token must not edit the creator's |
 | `/api/integrations` | all | Tokens can't manage tokens |
+| `/api/oauth` | all | A key must never mint or approve another token (#89 OAuth, [25-oauth.md](./25-oauth.md)) |
 | `/api/plaid/create-link-token`, `exchange-public-token`, `disconnect`, `rotate-token`, `items/hard-delete`, `resync`, `sync-accounts`, `fetch-historical` | all | Plaid connection lifecycle |
 | `/api/plaid/items` | non-GET | `PATCH` resets connection status after re-auth (lifecycle) |
 | `/api/accounts` | non-GET | No account writes for tokens |
@@ -164,7 +169,7 @@ the Plaid-signed webhook) or are public (`countries`, `currencies`).
 
 ### Route matrix (keeping the denylist complete)
 
-`__tests__/unit/middleware/integrationRouteMatrix.test.ts` lists every file
+`__tests__/unit/middleware/integrationRouteMatrix.data.ts` lists every file
 under `pages/api` with the expected outcome per method for READ_ONLY and
 READ_WRITE tokens (`A` allow, `R` read-only 403, `X` admin 403, `D` denylist
 403, `U` own credential, `P` public). It fails when:
@@ -173,6 +178,27 @@ READ_WRITE tokens (`A` allow, `R` read-only 403, `X` admin 403, `D` denylist
 - a file's `withAuth` / `requireRole: 'admin'` / inline admin check / admin-key wiring no longer matches its entry;
 - a token-reachable route re-reads the caller's `User` row by `req.user.id`;
 - the real `withAuth` (or `middleware.js` for non-`withAuth` routes) produces a different outcome than declared.
+
+The assertions live in `integrationRouteMatrix.test.ts`. The same table drives
+the MCP coverage test (#89, [24-mcp-server.md](./24-mcp-server.md#249-coverage)):
+a token-reachable route must also be wrapped by an MCP tool or listed in
+`lib/mcp/exclusions.js`.
+
+### MCP server (#89)
+
+Integration keys are also the only credential of the MCP endpoint
+`POST /api/mcp`, which exposes 38 tools over these same REST routes (every tool
+call goes through this authentication path again). See
+[24-mcp-server.md](./24-mcp-server.md).
+
+### OAuth connections (#89)
+
+Approving an OAuth consent ([25-oauth.md](./25-oauth.md)) creates an ordinary
+Integration with `oauthClientId` and `connectionExpiresAt` set and a single
+`ApiKey` ("OAuth access token") that the OAuth server re-keys on every refresh.
+`GET /api/integrations` adds `oauth: { clientName, connectionExpiresAt }` for
+these rows (`null` otherwise). Revoking the integration ends the connection:
+its refresh tokens stop working on the next refresh.
 
 ## 23.5. Management endpoints
 
@@ -188,7 +214,7 @@ responses.
 | `POST /api/integrations` | `{ name, description?, accessLevel, key: { name?, expiresInDays: 30\|90\|365\|null } }` | `201 { integration, apiKey, token }` (integration + first key in one nested create) | 400, 403 |
 | `PATCH /api/integrations/:id` | `{ name?, description? }` | `200 { integration }` | 400 (`ACCESS_LEVEL_IMMUTABLE` if `accessLevel` is sent), 403, 404 |
 | `DELETE /api/integrations/:id` | — | `200 { integration }` — stamps `revokedAt` on the integration and every key; idempotent | 403, 404 |
-| `POST /api/integrations/:id/keys` | `{ name?, expiresInDays }` | `201 { apiKey, token }` | 400, 403, 404, 409 `INTEGRATION_REVOKED` |
+| `POST /api/integrations/:id/keys` | `{ name?, expiresInDays }` | `201 { apiKey, token }` | 400, 403, 404, 409 `INTEGRATION_REVOKED`, 409 `OAUTH_MANAGED` (OAuth connection) |
 | `DELETE /api/integrations/:id/keys/:keyId` | — | `200 { apiKey }` — idempotent; other keys unaffected | 403, 404 |
 
 Key `status` is derived: `revoked` (wins) → `expired` → `active`.
@@ -205,6 +231,7 @@ Key `status` is derived: `revoked` (wins) → `expired` → `active`.
 | 403 | — (`Insufficient permissions` / route's own message) | Admin-only route |
 | 400 | `ACCESS_LEVEL_IMMUTABLE` | PATCH tried to change the access level |
 | 409 | `INTEGRATION_REVOKED` | Adding a key to a revoked integration |
+| 409 | `OAUTH_MANAGED` | Adding a key to an OAuth connection (its key is managed by the OAuth server) |
 
 ## 23.7. Rate limiting and deployment
 

@@ -42,6 +42,13 @@ One `Card` (settings card pattern):
 - Loading → two `Skeleton` rows; error → `loading_error` in `text-destructive`;
   empty → `empty` message.
 
+**OAuth connections (#89).** Rows whose `integration.oauth` is set show a
+**Connected via OAuth · {{client}}** badge (`data-testid="oauth-badge"`,
+`bg-brand-primary/10 text-brand-primary border-brand-primary/20`) and the
+connection expiry ("Connection expires …" / "No expiry"). **Add key** and the
+key list are hidden for them (the key is re-keyed by the OAuth server);
+rename and revoke are unchanged. Revoking disconnects the app.
+
 ### Badges (design tokens only)
 
 | Badge | Classes |
@@ -64,6 +71,10 @@ One `Card` (settings card pattern):
   (select on focus) and a **Copy** button (`navigator.clipboard`), a sample
   `curl -H "Authorization: Bearer …" <API_URL>/api/transactions` where
   `API_URL` is `NEXT_PUBLIC_API_URL` (without `/api`) or `window.location.origin`,
+  a **Use with Claude (MCP)** block (#89, `data-testid="mcp-snippet"`) with the
+  MCP server URL `<API_URL>/api/mcp` and a `claude mcp add --transport http bliss
+  <API_URL>/api/mcp --header "Authorization: Bearer <token>"` command pre-filled
+  with the token and its own **Copy command** button (copies it as one line),
   and **Done**, which closes the dialog and drops the token from state.
 - **Add key**: key name + expiry → same reveal step.
 - **Rename**: name + description (access level is not editable).
@@ -71,10 +82,30 @@ One `Card` (settings card pattern):
   consequences spelled out; the action button uses `bg-destructive`.
 - Every mutation toasts success (`toast.*`) or `toast.error` (destructive).
 
+## 23.4a. OAuth consent page (#89)
+
+`/oauth/consent?request=<id>` (`src/pages/oauth/consent.tsx`, route
+`protected: false`, wrapped in `withAuth` itself) is where `/api/oauth/authorize`
+sends the browser. Standalone card outside the app shell: client name, the
+redirect host (warning box), signed-in email, access level (Read-only default;
+Read & write disabled when the client only asked for `mcp:read`), connection
+expiry (30 d / 90 d default / 1 y / never, warning for never), **Allow** /
+**Deny**. Non-admins see `admin_required` and can only deny. The decision
+responds with `{ redirectUrl }` and the page calls `window.location.assign`.
+API: `getOAuthRequest`, `approveOAuthRequest`, `denyOAuthRequest`
+(`src/lib/api.ts`), types in `src/types/oauth.ts`.
+
+**Return after sign-in.** `withAuth` redirects signed-out users to
+`/auth?returnTo=<path+search>`; sign-in navigates back (`returnToFromLocation()`),
+and Google sign-in carries it through `sessionStorage`
+(`rememberReturnTo()` → `consumeReturnTo()` in `auth/callback`).
+`src/lib/return-to.ts` accepts only same-origin relative paths (no `//`,
+backslashes, schemes or control characters).
+
 ## 23.5. i18n
 
-All strings live under `pages.settings.integrations.*` (plus
-`pages.settings.tabs.integrations`) in `en`, `es`, `fr`, `pt`, `it`. The
+All strings live under `pages.settings.integrations.*` (MCP block: `pages.settings.integrations.mcp.*`) (plus
+`pages.settings.tabs.integrations`; OAuth: `pages.settings.integrations.oauth.*` and `pages.oauth.consent.*`) in `en`, `es`, `fr`, `pt`, `it`. The
 `i18n-parity.test.ts` block for #84 checks every EN leaf exists in all locales
 with the same `{{placeholders}}` and is translated.
 
@@ -86,3 +117,5 @@ with the same `{{placeholders}}` and is translated.
 | `hooks/use-integrations.test.tsx` | Query + each mutation's endpoint and invalidation; token not cached |
 | `pages/settings/settings-integrations-tab.test.tsx` | Tab visible for admin, hidden for member and viewer |
 | `i18n/i18n-parity.test.ts` (#84 block) | Locale parity |
+| `pages/oauth/consent.test.tsx` | Consent: approve with chosen access/expiry, never → null, read-only cap, non-admin deny, expired request, missing id, failed approval |
+| `lib/return-to.test.ts`, `components/withAuth.test.tsx`, `pages/auth/index.test.tsx` | returnTo round-trip and open-redirect guards |

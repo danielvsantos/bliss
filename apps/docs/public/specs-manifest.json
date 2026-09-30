@@ -236,5 +236,23 @@
       "api": "docs/specs/api/23-integrations-api.md",
       "frontend": "docs/specs/frontend/23-integrations.md"
     }
+  },
+  {
+    "slug": "mcp-server",
+    "title": "MCP Server for AI Agents",
+    "description": "Stateless Streamable HTTP MCP endpoint (/api/mcp) with 38 agent-oriented tools over the REST API, role-filtered by integration key",
+    "order": 24,
+    "layers": {
+      "api": "docs/specs/api/24-mcp-server.md"
+    }
+  },
+  {
+    "slug": "mcp-oauth",
+    "title": "OAuth for MCP Connectors",
+    "description": "OAuth 2.1 authorization server (PKCE, dynamic client registration, refresh rotation) so Claude custom connectors can connect to /api/mcp; access tokens are integration keys",
+    "order": 25,
+    "layers": {
+      "api": "docs/specs/api/25-oauth.md"
+    }
   }
 ]

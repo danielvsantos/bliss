@@ -16,7 +16,8 @@ import {
  *
  * POST /api/integrations/:id/keys   Body: { name?, expiresInDays: 30|90|365|null }
  *   → 201 { apiKey, token } — the plaintext token is returned this once.
- *   → 409 INTEGRATION_REVOKED on a revoked integration.
+ *   → 409 INTEGRATION_REVOKED on a revoked integration; 409 OAUTH_MANAGED on an
+ *     OAuth connection (#89), whose key is managed by the token endpoint.
  *
  * Several active keys per integration allow zero-downtime rotation.
  */
@@ -49,6 +50,13 @@ export default withAuth(async function handler(req, res) {
       return res.status(StatusCodes.CONFLICT).json({
         error: 'This integration has been revoked',
         code: 'INTEGRATION_REVOKED',
+      });
+    }
+    // OAuth connections (#89) have exactly one key, re-keyed by the token endpoint.
+    if (integration.oauthClientId) {
+      return res.status(StatusCodes.CONFLICT).json({
+        error: 'Keys for an OAuth connection are managed by the connected app',
+        code: 'OAUTH_MANAGED',
       });
     }
 

@@ -33,6 +33,8 @@ export interface Integration {
   activeKeyCount: number;
   lastUsedAt: string | null;
   keys: ApiKeySummary[];
+  /** Set when the connection was created through OAuth (#89); its key is managed by the app. */
+  oauth?: { clientName: string; connectionExpiresAt: string | null } | null;
 }
 
 export interface CreateApiKeyRequest {

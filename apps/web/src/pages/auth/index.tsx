@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/form";
 import { setTenantMeta } from "@/utils/tenantMetaStorage";
 import { Logo } from "@/components/logo";
+import { returnToFromLocation } from "@/lib/return-to";
 
 /* ══════════════════════════════════════════════════════
    RESPONSIVE HOOK
@@ -225,7 +226,7 @@ function SignInForm({ demoMode = false }: { demoMode?: boolean }) {
     setIsPending(true);
     try {
       await signIn({ email: values.email, password: values.password });
-      navigate("/");
+      navigate(returnToFromLocation() ?? "/");
     } catch (err: unknown) {
       setError((err as Error).message || t("Login failed"));
     } finally {
