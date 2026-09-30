@@ -104,7 +104,7 @@ function sanitizeRequest(request) {
 
   if (typeof request.url === 'string') {
     const [pathOnly] = request.url.split('?');
-    sanitized.url = pathOnly;
+    sanitized.url = redactTokens(pathOnly);
   }
   if (typeof request.method === 'string') {
     sanitized.method = request.method;
@@ -117,6 +117,22 @@ function sanitizeRequest(request) {
 const MAX_STRING_LENGTH = 2048;
 
 const REDACTED = '[redacted]';
+
+/**
+ * Bliss integration tokens (#84): `bliss_<8-char prefix>_<secret>`. Unlike the
+ * key-based denylist above, this is matched inside free-text strings, so a
+ * token pasted into an error message, a breadcrumb or a URL is redacted too.
+ * Deliberately loose on lengths so a truncated or malformed token still goes.
+ */
+const INTEGRATION_TOKEN_PATTERN = /bliss_[A-Za-z0-9]{8}_[A-Za-z0-9]{8,}/g;
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function redactTokens(value) {
+  return value.replace(INTEGRATION_TOKEN_PATTERN, `bliss_${REDACTED}`);
+}
 
 /**
  * @param {string} key
@@ -147,9 +163,10 @@ function scrubValue(value, seen, depth) {
   if (depth > 8) return value;
 
   if (typeof value === 'string') {
-    return value.length > MAX_STRING_LENGTH
-      ? `${value.slice(0, MAX_STRING_LENGTH)}… [truncated]`
-      : value;
+    const redacted = redactTokens(value);
+    return redacted.length > MAX_STRING_LENGTH
+      ? `${redacted.slice(0, MAX_STRING_LENGTH)}… [truncated]`
+      : redacted;
   }
 
   if (value === null || typeof value !== 'object') return value;
@@ -197,6 +214,15 @@ export function scrubEvent(event, _hint) {
 
     if (event.request) event.request = sanitizeRequest(event.request);
 
+    // Free-text fields: only integration tokens are redacted here — the
+    // message itself stays (see "What it must never do").
+    if (typeof event.message === 'string') event.message = redactTokens(event.message);
+    if (event.logentry && typeof event.logentry === 'object') {
+      if (typeof event.logentry.message === 'string') event.logentry.message = redactTokens(event.logentry.message);
+      if (typeof event.logentry.formatted === 'string') event.logentry.formatted = redactTokens(event.logentry.formatted);
+      if (Array.isArray(event.logentry.params)) event.logentry.params = scrubValue(event.logentry.params, seen, 0);
+    }
+
     if (event.extra) event.extra = scrubValue(event.extra, seen, 0);
     if (event.contexts) event.contexts = scrubValue(event.contexts, seen, 0);
     if (event.tags) event.tags = scrubValue(event.tags, seen, 0);
@@ -211,6 +237,9 @@ export function scrubEvent(event, _hint) {
       for (const entry of values) {
         if (entry && entry.mechanism && entry.mechanism.data) {
           entry.mechanism.data = scrubValue(entry.mechanism.data, seen, 0);
+        }
+        if (entry && typeof entry.value === 'string') {
+          entry.value = redactTokens(entry.value);
         }
         if (entry && typeof entry.value === 'string' && entry.value.length > MAX_STRING_LENGTH) {
           entry.value = `${entry.value.slice(0, MAX_STRING_LENGTH)}… [truncated]`;

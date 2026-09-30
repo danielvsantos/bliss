@@ -53,6 +53,11 @@ export default function TransactionsPage() {
   const { t } = useTranslation();
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  // Bumped on every open so TransactionForm remounts: useForm only reads
+  // defaultValues on mount, and Radix keeps DialogContent mounted during its
+  // exit animation, so a reused instance would keep the previous row's values
+  // while submitting against the newly selected transaction's id.
+  const [transactionFormKey, setTransactionFormKey] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -125,11 +130,13 @@ export default function TransactionsPage() {
 
   const handleAddTransaction = () => {
     setSelectedTransaction(null);
+    setTransactionFormKey((k) => k + 1);
     setShowTransactionForm(true);
   };
 
   const handleEditTransaction = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
+    setTransactionFormKey((k) => k + 1);
     setShowTransactionForm(true);
   };
 
@@ -613,7 +620,7 @@ export default function TransactionsPage() {
               {selectedTransaction ? t('pages.transactions.editTransactionDescription') : t('pages.transactions.addTransactionDescription')}
             </DialogDescription>
           </DialogHeader>
-          <TransactionForm transaction={selectedTransaction} onClose={closeTransactionForm} />
+          <TransactionForm key={transactionFormKey} transaction={selectedTransaction} onClose={closeTransactionForm} />
         </DialogContent>
       </Dialog>
     </div>

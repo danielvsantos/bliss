@@ -1,0 +1,315 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Integrations & API tokens
+  version: 1.0.0
+  description: >
+    Manage integrations — named, revocable credentials that let AI agents,
+    scripts and other systems call the Bliss API (#84). Each integration has an
+    access level (Read-only or Read & write) and one or more API keys.
+
+
+    **Using a token.** Send `Authorization: Bearer bliss_<prefix>_<secret>` on
+    any API request. The token acts on behalf of the admin who created the
+    integration, with a capped role: `READ_ONLY` → viewer (GET only),
+    `READ_WRITE` → member. A token is never admin, so admin-only endpoints
+    return 403. These routes refuse every token with
+    `403 NOT_AVAILABLE_TO_INTEGRATIONS`: `/api/auth/*`, `/api/users*`,
+    `/api/integrations*`, the Plaid connection lifecycle (`create-link-token`,
+    `exchange-public-token`, `disconnect`, `rotate-token`, `items/hard-delete`,
+    `resync`, `sync-accounts`, `fetch-historical`, non-GET `/api/plaid/items`),
+    and non-GET `/api/accounts*`, `/api/categories*` and `/api/tenants*`.
+
+
+    **Token errors** (401): `TOKEN_INVALID` (unknown, malformed, or its creator
+    was deleted), `TOKEN_EXPIRED`, `TOKEN_REVOKED`. A read-only token that
+    tries to write gets `403 READ_ONLY_INTEGRATION`.
+
+
+    The endpoints below are tenant-admin only and are called with the admin's
+    browser session. Integration tokens cannot call them.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: >
+        HttpOnly session cookie set by the API at sign-in/sign-up.
+        Sent automatically by the browser on all credentialed requests.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: bliss_<prefix>_<secret>
+      description: >
+        Integration token. Accepted by the data endpoints described in the
+        other specs, never by the endpoints in this file.
+
+  schemas:
+    AccessLevel:
+      type: string
+      enum: [READ_ONLY, READ_WRITE]
+      description: >
+        READ_ONLY acts as a viewer (GET only). READ_WRITE acts as a member.
+        Fixed at creation.
+
+    ApiKey:
+      type: object
+      description: Key metadata. The hash and the plaintext are never returned here.
+      properties:
+        id: { type: string, example: clx1key0000 }
+        name: { type: string, example: Default key }
+        prefix:
+          type: string
+          description: Public 8-character prefix, as in `bliss_<prefix>_…`.
+          example: AbCdEfGh
+        expiresAt: { type: string, format: date-time, nullable: true }
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Updated at most once per minute per key.
+        createdAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        status:
+          type: string
+          enum: [active, revoked, expired]
+
+    Integration:
+      type: object
+      properties:
+        id: { type: string, example: clx1int0000 }
+        name: { type: string, example: Claude agent }
+        description: { type: string, nullable: true }
+        accessLevel: { $ref: '#/components/schemas/AccessLevel' }
+        createdByUserId:
+          type: string
+          description: The admin the integration acts on behalf of.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        status:
+          type: string
+          enum: [active, revoked]
+        keyCount: { type: integer, example: 2 }
+        activeKeyCount: { type: integer, example: 1 }
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Most recent lastUsedAt across the integration's keys.
+        keys:
+          type: array
+          items: { $ref: '#/components/schemas/ApiKey' }
+
+    CreateKey:
+      type: object
+      required: [expiresInDays]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          description: Defaults to "Default key".
+        expiresInDays:
+          type: integer
+          nullable: true
+          enum: [30, 90, 365, null]
+          description: null creates a key that never expires.
+
+    Token:
+      type: string
+      description: >
+        The plaintext token. Returned only in this response and never again —
+        store it immediately.
+      example: bliss_AbCdEfGh_3kP9qZ2vN7xW1yT5rL8mB4cF6hJ0sD2gK9aQ1eR
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+
+  responses:
+    Forbidden:
+      description: >
+        Not a tenant admin (member or viewer session), or an integration token
+        (`code: NOT_AVAILABLE_TO_INTEGRATIONS`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such integration (or key) in the caller's tenant.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BadRequest:
+      description: Validation failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/integrations:
+    get:
+      summary: List the tenant's integrations
+      tags: [Integrations]
+      responses:
+        '200':
+          description: Integrations with key metadata, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integrations:
+                    type: array
+                    items: { $ref: '#/components/schemas/Integration' }
+        '401': { description: Not signed in }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create an integration and its first key
+      tags: [Integrations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, accessLevel, key]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                description: { type: string, maxLength: 280 }
+                accessLevel: { $ref: '#/components/schemas/AccessLevel' }
+                key: { $ref: '#/components/schemas/CreateKey' }
+            example:
+              name: Claude agent
+              accessLevel: READ_ONLY
+              key: { expiresInDays: 90 }
+      responses:
+        '201':
+          description: Created. `token` is shown this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration: { $ref: '#/components/schemas/Integration' }
+                  apiKey: { $ref: '#/components/schemas/ApiKey' }
+                  token: { $ref: '#/components/schemas/Token' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/integrations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      summary: Rename an integration or change its description
+      tags: [Integrations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                description: { type: string, maxLength: 280, nullable: true }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration: { $ref: '#/components/schemas/Integration' }
+        '400':
+          description: >
+            Validation failed, or `accessLevel` was sent
+            (`code: ACCESS_LEVEL_IMMUTABLE` — create a new integration instead).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Revoke an integration and all of its keys
+      description: Idempotent. Keys stop working on their next request.
+      tags: [Integrations]
+      responses:
+        '200':
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration: { $ref: '#/components/schemas/Integration' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/integrations/{id}/keys:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      summary: Add a key to an integration
+      description: Several active keys allow zero-downtime rotation.
+      tags: [Integrations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateKey' }
+      responses:
+        '201':
+          description: Created. `token` is shown this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey: { $ref: '#/components/schemas/ApiKey' }
+                  token: { $ref: '#/components/schemas/Token' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: 'The integration is revoked (code INTEGRATION_REVOKED).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/integrations/{id}/keys/{keyId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: keyId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      summary: Revoke one key
+      description: Idempotent. The integration's other keys keep working.
+      tags: [Integrations]
+      responses:
+        '200':
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey: { $ref: '#/components/schemas/ApiKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }

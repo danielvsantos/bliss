@@ -124,7 +124,7 @@ export function ManualPriceForm({ asset, onClose, existingValue }: ManualPriceFo
         <Controller
           name="value"
           control={control}
-          render={({ field }) => <Input {...field} type="number" step="0.01" placeholder={t('manualPriceForm.pricePlaceholder')} />}
+          render={({ field }) => <Input {...field} type="number" step="any" placeholder={t('manualPriceForm.pricePlaceholder')} />}
         />
         {errors.value && <p className="text-destructive text-sm">{errors.value.message}</p>}
       </div>

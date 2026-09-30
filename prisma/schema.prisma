@@ -70,6 +70,8 @@ model Tenant {
   insights            Insight[]
   recurringCharges    RecurringCharge[]
   incomeTerms         IncomeTerms[]
+  integrations        Integration[]
+  apiKeys             ApiKey[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -106,6 +108,10 @@ model User {
 
   // Notification center
   lastNotificationSeenAt DateTime?  // When user last opened notification center
+
+  // Integrations this user created. Token requests act on behalf of the
+  // creator, so deleting the user cascades to (and revokes) them.
+  integrations      Integration[]
 
   @@index([email])
   @@index([provider, providerId])
@@ -1048,4 +1054,60 @@ model RecurringCharge {
   @@index([tenantId, status])
   @@index([tenantId, categoryId])
   @@index([tenantId, chargeKey])
+}
+
+// ─── Integrations & API tokens (#84) ────────────────────────────────────────
+// Non-human clients (AI agents, scripts, external systems) authenticate with
+// `Authorization: Bearer bliss_<prefix>_<secret>`. withAuth resolves a key to
+// a req.user acting as the creating admin, with the role capped by accessLevel
+// (READ_ONLY → viewer, READ_WRITE → member, never admin). See
+// docs/specs/api/23-integrations-api.md.
+
+enum IntegrationAccessLevel {
+  READ_ONLY
+  READ_WRITE
+}
+
+model Integration {
+  id              String                 @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?
+  // Fixed at creation: to change it, create a new integration.
+  accessLevel     IntegrationAccessLevel
+  createdByUserId String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  // Revoking an integration also stamps revokedAt on all of its keys.
+  revokedAt       DateTime?
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  apiKeys   ApiKey[]
+
+  @@index([tenantId])
+  @@index([createdByUserId])
+}
+
+model ApiKey {
+  id            String    @id @default(cuid())
+  // Denormalised from Integration so every management query filters on tenantId.
+  tenantId      String
+  integrationId String
+  name          String
+  // Public 8-char prefix (bliss_<prefix>_…) — lookup key, safe to display.
+  prefix        String    @unique
+  // SHA-256 (hex) of the full token. The plaintext is never stored.
+  keyHash       String    @unique
+  expiresAt     DateTime? // null = no expiry
+  lastUsedAt    DateTime?
+  lastUsedIp    String?
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId])
+  @@index([tenantId])
 }

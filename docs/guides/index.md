@@ -13,5 +13,6 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 | [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) | Connect bank accounts for automatic transaction sync |
 | [AI Classification](/docs/guides/ai-classification) | How the 4-tier pipeline works and how to train it |
 | [Tracking Subscriptions](/docs/guides/tracking-subscriptions) | How recurring charges are detected, and confirming or dismissing them |
+| [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents) | Give Claude, a script or another system its own revocable, read-only or read-write API token |
 | [Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment) | Recommended architecture for hosting Bliss as a multi-user service |
 | [Key Rotation](/docs/guides/key-rotation) | Rotating `ENCRYPTION_SECRET` and every other Bliss-owned secret safely |

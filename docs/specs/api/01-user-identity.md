@@ -501,6 +501,10 @@ Three user roles with increasing restrictions:
 
 The viewer role enforcement is implemented as a blanket check in `withAuth.js` — it runs before any route-specific logic, ensuring no write operation can bypass it regardless of the endpoint.
 
+### Third credential type: integration tokens (#84)
+
+Besides the session JWT (cookie or Bearer), `withAuth` accepts **integration tokens** — `Authorization: Bearer bliss_<prefix>_<secret>` — for AI agents, scripts and other systems. They are checked **before** the cookie/JWT path, and a request carrying one ignores the cookie. A valid token hydrates `req.user` as the tenant admin who created the integration, with the role capped: `READ_ONLY` → `viewer`, `READ_WRITE` → `member`, never `admin`. The viewer rule and every admin check above therefore apply unchanged, and a central denylist (`utils/integrationPolicy.js`) refuses `/api/auth/*`, `/api/users*`, `/api/integrations*`, the Plaid connection lifecycle and account/category/tenant writes with `403 NOT_AVAILABLE_TO_INTEGRATIONS`. `req.user` also carries `authType: 'integration'`, `integrationId` and `apiKeyId`. Full spec: [`23-integrations-api.md`](./23-integrations-api.md).
+
 ### `pages/api/tenants/settings.js` - Tenant Settings *(Admin only)*
 - **`GET /api/tenants/settings`**: Returns tenant-level settings including `autoPromoteThreshold`, `reviewThreshold`, and `portfolioCurrency`.
 - **`PUT /api/tenants/settings`**: Updates tenant-level settings. Accepts `autoPromoteThreshold` (0.0–1.0), `reviewThreshold` (0.0–1.0), and `portfolioCurrency` (validated against tenant's TenantCurrency list). Returns `403 Forbidden` if `req.user.role !== 'admin'`.

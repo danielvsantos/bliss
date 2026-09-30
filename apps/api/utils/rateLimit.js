@@ -76,4 +76,7 @@ export const rateLimiters = {
   rebuildTrigger: createRateLimiter({ max: 20, windowMs: 5 * 60 * 1000 }),  // 20 triggers per 5 min
   rebuildStatus:  createRateLimiter({ max: 300, windowMs: 5 * 60 * 1000 }), // 300 polls per 5 min
 
+  // Integrations & API tokens management (admin only, #84)
+  integrations: createRateLimiter({ max: 30, windowMs: 5 * 60 * 1000 }),   // 30 calls per 5 min
+
 };

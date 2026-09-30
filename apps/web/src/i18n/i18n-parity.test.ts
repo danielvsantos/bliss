@@ -294,3 +294,60 @@ describe('i18n parity — task #81 Manage Assets keys', () => {
     for (const lang of Object.keys(LOCALES)) expect(resolve(LOCALES[lang], 'nav.assetPriceUpdates'), lang).toBeUndefined();
   });
 });
+
+// Keys introduced by task #84 (Integrations & API tokens). Every leaf under
+// pages.settings.integrations in EN must exist in every locale, keep its
+// interpolation placeholders, and be translated.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function leafKeys(obj: any, prefix: string): string[] {
+  return Object.entries(obj).flatMap(([k, v]) =>
+    v && typeof v === 'object' ? leafKeys(v, `${prefix}.${k}`) : [`${prefix}.${k}`],
+  );
+}
+
+// Values that are legitimately identical in some languages.
+const SAME_AS_EN_ALLOWED = new Set([
+  'pages.settings.integrations.form.name_label',
+  'pages.settings.integrations.status_active',
+  'pages.settings.integrations.form.description_label',
+  'pages.settings.tabs.maintenance', // "Maintenance" in French too
+  'pages.settings.tabs.admin_section', // "Administration" in French too
+]);
+
+describe('i18n parity — task #84 integrations keys', () => {
+  const keys = [
+    ...leafKeys(resolve(en, 'pages.settings.integrations'), 'pages.settings.integrations'),
+    'pages.settings.tabs.integrations',
+    'pages.settings.tabs.ai_classification',
+    'pages.settings.tabs.maintenance',
+    'pages.settings.tabs.admin_section',
+  ];
+
+  it('has a meaningful number of keys', () => {
+    expect(keys.length).toBeGreaterThan(50);
+  });
+
+  for (const key of keys) {
+    it(`"${key}" exists in every locale with the same placeholders`, () => {
+      const enValue = resolve(en, key) as string;
+      const placeholders = (enValue.match(/\{\{\w+\}\}/g) ?? []).sort();
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+        expect(((v as string).match(/\{\{\w+\}\}/g) ?? []).sort(), `${lang}:${key}`).toEqual(placeholders);
+      }
+    });
+  }
+
+  it('is translated in es/fr/pt/it', () => {
+    const untranslated: string[] = [];
+    for (const key of keys) {
+      if (SAME_AS_EN_ALLOWED.has(key)) continue;
+      for (const lang of NON_EN) {
+        if (resolve(LOCALES[lang], key) === resolve(en, key)) untranslated.push(`${lang}:${key}`);
+      }
+    }
+    expect(untranslated).toEqual([]);
+  });
+});

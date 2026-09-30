@@ -267,3 +267,31 @@ describe('scrubEvent', () => {
     });
   });
 });
+
+describe('scrubEvent — integration tokens (#84)', () => {
+  const TOKEN = 'bliss_AbCdEfGh_0123456789abcdefghijABCDEFGHIJklmnopqrstu';
+  const SECRET = TOKEN.slice(15);
+
+  it('redacts bliss_ tokens from message, exception value, breadcrumbs, extra and request url', () => {
+    const event = scrubEvent({
+      message: `failed with ${TOKEN}`,
+      logentry: { message: `token=${TOKEN}`, formatted: `token=${TOKEN}`, params: [TOKEN] },
+      exception: { values: [{ type: 'Error', value: `bad token ${TOKEN}`, stacktrace: { frames: [] } }] },
+      breadcrumbs: [{ message: `GET /api/x?t=${TOKEN}`, data: { note: TOKEN } }],
+      extra: { context: `Bearer ${TOKEN}` },
+      request: { url: `https://api.example.com/api/${TOKEN}?q=1`, method: 'GET', headers: { authorization: `Bearer ${TOKEN}` } },
+    } as any);
+
+    const serialized = JSON.stringify(event);
+    expect(serialized).not.toContain(SECRET);
+    expect(event.message).toBe('failed with bliss_[redacted]');
+    expect(event.exception.values[0].value).toBe('bad token bliss_[redacted]');
+    expect(event.request).toEqual({ url: 'https://api.example.com/api/bliss_[redacted]', method: 'GET' });
+  });
+
+  it('leaves text without tokens untouched', () => {
+    const event = scrubEvent({ message: 'bliss_ is our prefix', exception: { values: [{ value: 'plain' }] } } as any);
+    expect(event.message).toBe('bliss_ is our prefix');
+    expect(event.exception.values[0].value).toBe('plain');
+  });
+});

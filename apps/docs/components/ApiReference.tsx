@@ -15,6 +15,7 @@ const CATEGORIES: { name: string; specs: Spec[] }[] = [
     name: 'Core',
     specs: [
       { id: 'auth', label: 'Authentication', file: 'auth.yaml' },
+      { id: 'integrations', label: 'Integrations & API tokens', file: 'integrations.yaml' },
       { id: 'accounts', label: 'Accounts', file: 'accounts.yaml' },
       { id: 'transactions', label: 'Transactions', file: 'transactions.yaml' },
       { id: 'category', label: 'Categories', file: 'category.yaml' },

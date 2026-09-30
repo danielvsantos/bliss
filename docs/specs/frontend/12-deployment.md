@@ -37,7 +37,7 @@ The custom nginx configuration (`docker/nginx.conf`) provides three key behavior
 Enabled for text, CSS, JSON, JavaScript, XML, and related MIME types. Minimum body size of 1024 bytes to avoid compressing tiny responses where the overhead exceeds the savings.
 
 ### Immutable Asset Caching
-The `/assets/` directory is served with aggressive caching headers:
+The `/static/` directory (Vite `build.assetsDir`) is served with aggressive caching headers:
 ```
 Cache-Control: public, immutable
 Expires: 1 year
@@ -47,9 +47,11 @@ Vite uses content-hashed filenames (e.g. `index-a1b2c3d4.js`), so assets are saf
 ### SPA Fallback
 All routes that do not match a physical file fall through to `index.html`:
 ```
-try_files $uri $uri/ /index.html
+try_files $uri /index.html
 ```
-This enables client-side routing via React Router. Direct navigation to `/accounts` or `/transactions` will serve `index.html`, and the React app handles the routing.
+This enables client-side routing via React Router. Direct navigation to `/accounts`, `/transactions` or `/assets` will serve `index.html`, and the React app handles the routing.
+
+`$uri/` is deliberately omitted, and Vite emits its bundles to `static/` rather than its default `assets/`: the Manage Assets page lives at `/assets`, and a directory of the same name in `dist/` made nginx try (and 403 on) a directory index instead of falling back to the SPA. `src/routes.test.ts` guards against a route reusing the build directory's name.
 
 ## 12.5. No Runtime Environment Variables
 

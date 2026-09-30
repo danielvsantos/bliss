@@ -91,6 +91,9 @@ The API supports two storage backends via `STORAGE_BACKEND`:
 
 ## 12.8. Production Notes
 
+- **Integration tokens (#84) need no new environment variables.** Token auth reads only the `Integration` / `ApiKey` tables and never calls the backend, so the split Vercel (API) + Railway (backend) deployment works unchanged.
+- The API has a root **Next.js `middleware.js`** (matcher `/api/:path*`, Edge runtime) that refuses integration tokens on denylisted routes. It imports only the pure `utils/integrationPolicy.js`, does no I/O, and is a no-op for requests without a `bliss_` bearer token. It is compiled into the standalone build like any other Next middleware.
+
 - The standalone server listens on `0.0.0.0:3000` (configured via `HOSTNAME` env var in Dockerfile)
 - The same standalone Docker image (`docker/Dockerfile.api`) is used for every deployment target, including Railway (see [`docs/guides/multi-tenant-deployment.md`](/docs/guides/multi-tenant-deployment) for the reference production topology) -- there is no separate build mode per platform
 - TLS termination should be handled by a reverse proxy in front of the Docker stack (Docker Compose) or by the platform's own edge (Railway terminates TLS for public services automatically)
