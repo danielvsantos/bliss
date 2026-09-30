@@ -32,6 +32,7 @@ jest.mock('../../../queues/securityMasterQueue', () => ({
 
 jest.mock('../../../services/debounceService', () => ({
   scheduleDebouncedJob: jest.fn(),
+  mergers: jest.requireActual('../../../services/debounceService').mergers,
 }));
 
 jest.mock('../../../utils/redis', () => ({
@@ -277,7 +278,8 @@ describe('eventSchedulerWorker — processEventJob', () => {
       'process-portfolio-changes',
       expect.objectContaining({ tenantId: 't1', needsSync: [true] }),
       'needsSync',
-      10 // DEBOUNCE_DELAY_SECONDS * 2
+      10, // DEBOUNCE_DELAY_SECONDS * 2
+      expect.any(Object)
     );
   });
 
@@ -335,8 +337,48 @@ describe('eventSchedulerWorker — processEventJob', () => {
       'process-cash-holdings',
       expect.objectContaining({ tenantId: 't1' }),
       'needsCashRebuild',
-      expect.any(Number)
+      expect.any(Number),
+      expect.any(Object)
     );
+  });
+
+  it('merges scope fields for process-cash-holdings, identically at every call site (#92)', async () => {
+    await processEventJob(makeJob('MANUAL_TRANSACTION_CREATED', {
+      tenantId: 't1', transactionId: 'tx1', categoryType: 'Essentials', transaction_date: '2026-07-10',
+      currency: 'EUR', country: 'PT', categoryGroup: 'Groceries',
+    }));
+    await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', {
+      tenantId: 't1', isFullRebuild: false, dateScopes: [{ year: 2026, month: 8 }],
+    }));
+    await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', { tenantId: 't1', isFullRebuild: true }));
+
+    const cashCalls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'process-cash-holdings');
+    expect(cashCalls).toHaveLength(3);
+    const [first] = cashCalls;
+    expect(Object.keys(first[5]).sort()).toEqual(['_rebuildMeta', 'originalScope', 'portfolioItemIds', 'scope']);
+    cashCalls.forEach((c) => expect(c[5]).toBe(first[5]));
+  });
+
+  it('passes the same mergers for both process-portfolio-changes call sites (#92)', async () => {
+    await processEventJob(makeJob('TRANSACTIONS_IMPORTED', { tenantId: 't1', accountIds: [1] }));
+    await processEventJob(makeJob('TENANT_CURRENCY_SETTINGS_UPDATED', { tenantId: 't1' }));
+
+    const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'process-portfolio-changes');
+    expect(calls).toHaveLength(2);
+    expect(Object.keys(calls[0][5]).sort()).toEqual(['accountIds', 'dateScopes']);
+    expect(calls[1][5]).toBe(calls[0][5]);
+  });
+
+  it('passes the same mergers for both scoped-update-analytics call sites (#92)', async () => {
+    await processEventJob(makeJob('CASH_HOLDINGS_PROCESSED', {
+      tenantId: 't1', originalScope: { earliestDate: '2026-07-01', filters: {} },
+    }));
+    await processEventJob(makeJob('TAG_ASSIGNMENT_MODIFIED', { tenantId: 't1', transactionScopes: [] }));
+
+    const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'scoped-update-analytics');
+    expect(calls).toHaveLength(2);
+    expect(Object.keys(calls[0][5]).sort()).toEqual(['_rebuildMeta', 'portfolioItemIds']);
+    expect(calls[1][5]).toBe(calls[0][5]);
   });
 
   // ─── TAG_ASSIGNMENT_MODIFIED ────────────────────────────────────────────
@@ -354,7 +396,8 @@ describe('eventSchedulerWorker — processEventJob', () => {
       'scoped-update-analytics',
       { tenantId: 't1', scopes: [{ year: 2026, month: 3, currency: 'USD', country: 'US' }] },
       'scopes',
-      5 // DEBOUNCE_DELAY_SECONDS
+      5, // DEBOUNCE_DELAY_SECONDS
+      expect.any(Object)
     );
   });
 
@@ -370,7 +413,8 @@ describe('eventSchedulerWorker — processEventJob', () => {
       'scoped-update-analytics',
       { tenantId: 't1', scopes: [] },
       'scopes',
-      5
+      5,
+      expect.any(Object)
     );
   });
 
@@ -612,6 +656,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
         expect.objectContaining({ tenantId: 't1', _rebuildMeta: meta }),
         'needsCashRebuild',
         expect.any(Number),
+        expect.any(Object),
       );
     });
 
@@ -630,6 +675,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
         expect.objectContaining({ _rebuildMeta: meta }),
         'needsCashRebuild',
         expect.any(Number),
+        expect.any(Object),
       );
     });
 
@@ -647,6 +693,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
         expect.objectContaining({ _rebuildMeta: meta }),
         'needsRecalc',
         expect.any(Number),
+        expect.any(Object),
       );
     });
 

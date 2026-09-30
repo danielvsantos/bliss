@@ -171,7 +171,7 @@ past.
 | Service | Purpose |
 |---------|---------|
 | `adapterEngine.js` | CSV/XLSX adapter detection by header intersection, amount strategy dispatch |
-| `debounceService.js` | 5-second debounce window for job consolidation |
+| `debounceService.js` | 5-second debounce window for job consolidation. Every scope-bearing field must be merged via `DEBOUNCE_MERGERS` (eventSchedulerWorker) — never only the newest event's value (#92) |
 | `insightService.js` | 7-lens financial analysis: data gathering, LLM prompt, validation |
 | `plaid.js` | Pre-configured Plaid client |
 

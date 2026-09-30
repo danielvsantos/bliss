@@ -370,6 +370,17 @@ All three types are processed in parallel via `Promise.all`.
 
 The `eventSchedulerWorker` uses `scheduleDebouncedJob()` from `debounceService.js` to consolidate rapid-fire events into a single job. This is used for all major job dispatches (portfolio changes, cash processing, analytics, revaluation). The debounce window is 5 seconds. During the window, array-type fields (e.g., `portfolioItemIds`, `scopes`, `needsCashRebuild`) are aggregated across events.
 
+Every other field the job reads is merged too, via per-job-name field mergers (`DEBOUNCE_MERGERS` in `eventSchedulerWorker.js`, built from `mergers` in `debounceService.js`); a field without a merger takes the newest event's value. All call sites of one job name share a Redis key and must pass the same mergers. Before #92 only the aggregation key was merged, so writes within the window lost every earlier event's scope.
+
+| Job | Field | Merge | Absent means |
+|-----|-------|-------|--------------|
+| `process-cash-holdings` | `scope` | earliest `year`; `currency` / `accountId` / `month` kept only when both agree (two currencies → all) | full cash rebuild |
+| `process-cash-holdings` | `originalScope` | earliest `earliestDate`, per-dimension union of `filters` (a dimension missing on one side is dropped = unfiltered) | contributes nothing |
+| `process-cash-holdings`, `scoped-update-analytics` | `portfolioItemIds` | union | contributes nothing |
+| `process-cash-holdings`, `scoped-update-analytics`, `full-rebuild-analytics` | `_rebuildMeta` | kept from either side | — |
+| `process-portfolio-changes` | `accountIds` | union | full rebuild (wins) |
+| `process-portfolio-changes` | `dateScopes` | union | contributes nothing |
+
 ## 6.7. TAG_ASSIGNMENT_MODIFIED Event Routing
 
 When tags are added to or removed from transactions, the API emits a `TAG_ASSIGNMENT_MODIFIED` event containing `tenantId` and `transactionScopes`. The `eventSchedulerWorker` routes this directly to `scoped-update-analytics` on the analytics queue, bypassing the portfolio pipeline. The analytics worker populates both regular and tag analytics in a single pass.

@@ -9,10 +9,35 @@ const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
 const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetectionQueue');
 const { enqueueTenantSecuritiesRefresh } = require('../queues/securityMasterQueue');
-const { scheduleDebouncedJob } = require('../services/debounceService');
+const { scheduleDebouncedJob, mergers } = require('../services/debounceService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 
 const DEBOUNCE_DELAY_SECONDS = 5; // 5 seconds
+
+// Field mergers per debounced job name. Every call site of a job name shares one
+// Redis debounce key, so they must all merge the same way: each field is the
+// union of the pending job's and the new event's value, never just the newest (#92).
+const DEBOUNCE_MERGERS = {
+    'process-cash-holdings': {
+        scope: mergers.cashScope,             // absent = full cash rebuild
+        originalScope: mergers.analyticsScope, // feeds scoped-update-analytics
+        portfolioItemIds: mergers.union,
+        _rebuildMeta: mergers.keepPresent,
+    },
+    'process-portfolio-changes': {
+        accountIds: mergers.unionOrAll,       // absent = full rebuild
+        dateScopes: mergers.union,
+    },
+    'recalculate-portfolio-items': {},        // portfolioItemIds is the aggregation key
+    'scoped-update-analytics': {
+        portfolioItemIds: mergers.union,
+        _rebuildMeta: mergers.keepPresent,
+    },
+    'full-rebuild-analytics': {
+        _rebuildMeta: mergers.keepPresent,
+    },
+    'value-all-assets': {},
+};
 
 const processEventJob = async (job) => {
     const { name, data } = job;
@@ -150,7 +175,8 @@ const processEventJob = async (job) => {
                     'recalculate-portfolio-items', // The new, correct, batched job name
                     { tenantId, portfolioItemIds: [portfolioItemId] },
                     'portfolioItemIds', // The key for aggregation
-                    DEBOUNCE_DELAY_SECONDS
+                    DEBOUNCE_DELAY_SECONDS,
+                    DEBOUNCE_MERGERS['recalculate-portfolio-items']
                 );
                 break;
             }
@@ -175,7 +201,8 @@ const processEventJob = async (job) => {
                             'recalculate-portfolio-items',
                             { tenantId, portfolioItemIds: [portfolioItemId] },
                             'portfolioItemIds',
-                            DEBOUNCE_DELAY_SECONDS
+                            DEBOUNCE_DELAY_SECONDS,
+                            DEBOUNCE_MERGERS['recalculate-portfolio-items']
                         );
                     } else if (!isDeletion) {
                         logger.info(`[Event] Routing Investment/Debt transaction to portfolio processor.`);
@@ -215,7 +242,8 @@ const processEventJob = async (job) => {
                         'process-cash-holdings',
                         { tenantId, scope: cashScope, originalScope: finalScope, needsCashRebuild: [true] },
                         'needsCashRebuild',
-                        DEBOUNCE_DELAY_SECONDS
+                        DEBOUNCE_DELAY_SECONDS,
+                        DEBOUNCE_MERGERS['process-cash-holdings']
                     );
                     // Analytics will be triggered by CASH_HOLDINGS_PROCESSED
                 }
@@ -241,7 +269,8 @@ const processEventJob = async (job) => {
                         ...(resolvedDateScopes && resolvedDateScopes.length > 0 && { dateScopes: resolvedDateScopes }),
                     },
                     'needsSync',
-                    DEBOUNCE_DELAY_SECONDS * 2
+                    DEBOUNCE_DELAY_SECONDS * 2,
+                    DEBOUNCE_MERGERS['process-portfolio-changes']
                 );
                 break;
             }
@@ -284,7 +313,8 @@ const processEventJob = async (job) => {
                         'process-cash-holdings',
                         { tenantId, needsCashRebuild: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsCashRebuild',
-                        DEBOUNCE_DELAY_SECONDS
+                        DEBOUNCE_DELAY_SECONDS,
+                        DEBOUNCE_MERGERS['process-cash-holdings']
                     );
                 } else if (dateScopes && dateScopes.length > 0) {
                     // For scoped updates, determine if we need cash processing
@@ -304,7 +334,8 @@ const processEventJob = async (job) => {
                         'process-cash-holdings',
                         { tenantId, scope: cashScope, originalScope: finalScope, portfolioItemIds, needsCashRebuild: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsCashRebuild',
-                        DEBOUNCE_DELAY_SECONDS
+                        DEBOUNCE_DELAY_SECONDS,
+                        DEBOUNCE_MERGERS['process-cash-holdings']
                     );
                 }
                 break;
@@ -325,7 +356,8 @@ const processEventJob = async (job) => {
                         'full-rebuild-analytics',
                         { tenantId, needsRecalc: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsRecalc',
-                        DEBOUNCE_DELAY_SECONDS
+                        DEBOUNCE_DELAY_SECONDS,
+                        DEBOUNCE_MERGERS['full-rebuild-analytics']
                     );
                 } else if (originalScope || portfolioItemIds) {
                     // Trigger scoped analytics with original scope
@@ -335,7 +367,8 @@ const processEventJob = async (job) => {
                         'scoped-update-analytics',
                         { tenantId, scopes: [originalScope], portfolioItemIds, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'scopes',
-                        DEBOUNCE_DELAY_SECONDS
+                        DEBOUNCE_DELAY_SECONDS,
+                        DEBOUNCE_MERGERS['scoped-update-analytics']
                     );
                 }
                 break;
@@ -405,7 +438,8 @@ const processEventJob = async (job) => {
                     'scoped-update-analytics',
                     { tenantId: tagTenantId, scopes: transactionScopes || [] },
                     'scopes',
-                    DEBOUNCE_DELAY_SECONDS
+                    DEBOUNCE_DELAY_SECONDS,
+                    DEBOUNCE_MERGERS['scoped-update-analytics']
                 );
                 break;
             }
@@ -435,7 +469,8 @@ const processEventJob = async (job) => {
                     'value-all-assets',
                     { tenantId: staleTenantId, needsRevaluation: [true] },
                     'needsRevaluation',
-                    1800 // 30 minutes
+                    1800, // 30 minutes
+                    DEBOUNCE_MERGERS['value-all-assets']
                 );
                 await getPortfolioQueue().add('process-simple-liability', { tenantId: staleTenantId }, { jobId: `${dedupePrefix}-liability` });
                 await getPortfolioQueue().add('process-amortizing-loan', { tenantId: staleTenantId }, { jobId: `${dedupePrefix}-amortizing` });
@@ -456,7 +491,8 @@ const processEventJob = async (job) => {
                     'process-portfolio-changes',
                     { tenantId, needsSync: [true] },
                     'needsSync',
-                    DEBOUNCE_DELAY_SECONDS * 2
+                    DEBOUNCE_DELAY_SECONDS * 2,
+                    DEBOUNCE_MERGERS['process-portfolio-changes']
                 );
 
                 break;
