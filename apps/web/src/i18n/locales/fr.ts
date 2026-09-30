@@ -123,6 +123,26 @@ const fr = {
 
   // Page titles and descriptions
   pages: {
+    oauth: {
+      consent: {
+        title: "Connecter {{client}} à Bliss",
+        subtitle: "Cette application souhaite utiliser vos données Bliss via le serveur MCP.",
+        signed_in_as: "Connecté en tant que {{email}}",
+        redirect_notice: "Après votre choix, vous serez renvoyé vers",
+        access_label: "Accès",
+        read_only_description: "Voir les transactions, le portefeuille, les analyses et les insights. Elle ne peut rien modifier.",
+        read_write_description: "Aussi recatégoriser les transactions, traiter vos files de révision et modifier les données du portefeuille.",
+        expiry_label: "La connexion expire après",
+        no_expiry_warning: "Une connexion sans expiration fonctionne jusqu'à ce que vous la révoquiez.",
+        footnote: "L'application voit vos données financières déchiffrées. Vous pouvez révoquer la connexion à tout moment dans Paramètres → Intégrations.",
+        admin_required: "Seul un administrateur de l'espace peut connecter des applications. Demandez à un administrateur de la connecter.",
+        allow: "Autoriser",
+        deny: "Refuser",
+        error_title: "Impossible de finaliser cette connexion",
+        error_missing: "Ce lien est incomplet. Relancez la connexion depuis votre application.",
+        error_generic: "Une erreur s'est produite. Relancez la connexion depuis votre application.",
+      },
+    },
     dashboard: {
       title: "Tableau de bord",
       subtitle: "Vue d'ensemble de votre situation financière",
@@ -428,6 +448,11 @@ const fr = {
           description: "Connectez Claude Code ou un autre client MCP avec cette clé. Il voit les mêmes données que la clé autorise : une clé en lecture seule ne peut que lire.",
           url_label: "URL du serveur MCP :",
           copy_command: "Copier la commande",
+        },
+        oauth: {
+          badge: "Connectée via OAuth · {{client}}",
+          expires: "La connexion expire le {{date}}",
+          no_expiry: "La connexion n'expire jamais",
         },
         confirm: {
           revoke_key_title: "Révoquer cette clé ?",

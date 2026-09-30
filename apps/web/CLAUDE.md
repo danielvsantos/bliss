@@ -11,7 +11,8 @@ All files use `import` / `export`. Never use `require()` in this app.
 ```
 apps/web/src/
   pages/                # Route pages
-    auth/               # Sign-in, sign-up
+    auth/               # Sign-in, sign-up (honours ?returnTo=)
+    oauth/              # consent.tsx — OAuth consent for MCP connectors (#89), standalone card
     reports/            # Financial reports (portfolio, expenses, tags, financial-summary, equity-analysis, passive-income)
     settings/           # User settings (index.tsx) + user management (users.tsx)
     Index.tsx           # Landing / home page
@@ -45,11 +46,12 @@ apps/web/src/
     equity-analysis/    # Equity Analysis asset class badge/editor + asset class colors
     onboarding/         # Onboarding flow components
     plaid-connect.tsx   # Plaid connection component (top-level)
-    withAuth.tsx        # Auth HOC wrapper (top-level)
+    withAuth.tsx        # Auth HOC wrapper (top-level); redirects to /auth?returnTo=
   hooks/                # 32 custom React hooks (use-*.ts/tsx)
   contexts/             # AuthContext (single context provider)
   lib/                  # Utility modules
     portfolio-utils.ts  # parseDecimal, getGroupColor, buildGroupColorMap, getGroupIcon
+    return-to.ts        # Safe post-sign-in returnTo (same-origin relative paths only)
   types/                # TypeScript type definitions (api.ts — all API response interfaces; equity-analysis.ts)
   i18n/                 # Internationalization (i18next, multiple locales)
 ```

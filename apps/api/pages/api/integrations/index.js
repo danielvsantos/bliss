@@ -6,6 +6,7 @@ import { cors } from '../../../utils/cors.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import {
   API_KEY_PUBLIC_SELECT,
+  OAUTH_CLIENT_INCLUDE,
   buildApiKey,
   serializeApiKey,
   serializeIntegration,
@@ -45,6 +46,7 @@ export default withAuth(async function handler(req, res) {
         orderBy: { createdAt: 'desc' },
         include: {
           apiKeys: { select: API_KEY_PUBLIC_SELECT, orderBy: { createdAt: 'asc' } },
+          oauthClient: OAUTH_CLIENT_INCLUDE,
         },
       });
       const now = new Date();

@@ -35,6 +35,8 @@ export const INTEGRATION_DENYLIST = Object.freeze([
   { prefix: '/api/users', methods: 'ALL' },
   // Tokens cannot manage tokens.
   { prefix: '/api/integrations', methods: 'ALL' },
+  // …nor mint them through OAuth (#89): consent is for signed-in users only.
+  { prefix: '/api/oauth', methods: 'ALL' },
   // Plaid connection lifecycle. The review queue (/api/plaid/transactions/*)
   // stays available to read-write tokens.
   { prefix: '/api/plaid/create-link-token', methods: 'ALL' },
@@ -171,10 +173,11 @@ export function isIntegrationToken(authHeader) {
   return extractIntegrationToken(authHeader) !== null;
 }
 
-const TOKEN_IN_TEXT = /bliss_[A-Za-z0-9]{8}_[A-Za-z0-9]{8,}/g;
+const TOKEN_IN_TEXT = /bliss_(?:[A-Za-z0-9]{8}|rt)_[A-Za-z0-9]{8,}/g;
 
 /**
- * Redact integration tokens from free text before it is logged.
+ * Redact integration tokens and OAuth refresh tokens (`bliss_rt_…`, #89)
+ * from free text before it is logged.
  *
  * @param {unknown} text
  * @returns {string}

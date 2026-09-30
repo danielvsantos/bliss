@@ -1,20 +1,60 @@
 # Use Bliss with Claude (MCP)
 
-Bliss includes an **MCP server**, so Claude Code, Claude Desktop and other
+Bliss includes an **MCP server**, so Claude (Cowork, claude.ai, Claude Desktop,
+Claude Code) and other
 [Model Context Protocol](https://modelcontextprotocol.io) clients can work with
 your finances in plain language. You don't need to teach the agent the REST API:
 it gets **39 tools** — search and re-categorise transactions, work the bank-sync
 review queue, review an imported statement, answer spending and portfolio
 questions, clean up subscriptions — and a short briefing on how Bliss works.
 
-It takes about five minutes:
+It takes about five minutes. There are two ways to connect:
 
-1. Create an **integration key** in Bliss.
-2. Add the Bliss MCP server to your client with that key.
-3. Ask.
+- **Claude Cowork / claude.ai / Claude Desktop connectors** — add a custom
+  connector with just the URL and sign in to Bliss when asked (OAuth). No key to
+  copy. See [Connect with a custom connector](#connect-with-a-custom-connector-oauth).
+- **Claude Code and other clients that send headers** — create an integration
+  key in Bliss and pass it as an `Authorization` header (steps 1–2 below).
+
+Then ask (step 3).
 
 The server lives on your own Bliss API at `https://<your-api>/api/mcp`. Nothing
 new to deploy, no environment variables to set.
+
+---
+
+## Connect with a custom connector (OAuth)
+
+Claude Cowork, claude.ai and Claude Desktop add remote MCP servers as
+**custom connectors**. They can't send a static API key, so Bliss signs them in
+with OAuth instead:
+
+1. In Claude, open **Connectors → Add custom connector** (the exact menu name
+   varies by app).
+2. Enter a name (e.g. *Bliss*) and the URL `https://API_URL/api/mcp`. Leave the
+   OAuth client ID and secret **empty** — Claude registers itself.
+3. Click **Connect**. A Bliss page opens: sign in if needed. You need to be a
+   workspace **admin**.
+4. On **Connect Claude to Bliss**, check where you'll be sent back to
+   (`claude.ai`), pick **Read-only** or **Read & write**, and how long the
+   connection lasts (30 days, **90 days** by default, 1 year, or never). Click
+   **Allow**.
+5. Claude shows the Bliss tools. Read-only connections get the 22 read tools;
+   Read & write all 39.
+
+The connection appears in **Settings → Integrations** as *Connected via OAuth ·
+Claude*. Claude renews its access every hour in the background; revoke the
+integration there to disconnect it immediately (removing the connector in Claude
+also revokes it, if Claude tells Bliss). When the connection expires, click
+**Connect** again in Claude.
+
+> The API must be reachable over **https** from the internet for claude.ai /
+> Cowork (their servers call it). A laptop-only Docker instance works with
+> Claude Code and Claude Desktop, but not with web connectors.
+
+Operators can restrict which apps may connect with `OAUTH_ALLOWED_REDIRECT_HOSTS`
+(default `claude.ai,claude.com,localhost,127.0.0.1`) — see
+[Configuration](/docs/configuration).
 
 ---
 
@@ -186,6 +226,10 @@ parameters and the REST endpoints it calls.
 | "Rate limited by Bliss. Retry after N seconds" | Too many requests from your IP | Wait; ask for fewer, larger pages |
 | `405` | The client used GET/DELETE (SSE sessions) | Use the Streamable HTTP transport; Bliss answers POST only |
 | Connection refused / timeout | Wrong URL (web app instead of API), or the API is down | Use the API service URL; check `https://API_URL/api/countries` answers |
+| Connector: "can't connect to Bliss" page | The app's redirect address isn't allowed on this server, or the connector was registered against another Bliss URL | Remove the connector and add it again; operators check `OAUTH_ALLOWED_REDIRECT_HOSTS` |
+| Connector: "Only a workspace admin can connect apps" | You signed in as a member or viewer | Ask an admin to connect it |
+| Connector: "This connection request has expired" | More than 10 minutes passed on the consent page | Click **Connect** again in Claude |
+| Connector stops working after a while | The connection expired or was revoked in Settings → Integrations | Click **Connect** again in Claude |
 
 **Behind a proxy that rewrites paths, or on Vercel:** tools call Bliss's own
 REST API through `http://127.0.0.1:$PORT`. If that address doesn't reach the

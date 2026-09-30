@@ -103,10 +103,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 4,072 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 1,781 tests (unit + integration) |
+| All | `pnpm test` | -- | 4,181 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 1,860 tests (unit + integration) |
 | Backend | `pnpm test:backend` | Jest (CJS) | 1,225 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 1,066 tests |
+| Frontend | `pnpm test:web` | Vitest + RTL | 1,096 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -195,6 +195,7 @@ Key patterns:
 - **Execution model:** every tool (`lib/mcp/tools/*.js`: reference, transactions, analytics, plaid review queue, imports review, portfolio, subscriptions) calls existing REST routes **over loopback** (`http://127.0.0.1:$PORT`, override `MCP_LOOPBACK_URL`) with the caller's own key, forwarding the client IP for the rate limiters. withAuth, the denylist, tenant scoping, decryption and events therefore apply to every tool call. REST errors map to one-line tool errors (`isError: true`).
 - **Shaping:** opaque cursors (default 50 / max 100), `{ value, currency }` money, signed transaction amounts (+ in / − out), ISO dates, hashes/raw payloads stripped; default pages < 25k chars, 50k hard cap that drops `nextCursor` when it trims.
 - **Out of scope by design:** file upload, Plaid connection management, reference-data writes, `fullScan`. `search_transactions` has no text filter (descriptions are encrypted with per-value PBKDF2 keys).
+- **OAuth for custom connectors:** Claude Cowork / claude.ai / Claude Desktop connectors can't send a header, so `apps/api` also runs an OAuth 2.1 server (PKCE S256, RFC 9728/8414 discovery via `/.well-known/*` rewrites, dynamic client registration limited by `OAUTH_ALLOWED_REDIRECT_HOSTS`, refresh rotation with reuse detection, RFC 7009 revoke). Every 401 from `/api/mcp` carries a `WWW-Authenticate … resource_metadata` challenge. **The access token is an integration key**: consent at `/oauth/consent` (web, admins only) creates an Integration with `oauthClientId` + `connectionExpiresAt` (default 90 days) whose single ApiKey is re-keyed on each refresh, so everything above applies unchanged and Settings → Integrations revokes it. `/api/oauth` is on `INTEGRATION_DENYLIST` (a key never mints a key). See [`docs/specs/api/25-oauth.md`](docs/specs/api/25-oauth.md).
 - **Observability:** `integration_request` log lines carry `mcpTool` (from the sanitised `x-bliss-mcp-tool` header); one `mcp_tool_call` line per tool call.
 - **Coverage:** 86 token-reachable REST operations, 66 wrapped, 20 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
 
@@ -353,7 +354,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Key rotation: `ENCRYPTION_SECRET_PREVIOUS`, `JWT_SECRET_PREVIOUS`
 - Observability: `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`
 
-Integration tokens (#84) need **no** environment variables — admins create them in Settings → Integrations. The MCP server (#89) needs none either; `MCP_LOOPBACK_URL` is an optional override for hosts where the API can't reach itself on `127.0.0.1:$PORT`.
+Integration tokens (#84) need **no** environment variables — admins create them in Settings → Integrations. The MCP server (#89) needs none either; `MCP_LOOPBACK_URL` is an optional override for hosts where the API can't reach itself on `127.0.0.1:$PORT`, and `OAUTH_ISSUER_URL` / `OAUTH_ALLOWED_REDIRECT_HOSTS` optionally tune its OAuth server.
 
 See `.env.example` for the full reference.
 

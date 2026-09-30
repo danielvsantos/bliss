@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { consumeReturnTo } from "@/lib/return-to";
 
 export default function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -13,11 +14,13 @@ export default function AuthCallbackPage() {
 
     // The auth cookie was set server-side by google-token.js.
     // Just verify the session and redirect accordingly.
+    const returnTo = consumeReturnTo();
+
     checkSession().then(() => {
       if (isNew === "true") {
         navigate("/onboarding", { replace: true });
       } else {
-        navigate("/", { replace: true });
+        navigate(returnTo ?? "/", { replace: true });
       }
     }).catch(() => {
       navigate("/auth?error=oauth_failed", { replace: true });

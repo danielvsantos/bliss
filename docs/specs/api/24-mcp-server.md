@@ -67,7 +67,7 @@ limit). The client must send `Accept: application/json, text/event-stream`
 
 | Request | Response |
 |---|---|
-| No `Authorization`, invalid / expired / revoked key | `401` from withAuth (`TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REVOKED`), no MCP handling |
+| No `Authorization`, invalid / expired / revoked key | `401` from withAuth (`TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REVOKED`), no MCP handling. Every 401 carries `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource/api/mcp"` (plus `error="invalid_token"` when a `bliss_` key was sent) so OAuth clients can discover the authorization server |
 | Cookie session or user JWT | `401 { code: 'INTEGRATION_KEY_REQUIRED' }` |
 | `GET` / `DELETE` (SSE stream / session end) with a valid key | `405`, `Allow: POST` |
 | `POST` with a valid key | MCP JSON-RPC response (`200`, or `202` for notifications) |
@@ -78,6 +78,11 @@ read-only keys. `utils/integrationPolicy.js` has an **exact-path** allowance,
 the integration-token path of withAuth. This is safe because the MCP route never
 writes by itself: each tool's REST call is checked again by withAuth against its
 real route and method. The route matrix classifies `mcp.js` as `POST: A/A`.
+
+**OAuth (custom connectors).** Claude Cowork, claude.ai and Claude Desktop
+custom connectors can't send a static header; they discover and run the OAuth
+2.1 flow in [25-oauth.md](./25-oauth.md). The access token they receive **is**
+an integration key, so nothing on this endpoint changes for them.
 
 ## 24.4. Tools and roles
 

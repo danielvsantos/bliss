@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import AuthPage from './index';
 import * as AuthHook from '@/hooks/use-auth';
@@ -121,6 +121,25 @@ describe('AuthPage', () => {
       id: 't1',
       name: 'Test Tenant'
     }));
+  });
+
+  it('returns to a safe returnTo after sign-in (OAuth consent, #89)', async () => {
+    mockSignIn.mockResolvedValueOnce({});
+    window.history.pushState({}, '', '/auth?returnTo=%2Foauth%2Fconsent%3Frequest%3Dabc');
+    render(
+      <MemoryRouter initialEntries={['/auth']}>
+        <Routes>
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/oauth/consent" element={<div data-testid="consent-page" />} />
+          <Route path="/" element={<div data-testid="home-page" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'test@bliss.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Sign In' }).find((b) => b.getAttribute('type') === 'submit')!);
+    expect(await screen.findByTestId('consent-page')).toBeInTheDocument();
+    window.history.pushState({}, '', '/');
   });
 
   it('handles sign in failures gracefully', async () => {

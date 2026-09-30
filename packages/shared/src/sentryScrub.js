@@ -59,6 +59,11 @@ const DENYLISTED_KEYS = new Set([
   'set-cookie',
   'rawjson',
   'plaidaccesstoken',
+  // OAuth (#89)
+  'refresh_token',
+  'refreshtoken',
+  'code_verifier',
+  'client_secret',
 ]);
 
 /**
@@ -122,9 +127,10 @@ const REDACTED = '[redacted]';
  * Bliss integration tokens (#84): `bliss_<8-char prefix>_<secret>`. Unlike the
  * key-based denylist above, this is matched inside free-text strings, so a
  * token pasted into an error message, a breadcrumb or a URL is redacted too.
+ * OAuth refresh tokens (`bliss_rt_<secret>`, #89) are matched too.
  * Deliberately loose on lengths so a truncated or malformed token still goes.
  */
-const INTEGRATION_TOKEN_PATTERN = /bliss_[A-Za-z0-9]{8}_[A-Za-z0-9]{8,}/g;
+const INTEGRATION_TOKEN_PATTERN = /bliss_(?:[A-Za-z0-9]{8}|rt)_[A-Za-z0-9]{8,}/g;
 
 /**
  * @param {string} value

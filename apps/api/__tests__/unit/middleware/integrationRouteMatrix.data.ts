@@ -93,6 +93,17 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   'imports/similar.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'imports/upload.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
 
+  // ── OAuth for the MCP server (#89): tokens can never mint tokens ──────────
+  'oauth/protected-resource.js': { auth: 'public', methods: DENY_ALL(['GET']) },
+  'oauth/metadata.js': { auth: 'public', methods: DENY_ALL(['GET']) },
+  'oauth/register.js': { auth: 'public', methods: DENY_ALL(['POST']) },
+  'oauth/authorize.js': { auth: 'public', methods: DENY_ALL(['GET']) },
+  'oauth/token.js': { auth: 'public', methods: DENY_ALL(['POST']) },
+  'oauth/revoke.js': { auth: 'public', methods: DENY_ALL(['POST']) },
+  'oauth/requests/[id]/index.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
+  'oauth/requests/[id]/approve.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['POST']) },
+  'oauth/requests/[id]/deny.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
+
   // ── MCP server (#89): JSON-RPC over POST; read-only keys may POST here only ──
   'mcp.js': { auth: 'withAuth', methods: { POST: 'A/A' } },
 

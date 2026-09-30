@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { withAuth } from '../../utils/withAuth.js';
 import { handleMcpRequest } from '../../lib/mcp/server.js';
+import { mcpChallenge } from '../../utils/oauth.js';
 
 /**
  * MCP server for AI agents (#89) — `POST /api/mcp`.
@@ -13,7 +14,7 @@ import { handleMcpRequest } from '../../lib/mcp/server.js';
  * existing REST route over loopback with the caller's key, so withAuth's role
  * cap, denylist and tenant scoping apply to every tool call.
  */
-export default withAuth(async function handler(req, res) {
+const mcpHandler = withAuth(async function handler(req, res) {
   if (req.user?.authType !== 'integration') {
     return res.status(StatusCodes.UNAUTHORIZED).json({
       error: 'MCP requires a Bliss integration API key',
@@ -32,3 +33,21 @@ export default withAuth(async function handler(req, res) {
 
   return handleMcpRequest(req, res);
 });
+
+/**
+ * Every 401 from this route carries the OAuth challenge (RFC 9728 §5.1), so
+ * OAuth-only clients (Claude Cowork / claude.ai connectors) can discover the
+ * authorization server. A rejected `bliss_` token also gets
+ * error="invalid_token", which makes an OAuth client refresh.
+ */
+export default function handler(req, res) {
+  const status = res.status.bind(res);
+  res.status = (code) => {
+    if (code === StatusCodes.UNAUTHORIZED) {
+      const presentedKey = /^bearer\s+bliss_/i.test(req.headers?.authorization || '');
+      res.setHeader('WWW-Authenticate', mcpChallenge({ invalidToken: presentedKey }));
+    }
+    return status(code);
+  };
+  return mcpHandler(req, res);
+}

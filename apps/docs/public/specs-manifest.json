@@ -245,5 +245,14 @@
     "layers": {
       "api": "docs/specs/api/24-mcp-server.md"
     }
+  },
+  {
+    "slug": "mcp-oauth",
+    "title": "OAuth for MCP Connectors",
+    "description": "OAuth 2.1 authorization server (PKCE, dynamic client registration, refresh rotation) so Claude custom connectors can connect to /api/mcp; access tokens are integration keys",
+    "order": 25,
+    "layers": {
+      "api": "docs/specs/api/25-oauth.md"
+    }
   }
 ]

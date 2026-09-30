@@ -15,6 +15,7 @@ import { readdirSync, statSync } from 'fs';
 import { join, relative, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { AddressInfo } from 'net';
+import { OAUTH_REWRITES } from '../../lib/oauthRewrites.js';
 
 const API_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../pages/api');
 
@@ -81,6 +82,14 @@ export async function startLoopbackServer(): Promise<LoopbackServer> {
   const server = http.createServer(async (req: any, res: any) => {
     try {
       const url = new URL(req.url, 'http://localhost');
+      // Mirror next.config.mjs rewrites (OAuth discovery, #89).
+      for (const { source, destination } of OAUTH_REWRITES) {
+        const base = source.replace('/:path*', '');
+        if (url.pathname === base || (source.endsWith('/:path*') && url.pathname.startsWith(`${base}/`))) {
+          url.pathname = destination;
+          break;
+        }
+      }
       const route = routes.find((r) => r.regex.test(url.pathname));
       res.status = (code: number) => { res.statusCode = code; return res; };
       res.json = (body: unknown) => {
@@ -98,7 +107,10 @@ export async function startLoopbackServer(): Promise<LoopbackServer> {
         String(req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter(([k]) => k),
       );
       const raw = ['GET', 'HEAD'].includes(req.method) ? '' : await readBody(req);
-      req.body = raw && String(req.headers['content-type'] || '').includes('json') ? JSON.parse(raw) : (raw || {});
+      const contentType = String(req.headers['content-type'] || '');
+      if (raw && contentType.includes('json')) req.body = JSON.parse(raw);
+      else if (raw && contentType.includes('application/x-www-form-urlencoded')) req.body = Object.fromEntries(new URLSearchParams(raw));
+      else req.body = raw || {};
 
       if (!handlers.has(route.file)) {
         handlers.set(route.file, (await import(pathToFileURL(join(API_ROOT, route.file)).href)).default);

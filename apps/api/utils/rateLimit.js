@@ -78,5 +78,8 @@ export const rateLimiters = {
 
   // Integrations & API tokens management (admin only, #84)
   integrations: createRateLimiter({ max: 30, windowMs: 5 * 60 * 1000 }),   // 30 calls per 5 min
+  // OAuth for the MCP server (#89): discovery, authorize, token, consent — and client registration.
+  oauth: createRateLimiter({ max: 60, windowMs: 5 * 60 * 1000 }),
+  oauthRegister: createRateLimiter({ max: 10, windowMs: 60 * 60 * 1000 }),
 
 };

@@ -52,6 +52,7 @@ const FEATURE_MAP = {
   'passive-income':           { title: 'Passive Income Projection',  order: 22, description: 'Income terms on assets, allowance/benefit streams, the 12/24/36-month projection engine, ETFs in SecurityMaster, and detached terms' },
   'integrations':             { title: 'Integrations & API Tokens',  order: 23, description: 'Tenant-scoped, revocable API tokens for AI agents and external systems: Read-only / Read & write role cap, central denylist, attribution log' },
   'mcp-server':               { title: 'MCP Server for AI Agents',   order: 24, description: 'Stateless Streamable HTTP MCP endpoint (/api/mcp) with 39 agent-oriented tools over the REST API, role-filtered by integration key' },
+  'mcp-oauth':                { title: 'OAuth for MCP Connectors',   order: 25, description: 'OAuth 2.1 authorization server (PKCE, dynamic client registration, refresh rotation) so Claude custom connectors can connect to /api/mcp; access tokens are integration keys' },
 };
 
 // Maps feature slugs to actual filenames per layer (from docs/specs/)
@@ -80,6 +81,7 @@ const LAYER_FILES = {
   'passive-income':           { api: '22-passive-income-api.md', backend: '22-passive-income.md', frontend: '22-passive-income.md' },
   'integrations':             { api: '23-integrations-api.md', frontend: '23-integrations.md' },
   'mcp-server':               { api: '24-mcp-server.md' },
+  'mcp-oauth':                { api: '25-oauth.md' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────

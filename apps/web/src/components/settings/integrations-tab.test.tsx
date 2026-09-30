@@ -255,6 +255,25 @@ describe('IntegrationsTab', () => {
   });
 });
 
+describe('IntegrationsTab — OAuth connections (#89)', () => {
+  it('shows the OAuth badge and connection expiry, without key management', async () => {
+    listReturns([{
+      ...INTEGRATION,
+      id: 'int-oauth',
+      name: 'Claude',
+      oauth: { clientName: 'Claude', connectionExpiresAt: '2027-01-01T00:00:00.000Z' },
+    }]);
+    renderTab();
+    const badge = await screen.findByTestId('oauth-badge');
+    expect(badge.textContent).toBe(`${T}.oauth.badge {"client":"Claude"}`);
+    const row = screen.getByTestId('integration-row');
+    expect(row.textContent).toContain(`${T}.oauth.expires`);
+    expect(within(row).queryByText(`${T}.add_key`)).not.toBeInTheDocument();
+    expect(within(row).queryByText(`${T}.show_keys`)).not.toBeInTheDocument();
+    expect(within(row).getByLabelText(`${T}.revoke_integration`)).toBeInTheDocument();
+  });
+});
+
 describe('TokenReveal — MCP snippet (#89)', () => {
   it('shows the MCP URL and copies a one-line claude mcp add command', async () => {
     const user = userEvent.setup();

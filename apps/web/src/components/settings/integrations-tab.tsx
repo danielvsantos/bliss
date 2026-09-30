@@ -661,6 +661,9 @@ function IntegrationRow({
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const isActive = integration.status === 'active';
+  // OAuth connections (#89) have one key the connected app rotates hourly:
+  // show the connection's expiry instead of keys, and no "Add key".
+  const oauth = integration.oauth ?? null;
   const lastUsed = formatDate(integration.lastUsedAt, i18n.language) ?? t(`${T}.never_used`);
 
   return (
@@ -671,22 +674,33 @@ function IntegrationRow({
             <span className="text-sm font-medium text-foreground">{integration.name}</span>
             <AccessBadge level={integration.accessLevel} />
             <StatusBadge status={integration.status} />
+            {oauth && (
+              <Badge className="bg-brand-primary/10 text-brand-primary border-brand-primary/20" data-testid="oauth-badge">
+                {t(`${T}.oauth.badge`, { client: oauth.clientName })}
+              </Badge>
+            )}
           </div>
           {integration.description && (
             <p className="text-xs text-muted-foreground">{integration.description}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            {t(`${T}.keys_count`, { count: integration.activeKeyCount, total: integration.keyCount })} ·{' '}
-            {t(`${T}.last_used`)}: {lastUsed}
+            {oauth
+              ? oauth.connectionExpiresAt
+                ? t(`${T}.oauth.expires`, { date: formatDate(oauth.connectionExpiresAt, i18n.language) })
+                : t(`${T}.oauth.no_expiry`)
+              : t(`${T}.keys_count`, { count: integration.activeKeyCount, total: integration.keyCount })}{' '}
+            · {t(`${T}.last_used`)}: {lastUsed}
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {isActive && (
             <>
-              <Button variant="outline" size="sm" onClick={onAddKey}>
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                {t(`${T}.add_key`)}
-              </Button>
+              {!oauth && (
+                <Button variant="outline" size="sm" onClick={onAddKey}>
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  {t(`${T}.add_key`)}
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={onRename} aria-label={t(`${T}.rename`)}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
@@ -701,18 +715,20 @@ function IntegrationRow({
               </Button>
             </>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-          >
-            {expanded ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}
-            {expanded ? t(`${T}.hide_keys`) : t(`${T}.show_keys`)}
-          </Button>
+          {!oauth && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}
+              {expanded ? t(`${T}.hide_keys`) : t(`${T}.show_keys`)}
+            </Button>
+          )}
         </div>
       </div>
-      {expanded && (
+      {expanded && !oauth && (
         <ul className="mt-2 divide-y divide-border border-t border-border">
           {integration.keys.map((key) => (
             <KeyRow key={key.id} apiKey={key} canRevoke={isActive} onRevoke={() => onRevokeKey(key)} />
