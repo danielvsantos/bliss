@@ -208,17 +208,20 @@ export function TokenReveal({ token, onDone }: { token: string; onDone: () => vo
   const mcpCommand = `claude mcp add --transport http bliss ${mcpUrl} ${mcpHeader}`;
 
   return (
-    <div className="space-y-4" data-testid="token-reveal">
+    // min-w-0 throughout: DialogContent is a CSS grid, and a grid item's
+    // min-width defaults to its content — without it the unbreakable token and
+    // curl line stretch the column past the dialog's max width.
+    <div className="min-w-0 space-y-4" data-testid="token-reveal">
       <p className="flex items-start gap-2 rounded-md border border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
         {t(`${T}.reveal.warning`)}
       </p>
-      <div className="flex gap-2">
+      <div className="flex min-w-0 gap-2">
         <Input
           readOnly
           value={token}
           aria-label={t(`${T}.reveal.title`)}
-          className="font-mono text-xs"
+          className="min-w-0 flex-1 font-mono text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
         <Button type="button" variant="outline" onClick={() => tokenCopy.copy(token)} className="shrink-0">
@@ -226,13 +229,13 @@ export function TokenReveal({ token, onDone }: { token: string; onDone: () => vo
           {tokenCopy.copied ? t(`${T}.reveal.copied`) : t(`${T}.reveal.copy`)}
         </Button>
       </div>
-      <div className="space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         <Label>{t(`${T}.reveal.example`)}</Label>
-        <pre className="overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+        <pre className="whitespace-pre-wrap break-all rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
           {curl}
         </pre>
       </div>
-      <div className="space-y-1.5" data-testid="mcp-snippet">
+      <div className="min-w-0 space-y-1.5" data-testid="mcp-snippet">
         <div className="flex items-center justify-between gap-2">
           <Label>{t(`${T}.mcp.title`)}</Label>
           <Button
@@ -248,9 +251,9 @@ export function TokenReveal({ token, onDone }: { token: string; onDone: () => vo
         </div>
         <p className="text-xs text-muted-foreground">{t(`${T}.mcp.description`)}</p>
         <p className="text-xs text-muted-foreground">
-          {t(`${T}.mcp.url_label`)} <code className="font-mono text-foreground">{mcpUrl}</code>
+          {t(`${T}.mcp.url_label`)} <code className="break-all font-mono text-foreground">{mcpUrl}</code>
         </p>
-        <pre className="overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+        <pre className="whitespace-pre-wrap break-all rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
           {`claude mcp add --transport http bliss ${mcpUrl} \\\n  ${mcpHeader}`}
         </pre>
       </div>

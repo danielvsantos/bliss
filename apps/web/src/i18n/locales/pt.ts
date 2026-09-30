@@ -328,6 +328,9 @@ const pt = {
         banks: "Bancos",
         connections: "Conexões",
         integrations: "Integrações",
+        ai_classification: "Classificação IA",
+        maintenance: "Manutenção",
+        admin_section: "Administração",
       },
       general: {
         title: "Configurações Gerais",

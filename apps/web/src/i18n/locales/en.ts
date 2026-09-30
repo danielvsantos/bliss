@@ -328,6 +328,9 @@ const en = {
         banks: "Banks",
         connections: "Connections",
         integrations: "Integrations",
+        ai_classification: "AI Classification",
+        maintenance: "Maintenance",
+        admin_section: "Administration",
       },
       general: {
         title: "General Settings",

@@ -1,5 +1,6 @@
 /**
- * Settings → Integrations tab visibility (#84, AC8): admin only.
+ * Settings tab navigation: Integrations tab visibility (#84, AC8: admin only)
+ * and the responsive side-nav / pill-row layout.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -11,12 +12,14 @@ import SettingsPage from './index';
 import { useAuth } from '@/hooks/use-auth';
 import { mockQueryResult, mockMutationResult } from '@/test/mock-helpers';
 import { useMetadata } from '@/hooks/use-metadata';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { useTenantSettings, useUpdateTenantSettings } from '@/hooks/use-tenant-settings';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'en', changeLanguage: vi.fn() } }),
 }));
 vi.mock('@/hooks/use-auth');
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: vi.fn(() => false) }));
 vi.mock('@/hooks/use-metadata');
 vi.mock('@/hooks/use-tenant-settings');
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
@@ -46,6 +49,7 @@ function renderAs(role: 'admin' | 'member' | 'viewer') {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useIsMobile).mockReturnValue(false);
   vi.mocked(useMetadata).mockReturnValue(
     mockQueryResult({ countries: [], currencies: [], banks: [] }) as unknown as ReturnType<typeof useMetadata>,
   );
@@ -69,5 +73,30 @@ describe('Settings page — Integrations tab', () => {
     expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.general/ })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /pages\.settings\.tabs\.integrations/ })).not.toBeInTheDocument();
     expect(screen.queryByText('integrations')).not.toBeInTheDocument();
+  });
+
+  it('groups the admin-only tabs under an Administration heading', () => {
+    renderAs('admin');
+    expect(screen.getByText('pages.settings.tabs.admin_section')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.maintenance/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.ai_classification/ })).toBeInTheDocument();
+  });
+
+  it('hides the Administration heading and admin tabs from members', () => {
+    renderAs('member');
+    expect(screen.queryByText('pages.settings.tabs.admin_section')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /pages\.settings\.tabs\.maintenance/ })).not.toBeInTheDocument();
+  });
+
+  it('shows every tab label (no icon-only tabs) in a vertical tablist on desktop', () => {
+    renderAs('admin');
+    expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'vertical');
+    expect(screen.getAllByRole('tab')).toHaveLength(6);
+  });
+
+  it('switches to a horizontal (scrollable) tablist on mobile', () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    renderAs('admin');
+    expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'horizontal');
   });
 });

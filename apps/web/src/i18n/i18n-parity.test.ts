@@ -310,12 +310,17 @@ const SAME_AS_EN_ALLOWED = new Set([
   'pages.settings.integrations.form.name_label',
   'pages.settings.integrations.status_active',
   'pages.settings.integrations.form.description_label',
+  'pages.settings.tabs.maintenance', // "Maintenance" in French too
+  'pages.settings.tabs.admin_section', // "Administration" in French too
 ]);
 
 describe('i18n parity — task #84 integrations keys', () => {
   const keys = [
     ...leafKeys(resolve(en, 'pages.settings.integrations'), 'pages.settings.integrations'),
     'pages.settings.tabs.integrations',
+    'pages.settings.tabs.ai_classification',
+    'pages.settings.tabs.maintenance',
+    'pages.settings.tabs.admin_section',
   ];
 
   it('has a meaningful number of keys', () => {

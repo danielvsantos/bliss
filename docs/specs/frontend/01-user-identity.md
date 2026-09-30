@@ -159,18 +159,18 @@ These components allow a user to manage their tenant's configuration and the use
 
 ### Page Layout
 
-The settings page uses a constrained layout (`max-w-[880px]`, centered) with a page header and pill-style tab navigation.
+The settings page uses a centered layout (`max-w-[1120px]`) with a page header and a responsive tab navigation: a vertical side nav from `md` up, a horizontal pill row on phones.
 
 **Page Header:**
 - Icon tile (42px rounded-xl, `bg-brand-primary/10`) with `Settings` Lucide icon
 - Title: "Settings" + subtitle: "Manage your workspace, preferences, and users."
 
-**Tab Navigation — Pill Segmented Control:**
-- Inline-flex pill tabs (`bg-muted border border-border rounded-[0.875rem] p-[3px]`)
-- Active state: `bg-primary text-primary-foreground rounded-[0.75rem]` with shadow
-- 5 tabs: General, Countries & Currencies, Banks, Plan, AI Classification
-- Each tab has a Lucide icon prefix (SettingsIcon, Globe, Building, CreditCard, Sparkles)
-- Horizontally scrollable on small screens (`overflow-x-auto`)
+**Tab Navigation — side nav (desktop) / pill row (mobile):**
+- Tabs are declared once in `SETTINGS_SECTIONS` (`src/pages/settings/index.tsx`): each section has an optional heading key, an `adminOnly` flag and its tabs (`value`, `labelKey`, Lucide icon). Add new settings tabs there — the layout scales to any number of tabs.
+- Sections: **Workspace** (no heading) — General (`SettingsIcon`), Countries & Currencies (`Globe`), Banks (`Building`), AI Classification (`Sparkles`); **Administration** (`adminOnly`, heading `pages.settings.tabs.admin_section`) — Maintenance (`Wrench`), Integrations (`KeyRound`). Admin sections are not rendered at all for members and viewers.
+- **Desktop (`md`+)**: Radix `Tabs` with `orientation="vertical"` and `md:flex-row`; a 208px sticky `TabsList` on the left (full labels, icon prefix, section headings in small uppercase `text-muted-foreground`), content in a `min-w-0 flex-1` column. Active tab: `bg-muted text-foreground font-medium`; hover `bg-muted`.
+- **Mobile**: `orientation="horizontal"` (via `useIsMobile()`); the `TabsList` is a horizontally scrollable row of bordered `bg-card` pills with full labels; section headings are hidden. Active pill: `bg-primary text-primary-foreground`. Radix scrolls the focused tab into view.
+- Every label comes from `pages.settings.tabs.*` in all 5 locales.
 
 ### Card Architecture
 
