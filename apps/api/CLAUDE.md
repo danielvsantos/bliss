@@ -35,10 +35,12 @@ apps/api/
     countries.js        # Supported countries
     currencies.js       # Supported currencies
     currency-rates.js   # Exchange rates
+    mcp.js              # MCP server for AI agents (#89) — POST only, integration keys only
   utils/                # Shared utilities
   middleware.js         # Next.js middleware: refuses integration tokens on denylisted routes (Edge, pure)
   services/             # Business logic (auth, transactions, plaid, valuation)
   lib/                  # Constants, default categories
+    mcp/                # MCP server (#89): server, loopback, errors, shape, registry, exclusions, tools/*
   prisma/               # Prisma client with encryption + validation extensions
   __tests__/            # Vitest tests (unit + integration)
     unit/               # Isolated utility and middleware tests
@@ -82,7 +84,8 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 - **Secret rotation:** `withAuth` tries `JWT_SECRET_CURRENT` first, then `JWT_SECRET_PREVIOUS`
 - **Multi-tenant isolation:** `user.tenantId` from JWT is used in every Prisma query. Never trust client-supplied tenantId.
 - **Integration tokens (#84):** `Authorization: Bearer bliss_<prefix>_<secret>` is checked first in `withAuth` (cookie ignored). It hydrates `req.user` as the creating admin with a capped role (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, never `admin`) plus `authType: 'integration'`, `integrationId`, `apiKeyId`, and logs one `integration_request` line per request. Only a SHA-256 hash + public prefix is stored (`ApiKey`). See `docs/specs/api/23-integrations-api.md`.
-- **Every new route must be classified in `__tests__/unit/middleware/integrationRouteMatrix.test.ts`** (the test fails otherwise). If a token must not reach it, add it to `INTEGRATION_DENYLIST` in `utils/integrationPolicy.js`. Never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route — that would undo the role cap.
+- **Every new route must be classified in `__tests__/unit/middleware/integrationRouteMatrix.data.ts`** (`integrationRouteMatrix.test.ts` fails otherwise). If a token must not reach it, add it to `INTEGRATION_DENYLIST` in `utils/integrationPolicy.js`. Never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route — that would undo the role cap.
+- **MCP (#89):** `POST /api/mcp` accepts integration keys only (read-only keys may POST there: exact-path allowance in `integrationPolicy.js`). **A token-reachable route must also be wrapped by an MCP tool or listed in `lib/mcp/exclusions.js`** — `__tests__/unit/mcp/coverage.test.ts` fails otherwise. Tools call REST over loopback; never put Prisma access or business logic in `lib/mcp`. Regenerate `docs/guides/mcp-tool-reference.md` with `pnpm mcp:reference` after changing a tool. See `docs/specs/api/24-mcp-server.md`.
 
 ## Key utilities
 
@@ -90,7 +93,7 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 |------|---------|
 | `withAuth.js` | Integration-token path (role cap + denylist + attribution log), then JWT validation, Redis denylist check; hydrates `req.user` |
 | `apiKeys.js` | Integration tokens: generate, SHA-256 hash, parse, `verifyApiKey`, throttled `touchLastUsed` |
-| `integrationPolicy.js` | Pure (Edge-safe) token policy: path normalisation, `INTEGRATION_DENYLIST`, `effectiveRole`, token extraction/redaction |
+| `integrationPolicy.js` | Pure (Edge-safe) token policy: path normalisation, `INTEGRATION_DENYLIST`, `VIEWER_POST_ALLOWED` (`/api/mcp`), `effectiveRole`, token extraction/redaction |
 | `cors.js` | Dynamic origin whitelist from `FRONTEND_URL`, auto-adds localhost in dev |
 | `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config |
 | `rateLimit.js` | Per-route rate limiters (incl. `integrations`) |
@@ -166,7 +169,7 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 **Coverage:** 70% lines/functions, 60% branches. Excludes `pages/api/auth/[...nextauth].js`.
 
-**Integration tests** use `createIsolatedTenant()` from `__tests__/helpers/tenant.ts` which creates a Tenant + User + signed JWT. Always call `teardownTenant()` in afterAll. For integration-token requests use `createIntegrationKey()` / `createTenantUser()` / `bearer()` from `__tests__/helpers/integration.ts` (no extra teardown — deleting users cascades to integrations and keys), and set `req.url` (the denylist fails closed without it).
+**Integration tests** use `createIsolatedTenant()` from `__tests__/helpers/tenant.ts` which creates a Tenant + User + signed JWT. Always call `teardownTenant()` in afterAll. For integration-token requests use `createIntegrationKey()` / `createTenantUser()` / `bearer()` from `__tests__/helpers/integration.ts` (no extra teardown — deleting users cascades to integrations and keys), and set `req.url` (the denylist fails closed without it). MCP suites use `startLoopbackServer()` / `connectMcp()` / `callTool()` from `__tests__/helpers/mcpServer.ts`: a real HTTP server serving every Pages Router handler, so tool loopback calls hit the real routes.
 
 **Test setup** (`__tests__/setup/env.ts`): Loads `.env.test` first, then root `.env`. Forces test values for encryption and JWT secrets. This runs before any module imports.
 
@@ -187,5 +190,6 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 ## Lib
 
+- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (39 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
 - `constants.js` -- Category types: Income, Essentials, Lifestyle, Growth, Ventures, Investments, Asset, Debt, Transfers
 - `defaultCategories.js` -- ~70 pre-seeded categories for new tenants (with type, group, icon, processingHint)

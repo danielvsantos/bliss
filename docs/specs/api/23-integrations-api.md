@@ -87,7 +87,9 @@ extractIntegrationToken(Authorization)   // /^bearer\s+(bliss_.*)$/i
   │                 (optional mode: req.user = null, like the JWT path)
   ├─ isDeniedForIntegration(req.url, method) → 403 NOT_AVAILABLE_TO_INTEGRATIONS
   ├─ role = effectiveRole(creator.role, accessLevel)
-  ├─ role === 'viewer' && method !== 'GET' → 403 READ_ONLY_INTEGRATION
+  ├─ role === 'viewer' && method !== 'GET'
+  │     && !isViewerPostAllowed(url, method)  → 403 READ_ONLY_INTEGRATION
+  │     (exact-path exception: POST /api/mcp, #89)
   ├─ requireRole && role !== requireRole → 403 "Insufficient permissions"
   ├─ touchLastUsed(key, ip)
   └─ req.user = { id: creator.id, tenantId, email: creator.email, role,
@@ -118,7 +120,9 @@ the handler when the response object has no events, as in tests):
 ```
 
 IDs only — never the token, its hash, the query string or the body. Denied
-requests (403) are logged too. Error messages logged on the token path go
+requests (403) are logged too. REST calls made by an MCP tool (#89) carry an
+`x-bliss-mcp-tool` header; a well-formed value (`^[a-z_]{1,64}$`) is added as
+`"mcpTool":"update_transaction"`, anything else is dropped. Error messages logged on the token path go
 through `redactIntegrationTokens()`.
 
 ### Sentry
@@ -164,7 +168,7 @@ the Plaid-signed webhook) or are public (`countries`, `currencies`).
 
 ### Route matrix (keeping the denylist complete)
 
-`__tests__/unit/middleware/integrationRouteMatrix.test.ts` lists every file
+`__tests__/unit/middleware/integrationRouteMatrix.data.ts` lists every file
 under `pages/api` with the expected outcome per method for READ_ONLY and
 READ_WRITE tokens (`A` allow, `R` read-only 403, `X` admin 403, `D` denylist
 403, `U` own credential, `P` public). It fails when:
@@ -173,6 +177,18 @@ READ_WRITE tokens (`A` allow, `R` read-only 403, `X` admin 403, `D` denylist
 - a file's `withAuth` / `requireRole: 'admin'` / inline admin check / admin-key wiring no longer matches its entry;
 - a token-reachable route re-reads the caller's `User` row by `req.user.id`;
 - the real `withAuth` (or `middleware.js` for non-`withAuth` routes) produces a different outcome than declared.
+
+The assertions live in `integrationRouteMatrix.test.ts`. The same table drives
+the MCP coverage test (#89, [24-mcp-server.md](./24-mcp-server.md#249-coverage)):
+a token-reachable route must also be wrapped by an MCP tool or listed in
+`lib/mcp/exclusions.js`.
+
+### MCP server (#89)
+
+Integration keys are also the only credential of the MCP endpoint
+`POST /api/mcp`, which exposes 39 tools over these same REST routes (every tool
+call goes through this authentication path again). See
+[24-mcp-server.md](./24-mcp-server.md).
 
 ## 23.5. Management endpoints
 

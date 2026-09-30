@@ -1,10 +1,11 @@
 /**
  * Integration-token route matrix (#84, AC9).
  *
- * Every file under pages/api must be classified here with the outcome an
- * integration token gets for each method it serves, for READ_ONLY and for
+ * Every file under pages/api must be classified in integrationRouteMatrix.data.ts
+ * with the outcome an integration token gets for each method it serves, for READ_ONLY and for
  * READ_WRITE tokens. The test fails when:
- *   - a route file exists that is not in ROUTE_MATRIX (new route → classify it),
+ *   - a route file exists that is not in ROUTE_MATRIX (new route → classify it
+ *     in integrationRouteMatrix.data.ts),
  *   - a ROUTE_MATRIX entry has no file (route removed/renamed),
  *   - a file's auth wiring (withAuth / requireRole / inline admin check / admin
  *     key) no longer matches its declared classification,
@@ -21,7 +22,8 @@
  *   P  public route, no auth at all (same answer as an anonymous request)
  *
  * If you add a route: decide whether a token should reach it. If not, add it
- * to INTEGRATION_DENYLIST in utils/integrationPolicy.js, then classify it here.
+ * to INTEGRATION_DENYLIST in utils/integrationPolicy.js, then classify it in
+ * integrationRouteMatrix.data.ts.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -44,131 +46,7 @@ vi.mock('../../../utils/cors.js', () => ({ cors: vi.fn().mockReturnValue(false) 
 import { withAuth } from '../../../utils/withAuth.js';
 import { generateApiKey, _resetLastUsedThrottle } from '../../../utils/apiKeys.js';
 import { middleware } from '../../../middleware.js';
-
-type Outcome = 'A' | 'R' | 'X' | 'D' | 'U' | 'P';
-type Pair = `${Outcome}/${Outcome}`;
-
-interface RouteSpec {
-  auth: 'withAuth' | 'public' | 'adminKey' | 'webhook' | 'credential';
-  /** withAuth(..., { requireRole: 'admin' }) on the whole route. */
-  requireAdmin?: boolean;
-  /** Methods gated by an inline `user.role !== 'admin'` check in the handler. */
-  inlineAdmin?: string[];
-  methods: Record<string, Pair>;
-}
-
-const RW_ALL = (methods: string[]): Record<string, Pair> =>
-  Object.fromEntries(methods.map((m) => [m, m === 'GET' ? 'A/A' : 'R/A'])) as Record<string, Pair>;
-const DENY_ALL = (methods: string[]): Record<string, Pair> =>
-  Object.fromEntries(methods.map((m) => [m, 'D/D'])) as Record<string, Pair>;
-const WRITES_DENIED = (methods: string[]): Record<string, Pair> =>
-  Object.fromEntries(methods.map((m) => [m, m === 'GET' ? 'A/A' : 'D/D'])) as Record<string, Pair>;
-
-const ROUTE_MATRIX: Record<string, RouteSpec> = {
-  // ── Accounts / categories / tenants: reads only ───────────────────────────
-  'accounts.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'POST', 'PUT', 'DELETE']) },
-  'categories.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'POST', 'PUT', 'DELETE']) },
-  'tenants.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'PUT', 'DELETE']) },
-  'tenants/settings.js': { auth: 'withAuth', inlineAdmin: ['PUT'], methods: WRITES_DENIED(['GET', 'PUT']) },
-
-  // ── Admin (tenant admin via withAuth) ─────────────────────────────────────
-  'admin/rebuild.js': { auth: 'withAuth', requireAdmin: true, inlineAdmin: [], methods: { GET: 'X/X', POST: 'R/X' } },
-  'admin/refresh-fundamentals.js': { auth: 'withAuth', requireAdmin: true, inlineAdmin: [], methods: { POST: 'R/X' } },
-  // ── Admin (operator ADMIN_API_KEY) ────────────────────────────────────────
-  'admin/default-categories/index.js': { auth: 'adminKey', methods: { GET: 'U/U', POST: 'U/U' } },
-  'admin/default-categories/[code].js': { auth: 'adminKey', methods: { PUT: 'U/U' } },
-  'admin/default-categories/[code]/regenerate-embeddings.js': { auth: 'adminKey', methods: { POST: 'U/U' } },
-  'runtime.js': { auth: 'adminKey', methods: { GET: 'U/U' } },
-
-  // ── Analytics / reference data ────────────────────────────────────────────
-  'analytics.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
-  'analytics/tags.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'banks.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
-  'currency-rates.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
-  'countries.js': { auth: 'public', methods: { GET: 'P/P' } },
-  'currencies.js': { auth: 'public', methods: { GET: 'P/P' } },
-  'ticker/search.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-
-  // ── Auth (always denied) ──────────────────────────────────────────────────
-  'auth/[...nextauth].js': { auth: 'credential', methods: DENY_ALL(['GET', 'POST']) },
-  'auth/change-password.js': { auth: 'withAuth', methods: DENY_ALL(['PUT']) },
-  'auth/google-token.js': { auth: 'credential', methods: DENY_ALL(['GET']) },
-  'auth/session.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
-  'auth/signin.js': { auth: 'credential', methods: DENY_ALL(['POST']) },
-  'auth/signout.js': { auth: 'credential', methods: DENY_ALL(['POST']) },
-  'auth/signup.js': { auth: 'credential', methods: DENY_ALL(['POST']) },
-
-  // ── Users & integrations management (always denied) ───────────────────────
-  'users.js': { auth: 'withAuth', inlineAdmin: ['POST', 'PUT', 'DELETE'], methods: DENY_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
-  'integrations/index.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['GET', 'POST']) },
-  'integrations/[id].js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['PATCH', 'DELETE']) },
-  'integrations/[id]/keys/index.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['POST']) },
-  'integrations/[id]/keys/[keyId].js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['DELETE']) },
-
-  // ── Smart import ──────────────────────────────────────────────────────────
-  'imports/[id].js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
-  'imports/[id]/bulk-confirm.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'imports/[id]/confirm-seeds.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'imports/[id]/rows/[rowId].js': { auth: 'withAuth', methods: RW_ALL(['PUT']) },
-  'imports/[id]/seeds.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'imports/adapters.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
-  'imports/adapters/[id].js': { auth: 'withAuth', methods: RW_ALL(['PUT', 'DELETE']) },
-  'imports/detect-adapter.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'imports/pending.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'imports/similar.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'imports/upload.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-
-  // ── Insights, notifications, onboarding, subscriptions, tags ─────────────
-  'insights.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT', 'POST']) },
-  'notifications/summary.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT']) },
-  'onboarding/progress.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT']) },
-  'subscriptions.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
-  'tags.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
-
-  // ── Passive income & portfolio ────────────────────────────────────────────
-  'passive-income/streams/index.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
-  'passive-income/streams/[id].js': { auth: 'withAuth', methods: RW_ALL(['PUT', 'DELETE']) },
-  'portfolio/assets.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/equity-analysis.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/history.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/holdings.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/items.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/passive-income.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/income-terms/[id].js': { auth: 'withAuth', methods: RW_ALL(['DELETE']) },
-  'portfolio/income-terms/[id]/attach.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'portfolio/income-terms/detached.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'portfolio/items/[assetId]/asset-class.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT']) },
-  'portfolio/items/[assetId]/debt-terms.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT']) },
-  'portfolio/items/[assetId]/income-terms.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT', 'DELETE']) },
-  'portfolio/items/[assetId]/manual-values.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
-  'portfolio/items/[assetId]/manual-values/[valueId].js': { auth: 'withAuth', methods: RW_ALL(['PUT', 'DELETE']) },
-
-  // ── Plaid: review queue + reads allowed; connection lifecycle denied ─────
-  'plaid/accounts.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'plaid/sync-logs.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'plaid/items.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'PATCH']) },
-  'plaid/create-link-token.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/disconnect.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/exchange-public-token.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/fetch-historical.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/resync.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/rotate-token.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/sync-accounts.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
-  'plaid/items/hard-delete.js': { auth: 'adminKey', methods: DENY_ALL(['DELETE']) },
-  'plaid/webhook.js': { auth: 'webhook', methods: { POST: 'U/U' } },
-  'plaid/transactions/index.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'plaid/transactions/seeds.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'plaid/transactions/[id].js': { auth: 'withAuth', methods: RW_ALL(['PUT']) },
-  'plaid/transactions/[id]/retry.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'plaid/transactions/bulk-promote.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'plaid/transactions/bulk-requeue.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-  'plaid/transactions/confirm-seeds.js': { auth: 'withAuth', methods: RW_ALL(['POST']) },
-
-  // ── Transactions ──────────────────────────────────────────────────────────
-  'transactions/index.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
-  'transactions/export.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-  'transactions/merchant-history.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
-};
+import { ROUTE_MATRIX, type Outcome, type RouteSpec } from './integrationRouteMatrix.data.js';
 
 // ---------------------------------------------------------------------------
 // Route discovery

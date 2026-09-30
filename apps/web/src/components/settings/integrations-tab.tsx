@@ -182,20 +182,30 @@ function expiryDays(value: string): KeyExpiryDays {
 
 // ─── One-time token reveal ──────────────────────────────────────────────────
 
-export function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
-  const { t } = useTranslation();
+/** Copy-to-clipboard with a short "copied" state. */
+function useCopy() {
   const [copied, setCopied] = useState(false);
-  const curl = `curl -H "Authorization: Bearer ${token}" \\\n  ${apiBaseUrl()}/api/transactions`;
-
-  async function copy() {
+  async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(token);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
     }
   }
+  return { copied, copy };
+}
+
+export function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
+  const { t } = useTranslation();
+  const tokenCopy = useCopy();
+  const mcpCopy = useCopy();
+  const curl = `curl -H "Authorization: Bearer ${token}" \\\n  ${apiBaseUrl()}/api/transactions`;
+  // MCP server for AI agents (#89): the same key works with Claude Code.
+  const mcpUrl = `${apiBaseUrl()}/api/mcp`;
+  const mcpHeader = `--header "Authorization: Bearer ${token}"`;
+  const mcpCommand = `claude mcp add --transport http bliss ${mcpUrl} ${mcpHeader}`;
 
   return (
     <div className="space-y-4" data-testid="token-reveal">
@@ -211,15 +221,37 @@ export function TokenReveal({ token, onDone }: { token: string; onDone: () => vo
           className="font-mono text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
-        <Button type="button" variant="outline" onClick={copy} className="shrink-0">
-          {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
-          {copied ? t(`${T}.reveal.copied`) : t(`${T}.reveal.copy`)}
+        <Button type="button" variant="outline" onClick={() => tokenCopy.copy(token)} className="shrink-0">
+          {tokenCopy.copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
+          {tokenCopy.copied ? t(`${T}.reveal.copied`) : t(`${T}.reveal.copy`)}
         </Button>
       </div>
       <div className="space-y-1.5">
         <Label>{t(`${T}.reveal.example`)}</Label>
         <pre className="overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
           {curl}
+        </pre>
+      </div>
+      <div className="space-y-1.5" data-testid="mcp-snippet">
+        <div className="flex items-center justify-between gap-2">
+          <Label>{t(`${T}.mcp.title`)}</Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => mcpCopy.copy(mcpCommand)}
+            aria-label={t(`${T}.mcp.copy_command`)}
+          >
+            {mcpCopy.copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
+            {mcpCopy.copied ? t(`${T}.reveal.copied`) : t(`${T}.mcp.copy_command`)}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{t(`${T}.mcp.description`)}</p>
+        <p className="text-xs text-muted-foreground">
+          {t(`${T}.mcp.url_label`)} <code className="font-mono text-foreground">{mcpUrl}</code>
+        </p>
+        <pre className="overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+          {`claude mcp add --transport http bliss ${mcpUrl} \\\n  ${mcpHeader}`}
         </pre>
       </div>
       <DialogFooter>

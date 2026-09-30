@@ -434,6 +434,12 @@ const en = {
           example: "Example request",
           done: "Done",
         },
+        mcp: {
+          title: "Use with Claude (MCP)",
+          description: "Connect Claude Code or another MCP client with this key. It sees the same data the key allows: read-only keys can only read.",
+          url_label: "MCP server URL:",
+          copy_command: "Copy command",
+        },
         confirm: {
           revoke_key_title: "Revoke this key?",
           revoke_key_description: "Anything using this key stops working on its next request. The integration's other keys keep working.",

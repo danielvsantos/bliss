@@ -93,7 +93,19 @@ curl -H "Authorization: Bearer $BLISS_TOKEN" \
   "$BLISS_API_URL/api/portfolio/holdings"
 ```
 
-### Claude Code or another AI agent
+### Claude Code, Claude Desktop or another MCP client
+
+**Use the MCP server.** Bliss exposes 39 agent-ready tools at
+`$BLISS_API_URL/api/mcp`, authenticated with this same token — the agent
+doesn't need to learn the REST API. See
+[Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp):
+
+```bash
+claude mcp add --transport http bliss "$BLISS_API_URL/api/mcp" \
+  --header "Authorization: Bearer $BLISS_TOKEN"
+```
+
+### An agent calling the REST API directly
 
 Keep the token out of prompts and chat history. Put it in an environment
 variable and tell the agent to use it:

@@ -14,5 +14,7 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 | [AI Classification](/docs/guides/ai-classification) | How the 4-tier pipeline works and how to train it |
 | [Tracking Subscriptions](/docs/guides/tracking-subscriptions) | How recurring charges are detected, and confirming or dismissing them |
 | [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents) | Give Claude, a script or another system its own revocable, read-only or read-write API token |
+| [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp) | Connect Claude Code, Claude Desktop or any MCP client and manage your finances in plain language |
+| [MCP Tool Reference](/docs/guides/mcp-tool-reference) | Every MCP tool, its parameters and the REST endpoints it wraps |
 | [Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment) | Recommended architecture for hosting Bliss as a multi-user service |
 | [Key Rotation](/docs/guides/key-rotation) | Rotating `ENCRYPTION_SECRET` and every other Bliss-owned secret safely |

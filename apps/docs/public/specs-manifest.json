@@ -236,5 +236,14 @@
       "api": "docs/specs/api/23-integrations-api.md",
       "frontend": "docs/specs/frontend/23-integrations.md"
     }
+  },
+  {
+    "slug": "mcp-server",
+    "title": "MCP Server for AI Agents",
+    "description": "Stateless Streamable HTTP MCP endpoint (/api/mcp) with 39 agent-oriented tools over the REST API, role-filtered by integration key",
+    "order": 24,
+    "layers": {
+      "api": "docs/specs/api/24-mcp-server.md"
+    }
   }
 ]

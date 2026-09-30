@@ -64,6 +64,10 @@ One `Card` (settings card pattern):
   (select on focus) and a **Copy** button (`navigator.clipboard`), a sample
   `curl -H "Authorization: Bearer …" <API_URL>/api/transactions` where
   `API_URL` is `NEXT_PUBLIC_API_URL` (without `/api`) or `window.location.origin`,
+  a **Use with Claude (MCP)** block (#89, `data-testid="mcp-snippet"`) with the
+  MCP server URL `<API_URL>/api/mcp` and a `claude mcp add --transport http bliss
+  <API_URL>/api/mcp --header "Authorization: Bearer <token>"` command pre-filled
+  with the token and its own **Copy command** button (copies it as one line),
   and **Done**, which closes the dialog and drops the token from state.
 - **Add key**: key name + expiry → same reveal step.
 - **Rename**: name + description (access level is not editable).
@@ -73,7 +77,7 @@ One `Card` (settings card pattern):
 
 ## 23.5. i18n
 
-All strings live under `pages.settings.integrations.*` (plus
+All strings live under `pages.settings.integrations.*` (MCP block: `pages.settings.integrations.mcp.*`) (plus
 `pages.settings.tabs.integrations`) in `en`, `es`, `fr`, `pt`, `it`. The
 `i18n-parity.test.ts` block for #84 checks every EN leaf exists in all locales
 with the same `{{placeholders}}` and is translated.

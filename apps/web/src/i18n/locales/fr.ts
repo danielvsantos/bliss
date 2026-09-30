@@ -420,6 +420,12 @@ const fr = {
           example: "Exemple de requête",
           done: "Terminé",
         },
+        mcp: {
+          title: "Utiliser avec Claude (MCP)",
+          description: "Connectez Claude Code ou un autre client MCP avec cette clé. Il voit les mêmes données que la clé autorise : une clé en lecture seule ne peut que lire.",
+          url_label: "URL du serveur MCP :",
+          copy_command: "Copier la commande",
+        },
         confirm: {
           revoke_key_title: "Révoquer cette clé ?",
           revoke_key_description: "Tout ce qui utilise cette clé cessera de fonctionner à la prochaine requête. Les autres clés de l'intégration restent valides.",

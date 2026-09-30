@@ -13,8 +13,8 @@
  * (Node runtime) and by the root Next.js middleware.js (Edge runtime).
  *
  * Every new route under pages/api must be classified in
- * __tests__/unit/middleware/integrationRouteMatrix.test.ts, which fails when a
- * route has no asserted outcome for integration tokens.
+ * __tests__/unit/middleware/integrationRouteMatrix.data.ts; integrationRouteMatrix.test.ts
+ * fails when a route has no asserted outcome for integration tokens.
  */
 
 export const TOKEN_PREFIX = 'bliss_';
@@ -52,6 +52,14 @@ export const INTEGRATION_DENYLIST = Object.freeze([
   { prefix: '/api/categories', methods: 'NON_GET' },
   { prefix: '/api/tenants', methods: 'NON_GET' },
 ]);
+
+/**
+ * Exact (normalised) paths where a read-only token may POST (#89). The MCP
+ * endpoint is JSON-RPC over POST but never writes by itself: every tool calls
+ * the real REST route over loopback, where this viewer rule applies again.
+ * Exact match only — never a prefix.
+ */
+export const VIEWER_POST_ALLOWED = Object.freeze(['/api/mcp']);
 
 function safeDecode(segment) {
   try {
@@ -127,6 +135,17 @@ export function effectiveRole(creatorRole, accessLevel) {
   if (accessLevel !== 'READ_WRITE') return 'viewer';
   if (creatorRole === 'viewer') return 'viewer';
   return 'member';
+}
+
+/**
+ * @param {string} url     Raw request URL or path.
+ * @param {string} method  HTTP method.
+ * @returns {boolean} true when a read-only (viewer) token may send this
+ *   non-GET request anyway. Only POST to an exact VIEWER_POST_ALLOWED path.
+ */
+export function isViewerPostAllowed(url, method) {
+  if (String(method || '').toUpperCase() !== 'POST') return false;
+  return VIEWER_POST_ALLOWED.includes(normalizeApiPath(url));
 }
 
 const INTEGRATION_BEARER = /^bearer\s+(bliss_.*)$/i;

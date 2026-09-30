@@ -434,6 +434,12 @@ const it = {
           example: "Richiesta di esempio",
           done: "Fatto",
         },
+        mcp: {
+          title: "Usa con Claude (MCP)",
+          description: "Collega Claude Code o un altro client MCP con questa chiave. Vede gli stessi dati consentiti dalla chiave: le chiavi di sola lettura possono solo leggere.",
+          url_label: "URL del server MCP:",
+          copy_command: "Copia comando",
+        },
         confirm: {
           revoke_key_title: "Revocare questa chiave?",
           revoke_key_description: "Tutto ciò che usa questa chiave smetterà di funzionare alla richiesta successiva. Le altre chiavi dell'integrazione continuano a funzionare.",

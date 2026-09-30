@@ -106,6 +106,7 @@ File upload storage is pluggable. The default is local disk; switch to Google Cl
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Yes | `http://localhost:3000` | Public URL of the API layer, baked into the web bundle at build time. Changing it requires a rebuild. |
 | `FRONTEND_URL` | Yes | `http://localhost:8080` | Public URL of the frontend app. Used by the API layer for CORS whitelisting. |
+| `MCP_LOOPBACK_URL` | No | `http://127.0.0.1:$PORT` | Base URL the MCP server's tools use to call the API's own REST routes ([Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp)). The default works on Docker Compose and Railway; set it to the public API URL only when the API can't reach itself on loopback (Vercel, a path-rewriting proxy). |
 
 ## Plaid (optional)
 

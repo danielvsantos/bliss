@@ -52,6 +52,7 @@ The standalone build bundles only the files required to run the server, producin
 | `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | API key for the selected provider(s). |
 | `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL` | Optional model overrides per slot. |
 | `SENTRY_DSN` | Sentry error tracking |
+| `MCP_LOOPBACK_URL` | Optional. Base URL the MCP tools use to call the API's own REST routes (default `http://127.0.0.1:$PORT`) |
 
 ## 12.4. Migration on Startup
 
@@ -92,6 +93,7 @@ The API supports two storage backends via `STORAGE_BACKEND`:
 ## 12.8. Production Notes
 
 - **Integration tokens (#84) need no new environment variables.** Token auth reads only the `Integration` / `ApiKey` tables and never calls the backend, so the split Vercel (API) + Railway (backend) deployment works unchanged.
+- **MCP server (#89)** at `POST /api/mcp` runs inside the API service (stateless Streamable HTTP, so any replica answers any request). Its tools call the API's own REST routes over `http://127.0.0.1:$PORT` — the standalone server listens on `0.0.0.0:$PORT`, so this works on Docker Compose and Railway with no configuration. Set `MCP_LOOPBACK_URL` to the public API URL only where the API can't reach itself (Vercel, a path-rewriting proxy). See [24-mcp-server.md](./24-mcp-server.md).
 - The API has a root **Next.js `middleware.js`** (matcher `/api/:path*`, Edge runtime) that refuses integration tokens on denylisted routes. It imports only the pure `utils/integrationPolicy.js`, does no I/O, and is a no-op for requests without a `bliss_` bearer token. It is compiled into the standalone build like any other Next middleware.
 
 - The standalone server listens on `0.0.0.0:3000` (configured via `HOSTNAME` env var in Dockerfile)
