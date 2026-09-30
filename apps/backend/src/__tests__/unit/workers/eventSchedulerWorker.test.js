@@ -299,6 +299,24 @@ describe('eventSchedulerWorker — processEventJob', () => {
     );
   });
 
+  it('forwards previousPortfolioItemId so the worker can reconcile the item the edit moved away from (#86)', async () => {
+    const job = makeJob('MANUAL_TRANSACTION_MODIFIED', {
+      tenantId: 't1',
+      transactionId: 'tx1',
+      categoryType: 'Investments',
+      transaction_date: '2026-03-01',
+      portfolioItemId: 10,
+      previousPortfolioItemId: 10,
+    });
+
+    await processEventJob(job);
+
+    expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
+      'process-portfolio-changes',
+      { tenantId: 't1', transactionId: 'tx1', previousPortfolioItemId: 10 }
+    );
+  });
+
   it('routes simple transaction to cash processor', async () => {
     const job = makeJob('MANUAL_TRANSACTION_CREATED', {
       tenantId: 't1',

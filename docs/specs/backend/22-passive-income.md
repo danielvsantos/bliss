@@ -33,8 +33,22 @@ Before `portfolioItem.deleteMany` on items that are no longer active, `pruneItem
 2. For each, candidates = items **created in this run** with the same `categoryId` **and** the same `accountId` (corrected description) **or** the same `symbol` (corrected account). A candidate claimed by two orphans is ambiguous for both.
 3. Exactly one unambiguous candidate → both rows move (`assetId` updated). Otherwise → the `IncomeTerms` is **detached** (`assetId = null`, `orphanedAt = now`, `orphanedLabel = <old symbol>`); unmatched `DebtTerms` keep today's behaviour (cascade-deleted).
 4. An orphan's `PortfolioItem.assetClassOverride` (#79) is matched the same way (an override alone also counts) and, on a move, copied to the new item unless it already has one. A detached orphan's override is lost with the item.
+5. An orphan's **user-entered `ManualAssetValue` rows** (appraisals — every row whose `notes` is not `Auto-seeded from purchase transaction`) are matched the same way (they alone also count) and move with it. Auto-seeded rows are regenerated from the target's own transactions.
+6. `IncomeTerms` and `DebtTerms` are 1:1 per asset: when the target **already owns** one, it keeps its own. The orphan's `IncomeTerms` are then detached and its `DebtTerms` cascade.
 
-The same helper covers the early-return path (no investment/debt transactions left in scope). `recalculate-portfolio-item.js` (item with no transactions left) and user deletions are intentional removals and still cascade.
+The same helper covers the early-return path (no investment/debt transactions left in scope) and the **scoped-update reconcile** (#86, below).
+
+### Scoped updates: the item an edit moved away from (#86)
+
+Editing a transaction can re-key it (e.g. a new description on a `category:description` asset such as Real Estate). The API upserts the new item and relinks the transaction *before* emitting, then sends `previousPortfolioItemId` on the old-state `MANUAL_TRANSACTION_MODIFIED` event; `eventSchedulerWorker` forwards it on the `process-portfolio-changes` job. `handleScopedUpdate` then reconciles that item (`reconcilePreviousItem`, tenant-scoped lookup):
+
+| Old item after the edit | Outcome |
+|---|---|
+| Still has transactions | Investment state recalculated; included in `portfolioItemIds` |
+| Empty, **clear replacement** (the transaction's current item: same category and same account or same symbol) | Pruned via `pruneItemsPreservingTerms(prisma, [old], [replacement])` — terms, override and user manual values move |
+| Empty, no clear replacement (recategorised out of Investments/Debt, or into another category) | **Kept, never deleted**: stored state zeroed (`quantity`, `costBasis`, `currentValue`, USD fields…), included in `portfolioItemIds` so valuation clears its history. User data survives an edit the user may revert; a full rebuild prunes it later |
+
+A transaction whose new category yields no asset key is unlinked (`portfolioItemId = null`), as a full rebuild would do. `recalculate-portfolio-item.js` (item with no transactions left) and user deletions are intentional removals and still cascade.
 
 ## 22.4. Trigger map
 

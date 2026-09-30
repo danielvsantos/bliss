@@ -56,45 +56,78 @@ const seedManualAssetValues = async (portfolioItemId, tenantId, transactions) =>
     return records.length;
 };
 
+// Stored state of an item that no longer has any transactions. Valuation then
+// rebuilds its (now empty) history, so it stops contributing to totals.
+const EMPTY_ITEM_STATE = {
+    quantity: 0,
+    costBasis: 0,
+    realizedPnL: 0,
+    currentValue: 0,
+    totalInvested: 0,
+    costBasisInUSD: 0,
+    currentValueInUSD: 0,
+    realizedPnLInUSD: 0,
+    totalInvestedInUSD: 0,
+    hasLotMismatch: false,
+};
+
+/**
+ * A replacement is "clear" when the edit only re-keyed the same holding: same
+ * category and either the same account (new description / ticker) or the same
+ * symbol (moved to another account). Anything else (e.g. the transaction was
+ * recategorised as an expense) may be a mistake the user will undo.
+ */
+const isClearReplacement = (oldItem, replacement) =>
+    !!replacement &&
+    replacement.id !== oldItem.id &&
+    replacement.categoryId === oldItem.categoryId &&
+    ((oldItem.accountId != null && replacement.accountId === oldItem.accountId) ||
+        replacement.symbol === oldItem.symbol);
+
 /**
  * After a scoped update moves a transaction off `itemId`, bring that item back in
- * line with its remaining history: prune it when no transactions are left (the
- * same prune a full rebuild would do, preserving income terms), otherwise
- * recalculate its Investment state. Without this, re-keying the last
- * transaction of an item left an empty "ghost" holding still carrying its last
- * market value.
+ * line with its remaining history. Without this, re-keying the last transaction
+ * of an item left an empty "ghost" holding still carrying its last market value.
+ *
+ * - Transactions remain → recalculate its Investment state.
+ * - Empty, with a clear replacement → prune it like a full rebuild does; income
+ *   & debt terms, the asset class override and user-entered manual values move
+ *   to the replacement (see `income-terms-preserver.js`).
+ * - Empty, no clear replacement → keep the item but zero its state, so user
+ *   data (manual values, terms) survives an edit the user may revert.
  *
  * @returns {Promise<object|null>} the surviving item (to include in the blast
- *   radius), or null when it was pruned or not found.
+ *   radius, so valuation rebuilds its history), or null when pruned/not found.
  */
-const reconcilePreviousItem = async (tenantId, itemId, newItems) => {
+const reconcilePreviousItem = async (tenantId, itemId, replacement) => {
     const previousItem = await prisma.portfolioItem.findFirst({
         where: { id: itemId, tenantId },
         include: { transactions: { orderBy: { transaction_date: 'asc' }, include: { category: true } }, category: true },
     });
     if (!previousItem) return null;
 
-    if (previousItem.transactions.length === 0) {
-        logger.info(`[Scoped] Portfolio item ${itemId} (${previousItem.symbol}) has no transactions left. Pruning orphan.`);
-        const orphan = {
-            id: previousItem.id,
-            symbol: previousItem.symbol,
-            accountId: previousItem.accountId,
-            categoryId: previousItem.categoryId,
-        };
-        await pruneItemsPreservingTerms(prisma, [orphan], newItems.filter(Boolean));
+    if (previousItem.transactions.length > 0) {
+        if (previousItem.category?.type === 'Investments') {
+            const newState = await calculatePortfolioItemState(previousItem.transactions);
+            await prisma.portfolioItem.update({ where: { id: itemId }, data: newState });
+        }
+        return previousItem;
+    }
+
+    if (isClearReplacement(previousItem, replacement)) {
+        logger.info(`[Scoped] Portfolio item ${itemId} (${previousItem.symbol}) was re-keyed to ${replacement.id} (${replacement.symbol}). Pruning orphan.`);
+        const toRef = (i) => ({ id: i.id, symbol: i.symbol, accountId: i.accountId, categoryId: i.categoryId });
+        await pruneItemsPreservingTerms(prisma, [toRef(previousItem)], [toRef(replacement)]);
         return null;
     }
 
-    if (previousItem.category?.type === 'Investments') {
-        const newState = await calculatePortfolioItemState(previousItem.transactions);
-        await prisma.portfolioItem.update({ where: { id: itemId }, data: newState });
-    }
+    logger.info(`[Scoped] Portfolio item ${itemId} (${previousItem.symbol}) has no transactions left and no clear replacement. Zeroing it instead of deleting.`);
+    await prisma.portfolioItem.update({ where: { id: itemId }, data: EMPTY_ITEM_STATE });
     return previousItem;
 };
 
 const processPortfolioChanges = async (job) => {
-    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta } = job.data;
+    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta, previousPortfolioItemId } = job.data;
 
     // Thread the BullMQ lock heartbeat attached by `portfolioWorker`
     // through to `handleFullRebuild`'s inner loops. Without this,
@@ -105,7 +138,7 @@ const processPortfolioChanges = async (job) => {
 
     if (transactionId) {
         // --- Scoped Update Logic (single transaction) ---
-        return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta);
+        return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta, previousPortfolioItemId);
     } else if (accountIds && accountIds.length > 0) {
         // --- Account-scoped rebuild (e.g., after Plaid promote or import) ---
         return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat);
@@ -115,7 +148,7 @@ const processPortfolioChanges = async (job) => {
     }
 };
 
-const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
+const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previousPortfolioItemId) => {
     logger.info(`--- Starting Scoped Portfolio Update for tenant: ${tenantId}, transaction: ${transactionId} ---`);
     
     const transaction = await prisma.transaction.findUnique({
@@ -133,12 +166,12 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
 
     // 1. Handle the primary portfolio item (if any)
     const assetKey = generateAssetKey(transaction, decrypt);
-    // The item the transaction was linked to before this update. If the edit
-    // re-keys it (e.g. a new description on a `category:description` asset),
-    // the old item must be reconciled below or it lingers as a ghost holding.
-    const previousItemId = transaction.portfolioItemId;
+    // The item the transaction was linked to before the edit. If the edit re-keys
+    // it (e.g. a new description on a `category:description` asset), the old item
+    // must be reconciled below or it lingers as a ghost holding. The API relinks
+    // the transaction before emitting, so it passes the old id explicitly.
+    const previousItemId = previousPortfolioItemId || transaction.portfolioItemId;
     let portfolioItem = null;
-    let createdItem = false;
     let createdSecuritySymbol = null;
 
     if (assetKey) {
@@ -182,7 +215,6 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
                         ...(transaction.assetCurrency && { assetCurrency: transaction.assetCurrency }),
                     },
                 });
-                createdItem = true;
                 if (SECURITY_PROCESSING_HINTS.has(transaction.category?.processingHint)) {
                     createdSecuritySymbol = assetKey;
                 }
@@ -230,7 +262,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
         }
 
         affectedPortfolioItems.set(portfolioItem.id, portfolioItem);
-    } else if (!assetKey && previousItemId) {
+    } else if (!assetKey && transaction.portfolioItemId) {
         // The transaction no longer maps to any asset (a full rebuild would not
         // link it either), so detach it from its old item.
         await prisma.transaction.update({
@@ -242,7 +274,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta) => {
     // 1b. Reconcile the previously linked item when the transaction moved away.
     const movedAway = previousItemId && (portfolioItem ? portfolioItem.id !== previousItemId : !assetKey);
     if (movedAway) {
-        const reconciled = await reconcilePreviousItem(tenantId, previousItemId, createdItem ? [portfolioItem] : []);
+        const reconciled = await reconcilePreviousItem(tenantId, previousItemId, portfolioItem);
         if (reconciled) affectedPortfolioItems.set(reconciled.id, reconciled);
     }
 
