@@ -38,6 +38,7 @@ jest.mock('../../../../../prisma/prisma.js', () => ({
   },
   portfolioItem: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     createMany: jest.fn(),
@@ -53,6 +54,8 @@ jest.mock('../../../../../prisma/prisma.js', () => ({
   manualAssetValue: {
     createMany: jest.fn(),
     deleteMany: jest.fn(),
+    findMany: jest.fn(),
+    updateMany: jest.fn(),
   },
   portfolioHolding: {
     createMany: jest.fn(),
@@ -119,6 +122,7 @@ function installEmptyTenantMocks() {
   prisma.transaction.findFirst.mockResolvedValue(null);
   prisma.portfolioItem.findMany.mockResolvedValue([]);
   prisma.portfolioItem.findUnique.mockResolvedValue(null);
+  prisma.portfolioItem.findFirst.mockResolvedValue(null);
   prisma.portfolioItem.create.mockResolvedValue({ id: 1 });
   prisma.portfolioItem.createMany.mockResolvedValue({ count: 0 });
   prisma.portfolioItem.update.mockResolvedValue({});
@@ -128,6 +132,8 @@ function installEmptyTenantMocks() {
   prisma.category.findFirst.mockResolvedValue(null);
   prisma.manualAssetValue.createMany.mockResolvedValue({ count: 0 });
   prisma.manualAssetValue.deleteMany.mockResolvedValue({ count: 0 });
+  prisma.manualAssetValue.findMany.mockResolvedValue([]);
+  prisma.manualAssetValue.updateMany.mockResolvedValue({ count: 0 });
   prisma.portfolioHolding.createMany.mockResolvedValue({ count: 0 });
   prisma.incomeTerms.findMany.mockResolvedValue([]);
   prisma.incomeTerms.update.mockResolvedValue({});
@@ -408,5 +414,138 @@ describe('process-portfolio-changes — income terms & new security symbols', ()
     expect(enqueueEvent).toHaveBeenCalledWith('PORTFOLIO_CHANGES_PROCESSED', expect.objectContaining({
       newSecuritySymbols: ['KO'],
     }));
+  });
+});
+
+// ─── Scoped update re-keys a transaction (#86 ghost items) ──────────────────
+//
+// Editing the description of a `category:description` asset (e.g. Real Estate)
+// moves the transaction to a new item. The API relinks the transaction BEFORE
+// emitting, so the job carries `previousPortfolioItemId`; these tests start
+// from that real post-API state (transaction already on the new item).
+describe('process-portfolio-changes — scoped update reconciles the previous item', () => {
+  const { calculatePortfolioItemState } = require('../../../../utils/portfolioItemStateCalculator.js');
+
+  const OLD = { id: 10, symbol: 'Real Estate:Flat', accountId: 5, categoryId: 7 };
+  const NEW = { id: 11, symbol: 'Real Estate:Flat Lisbon', accountId: 5, categoryId: 7, source: 'MANUAL' };
+
+  const makeEditedTx = (overrides = {}) => ({
+    id: 42, tenantId: 'tenant-1', categoryId: 7, accountId: 5, currency: 'EUR',
+    transaction_date: new Date('2026-03-01'), year: 2026, month: 3,
+    credit: 0, debit: 200000, ticker: NEW.symbol,
+    portfolioItemId: NEW.id, // already relinked by the API
+    category: { id: 7, type: 'Investments', group: 'Real Estate' },
+    account: { countryId: 'PT' },
+    ...overrides,
+  });
+  const oldItem = (transactions = []) => ({ ...OLD, transactions, category: { type: 'Investments' } });
+  const emittedIds = () =>
+    enqueueEvent.mock.calls.find(([t]) => t === 'PORTFOLIO_CHANGES_PROCESSED')[1].portfolioItemIds;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    installEmptyTenantMocks();
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce(NEW)
+      .mockResolvedValueOnce({ ...NEW, transactions: [] });
+  });
+
+  it('prunes the emptied old item and moves its terms and user manual values to the replacement', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+    prisma.portfolioItem.findFirst.mockResolvedValue(oldItem());
+    prisma.incomeTerms.findMany.mockImplementation(({ where }) =>
+      Promise.resolve(where.assetId.in.includes(10) ? [{ id: 900, assetId: 10 }] : []));
+    prisma.manualAssetValue.findMany.mockResolvedValue([{ assetId: 10 }]);
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.portfolioItem.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 10, tenantId: 'tenant-1' },
+    }));
+    expect(prisma.incomeTerms.update).toHaveBeenCalledWith({ where: { id: 900 }, data: { assetId: 11 } });
+    expect(prisma.manualAssetValue.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { assetId: 11 } }));
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [10] } } });
+    expect(emittedIds()).toContain(11);
+    expect(emittedIds()).not.toContain(10);
+  });
+
+  it('recalculates (does not prune) the old item when it still has transactions', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+    prisma.portfolioItem.findFirst.mockResolvedValue(oldItem([{ id: 43, debit: 1000 }]));
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(calculatePortfolioItemState).toHaveBeenCalledWith([{ id: 43, debit: 1000 }]);
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10 } }));
+    expect(emittedIds()).toEqual(expect.arrayContaining([10, 11]));
+  });
+
+  it('re-seeds the old MANUAL item\'s auto-seeded prices from its remaining buys only (partial rename)', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+    const remainingBuy = { id: 43, debit: 100000, currency: 'EUR', transaction_date: new Date('2025-01-01') };
+    prisma.portfolioItem.findFirst.mockResolvedValue({ ...oldItem([remainingBuy]), source: 'MANUAL' });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.manualAssetValue.deleteMany).toHaveBeenCalledWith({
+      where: { assetId: 10, notes: 'Auto-seeded from purchase transaction' },
+    });
+    const seeded = prisma.manualAssetValue.createMany.mock.calls
+      .map(([arg]) => arg.data).flat().filter((r) => r.assetId === 10);
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].value.toString()).toBe('100000');
+  });
+
+  it('does nothing extra when the job carries no previous item and the transaction did not move', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+
+    await processPortfolioChanges(makeJob({ transactionId: 42 }));
+
+    expect(prisma.portfolioItem.findFirst).not.toHaveBeenCalled();
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('zeroes (never deletes) the old item when the transaction is recategorised out of investments', async () => {
+    // The API leaves the link untouched when the new category has no asset key.
+    prisma.portfolioItem.findUnique.mockReset();
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx({
+      ticker: null, portfolioItemId: 10, category: { id: 3, type: 'Expense', group: 'Housing' },
+    }));
+    prisma.portfolioItem.findFirst.mockResolvedValue(oldItem());
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.transaction.update).toHaveBeenCalledWith({ where: { id: 42 }, data: { portfolioItemId: null } });
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.manualAssetValue.updateMany).not.toHaveBeenCalled();
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith({
+      where: { id: 10 },
+      data: expect.objectContaining({ quantity: 0, currentValue: 0, costBasis: 0, currentValueInUSD: 0 }),
+    });
+    expect(emittedIds()).toContain(10);
+  });
+
+  it('zeroes (never deletes) the old item when the new item is in a different category', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+    prisma.portfolioItem.findFirst.mockResolvedValue({ ...oldItem(), categoryId: 99 });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith({
+      where: { id: 10 },
+      data: expect.objectContaining({ quantity: 0, currentValue: 0 }),
+    });
+  });
+
+  it('ignores a previous item that belongs to another tenant (lookup is tenant-scoped)', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+    prisma.portfolioItem.findFirst.mockResolvedValue(null);
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.portfolioItem.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10 } }));
   });
 });

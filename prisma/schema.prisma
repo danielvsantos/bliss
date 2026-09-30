@@ -1081,9 +1081,17 @@ model Integration {
   // Revoking an integration also stamps revokedAt on all of its keys.
   revokedAt       DateTime?
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
-  apiKeys   ApiKey[]
+  // OAuth (#89): set when the integration was created by an OAuth consent.
+  // Its single key is the OAuth access token, re-keyed on every refresh.
+  oauthClientId       String?
+  // Hard end of an OAuth connection (consent-screen expiry); null = never.
+  connectionExpiresAt DateTime?
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy     User                @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  apiKeys       ApiKey[]
+  oauthClient   OAuthClient?        @relation(fields: [oauthClientId], references: [id], onDelete: SetNull)
+  refreshTokens OAuthRefreshToken[]
 
   @@index([tenantId])
   @@index([createdByUserId])
@@ -1110,4 +1118,67 @@ model ApiKey {
 
   @@index([integrationId])
   @@index([tenantId])
+}
+
+// ─── OAuth 2.1 for the MCP server (#89) ──────────────────────────────────────
+// Claude connectors (Cowork / claude.ai) authenticate with OAuth. An OAuth
+// access token *is* an integration key: consent creates an Integration whose
+// ApiKey is handed out as the access token. See docs/specs/api/25-oauth.md.
+
+/// A dynamically registered public client (RFC 7591). `id` is the client_id.
+model OAuthClient {
+  id           String   @id @default(cuid())
+  name         String
+  redirectUris String[]
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime?
+
+  requests     OAuthAuthorizationRequest[]
+  integrations Integration[]
+}
+
+/// A pending /authorize request, then its one-time authorization code.
+model OAuthAuthorizationRequest {
+  /// 32 random bytes (base64url) — the consent page's handle, not guessable.
+  id                 String                  @id
+  clientId           String
+  redirectUri        String
+  state              String?
+  codeChallenge      String
+  /// Requested access level (from scope); consent may only downgrade it.
+  requestedAccess    IntegrationAccessLevel
+  resource           String?
+  /// Bound to the first user who opens the consent page.
+  userId             String?
+  tenantId           String?
+  integrationId      String?
+  /// SHA-256 of the authorization code, set on approval.
+  codeHash           String?                 @unique
+  codeExpiresAt      DateTime?
+  /// When the code was redeemed (single use).
+  usedAt             DateTime?
+  /// Consent-request expiry (10 minutes).
+  expiresAt          DateTime
+  createdAt          DateTime                @default(now())
+
+  client OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+}
+
+/// Rotating refresh token (only its SHA-256 is stored).
+model OAuthRefreshToken {
+  id            String    @id @default(cuid())
+  tenantId      String
+  integrationId String
+  tokenHash     String    @unique
+  expiresAt     DateTime
+  /// Set when rotated; presenting a used token revokes the connection.
+  usedAt        DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId])
 }

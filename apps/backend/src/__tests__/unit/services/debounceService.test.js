@@ -148,6 +148,27 @@ describe('debounceService — scheduleDebouncedJob()', () => {
     expect(jobData.scopes).toEqual(['investments', 'transactions', 'balances']);
   });
 
+  it('unions portfolioItemIds across debounced events instead of keeping only the latest (#86)', async () => {
+    mockRedis.get.mockResolvedValue(JSON.stringify({
+      jobId: 'old-job', tenantId: 't1', needsCashRebuild: [true], portfolioItemIds: [10, 11, 99],
+    }));
+
+    // The later event carries no portfolioItemIds (e.g. an edit's simple-transaction half).
+    await scheduleDebouncedJob(mockQueue, 'process-cash-holdings', { tenantId: 't1', needsCashRebuild: [true] }, 'needsCashRebuild', 5);
+    expect(mockQueue.add.mock.calls[0][1].portfolioItemIds).toEqual([10, 11, 99]);
+
+    mockQueue.add.mockClear();
+    await scheduleDebouncedJob(mockQueue, 'process-cash-holdings',
+      { tenantId: 't1', needsCashRebuild: [true], portfolioItemIds: [11, 12] }, 'needsCashRebuild', 5);
+    expect(mockQueue.add.mock.calls[0][1].portfolioItemIds).toEqual([10, 11, 99, 12]);
+  });
+
+  it('leaves portfolioItemIds absent when neither event carries them', async () => {
+    mockRedis.get.mockResolvedValue(JSON.stringify({ jobId: 'old-job', tenantId: 't1', needsCashRebuild: [true] }));
+    await scheduleDebouncedJob(mockQueue, 'process-cash-holdings', { tenantId: 't1', needsCashRebuild: [true] }, 'needsCashRebuild', 5);
+    expect(mockQueue.add.mock.calls[0][1]).not.toHaveProperty('portfolioItemIds');
+  });
+
   it('sets Redis key with TTL = delay + 5 seconds buffer', async () => {
     await scheduleDebouncedJob(
       mockQueue,

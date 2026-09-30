@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { buildHeaderRules } from './utils/securityHeaders.js';
+import { OAUTH_REWRITES } from './lib/oauthRewrites.js';
 
 // Load environment variables from monorepo root .env
 // (Next.js only auto-loads from the app directory; this ensures the unified root .env is used)
@@ -21,6 +22,12 @@ const nextConfig = {
   // See utils/securityHeaders.js.
   async headers() {
     return buildHeaderRules();
+  },
+
+  // OAuth discovery for the MCP server (#89): RFC 9728 / RFC 8414 documents,
+  // at the root and path-insertion (`/…/api/mcp`) locations clients probe.
+  async rewrites() {
+    return OAUTH_REWRITES;
   },
 
   // Packages that use native Node.js modules or dynamic require() patterns

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { withAuth } from './withAuth';
 
 vi.mock('@/hooks/use-auth');
@@ -40,5 +40,24 @@ describe('withAuth', () => {
     } as unknown as ReturnType<typeof useAuth>);
     renderWithRouter(<ProtectedPage />);
     expect(screen.queryByTestId('protected-page')).not.toBeInTheDocument();
+  });
+
+  it('redirects to sign-in with a returnTo for the current page', () => {
+    vi.mocked(useAuth).mockReturnValue({
+      user: null, loading: false, signOut: vi.fn(),
+    } as unknown as ReturnType<typeof useAuth>);
+    function AuthProbe() {
+      const location = useLocation();
+      return <div data-testid="auth-page">{`${location.pathname}${location.search}`}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/oauth/consent?request=abc']}>
+        <Routes>
+          <Route path="/oauth/consent" element={<ProtectedPage />} />
+          <Route path="/auth" element={<AuthProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('auth-page').textContent).toBe('/auth?returnTo=%2Foauth%2Fconsent%3Frequest%3Dabc');
   });
 });

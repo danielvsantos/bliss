@@ -20,10 +20,13 @@ import TagAnalyticsPage from "./pages/reports/tags";
 import EquityAnalysisPage from "./pages/reports/equity-analysis";
 import SubscriptionsPage from "./pages/subscriptions";
 import PassiveIncomePage from "./pages/reports/passive-income";
+import OAuthConsentPage from "./pages/oauth/consent";
 
 export const routes = [
   { path: "/auth", element: <AuthPage />, protected: false },
   { path: "/auth/callback", element: <AuthCallbackPage />, protected: false },
+  // OAuth consent for MCP connectors (#89): standalone card, signs in itself (withAuth + returnTo).
+  { path: "/oauth/consent", element: <OAuthConsentPage />, protected: false },
   { path: "/categories", component: CategoriesPage, protected: true },
   { path: "/accounts", component: AccountsPage, protected: true },
   { path: "/assets", component: ManageAssetsPage, protected: true },

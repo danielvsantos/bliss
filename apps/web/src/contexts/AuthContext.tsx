@@ -4,6 +4,7 @@ import { AxiosError } from 'axios';
 import type { User } from '../types/api';
 import { updateTenantMetaFromAPI } from '@/utils/tenantMetaStorage';
 import { toast } from '@/hooks/use-toast';
+import { rememberReturnTo } from '@/lib/return-to';
 import {
   AuthContext,
   type SignUpData,
@@ -139,6 +140,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => {
     try {
       setError(null);
+      // Google sign-in leaves the SPA: keep ?returnTo for pages/auth/callback.tsx.
+      rememberReturnTo();
       const apiUrl = (import.meta.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
       // Step 1: fetch CSRF token cross-origin (NextAuth requires this for OAuth initiation)

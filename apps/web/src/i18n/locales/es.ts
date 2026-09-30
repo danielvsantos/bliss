@@ -123,6 +123,26 @@ const es = {
 
   // Page titles and descriptions
   pages: {
+    oauth: {
+      consent: {
+        title: "Conectar {{client}} a Bliss",
+        subtitle: "Esta aplicación quiere usar tus datos de Bliss a través del servidor MCP.",
+        signed_in_as: "Sesión iniciada como {{email}}",
+        redirect_notice: "Cuando decidas, volverás a",
+        access_label: "Acceso",
+        read_only_description: "Ver transacciones, cartera, análisis e insights. No puede cambiar nada.",
+        read_write_description: "Además, recategorizar transacciones, gestionar tus colas de revisión y editar datos de la cartera.",
+        expiry_label: "La conexión caduca tras",
+        no_expiry_warning: "Una conexión sin caducidad sigue funcionando hasta que la revoques.",
+        footnote: "La aplicación ve tus datos financieros descifrados. Puedes revocar la conexión en cualquier momento en Ajustes → Integraciones.",
+        admin_required: "Solo un administrador del espacio puede conectar aplicaciones. Pide a un administrador que la conecte.",
+        allow: "Permitir",
+        deny: "Rechazar",
+        error_title: "No se puede completar esta conexión",
+        error_missing: "Este enlace está incompleto. Vuelve a iniciar la conexión desde tu aplicación.",
+        error_generic: "Algo salió mal. Vuelve a iniciar la conexión desde tu aplicación.",
+      },
+    },
     dashboard: {
       title: "Panel",
       subtitle: "Resumen de tu situación financiera",
@@ -417,6 +437,17 @@ const es = {
           copied: "Copiado",
           example: "Solicitud de ejemplo",
           done: "Hecho",
+        },
+        mcp: {
+          title: "Usar con Claude (MCP)",
+          description: "Conecta Claude Code u otro cliente MCP con esta clave. Verá los mismos datos que permite la clave: las claves de solo lectura solo pueden leer.",
+          url_label: "URL del servidor MCP:",
+          copy_command: "Copiar comando",
+        },
+        oauth: {
+          badge: "Conectada vía OAuth · {{client}}",
+          expires: "La conexión caduca el {{date}}",
+          no_expiry: "La conexión no caduca",
         },
         confirm: {
           revoke_key_title: "¿Revocar esta clave?",

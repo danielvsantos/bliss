@@ -6,6 +6,7 @@ import { cors } from '../../../utils/cors.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import {
   API_KEY_PUBLIC_SELECT,
+  OAUTH_CLIENT_INCLUDE,
   serializeIntegration,
   validateUpdateIntegration,
 } from '../../../services/integrations.service.js';
@@ -56,7 +57,7 @@ export default withAuth(async function handler(req, res) {
       const integration = await prisma.integration.update({
         where: { id: existing.id },
         data: parsed.value,
-        include: { apiKeys: { select: API_KEY_PUBLIC_SELECT, orderBy: { createdAt: 'asc' } } },
+        include: { apiKeys: { select: API_KEY_PUBLIC_SELECT, orderBy: { createdAt: 'asc' } }, oauthClient: OAUTH_CLIENT_INCLUDE },
       });
       return res.status(StatusCodes.OK).json({ integration: serializeIntegration(integration) });
     }
@@ -71,7 +72,7 @@ export default withAuth(async function handler(req, res) {
       prisma.integration.update({
         where: { id: existing.id },
         data: { revokedAt: existing.revokedAt ?? now },
-        include: { apiKeys: { select: API_KEY_PUBLIC_SELECT, orderBy: { createdAt: 'asc' } } },
+        include: { apiKeys: { select: API_KEY_PUBLIC_SELECT, orderBy: { createdAt: 'asc' } }, oauthClient: OAUTH_CLIENT_INCLUDE },
       }),
     ]);
     return res.status(StatusCodes.OK).json({ integration: serializeIntegration(integration) });

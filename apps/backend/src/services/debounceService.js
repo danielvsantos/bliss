@@ -147,7 +147,7 @@ async function scheduleDebouncedJob(queue, jobName, jobData, aggregationKey, del
             [aggregationKey]: unionArrays((existingJob && existingJob[aggregationKey]) || [], jobData[aggregationKey] || []),
         };
 
-        // Merge every other scope-bearing field, so no earlier event's scope is dropped.
+        // Merge every other scope-bearing field, so no earlier event's scope is dropped (#92).
         if (existingJob) {
             for (const [field, merge] of Object.entries(fieldMergers)) {
                 if (field === aggregationKey) continue;
@@ -158,6 +158,19 @@ async function scheduleDebouncedJob(queue, jobName, jobData, aggregationKey, del
                     aggregatedJobData[field] = merged;
                 }
             }
+        }
+
+        // `portfolioItemIds` is the scoped-valuation blast radius threaded through
+        // cash → analytics → value-portfolio-items. Unless a call site passes its own
+        // merger for it, it is unioned for every job: without this a later event
+        // (e.g. the new-state half of a transaction edit) silently dropped the items
+        // an earlier one needed revalued. A union only ever adds work.
+        if (!('portfolioItemIds' in fieldMergers) && aggregationKey !== 'portfolioItemIds'
+            && (existingJob?.portfolioItemIds || jobData.portfolioItemIds)) {
+            aggregatedJobData.portfolioItemIds = [...new Set([
+                ...(existingJob?.portfolioItemIds || []),
+                ...(jobData.portfolioItemIds || []),
+            ])];
         }
 
         // Schedule the new job with the aggregated data.

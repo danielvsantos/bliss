@@ -183,7 +183,7 @@ const processEventJob = async (job) => {
 
             case 'MANUAL_TRANSACTION_MODIFIED': // Fall-through
             case 'MANUAL_TRANSACTION_CREATED': {
-                const { tenantId, transactionId, categoryType, transaction_date, currency, country, categoryGroup, isDeletion, portfolioItemId } = data;
+                const { tenantId, transactionId, categoryType, transaction_date, currency, country, categoryGroup, isDeletion, portfolioItemId, previousPortfolioItemId } = data;
                 if (!tenantId || !transactionId) {
                     logger.warn(`${name} event is missing tenantId or transactionId.`);
                     return;
@@ -206,7 +206,13 @@ const processEventJob = async (job) => {
                         );
                     } else if (!isDeletion) {
                         logger.info(`[Event] Routing Investment/Debt transaction to portfolio processor.`);
-                        await getPortfolioQueue().add('process-portfolio-changes', { tenantId, transactionId });
+                        // `previousPortfolioItemId` lets the scoped update reconcile the item an
+                        // edit moved the transaction away from (the API relinks before emitting).
+                        await getPortfolioQueue().add('process-portfolio-changes', {
+                            tenantId,
+                            transactionId,
+                            ...(previousPortfolioItemId && { previousPortfolioItemId }),
+                        });
                     }
                     // Cash processing will be triggered by PORTFOLIO_CHANGES_PROCESSED
 

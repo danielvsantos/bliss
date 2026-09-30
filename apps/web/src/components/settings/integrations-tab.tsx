@@ -182,20 +182,30 @@ function expiryDays(value: string): KeyExpiryDays {
 
 // ─── One-time token reveal ──────────────────────────────────────────────────
 
-export function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
-  const { t } = useTranslation();
+/** Copy-to-clipboard with a short "copied" state. */
+function useCopy() {
   const [copied, setCopied] = useState(false);
-  const curl = `curl -H "Authorization: Bearer ${token}" \\\n  ${apiBaseUrl()}/api/transactions`;
-
-  async function copy() {
+  async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(token);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
     }
   }
+  return { copied, copy };
+}
+
+export function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
+  const { t } = useTranslation();
+  const tokenCopy = useCopy();
+  const mcpCopy = useCopy();
+  const curl = `curl -H "Authorization: Bearer ${token}" \\\n  ${apiBaseUrl()}/api/transactions`;
+  // MCP server for AI agents (#89): the same key works with Claude Code.
+  const mcpUrl = `${apiBaseUrl()}/api/mcp`;
+  const mcpHeader = `--header "Authorization: Bearer ${token}"`;
+  const mcpCommand = `claude mcp add --transport http bliss ${mcpUrl} ${mcpHeader}`;
 
   return (
     // min-w-0 throughout: DialogContent is a CSS grid, and a grid item's
@@ -214,15 +224,37 @@ export function TokenReveal({ token, onDone }: { token: string; onDone: () => vo
           className="min-w-0 flex-1 font-mono text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
-        <Button type="button" variant="outline" onClick={copy} className="shrink-0">
-          {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
-          {copied ? t(`${T}.reveal.copied`) : t(`${T}.reveal.copy`)}
+        <Button type="button" variant="outline" onClick={() => tokenCopy.copy(token)} className="shrink-0">
+          {tokenCopy.copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
+          {tokenCopy.copied ? t(`${T}.reveal.copied`) : t(`${T}.reveal.copy`)}
         </Button>
       </div>
       <div className="min-w-0 space-y-1.5">
         <Label>{t(`${T}.reveal.example`)}</Label>
         <pre className="whitespace-pre-wrap break-all rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
           {curl}
+        </pre>
+      </div>
+      <div className="min-w-0 space-y-1.5" data-testid="mcp-snippet">
+        <div className="flex items-center justify-between gap-2">
+          <Label>{t(`${T}.mcp.title`)}</Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => mcpCopy.copy(mcpCommand)}
+            aria-label={t(`${T}.mcp.copy_command`)}
+          >
+            {mcpCopy.copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
+            {mcpCopy.copied ? t(`${T}.reveal.copied`) : t(`${T}.mcp.copy_command`)}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{t(`${T}.mcp.description`)}</p>
+        <p className="text-xs text-muted-foreground">
+          {t(`${T}.mcp.url_label`)} <code className="break-all font-mono text-foreground">{mcpUrl}</code>
+        </p>
+        <pre className="whitespace-pre-wrap break-all rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+          {`claude mcp add --transport http bliss ${mcpUrl} \\\n  ${mcpHeader}`}
         </pre>
       </div>
       <DialogFooter>
@@ -629,6 +661,9 @@ function IntegrationRow({
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const isActive = integration.status === 'active';
+  // OAuth connections (#89) have one key the connected app rotates hourly:
+  // show the connection's expiry instead of keys, and no "Add key".
+  const oauth = integration.oauth ?? null;
   const lastUsed = formatDate(integration.lastUsedAt, i18n.language) ?? t(`${T}.never_used`);
 
   return (
@@ -639,22 +674,33 @@ function IntegrationRow({
             <span className="text-sm font-medium text-foreground">{integration.name}</span>
             <AccessBadge level={integration.accessLevel} />
             <StatusBadge status={integration.status} />
+            {oauth && (
+              <Badge className="bg-brand-primary/10 text-brand-primary border-brand-primary/20" data-testid="oauth-badge">
+                {t(`${T}.oauth.badge`, { client: oauth.clientName })}
+              </Badge>
+            )}
           </div>
           {integration.description && (
             <p className="text-xs text-muted-foreground">{integration.description}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            {t(`${T}.keys_count`, { count: integration.activeKeyCount, total: integration.keyCount })} ·{' '}
-            {t(`${T}.last_used`)}: {lastUsed}
+            {oauth
+              ? oauth.connectionExpiresAt
+                ? t(`${T}.oauth.expires`, { date: formatDate(oauth.connectionExpiresAt, i18n.language) })
+                : t(`${T}.oauth.no_expiry`)
+              : t(`${T}.keys_count`, { count: integration.activeKeyCount, total: integration.keyCount })}{' '}
+            · {t(`${T}.last_used`)}: {lastUsed}
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {isActive && (
             <>
-              <Button variant="outline" size="sm" onClick={onAddKey}>
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                {t(`${T}.add_key`)}
-              </Button>
+              {!oauth && (
+                <Button variant="outline" size="sm" onClick={onAddKey}>
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  {t(`${T}.add_key`)}
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={onRename} aria-label={t(`${T}.rename`)}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
@@ -669,18 +715,20 @@ function IntegrationRow({
               </Button>
             </>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-          >
-            {expanded ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}
-            {expanded ? t(`${T}.hide_keys`) : t(`${T}.show_keys`)}
-          </Button>
+          {!oauth && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}
+              {expanded ? t(`${T}.hide_keys`) : t(`${T}.show_keys`)}
+            </Button>
+          )}
         </div>
       </div>
-      {expanded && (
+      {expanded && !oauth && (
         <ul className="mt-2 divide-y divide-border border-t border-border">
           {integration.keys.map((key) => (
             <KeyRow key={key.id} apiKey={key} canRevoke={isActive} onRevoke={() => onRevokeKey(key)} />

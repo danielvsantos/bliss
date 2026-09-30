@@ -9,6 +9,7 @@ import {
   effectiveRole,
   extractIntegrationToken,
   isDeniedForIntegration,
+  isViewerPostAllowed,
   normalizeApiPath,
   redactIntegrationTokens,
 } from './integrationPolicy.js';
@@ -19,11 +20,15 @@ const TOKEN_ERROR_MESSAGES = {
   TOKEN_REVOKED: 'API token has been revoked',
 };
 
+const MCP_TOOL_HEADER = /^[a-z_]{1,64}$/;
+
 /**
  * One structured line per integration-token request (#84). IDs only — never
- * the token, its hash, or the request body.
+ * the token, its hash, or the request body. REST calls made by an MCP tool
+ * (#89) carry `x-bliss-mcp-tool`; a well-formed value is logged as `mcpTool`.
  */
 function logIntegrationRequest(req, res, key, integration, route) {
+  const mcpTool = req.headers?.['x-bliss-mcp-tool'];
   console.info(JSON.stringify({
     event: 'integration_request',
     tenantId: key.tenantId,
@@ -32,6 +37,7 @@ function logIntegrationRequest(req, res, key, integration, route) {
     method: req.method,
     route,
     status: res.statusCode,
+    ...(typeof mcpTool === 'string' && MCP_TOOL_HEADER.test(mcpTool) && { mcpTool }),
   }));
 }
 
@@ -88,8 +94,10 @@ async function authenticateIntegration(token, req, res, handler, { optional, req
 
   const role = effectiveRole(user.role, integration.accessLevel);
 
-  // Same rule as viewer users: read-only tokens cannot mutate anything.
-  if (role === 'viewer' && req.method !== 'GET') {
+  // Same rule as viewer users: read-only tokens cannot mutate anything. The
+  // one exception is POST to the MCP endpoint (#89), which re-checks every
+  // tool's REST call against this same rule.
+  if (role === 'viewer' && req.method !== 'GET' && !isViewerPostAllowed(req.url, req.method)) {
     return deny(StatusCodes.FORBIDDEN, {
       error: 'Read-only integration',
       code: 'READ_ONLY_INTEGRATION',

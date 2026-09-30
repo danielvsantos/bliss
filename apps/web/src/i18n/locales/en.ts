@@ -120,6 +120,26 @@ const en = {
 
   // Page titles and descriptions
   pages: {
+    oauth: {
+      consent: {
+        title: "Connect {{client}} to Bliss",
+        subtitle: "This app wants to use your Bliss data through the MCP server.",
+        signed_in_as: "Signed in as {{email}}",
+        redirect_notice: "After you decide, you'll be sent back to",
+        access_label: "Access",
+        read_only_description: "See transactions, portfolio, analytics and insights. It can't change anything.",
+        read_write_description: "Also re-categorise transactions, work your review queues, and edit portfolio data.",
+        expiry_label: "Connection expires after",
+        no_expiry_warning: "A connection without an expiry keeps working until you revoke it.",
+        footnote: "The app sees your decrypted financial data. You can revoke the connection at any time in Settings → Integrations.",
+        admin_required: "Only a workspace admin can connect apps. Ask an admin to connect it for you.",
+        allow: "Allow",
+        deny: "Deny",
+        error_title: "Can't complete this connection",
+        error_missing: "This link is incomplete. Start the connection again from your app.",
+        error_generic: "Something went wrong. Start the connection again from your app.",
+      },
+    },
     dashboard: {
       title: "Dashboard",
       subtitle: "Overview of your financial status",
@@ -436,6 +456,17 @@ const en = {
           copied: "Copied",
           example: "Example request",
           done: "Done",
+        },
+        mcp: {
+          title: "Use with Claude (MCP)",
+          description: "Connect Claude Code or another MCP client with this key. It sees the same data the key allows: read-only keys can only read.",
+          url_label: "MCP server URL:",
+          copy_command: "Copy command",
+        },
+        oauth: {
+          badge: "Connected via OAuth · {{client}}",
+          expires: "Connection expires {{date}}",
+          no_expiry: "Connection never expires",
         },
         confirm: {
           revoke_key_title: "Revoke this key?",

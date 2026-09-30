@@ -120,6 +120,26 @@ const it = {
 
   // Page titles and descriptions
   pages: {
+    oauth: {
+      consent: {
+        title: "Collega {{client}} a Bliss",
+        subtitle: "Questa app vuole usare i tuoi dati Bliss tramite il server MCP.",
+        signed_in_as: "Accesso effettuato come {{email}}",
+        redirect_notice: "Dopo la tua scelta verrai riportato a",
+        access_label: "Accesso",
+        read_only_description: "Vedere transazioni, portafoglio, analisi e insight. Non può modificare nulla.",
+        read_write_description: "Anche ricategorizzare transazioni, gestire le code di revisione e modificare i dati del portafoglio.",
+        expiry_label: "La connessione scade dopo",
+        no_expiry_warning: "Una connessione senza scadenza continua a funzionare finché non la revochi.",
+        footnote: "L'app vede i tuoi dati finanziari decifrati. Puoi revocare la connessione in qualsiasi momento in Impostazioni → Integrazioni.",
+        admin_required: "Solo un amministratore dello spazio può collegare app. Chiedi a un amministratore di collegarla.",
+        allow: "Consenti",
+        deny: "Rifiuta",
+        error_title: "Impossibile completare questa connessione",
+        error_missing: "Questo link è incompleto. Avvia di nuovo la connessione dalla tua app.",
+        error_generic: "Qualcosa è andato storto. Avvia di nuovo la connessione dalla tua app.",
+      },
+    },
     dashboard: {
       title: "Dashboard",
       subtitle: "Panoramica della tua situazione finanziaria",
@@ -436,6 +456,17 @@ const it = {
           copied: "Copiato",
           example: "Richiesta di esempio",
           done: "Fatto",
+        },
+        mcp: {
+          title: "Usa con Claude (MCP)",
+          description: "Collega Claude Code o un altro client MCP con questa chiave. Vede gli stessi dati consentiti dalla chiave: le chiavi di sola lettura possono solo leggere.",
+          url_label: "URL del server MCP:",
+          copy_command: "Copia comando",
+        },
+        oauth: {
+          badge: "Connessa tramite OAuth · {{client}}",
+          expires: "La connessione scade il {{date}}",
+          no_expiry: "La connessione non scade mai",
         },
         confirm: {
           revoke_key_title: "Revocare questa chiave?",
