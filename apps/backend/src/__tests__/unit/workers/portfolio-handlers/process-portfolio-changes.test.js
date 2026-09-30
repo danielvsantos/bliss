@@ -481,6 +481,22 @@ describe('process-portfolio-changes — scoped update reconciles the previous it
     expect(emittedIds()).toEqual(expect.arrayContaining([10, 11]));
   });
 
+  it('re-seeds the old MANUAL item\'s auto-seeded prices from its remaining buys only (partial rename)', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
+    const remainingBuy = { id: 43, debit: 100000, currency: 'EUR', transaction_date: new Date('2025-01-01') };
+    prisma.portfolioItem.findFirst.mockResolvedValue({ ...oldItem([remainingBuy]), source: 'MANUAL' });
+
+    await processPortfolioChanges(makeJob({ transactionId: 42, previousPortfolioItemId: 10 }));
+
+    expect(prisma.manualAssetValue.deleteMany).toHaveBeenCalledWith({
+      where: { assetId: 10, notes: 'Auto-seeded from purchase transaction' },
+    });
+    const seeded = prisma.manualAssetValue.createMany.mock.calls
+      .map(([arg]) => arg.data).flat().filter((r) => r.assetId === 10);
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].value.toString()).toBe('100000');
+  });
+
   it('does nothing extra when the job carries no previous item and the transaction did not move', async () => {
     prisma.transaction.findUnique.mockResolvedValue(makeEditedTx());
 

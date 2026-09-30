@@ -44,9 +44,11 @@ Editing a transaction can re-key it (e.g. a new description on a `category:descr
 
 | Old item after the edit | Outcome |
 |---|---|
-| Still has transactions | Investment state recalculated; included in `portfolioItemIds` |
+| Still has transactions | Investment state recalculated; a MANUAL item's auto-seeded prices are re-seeded from its remaining buys; included in `portfolioItemIds` |
 | Empty, **clear replacement** (the transaction's current item: same category and same account or same symbol) | Pruned via `pruneItemsPreservingTerms(prisma, [old], [replacement])` — terms, override and user manual values move |
 | Empty, no clear replacement (recategorised out of Investments/Debt, or into another category) | **Kept, never deleted**: stored state zeroed (`quantity`, `costBasis`, `currentValue`, USD fields…), included in `portfolioItemIds` so valuation clears its history. User data survives an edit the user may revert; a full rebuild prunes it later |
+
+An edit emits two events, and `scheduleDebouncedJob` keeps only the latest event's fields, so it **unions `portfolioItemIds`** across debounced events; otherwise the new-state event dropped the old item before `value-portfolio-items` and its stale value history survived.
 
 A transaction whose new category yields no asset key is unlinked (`portfolioItemId = null`), as a full rebuild would do. `recalculate-portfolio-item.js` (item with no transactions left) and user deletions are intentional removals and still cascade.
 

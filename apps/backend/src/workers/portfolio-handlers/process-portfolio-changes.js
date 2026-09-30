@@ -111,6 +111,16 @@ const reconcilePreviousItem = async (tenantId, itemId, replacement) => {
             const newState = await calculatePortfolioItemState(previousItem.transactions);
             await prisma.portfolioItem.update({ where: { id: itemId }, data: newState });
         }
+        // The auto-seeded weighted-average prices still include the buy that just
+        // left, and MANUAL valuation prices every unit with them. Re-seed from the
+        // remaining buys; user-entered values are untouched.
+        if (previousItem.source === 'MANUAL') {
+            await prisma.manualAssetValue.deleteMany({
+                where: { assetId: itemId, notes: 'Auto-seeded from purchase transaction' },
+            });
+            const remainingBuys = previousItem.transactions.filter((tx) => tx.debit && new Decimal(tx.debit).gt(0));
+            await seedManualAssetValues(itemId, tenantId, remainingBuys);
+        }
         return previousItem;
     }
 
