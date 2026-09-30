@@ -12,6 +12,7 @@ All files use `import` / `export`. Never use `require()` in this app.
 apps/api/
   pages/api/            # File-based API routes (the core of this app)
     auth/               # signin, signup, signout, session, change-password, google-token, [...nextauth]
+    integrations/       # index, [id], [id]/keys (index, [keyId]) — admin-only integration token management (#84)
     transactions/       # CRUD (index), export, merchant-history
     imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
     portfolio/          # items, holdings, history, equity-analysis, passive-income, items/[assetId]/manual-values, manual-values/[valueId], items/[assetId]/debt-terms, items/[assetId]/income-terms, income-terms/detached, income-terms/[id], income-terms/[id]/attach
@@ -34,7 +35,8 @@ apps/api/
     countries.js        # Supported countries
     currencies.js       # Supported currencies
     currency-rates.js   # Exchange rates
-  utils/                # Shared utilities (12 files)
+  utils/                # Shared utilities
+  middleware.js         # Next.js middleware: refuses integration tokens on denylisted routes (Edge, pure)
   services/             # Business logic (auth, transactions, plaid, valuation)
   lib/                  # Constants, default categories
   prisma/               # Prisma client with encryption + validation extensions
@@ -79,15 +81,19 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 - **Revocation:** jti added to Redis denylist on signout (TTL = remaining token life)
 - **Secret rotation:** `withAuth` tries `JWT_SECRET_CURRENT` first, then `JWT_SECRET_PREVIOUS`
 - **Multi-tenant isolation:** `user.tenantId` from JWT is used in every Prisma query. Never trust client-supplied tenantId.
+- **Integration tokens (#84):** `Authorization: Bearer bliss_<prefix>_<secret>` is checked first in `withAuth` (cookie ignored). It hydrates `req.user` as the creating admin with a capped role (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, never `admin`) plus `authType: 'integration'`, `integrationId`, `apiKeyId`, and logs one `integration_request` line per request. Only a SHA-256 hash + public prefix is stored (`ApiKey`). See `docs/specs/api/23-integrations-api.md`.
+- **Every new route must be classified in `__tests__/unit/middleware/integrationRouteMatrix.test.ts`** (the test fails otherwise). If a token must not reach it, add it to `INTEGRATION_DENYLIST` in `utils/integrationPolicy.js`. Never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route — that would undo the role cap.
 
 ## Key utilities
 
 | File | Purpose |
 |------|---------|
-| `withAuth.js` | JWT validation, Redis denylist check, hydrates `req.user` |
+| `withAuth.js` | Integration-token path (role cap + denylist + attribution log), then JWT validation, Redis denylist check; hydrates `req.user` |
+| `apiKeys.js` | Integration tokens: generate, SHA-256 hash, parse, `verifyApiKey`, throttled `touchLastUsed` |
+| `integrationPolicy.js` | Pure (Edge-safe) token policy: path normalisation, `INTEGRATION_DENYLIST`, `effectiveRole`, token extraction/redaction |
 | `cors.js` | Dynamic origin whitelist from `FRONTEND_URL`, auto-adds localhost in dev |
 | `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config |
-| `rateLimit.js` | Per-route rate limiters (24 endpoints configured) |
+| `rateLimit.js` | Per-route rate limiters (incl. `integrations`) |
 | `denylist.js` | Redis-backed JWT revocation, fail-open if Redis unavailable |
 | `produceEvent.js` | Dispatch events to backend via `POST BACKEND_URL/api/events` with `INTERNAL_API_KEY` |
 | `currencyConversion.js` | Cross-currency conversion with 7-day forward-fill lookback |
@@ -160,7 +166,7 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 **Coverage:** 70% lines/functions, 60% branches. Excludes `pages/api/auth/[...nextauth].js`.
 
-**Integration tests** use `createIsolatedTenant()` from `__tests__/helpers/tenant.ts` which creates a Tenant + User + signed JWT. Always call `teardownTenant()` in afterAll.
+**Integration tests** use `createIsolatedTenant()` from `__tests__/helpers/tenant.ts` which creates a Tenant + User + signed JWT. Always call `teardownTenant()` in afterAll. For integration-token requests use `createIntegrationKey()` / `createTenantUser()` / `bearer()` from `__tests__/helpers/integration.ts` (no extra teardown — deleting users cascades to integrations and keys), and set `req.url` (the denylist fails closed without it).
 
 **Test setup** (`__tests__/setup/env.ts`): Loads `.env.test` first, then root `.env`. Forces test values for encryption and JWT secrets. This runs before any module imports.
 
@@ -177,6 +183,7 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 | `valuation.service.js` | Asset valuation logic |
 | `passiveIncome.service.js` | Passive income `loadInputs()` (Prisma + FX) and response assembly around `project()` from `@bliss/shared/portfolio` |
 | `incomeTerms.service.js` | IncomeTerms body validation/whitelisting, serialization, stream-category eligibility |
+| `integrations.service.js` | Integrations & API keys (#84): body validation, key creation payload (`buildApiKey`), serialization that never exposes `keyHash` |
 
 ## Lib
 

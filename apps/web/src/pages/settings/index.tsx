@@ -47,6 +47,7 @@ import {
   Plus,
   Lock,
   Wrench,
+  KeyRound,
 } from "lucide-react";
 import { useTenantSettings, useUpdateTenantSettings } from "@/hooks/use-tenant-settings";
 
@@ -54,6 +55,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { CardDivider } from "@/components/ui/card-divider";
 import { SettingsSelect } from "@/components/settings/settings-select";
 import { MaintenanceTab } from "@/components/settings/maintenance-tab";
+import { IntegrationsTab } from "@/components/settings/integrations-tab";
 import {
   MultiSelectCombobox,
   type ComboboxOption,
@@ -398,6 +400,17 @@ export default function SettingsPage() {
               >
                 <Wrench className="h-3.5 w-3.5 sm:mr-1.5" />
                 <span className="hidden sm:inline">Maintenance</span>
+              </TabsTrigger>
+            )}
+            {/* Integrations & API tokens — admin only (#84). The management
+                endpoints also return 403 for members and viewers. */}
+            {user?.role === 'admin' && (
+              <TabsTrigger
+                value="integrations"
+                className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                <KeyRound className="h-3.5 w-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">{t("pages.settings.tabs.integrations")}</span>
               </TabsTrigger>
             )}
           </TabsList>
@@ -974,6 +987,13 @@ export default function SettingsPage() {
           {user?.role === 'admin' && (
             <TabsContent value="maintenance" className="mt-6 space-y-5">
               <MaintenanceTab />
+            </TabsContent>
+          )}
+
+          {/* ═══════ INTEGRATIONS TAB (admin only) ═══════ */}
+          {user?.role === 'admin' && (
+            <TabsContent value="integrations" className="mt-6 space-y-5">
+              <IntegrationsTab />
             </TabsContent>
           )}
         </Tabs>

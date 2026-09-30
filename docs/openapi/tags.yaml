@@ -5,6 +5,18 @@ info:
 
 components:
   securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: bliss_<prefix>_<secret>
+      description: >
+        Integration token for AI agents, scripts and other systems, created by a
+        tenant admin in Settings → Integrations (see integrations.yaml). It acts
+        on behalf of the admin who created it, with a capped role: Read-only
+        tokens may only GET, Read & write tokens act as a member, and a token is
+        never admin. Some routes refuse tokens entirely with
+        403 NOT_AVAILABLE_TO_INTEGRATIONS (sessions, users, integrations, the
+        Plaid connection lifecycle, and account/category/tenant writes).
     cookieAuth:
       type: apiKey
       in: cookie
@@ -25,6 +37,7 @@ components:
 
 security:
   - cookieAuth: []
+  - bearerAuth: []
 
 paths:
   /api/tags:

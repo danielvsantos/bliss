@@ -215,5 +215,26 @@
       "backend": "docs/specs/backend/21-subscriptions-detection.md",
       "frontend": "docs/specs/frontend/21-subscriptions.md"
     }
+  },
+  {
+    "slug": "passive-income",
+    "title": "Passive Income Projection",
+    "description": "Income terms on assets, allowance/benefit streams, the 12/24/36-month projection engine, ETFs in SecurityMaster, and detached terms",
+    "order": 22,
+    "layers": {
+      "api": "docs/specs/api/22-passive-income-api.md",
+      "backend": "docs/specs/backend/22-passive-income.md",
+      "frontend": "docs/specs/frontend/22-passive-income.md"
+    }
+  },
+  {
+    "slug": "integrations",
+    "title": "Integrations & API Tokens",
+    "description": "Tenant-scoped, revocable API tokens for AI agents and external systems: Read-only / Read & write role cap, central denylist, attribution log",
+    "order": 23,
+    "layers": {
+      "api": "docs/specs/api/23-integrations-api.md",
+      "frontend": "docs/specs/frontend/23-integrations.md"
+    }
   }
 ]

@@ -54,6 +54,14 @@ import type {
   DetachedIncomeTerms,
   PassiveIncomeResponse,
 } from '../types/passive-income';
+import type {
+  Integration,
+  ApiKeySummary,
+  CreateApiKeyRequest,
+  CreateApiKeyResponse,
+  CreateIntegrationRequest,
+  CreateIntegrationResponse,
+} from '../types/integrations';
 
 export interface AggregatedPortfolioHistory {
   date: string;
@@ -1193,6 +1201,40 @@ class APIClient {
 
   async discardIncomeTerms(id: number): Promise<void> {
     await this.client.delete(`/api/portfolio/income-terms/${id}`);
+  }
+
+  // --- Integrations & API tokens (#84, admin only) ---
+
+  async getIntegrations(): Promise<{ integrations: Integration[] }> {
+    const response = await this.client.get('/api/integrations');
+    return response.data;
+  }
+
+  async createIntegration(body: CreateIntegrationRequest): Promise<CreateIntegrationResponse> {
+    const response = await this.client.post('/api/integrations', body);
+    return response.data;
+  }
+
+  async updateIntegration(id: string, body: { name?: string; description?: string | null }): Promise<{ integration: Integration }> {
+    const response = await this.client.patch(`/api/integrations/${encodeURIComponent(id)}`, body);
+    return response.data;
+  }
+
+  async revokeIntegration(id: string): Promise<{ integration: Integration }> {
+    const response = await this.client.delete(`/api/integrations/${encodeURIComponent(id)}`);
+    return response.data;
+  }
+
+  async createApiKey(integrationId: string, body: CreateApiKeyRequest): Promise<CreateApiKeyResponse> {
+    const response = await this.client.post(`/api/integrations/${encodeURIComponent(integrationId)}/keys`, body);
+    return response.data;
+  }
+
+  async revokeApiKey(integrationId: string, keyId: string): Promise<{ apiKey: ApiKeySummary }> {
+    const response = await this.client.delete(
+      `/api/integrations/${encodeURIComponent(integrationId)}/keys/${encodeURIComponent(keyId)}`,
+    );
+    return response.data;
   }
 }
 
