@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
+import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   getTenantMeta,
   setTenantMeta,
@@ -74,6 +76,43 @@ interface TenantSettingsData {
   plaidLinkedBankIds?: number[];
 }
 
+/* ─── Tab navigation ────────────────────────────────── */
+
+interface SettingsTab {
+  value: string;
+  labelKey: string;
+  icon: LucideIcon;
+}
+
+interface SettingsSection {
+  id: string;
+  /** Group heading, shown in the desktop side nav only. */
+  labelKey?: string;
+  adminOnly?: boolean;
+  tabs: SettingsTab[];
+}
+
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  {
+    id: "workspace",
+    tabs: [
+      { value: "general", labelKey: "pages.settings.tabs.general", icon: SettingsIcon },
+      { value: "countries-currencies", labelKey: "pages.settings.tabs.countries_currencies", icon: Globe },
+      { value: "banks", labelKey: "pages.settings.tabs.banks", icon: Building },
+      { value: "ai-classification", labelKey: "pages.settings.tabs.ai_classification", icon: Sparkles },
+    ],
+  },
+  {
+    id: "admin",
+    labelKey: "pages.settings.tabs.admin_section",
+    adminOnly: true,
+    tabs: [
+      { value: "maintenance", labelKey: "pages.settings.tabs.maintenance", icon: Wrench },
+      { value: "integrations", labelKey: "pages.settings.tabs.integrations", icon: KeyRound },
+    ],
+  },
+];
+
 /* ─── Save Hook Helper ──────────────────────────────── */
 
 function useSaveConfirmation() {
@@ -102,6 +141,7 @@ export default function SettingsPage() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
 
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState<TenantSettingsData | null>(null);
@@ -322,7 +362,7 @@ export default function SettingsPage() {
 
   if (isReferenceDataLoading || !settings) {
     return (
-      <div className="max-w-[880px] mx-auto py-7 px-7 space-y-6">
+      <div className="max-w-[1120px] mx-auto py-7 px-4 sm:px-7 space-y-6">
         <Skeleton className="h-12 w-64" />
         <Skeleton className="h-10 w-full max-w-lg" />
         <Skeleton className="h-64 w-full" />
@@ -342,7 +382,7 @@ export default function SettingsPage() {
   /* ─── Render ─────────────────────────────────────── */
 
   return (
-    <div className="max-w-[880px] mx-auto py-7 px-7 pb-20 flex flex-col gap-6 relative">
+    <div className="max-w-[1120px] mx-auto py-7 px-4 sm:px-7 pb-20 flex flex-col gap-6 relative">
       {/* Page Header */}
       <div className="flex items-start gap-3.5">
         <div className="w-[42px] h-[42px] rounded-xl bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0 mt-0.5">
@@ -358,65 +398,48 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Tab Navigation — Pill Segmented Control */}
-      <div className="overflow-x-auto pb-0.5">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-muted border border-border rounded-[0.875rem] p-[3px] inline-flex gap-0.5 h-auto">
-            <TabsTrigger
-              value="general"
-              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-            >
-              <SettingsIcon className="h-3.5 w-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">{t("pages.settings.tabs.general")}</span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="countries-currencies"
-              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-            >
-              <Globe className="h-3.5 w-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">{t("pages.settings.tabs.countries_currencies")}</span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="banks"
-              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-            >
-              <Building className="h-3.5 w-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">{t("pages.settings.tabs.banks")}</span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="ai-classification"
-              className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-            >
-              <Sparkles className="h-3.5 w-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">AI Classification</span>
-            </TabsTrigger>
-            {/* Maintenance tab — admin only. Non-admin users don't see it
-                at all (server-side auth returns 403 if they find the URL,
-                but hiding the entry point is the primary guard). */}
-            {user?.role === 'admin' && (
-              <TabsTrigger
-                value="maintenance"
-                className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-              >
-                <Wrench className="h-3.5 w-3.5 sm:mr-1.5" />
-                <span className="hidden sm:inline">Maintenance</span>
-              </TabsTrigger>
-            )}
-            {/* Integrations & API tokens — admin only (#84). The management
-                endpoints also return 403 for members and viewers. */}
-            {user?.role === 'admin' && (
-              <TabsTrigger
-                value="integrations"
-                className="rounded-[0.75rem] px-2 sm:px-4 py-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-              >
-                <KeyRound className="h-3.5 w-3.5 sm:mr-1.5" />
-                <span className="hidden sm:inline">{t("pages.settings.tabs.integrations")}</span>
-              </TabsTrigger>
-            )}
-          </TabsList>
+      {/* Tab Navigation — vertical side nav from md up, a horizontally
+          scrollable pill row on phones. Admin-only tabs are grouped under
+          their own label and hidden entirely for members and viewers
+          (server-side auth also returns 403 for them). */}
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        orientation={isMobile ? "horizontal" : "vertical"}
+        className="gap-6 md:flex-row md:items-start md:gap-8"
+      >
+        <TabsList
+          aria-label={t("pages.settings.title")}
+          className="bg-transparent p-0 h-auto w-full justify-start gap-1 overflow-x-auto pb-1 -mx-1 px-1 md:mx-0 md:px-0 md:pb-0 md:w-[208px] md:shrink-0 md:flex-col md:items-stretch md:overflow-visible md:sticky md:top-6"
+        >
+          {SETTINGS_SECTIONS.filter((section) => !section.adminOnly || user?.role === "admin").map((section) => (
+            <Fragment key={section.id}>
+              {section.labelKey && (
+                <span
+                  role="presentation"
+                  className="hidden md:block px-3 pt-4 pb-1 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+                >
+                  {t(section.labelKey)}
+                </span>
+              )}
+              {section.tabs.map(({ value, labelKey, icon: Icon }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="flex-none md:flex-1 md:w-full justify-start gap-2 rounded-[0.75rem] px-3 py-2 text-sm font-normal text-muted-foreground border border-border md:border-transparent bg-card md:bg-transparent hover:text-foreground md:hover:bg-muted data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm md:data-[state=active]:bg-muted md:data-[state=active]:text-foreground md:data-[state=active]:border-transparent md:data-[state=active]:shadow-none md:data-[state=active]:font-medium"
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{t(labelKey)}</span>
+                </TabsTrigger>
+              ))}
+            </Fragment>
+          ))}
+        </TabsList>
+
+        <div className="min-w-0 flex-1">
 
           {/* ═══════ GENERAL TAB ═══════ */}
-          <TabsContent value="general" className="mt-6 space-y-5">
+          <TabsContent value="general" className="mt-0 space-y-5">
             {/* Workspace Details Card */}
             <Card className="overflow-hidden p-0 gap-0">
               <div className="px-7 pt-[22px] pb-[18px]">
@@ -568,7 +591,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* ═══════ COUNTRIES & CURRENCIES TAB ═══════ */}
-          <TabsContent value="countries-currencies" className="mt-6 space-y-5">
+          <TabsContent value="countries-currencies" className="mt-0 space-y-5">
             <Card className="overflow-hidden p-0 gap-0">
               <div className="px-7 pt-[22px] pb-[18px]">
                 <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
@@ -713,7 +736,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* ═══════ BANKS TAB ═══════ */}
-          <TabsContent value="banks" className="mt-6 space-y-5">
+          <TabsContent value="banks" className="mt-0 space-y-5">
             <Card className="overflow-hidden p-0 gap-0">
               <div className="px-7 pt-[22px] pb-[18px]">
                 <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
@@ -831,7 +854,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* ═══════ AI CLASSIFICATION TAB ═══════ */}
-          <TabsContent value="ai-classification" className="mt-6 space-y-5">
+          <TabsContent value="ai-classification" className="mt-0 space-y-5">
             <Card className="overflow-hidden p-0 gap-0">
               <div className="px-7 pt-[22px] pb-[18px]">
                 <div className="flex items-center gap-2">
@@ -985,19 +1008,19 @@ export default function SettingsPage() {
 
           {/* ═══════ MAINTENANCE TAB (admin only) ═══════ */}
           {user?.role === 'admin' && (
-            <TabsContent value="maintenance" className="mt-6 space-y-5">
+            <TabsContent value="maintenance" className="mt-0 space-y-5">
               <MaintenanceTab />
             </TabsContent>
           )}
 
           {/* ═══════ INTEGRATIONS TAB (admin only) ═══════ */}
           {user?.role === 'admin' && (
-            <TabsContent value="integrations" className="mt-6 space-y-5">
+            <TabsContent value="integrations" className="mt-0 space-y-5">
               <IntegrationsTab />
             </TabsContent>
           )}
-        </Tabs>
-      </div>
+        </div>
+      </Tabs>
 
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </div>

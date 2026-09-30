@@ -309,6 +309,9 @@ const es = {
         banks: "Bancos",
         connections: "Conexiones",
         integrations: "Integraciones",
+        ai_classification: "Clasificación IA",
+        maintenance: "Mantenimiento",
+        admin_section: "Administración",
       },
       general: {
         title: "Configuración general",

@@ -328,6 +328,9 @@ const it = {
         banks: "Banche",
         connections: "Connessioni",
         integrations: "Integrazioni",
+        ai_classification: "Classificazione IA",
+        maintenance: "Manutenzione",
+        admin_section: "Amministrazione",
       },
       general: {
         title: "Impostazioni generali",
