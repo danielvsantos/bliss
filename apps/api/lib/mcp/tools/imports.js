@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { defineTool, cursorField, limitField, stringId, intId, pathId } from '../define.js';
 import { ToolInputError, errorMessage } from '../errors.js';
 import { mapWithConcurrency } from '../loopback.js';
-import { pageArgs, pageMeta, num, isoDate, signedAmount } from '../shape.js';
+import { pageArgs, pageMeta, paginate, num, isoDate, signedAmount } from '../shape.js';
 
 /**
  * Smart Import staged-import review (#89). Statement files are uploaded in the
@@ -62,17 +62,17 @@ const listImports = defineTool({
   async handler(args, { api }) {
     if (!args.importId) {
       const data = await api.get('/api/imports/pending');
-      return {
-        imports: (data.imports || []).map((i) => ({
-          importId: i.id,
-          fileName: i.fileName,
-          adapter: i.adapterName,
-          accountId: i.accountId,
-          totalRows: i.totalRows,
-          rowsToReview: i.pendingRowCount,
-          createdAt: i.createdAt,
-        })),
-      };
+      const imports = (data.imports || []).map((i) => ({
+        importId: i.id,
+        fileName: i.fileName,
+        adapter: i.adapterName,
+        accountId: i.accountId,
+        totalRows: i.totalRows,
+        rowsToReview: i.pendingRowCount,
+        createdAt: i.createdAt,
+      }));
+      // Same list contract as every other tool: items + total + hasMore/nextCursor.
+      return paginate(imports, args, 50);
     }
     const p = pageArgs(args, 50);
     const data = await api.get(`/api/imports/${encodeURIComponent(args.importId)}`, {
@@ -102,28 +102,6 @@ const listImports = defineTool({
       total,
       ...pageMeta(p, total),
     };
-  },
-});
-
-const findSimilarTransactions = defineTool({
-  name: 'find_similar_transactions',
-  access: 'read',
-  title: 'Find similar transactions',
-  description:
-    'Semantic search over the user\'s past categorised transactions: returns similar descriptions with their '
-    + 'category and a similarity score (0-1). Use it to pick a category for an unfamiliar import row.',
-  input: {
-    description: z.string().min(2).max(500),
-    limit: z.number().int().min(1).max(20).optional().describe('Max results (default 5).'),
-    threshold: z.number().min(0).max(1).optional().describe('Minimum similarity (default 0.70).'),
-  },
-  wraps: [{ method: 'GET', route: '/api/imports/similar' }],
-  async handler(args, { api }) {
-    const data = await api.get('/api/imports/similar', {
-      description: args.description, limit: args.limit ?? 5, threshold: args.threshold,
-    });
-    const rows = Array.isArray(data) ? data : (data?.results || []);
-    return { items: rows.slice(0, args.limit ?? 5) };
   },
 });
 
@@ -260,6 +238,6 @@ const finalizeImport = defineTool({
   },
 });
 
-const TOOLS = [listImports, findSimilarTransactions, reviewImportRows, listImportSeeds, confirmImportSeeds, finalizeImport];
+const TOOLS = [listImports, reviewImportRows, listImportSeeds, confirmImportSeeds, finalizeImport];
 
 export default TOOLS;

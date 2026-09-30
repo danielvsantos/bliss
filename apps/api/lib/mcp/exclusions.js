@@ -12,6 +12,7 @@ export const EXCLUDED_OPERATIONS = Object.freeze([
   { method: 'POST', route: '/api/imports/detect-adapter', reason: 'File upload stays in the app' },
   { method: 'GET', route: '/api/imports/adapters', reason: 'Import adapter configuration is a UI job' },
   { method: 'POST', route: '/api/imports/adapters', reason: 'Import adapter configuration is a UI job' },
+  { method: 'GET', route: '/api/imports/similar', reason: 'Returns raw classifier embedding matches (no description); staged rows already carry the suggested category' },
   { method: 'PUT', route: '/api/imports/adapters/[id]', reason: 'Import adapter configuration is a UI job' },
   { method: 'DELETE', route: '/api/imports/adapters/[id]', reason: 'Import adapter configuration is a UI job' },
   { method: 'GET', route: '/api/plaid/items', reason: 'Plaid connections are managed in the app' },

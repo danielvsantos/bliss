@@ -2,7 +2,7 @@
  * Server `instructions` sent on MCP initialize (#89): the Bliss concepts an
  * agent needs before it picks tools.
  */
-export const MCP_INSTRUCTIONS = `Bliss is a personal finance app: bank and card transactions, investment portfolios, subscriptions and AI insights for one household (a "tenant"). You act as the user who created this API key.
+export const MCP_INSTRUCTIONS = `Bliss is a personal finance app: bank and card transactions, investment portfolios, subscriptions and AI insights for one household (a "tenant"). You act as the Bliss admin who approved this connection (an integration key or an OAuth connector).
 
 Conventions
 - Dates are YYYY-MM-DD. Analytics periods are "YYYY-MM", "YYYY-Qn" or "YYYY".
@@ -16,4 +16,4 @@ Two review queues
 - Bank sync (Plaid): get_plaid_review_queue → review_plaid_transactions. Approving creates the transaction.
 - Imported statements: the user uploads the file in the Bliss app; then list_imports → review_import_rows → finalize_import (commit). You cannot upload files, and bank connections are managed in the app.
 
-Writes behave exactly like the app: re-categorising teaches the classifier, and analytics and portfolio values refresh in the background (allow a minute). A read-only key only sees read tools.`;
+Writes behave exactly like the app: re-categorising teaches the classifier, and analytics and portfolio values refresh in the background (allow a minute). A Read-only connection only sees read tools.`;

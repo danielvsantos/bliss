@@ -51,7 +51,7 @@ const FEATURE_MAP = {
   'subscriptions':            { title: 'Subscriptions & Recurring Charges', order: 21, description: 'Deterministic recurring-charge detection (category signal + bounded interval heuristic), the Subscriptions page, and the per-merchant Confirm/Dismiss learning loop' },
   'passive-income':           { title: 'Passive Income Projection',  order: 22, description: 'Income terms on assets, allowance/benefit streams, the 12/24/36-month projection engine, ETFs in SecurityMaster, and detached terms' },
   'integrations':             { title: 'Integrations & API Tokens',  order: 23, description: 'Tenant-scoped, revocable API tokens for AI agents and external systems: Read-only / Read & write role cap, central denylist, attribution log' },
-  'mcp-server':               { title: 'MCP Server for AI Agents',   order: 24, description: 'Stateless Streamable HTTP MCP endpoint (/api/mcp) with 39 agent-oriented tools over the REST API, role-filtered by integration key' },
+  'mcp-server':               { title: 'MCP Server for AI Agents',   order: 24, description: 'Stateless Streamable HTTP MCP endpoint (/api/mcp) with 38 agent-oriented tools over the REST API, role-filtered by integration key' },
   'mcp-oauth':                { title: 'OAuth for MCP Connectors',   order: 25, description: 'OAuth 2.1 authorization server (PKCE, dynamic client registration, refresh rotation) so Claude custom connectors can connect to /api/mcp; access tokens are integration keys' },
 };
 

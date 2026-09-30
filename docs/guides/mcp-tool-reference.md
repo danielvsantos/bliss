@@ -2,7 +2,7 @@
 
 <!-- Generated from apps/api/lib/mcp/registry.js by `pnpm --filter @bliss/api mcp:reference`. Do not edit by hand. -->
 
-Bliss exposes **39 tools** over MCP at `POST /api/mcp`: **22 read** tools available to every integration key and **17 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
+Bliss exposes **38 tools** over MCP at `POST /api/mcp`: **21 read** tools available to every integration key and **17 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
 
 Conventions: dates are `YYYY-MM-DD`; amounts are `{ value, currency }`; transaction amounts are signed (positive = money in, negative = money out); lists return `hasMore` and `nextCursor` — pass `nextCursor` back as `cursor` for the next page (default 50 items, max 100).
 
@@ -225,14 +225,14 @@ Income and spending for tagged transactions (e.g. a trip), per tag and period, b
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/insights`
 
-AI-generated financial insights (monthly/quarterly/annual health checks and weekly portfolio notes), most important first. Dismissed insights are hidden unless includeDismissed is true.
+AI-generated financial insights: tiers MONTHLY, QUARTERLY and ANNUAL health checks, and PORTFOLIO notes (generated weekly; there is no WEEKLY tier), most important first. Dismissed insights are hidden unless includeDismissed is true.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `tier` | `MONTHLY` \| `QUARTERLY` \| `ANNUAL` \| `PORTFOLIO` | no |  |
 | `category` | `SPENDING` \| `INCOME` \| `SAVINGS` \| `PORTFOLIO` \| `DEBT` \| `NET_WORTH` | no |  |
 | `severity` | `INFO` \| `WARNING` \| `POSITIVE` \| `CRITICAL` | no |  |
-| `periodKey` | string | no | e.g. "2026-03", "2026-Q1", "2025", "2026-W14". |
+| `periodKey` | string | no | e.g. "2026-03" (MONTHLY), "2026-Q1" (QUARTERLY), "2025" (ANNUAL), "2026-W14" (PORTFOLIO). |
 | `includeDismissed` | boolean | no |  |
 | `limit` | integer | no | Items per page (1-100, default 20). |
 | `cursor` | string | no | Opaque cursor from a previous result's nextCursor. Omit for the first page. |
@@ -359,19 +359,6 @@ Without importId: imports (uploaded statements) that still have rows to review. 
 | `limit` | integer | no | Items per page (1-100, default 50). |
 | `cursor` | string | no | Opaque cursor from a previous result's nextCursor. Omit for the first page. |
 
-### `find_similar_transactions` — Find similar transactions
-
-**Access:** Read (all keys)  
-**Wraps:** `GET /api/imports/similar`
-
-Semantic search over the user's past categorised transactions: returns similar descriptions with their category and a similarity score (0-1). Use it to pick a category for an unfamiliar import row.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `description` | string | yes |  |
-| `limit` | integer | no | Max results (default 5). |
-| `threshold` | number | no | Minimum similarity (default 0.70). |
-
 ### `review_import_rows` — Review staged import rows
 
 **Access:** Write (Read & write keys only)  
@@ -479,7 +466,7 @@ Stock and ETF holdings grouped by sector, industry, country or asset class, with
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/portfolio/passive-income`, `GET /api/portfolio/income-terms/detached`, `GET /api/passive-income/streams`
 
-Projected dividends, bond coupons, rent, interest and other income streams for the next 12/24/36 months (display currency), next to the last 12 months of actual passive income. Also lists holdings missing income terms, user-defined income streams and detached terms left over from re-keyed holdings.
+Projected dividends, bond coupons, rent, interest and other income streams for the next 12/24/36 months (display currency), next to the last 12 months of actual passive income. Also lists holdings missing income terms, user-defined income streams and detached terms left over from re-keyed holdings. Every amount is in the display currency (`currency`); the monthly/yearly series are plain numbers in it. `byHolding[].holdingCurrency` is the holding's own currency, for reference only.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -610,6 +597,7 @@ These REST operations are reachable with an integration key but have no tool, on
 | `POST /api/imports/detect-adapter` | File upload stays in the app |
 | `GET /api/imports/adapters` | Import adapter configuration is a UI job |
 | `POST /api/imports/adapters` | Import adapter configuration is a UI job |
+| `GET /api/imports/similar` | Returns raw classifier embedding matches (no description); staged rows already carry the suggested category |
 | `PUT /api/imports/adapters/[id]` | Import adapter configuration is a UI job |
 | `DELETE /api/imports/adapters/[id]` | Import adapter configuration is a UI job |
 | `GET /api/plaid/items` | Plaid connections are managed in the app |

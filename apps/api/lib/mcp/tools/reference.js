@@ -58,7 +58,7 @@ export async function ensureAccount(api, id) {
     return await api.get('/api/accounts', { id });
   } catch (err) {
     if (err instanceof LoopbackError && (err.status === 404 || err.status === 403)) {
-      throw new ToolNotFoundError(`account ${id}`);
+      throw new ToolNotFoundError(`account ${id}`, ACCOUNT_HINT);
     }
     throw err;
   }
@@ -69,7 +69,7 @@ export async function ensureCategory(api, id) {
     return await api.get('/api/categories', { id });
   } catch (err) {
     if (err instanceof LoopbackError && (err.status === 404 || err.status === 403 || err.status === 400)) {
-      throw new ToolNotFoundError(`category ${id}`);
+      throw new ToolNotFoundError(`category ${id}`, CATEGORY_HINT);
     }
     throw err;
   }

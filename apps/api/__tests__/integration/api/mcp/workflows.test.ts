@@ -198,7 +198,7 @@ describe('AC7 — review queues', () => {
 
     const client = await connectMcp(server.baseUrl, a.key);
     const pending = await callTool(client, 'list_imports', {});
-    expect(pending.data.imports.map((i: any) => i.importId)).toEqual(expect.arrayContaining([commitMe.id, cancelMe.id]));
+    expect(pending.data.items.map((i: any) => i.importId)).toEqual(expect.arrayContaining([commitMe.id, cancelMe.id]));
 
     const detail = await callTool(client, 'list_imports', { importId: commitMe.id, uncategorized: true });
     expect(detail.data.rows).toHaveLength(1);
@@ -220,7 +220,7 @@ describe('AC7 — review queues', () => {
     expect(cancel.data.status).toBe('CANCELLED');
 
     const after = await callTool(client, 'list_imports', {});
-    const ids = after.data.imports.map((i: any) => i.importId);
+    const ids = after.data.items.map((i: any) => i.importId);
     expect(ids).not.toContain(commitMe.id);
     expect(ids).not.toContain(cancelMe.id);
     await client.close();

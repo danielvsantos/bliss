@@ -6,7 +6,7 @@
 server inside the API app (#89). MCP clients (Claude Code, Claude Desktop via
 `mcp-remote`, the MCP Inspector, other agents) connect with a Bliss
 **integration API key** (#84, [23-integrations-api.md](./23-integrations-api.md))
-and get 39 agent-oriented **tools** covering transactions, analytics, insights,
+and get 38 agent-oriented **tools** covering transactions, analytics, insights,
 the Plaid review queue, staged-import review, portfolio & passive income and
 subscriptions.
 
@@ -86,8 +86,8 @@ an integration key, so nothing on this endpoint changes for them.
 
 ## 24.4. Tools and roles
 
-`tools/list` is filtered by the key's role: **Read-only** (`viewer`) → the 22
-read tools; **Read & write** (`member`) → all 39. Write tools are not even
+`tools/list` is filtered by the key's role: **Read-only** (`viewer`) → the 21
+read tools; **Read & write** (`member`) → all 38. Write tools are not even
 registered for read-only keys (calling one by name is a "tool not found" error),
 and their REST calls would be refused with `403 READ_ONLY_INTEGRATION` anyway.
 Annotations: read tools `readOnlyHint: true`; write tools that delete, discard,
@@ -99,7 +99,7 @@ merge or dismiss `destructiveHint: true`.
 | Transactions | `search_transactions`, `get_merchant_history` | `create_transaction`, `update_transaction`, `delete_transaction` |
 | Analytics, insights, notifications | `get_spending_summary`, `get_tag_summary`, `list_insights`, `get_notifications_summary` | `generate_insights`, `dismiss_insight` |
 | Plaid review queue | `get_plaid_review_queue`, `list_plaid_seeds` | `review_plaid_transactions`, `requeue_plaid_transactions`, `confirm_plaid_seeds` |
-| Smart Import review | `list_imports`, `find_similar_transactions`, `list_import_seeds` | `review_import_rows`, `confirm_import_seeds`, `finalize_import` |
+| Smart Import review | `list_imports`, `list_import_seeds` | `review_import_rows`, `confirm_import_seeds`, `finalize_import` |
 | Portfolio & passive income | `get_portfolio_holdings`, `get_portfolio_history`, `get_equity_analysis`, `get_passive_income`, `get_holding_details` | `set_asset_class`, `manage_manual_values`, `manage_income_and_debt_terms`, `manage_passive_income_streams` |
 | Subscriptions | `list_subscriptions` | `update_subscription` |
 
@@ -144,6 +144,10 @@ Notable contracts:
 - **Money** is `{ value, currency }` (2 decimals); **dates** are `YYYY-MM-DD`.
   Transaction, import-row and review-item amounts are **signed**: positive =
   money in, negative = money out (Plaid's positive-outflow amounts are flipped).
+  `get_passive_income` amounts (KPIs, `byHolding`, upcoming payments) carry the
+  **display** currency: `project()` has already converted them, so the group's
+  own currency is exposed separately as `holdingCurrency`, never as the label.
+  Its monthly/yearly series stay plain numbers in the top-level `currency`.
 - **Hidden fields:** `omitDeep()` removes `rawJson`, `rawData`, `embedding`,
   `hash`, `keyHash`, `accessToken`, `dedupeHash`, `transactionHash`,
   `plaidTransactionId`, `externalId` at any depth. Account numbers are reduced to
@@ -159,10 +163,10 @@ REST failures become MCP tool results with `isError: true` and one sentence:
 
 | REST | Message |
 |---|---|
-| `401` | The Bliss API key is invalid, expired or revoked… |
-| `403 READ_ONLY_INTEGRATION` | This key is read-only… |
+| `401` | The Bliss connection is invalid, expired or revoked… |
+| `403 READ_ONLY_INTEGRATION` | This Bliss connection is read-only… |
 | `403 NOT_AVAILABLE_TO_INTEGRATIONS` | This operation is not available to integrations… |
-| `403` (other) / `404` | `Not found: <route message>. <which tool lists the IDs>` — cross-tenant IDs never reveal more |
+| `403` (other) / `404` | `Not found: <route message>. <which tool lists the IDs>` — the hint names the tool that lists the missing kind of ID (a transaction tool failing on a category ID points to `list_categories`); cross-tenant IDs never reveal more |
 | `400` / `409` / `422` | The route's `error` (+ `details`) |
 | `429` | Rate limited by Bliss. Retry after N seconds (from `Retry-After` or body `retryAfter`) |
 | `5xx`, timeout, unreachable | Generic message; 5xx and unexpected errors go to Sentry |
@@ -209,10 +213,10 @@ not counted.
 | Analytics | 5 | 2 | `analytics` POST/PUT/DELETE: cache maintenance (501 today) |
 | Insights, notifications, onboarding | 7 | 4 | `notifications/summary` PUT (marks the creating admin's notifications seen); `onboarding/progress` GET/PUT: UI state |
 | Plaid | 10 | 7 | `plaid/items` GET, `plaid/accounts` GET, `plaid/sync-logs` GET: connections are managed in the app |
-| Smart Import | 14 | 8 | `upload`, `detect-adapter`: file upload stays in the app; `adapters` ×4: adapter configuration |
+| Smart Import | 14 | 7 | `upload`, `detect-adapter`: file upload stays in the app; `adapters` ×4: adapter configuration; `similar` GET: raw classifier embedding matches (no description), and staged rows already carry the suggested category |
 | Portfolio & passive income | 25 | 25 | — |
 | Subscriptions | 2 | 2 | action `fullScan` only |
-| **Total** | **86** | **66 (77%)** | **20** |
+| **Total** | **86** | **65 (76%)** | **21** |
 
 The PRD counted 84 reachable operations; the route matrix also classifies
 `GET /api/tenants` and `GET /api/tenants/settings` as reachable. Both are
@@ -226,9 +230,9 @@ currencies/countries, transaction years, thresholds).
 | `unit/mcp/core.test.ts` | Shaping, cursors, `capResponse`, error mapping, loopback headers/timeouts/errors, registry counts and annotations, `isViewerPostAllowed` |
 | `unit/mcp/tools.test.ts` | Each tool's exact REST call(s) and output shape (fake loopback) |
 | `unit/mcp/auth.test.ts` | withAuth viewer POST allowance (exact path), `mcpTool` sanitisation, `wrapTool` logging |
-| `unit/mcp/coverage.test.ts` | 86 reachable / 66 covered / 20 excluded; no upload or Plaid-connection tool |
+| `unit/mcp/coverage.test.ts` | 86 reachable / 65 covered / 21 excluded; no upload or Plaid-connection tool |
 | `unit/mcp/reference.test.ts` | The committed tool reference matches the registry |
-| `integration/api/mcp/protocol.test.ts` | SDK client end to end: 22/39 tools by role, auth 401s, 405s, stateless, IP forwarding, smoke script |
+| `integration/api/mcp/protocol.test.ts` | SDK client end to end: 21/38 tools by role, auth 401s, 405s, stateless, IP forwarding, smoke script |
 | `integration/api/mcp/workflows.test.ts` | `update_transaction` ≡ REST PUT (DB, events, feedback, logs); Plaid approve + bulk promote; import review/commit/cancel; manual values; subscription merge/unmerge |
 | `integration/api/mcp/isolation.test.ts` | Tenant A's key with tenant B's IDs on every ID-taking tool: not found or empty, nothing leaked, B unchanged |
 | `integration/api/mcp/pagination.test.ts` | 5,000 transactions: ≤50 items, `hasMore`, < 25k chars, cursor without overlap |

@@ -139,13 +139,14 @@ const listInsights = defineTool({
   access: 'read',
   title: 'List insights',
   description:
-    'AI-generated financial insights (monthly/quarterly/annual health checks and weekly portfolio notes), '
+    'AI-generated financial insights: tiers MONTHLY, QUARTERLY and ANNUAL health checks, and PORTFOLIO notes '
+    + '(generated weekly; there is no WEEKLY tier), '
     + 'most important first. Dismissed insights are hidden unless includeDismissed is true.',
   input: {
     tier: z.enum(TIERS).optional(),
     category: z.enum(INSIGHT_CATEGORIES).optional(),
     severity: z.enum(['INFO', 'WARNING', 'POSITIVE', 'CRITICAL']).optional(),
-    periodKey: z.string().max(20).optional().describe('e.g. "2026-03", "2026-Q1", "2025", "2026-W14".'),
+    periodKey: z.string().max(20).optional().describe('e.g. "2026-03" (MONTHLY), "2026-Q1" (QUARTERLY), "2025" (ANNUAL), "2026-W14" (PORTFOLIO).'),
     includeDismissed: z.boolean().optional(),
     limit: limitField(20),
     cursor: cursorField,

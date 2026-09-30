@@ -187,7 +187,7 @@ a token-reachable route must also be wrapped by an MCP tool or listed in
 ### MCP server (#89)
 
 Integration keys are also the only credential of the MCP endpoint
-`POST /api/mcp`, which exposes 39 tools over these same REST routes (every tool
+`POST /api/mcp`, which exposes 38 tools over these same REST routes (every tool
 call goes through this authentication path again). See
 [24-mcp-server.md](./24-mcp-server.md).
 

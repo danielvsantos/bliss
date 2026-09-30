@@ -4,7 +4,7 @@ Bliss includes an **MCP server**, so Claude (Cowork, claude.ai, Claude Desktop,
 Claude Code) and other
 [Model Context Protocol](https://modelcontextprotocol.io) clients can work with
 your finances in plain language. You don't need to teach the agent the REST API:
-it gets **39 tools** — search and re-categorise transactions, work the bank-sync
+it gets **38 tools** — search and re-categorise transactions, work the bank-sync
 review queue, review an imported statement, answer spending and portfolio
 questions, clean up subscriptions — and a short briefing on how Bliss works.
 
@@ -39,8 +39,8 @@ with OAuth instead:
    (`claude.ai`), pick **Read-only** or **Read & write**, and how long the
    connection lasts (30 days, **90 days** by default, 1 year, or never). Click
    **Allow**.
-5. Claude shows the Bliss tools. Read-only connections get the 22 read tools;
-   Read & write all 39.
+5. Claude shows the Bliss tools. Read-only connections get the 21 read tools;
+   Read & write all 38.
 
 The connection appears in **Settings → Integrations** as *Connected via OAuth ·
 Claude*. Claude renews its access every hour in the background; revoke the
@@ -63,9 +63,9 @@ Operators can restrict which apps may connect with `OAUTH_ALLOWED_REDIRECT_HOSTS
 Follow [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents#create-an-integration):
 **Settings → Integrations → New integration** (tenant admins only).
 
-- **Read-only** — the agent sees the **22 read tools** only. It can answer
+- **Read-only** — the agent sees the **21 read tools** only. It can answer
   questions but cannot change anything, whatever it's told.
-- **Read & write** — all **39 tools**, including re-categorising, approving
+- **Read & write** — all **38 tools**, including re-categorising, approving
   review items, committing imports and editing portfolio data.
 
 When the key is shown, the dialog also shows the **MCP server URL** and a
@@ -220,7 +220,7 @@ parameters and the REST endpoints it calls.
 |---|---|---|
 | `401` when connecting | Missing, mistyped, expired or revoked key — or a browser session / user token instead of an integration key | Check the `Authorization: Bearer bliss_…` header; create a new key if needed |
 | Only 22 tools, writes missing | The key is **Read-only** | Create a **Read & write** integration |
-| "This key is read-only" | A read-only key called a write tool by name | Same as above |
+| "This Bliss connection is read-only" | A read-only key or connection called a write tool by name | Same as above |
 | "Not available to integrations" | The action is app-only (see above) | Do it in the Bliss app |
 | "Not found: …" | The ID belongs to nothing in your tenant | Let the agent list first (accounts, categories, holdings…) |
 | "Rate limited by Bliss. Retry after N seconds" | Too many requests from your IP | Wait; ask for fewer, larger pages |

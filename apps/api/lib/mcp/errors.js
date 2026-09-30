@@ -15,11 +15,32 @@ export class ToolInputError extends Error {
   }
 }
 
-/** Thrown by tool handlers when an ID does not belong to this tenant. */
+/**
+ * Thrown by tool handlers when an ID does not belong to this tenant. `hint`
+ * names the tool that lists that kind of ID; it replaces the tool's own
+ * `notFoundHint` (a transaction tool can fail on a category ID).
+ */
 export class ToolNotFoundError extends Error {
-  constructor(message) {
+  constructor(message, hint) {
     super(message);
     this.name = 'ToolNotFoundError';
+    this.hint = hint ?? null;
+  }
+}
+
+/**
+ * Runs a loopback call whose 403/404 means one specific ID was not found and
+ * reports it with that ID's hint, keeping the route's own message.
+ */
+export async function notFoundAs(promise, hint) {
+  try {
+    return await promise;
+  } catch (err) {
+    if (err instanceof LoopbackError && (err.status === 403 || err.status === 404)) {
+      const what = err.status === 404 && err.error ? err.error.replace(/\.$/, '') : 'Not found';
+      throw new ToolNotFoundError(what, hint);
+    }
+    throw err;
   }
 }
 
@@ -38,13 +59,13 @@ export function errorMessage(err, { tool, notFoundHint } = {}) {
   const hint = notFoundHint ? ` ${notFoundHint}` : '';
 
   if (err instanceof ToolInputError) return err.message;
-  if (err instanceof ToolNotFoundError) return `Not found: ${err.message}.${hint}`;
+  if (err instanceof ToolNotFoundError) return `Not found: ${err.message}.${err.hint ? ` ${err.hint}` : hint}`;
 
   if (err instanceof LoopbackError) {
     const { status, code } = err;
-    if (status === 401) return 'The Bliss API key is invalid, expired or revoked. Ask the user for a valid integration key.';
+    if (status === 401) return 'The Bliss connection is invalid, expired or revoked. Ask the user to reconnect Bliss (or provide a valid integration key).';
     if (status === 403 && code === 'READ_ONLY_INTEGRATION') {
-      return 'This key is read-only. Ask the user for a Read & write integration key to make changes.';
+      return 'This Bliss connection is read-only. Ask the user to connect Bliss with Read & write access to make changes.';
     }
     if (status === 403 && code === 'NOT_AVAILABLE_TO_INTEGRATIONS') {
       return 'This operation is not available to integrations. The user can do it in the Bliss app.';

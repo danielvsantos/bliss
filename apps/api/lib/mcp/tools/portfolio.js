@@ -7,13 +7,14 @@ import {
   REFERENCE_INDICES,
 } from '@bliss/shared/portfolio';
 import { defineTool, cursorField, limitField, dateString, intId, currencyCode, pathId } from '../define.js';
-import { ToolInputError, ToolNotFoundError } from '../errors.js';
+import { ToolInputError, ToolNotFoundError, notFoundAs } from '../errors.js';
 import { LoopbackError, optional } from '../loopback.js';
 import { paginate, pageArgs, pageMeta, num, money, isoDate } from '../shape.js';
 
 /** Portfolio & passive income (#89). */
 
 const ASSET_HINT = 'Use get_portfolio_holdings to find asset IDs.';
+const DETACHED_HINT = 'Use get_passive_income (detachedTerms) to find termsId values.';
 const assetId = intId('Asset (portfolio item) ID from get_portfolio_holdings.');
 
 function shapePosition(item, portfolioCurrency) {
@@ -221,7 +222,9 @@ const getPassiveIncome = defineTool({
   description:
     'Projected dividends, bond coupons, rent, interest and other income streams for the next 12/24/36 months '
     + '(display currency), next to the last 12 months of actual passive income. Also lists holdings missing '
-    + 'income terms, user-defined income streams and detached terms left over from re-keyed holdings.',
+    + 'income terms, user-defined income streams and detached terms left over from re-keyed holdings. '
+    + 'Every amount is in the display currency (`currency`); the monthly/yearly series are plain numbers in it. '
+    + '`byHolding[].holdingCurrency` is the holding\'s own currency, for reference only.',
   input: {
     horizon: z.union([z.literal(12), z.literal(24), z.literal(36)]).optional(),
   },
@@ -236,16 +239,50 @@ const getPassiveIncome = defineTool({
       api.get('/api/portfolio/income-terms/detached'),
       api.get('/api/passive-income/streams'),
     ]);
+    const cur = projection.displayCurrency;
+    const kpis = projection.kpis || {};
+    const pct = (ratio) => (ratio == null ? null : Math.round(ratio * 10000) / 100);
     return {
-      currency: projection.displayCurrency,
+      currency: cur,
       asOf: projection.asOf,
       horizon: projection.horizon,
-      kpis: projection.kpis,
+      kpis: {
+        next12mIncome: money(kpis.next12mIncome, cur),
+        next12mInvestmentIncome: money(kpis.next12mInvestmentIncome, cur),
+        next12mOtherIncome: money(kpis.next12mOtherIncome, cur),
+        monthlyAverage: money(kpis.monthlyAverage, cur),
+        yieldOnValuePct: pct(kpis.yieldOnValue),
+        essentialsCoveragePct: kpis.essentialsCoveragePct ?? null,
+        trailingEssentials: money(kpis.trailingEssentials, cur),
+        coverage: kpis.coverage ?? null,
+      },
       projectedByMonth: projection.projected,
       yearly: projection.yearly,
       actualsLast12Months: projection.actuals,
-      byHolding: (projection.groups || []).slice(0, 50),
-      upcomingPayments: (projection.upcomingPaymentsGrouped || projection.upcomingPayments || []).slice(0, 20),
+      // One row per symbol (cash: per currency); values were converted into the
+      // display currency by project(), so `currency` on the group is only the
+      // holdings' own currency and must not label these amounts.
+      byHolding: (projection.groups || []).slice(0, 50).map((g) => ({
+        label: g.label,
+        symbol: g.symbol ?? null,
+        assetClass: g.assetClass ?? null,
+        assetIds: g.portfolioItemIds,
+        accounts: g.accountCount,
+        holdingCurrency: g.currency ?? null,
+        currentValue: money(g.currentValue, cur),
+        next12mIncome: money(g.next12mTotal, cur),
+        horizonIncome: money(g.horizonTotal, cur),
+        amountPerPayment: money(g.amountPerPayment, cur),
+        incomeType: g.incomeType ?? null,
+        frequency: g.frequency ?? null,
+        source: g.source ?? null,
+        rateOrYieldPct: pct(g.rateOrYield),
+        nextPaymentDate: g.nextPaymentDate ?? null,
+        status: g.status,
+      })),
+      upcomingPayments: (projection.upcomingPaymentsGrouped || projection.upcomingPayments || [])
+        .slice(0, 20)
+        .map(({ amount, ...u }) => ({ ...u, amount: money(amount, cur) })),
       missingTerms: (projection.missingGroups || projection.missing || []).slice(0, 50),
       streams: (streams.streams || []).map((s) => ({
         streamId: s.id, name: s.name, categoryId: s.categoryId, category: s.categoryName,
@@ -475,11 +512,11 @@ const manageIncomeAndDebtTerms = defineTool({
       case 'attach': {
         const path = needTerms();
         if (!args.assetId) throw new ToolInputError('attach requires assetId.');
-        const data = await api.post(`${path}/attach`, { assetId: args.assetId });
+        const data = await notFoundAs(api.post(`${path}/attach`, { assetId: args.assetId }), `${DETACHED_HINT} ${ASSET_HINT}`);
         return { attached: data.terms?.id ?? args.termsId, assetId: args.assetId };
       }
       case 'deleteDetached': {
-        await api.del(needTerms());
+        await notFoundAs(api.del(needTerms()), DETACHED_HINT);
         return { deleted: args.termsId };
       }
       default:

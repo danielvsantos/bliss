@@ -9,7 +9,7 @@ import {
   encodeCursor, decodeCursor, pageArgs, pageMeta, paginate, offsetArgs, offsetMeta, money, signedAmount, isoDate,
   omitDeep, capResponse, clampLimit, num, MAX_RESPONSE_CHARS,
 } from '../../../lib/mcp/shape.js';
-import { errorMessage, toolError, ToolInputError, ToolNotFoundError } from '../../../lib/mcp/errors.js';
+import { errorMessage, toolError, notFoundAs, ToolInputError, ToolNotFoundError } from '../../../lib/mcp/errors.js';
 import {
   LoopbackError, buildQuery, clientIp, createLoopbackClient, loopbackBaseUrl, optional, mapWithConcurrency,
 } from '../../../lib/mcp/loopback.js';
@@ -108,6 +108,16 @@ describe('errors', () => {
     expect(errorMessage(new ToolNotFoundError('account 7'), { notFoundHint: 'Use list_accounts.' })).toBe('Not found: account 7. Use list_accounts.');
     expect(toolError(new ToolInputError('need x'), { tool: 't' })).toEqual({ isError: true, content: [{ type: 'text', text: 'need x' }] });
   });
+
+  it('a not-found ID carries the hint of its own kind, not the tool\'s (B8)', async () => {
+    const onCategory = new ToolNotFoundError('category 9', 'Use list_categories to find category IDs.');
+    expect(errorMessage(onCategory, { notFoundHint: 'Use search_transactions to find transaction IDs.' }))
+      .toBe('Not found: category 9. Use list_categories to find category IDs.');
+    await expect(notFoundAs(Promise.reject(err(404, { error: 'Income terms not found' })), 'Use get_passive_income.'))
+      .rejects.toMatchObject({ message: 'Income terms not found', hint: 'Use get_passive_income.' });
+    await expect(notFoundAs(Promise.reject(err(429)), 'x')).rejects.toBeInstanceOf(LoopbackError);
+    await expect(notFoundAs(Promise.resolve(5), 'x')).resolves.toBe(5);
+  });
 });
 
 describe('loopback', () => {
@@ -201,10 +211,10 @@ describe('loopback', () => {
 });
 
 describe('registry', () => {
-  it('has 39 tools: 22 read, 17 write, unique names', () => {
-    expect(ALL_TOOLS).toHaveLength(39);
-    expect(READ_TOOLS).toHaveLength(22);
-    expect(new Set(ALL_TOOLS.map((t) => t.name)).size).toBe(39);
+  it('has 38 tools: 21 read, 17 write, unique names', () => {
+    expect(ALL_TOOLS).toHaveLength(38);
+    expect(READ_TOOLS).toHaveLength(21);
+    expect(new Set(ALL_TOOLS.map((t) => t.name)).size).toBe(38);
   });
 
   it('filters by role: viewer → read tools, member → all', () => {

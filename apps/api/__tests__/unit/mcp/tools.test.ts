@@ -351,7 +351,7 @@ describe('plaid review tools', () => {
 describe('import tools', () => {
   it('list_imports without and with importId', async () => {
     const pending = await run('list_imports', {}, { 'GET /api/imports/pending': { imports: [{ id: 'imp', fileName: 'a.csv', pendingRowCount: 2 }] } });
-    expect(pending.result.imports[0]).toMatchObject({ importId: 'imp', rowsToReview: 2 });
+    expect(pending.result).toMatchObject({ items: [{ importId: 'imp', rowsToReview: 2 }], total: 1, hasMore: false, nextCursor: null });
 
     const detail = await run('list_imports', { importId: 'imp', status: ['PENDING', 'ERROR'] }, {
       'GET /api/imports/imp': {
@@ -364,12 +364,6 @@ describe('import tools', () => {
     expect(detail.calls[0].query).toMatchObject({ status: 'PENDING,ERROR', page: 1, limit: 50 });
     expect(detail.result.rows[0]).toMatchObject({ rowId: 'r1', amount: { value: -5, currency: 'EUR' } });
     expect(JSON.stringify(detail.result)).not.toContain('secret');
-  });
-
-  it('find_similar_transactions', async () => {
-    const r = await run('find_similar_transactions', { description: 'rewe' }, { 'GET /api/imports/similar': { results: [{ a: 1 }] } });
-    expect(r.calls[0].query).toEqual({ description: 'rewe', limit: 5, threshold: undefined });
-    expect(r.result).toEqual({ items: [{ a: 1 }] });
   });
 
   it('review_import_rows per row and bulk', async () => {
@@ -453,8 +447,31 @@ describe('portfolio tools', () => {
       'GET /api/passive-income/streams': { streams: [{ id: 2, name: 'Pension', amountPerPayment: 500, currency: 'EUR', frequency: 'MONTHLY', startDate: '2026-01-01' }], eligibleCategories: [{ id: 9 }] },
     });
     expect(calls[0].query).toEqual({ horizon: 24 });
-    expect(result).toMatchObject({ currency: 'EUR', kpis: { next12mIncome: 1 }, detachedTerms: [{ termsId: 4 }], streams: [{ streamId: 2, amountPerPayment: { value: 500, currency: 'EUR' } }] });
+    expect(result).toMatchObject({ currency: 'EUR', kpis: { next12mIncome: { value: 1, currency: 'EUR' } }, detachedTerms: [{ termsId: 4 }], streams: [{ streamId: 2, amountPerPayment: { value: 500, currency: 'EUR' } }] });
     expect(result.items).toBeUndefined();
+  });
+
+  it('get_passive_income labels holding values with the display currency, not the holding currency (B6)', async () => {
+    const { result } = await run('get_passive_income', {}, {
+      'GET /api/portfolio/passive-income': {
+        displayCurrency: 'USD',
+        kpis: { next12mIncome: 24, yieldOnValue: 0.0123 },
+        groups: [{ label: 'VWCE', symbol: 'VWCE', assetClass: 'INDEX_ETF', portfolioItemIds: [1], accountCount: 1, currency: 'EUR', currentValue: 192.51, next12mTotal: 3.2, horizonTotal: 3.2, amountPerPayment: 0.8, rateOrYield: 0.0166, status: 'OK', children: [{ big: true }] }],
+        upcomingPaymentsGrouped: [{ date: '2026-10-15', label: 'VWCE', amount: 0.8 }],
+      },
+      'GET /api/portfolio/income-terms/detached': { detached: [] },
+      'GET /api/passive-income/streams': { streams: [] },
+    });
+    expect(result.kpis).toMatchObject({ next12mIncome: { value: 24, currency: 'USD' }, yieldOnValuePct: 1.23 });
+    expect(result.byHolding[0]).toMatchObject({
+      holdingCurrency: 'EUR',
+      currentValue: { value: 192.51, currency: 'USD' },
+      next12mIncome: { value: 3.2, currency: 'USD' },
+      rateOrYieldPct: 1.66,
+      assetIds: [1],
+    });
+    expect(result.byHolding[0].children).toBeUndefined();
+    expect(result.upcomingPayments[0].amount).toEqual({ value: 0.8, currency: 'USD' });
   });
 
   it('get_holding_details: asset class is primary, other parts fail soft', async () => {

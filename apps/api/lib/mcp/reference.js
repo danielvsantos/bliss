@@ -13,7 +13,7 @@ const DOMAINS = [
   ['Transactions', ['search_transactions', 'get_merchant_history', 'create_transaction', 'update_transaction', 'delete_transaction']],
   ['Analytics, insights & notifications', ['get_spending_summary', 'get_tag_summary', 'list_insights', 'generate_insights', 'dismiss_insight', 'get_notifications_summary']],
   ['Bank-sync (Plaid) review queue', ['get_plaid_review_queue', 'review_plaid_transactions', 'requeue_plaid_transactions', 'list_plaid_seeds', 'confirm_plaid_seeds']],
-  ['Smart Import review', ['list_imports', 'find_similar_transactions', 'review_import_rows', 'list_import_seeds', 'confirm_import_seeds', 'finalize_import']],
+  ['Smart Import review', ['list_imports', 'review_import_rows', 'list_import_seeds', 'confirm_import_seeds', 'finalize_import']],
   ['Portfolio & passive income', ['get_portfolio_holdings', 'get_portfolio_history', 'get_equity_analysis', 'get_passive_income', 'get_holding_details', 'set_asset_class', 'manage_manual_values', 'manage_income_and_debt_terms', 'manage_passive_income_streams']],
   ['Subscriptions', ['list_subscriptions', 'update_subscription']],
 ];
