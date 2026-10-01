@@ -24,6 +24,7 @@ A key design principle of the transaction management system is that the backend 
     - `description` (non-searchable)
     - `details` (non-searchable)
 - This encryption is handled transparently by a Prisma middleware. Because these fields use non-searchable encryption (with a random salt for each entry), they cannot be used in `WHERE` clauses for filtering. All data is automatically decrypted upon being read from the database.
+- **Tenant ownership of foreign keys (#90)**: `POST` and `PUT` load the body's `categoryId` and `accountId` with `findFirst({ where: { id, tenantId } })` before any write. A missing, non-integer or other-tenant ID returns `400` and writes nothing (no Transaction, PortfolioItem, DebtTerms or tag). The foreign keys alone only prove the rows exist, so this check is what prevents a session or Read & write integration token from attaching a transaction to another tenant's account or category.
 
 ### Debt Terms Support
 
