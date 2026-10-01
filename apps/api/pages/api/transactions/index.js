@@ -13,6 +13,28 @@ import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
 
+/**
+ * Loads the category and account referenced by a write, scoped to the caller's
+ * tenant (#90). The foreign keys only prove the rows exist, so an unscoped
+ * lookup would let tenant A attach a transaction (and a PortfolioItem) to
+ * tenant B's account or category. Returns `{ error }` when either ID is
+ * missing, malformed, or belongs to another tenant.
+ */
+async function findOwnedCategoryAndAccount(tenantId, rawCategoryId, rawAccountId) {
+  const categoryId = Number(rawCategoryId);
+  const accountId = Number(rawAccountId);
+  if (!Number.isInteger(categoryId) || !Number.isInteger(accountId)) {
+    return { error: 'categoryId and accountId must be integers.' };
+  }
+  const [category, account] = await Promise.all([
+    prisma.category.findFirst({ where: { id: categoryId, tenantId } }),
+    prisma.account.findFirst({ where: { id: accountId, tenantId } }),
+  ]);
+  if (!category) return { error: 'Category not found in this tenant.' };
+  if (!account) return { error: 'Account not found in this tenant.' };
+  return { category, account };
+}
+
 export default withAuth(async function handler(req, res) {
   // Apply rate limiting
   await new Promise((resolve, reject) => {
@@ -318,6 +340,21 @@ async function handlePost(req, res) {
     const day = date.getUTCDate();
     const quarter = `Q${Math.ceil(month / 3)}`;
 
+    // Validate ownership before any write (tags, PortfolioItem, DebtTerms).
+    const owned = await findOwnedCategoryAndAccount(tenantId, transactionData.categoryId, transactionData.accountId);
+    if (owned.error) {
+      return res.status(StatusCodes.BAD_REQUEST).json({ error: owned.error });
+    }
+    const { category, account } = owned;
+    transactionData.categoryId = category.id;
+    transactionData.accountId = account.id;
+
+    // Stock / ETF / crypto rows need ticker, quantity and price — before any write.
+    const missingEnrichment = missingInvestmentFields(category, transactionData);
+    if (missingEnrichment.length > 0) {
+      return res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(category, missingEnrichment));
+    }
+
     let tagConnections;
     let resolvedTagIds = [];
     if (tags && Array.isArray(tags)) {
@@ -332,17 +369,7 @@ async function handlePost(req, res) {
 
     // 1. Find or create the PortfolioItem
     let portfolioItem;
-    const [category, account] = await Promise.all([
-      prisma.category.findUnique({ where: { id: transactionData.categoryId } }),
-      prisma.account.findUnique({ where: { id: transactionData.accountId } })
-    ]);
-
-    const missingEnrichment = missingInvestmentFields(category, transactionData);
-    if (missingEnrichment.length > 0) {
-      return res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(category, missingEnrichment));
-    }
-
-    if (category && (category.type === 'Investments' || category.type === 'Debt')) {
+    if (category.type === 'Investments' || category.type === 'Debt') {
       const { ticker, description, currency } = transactionData;
 
       // Generate symbol using the same logic as the backend's asset-aggregator.js
@@ -591,14 +618,20 @@ async function handlePut(req, res) {
 
     // 2. Find or create the PortfolioItem for the updated transaction
     let portfolioItem;
-    // We fetch the new category to determine if a portfolio item link is needed.
-    const newCategory = await prisma.category.findUnique({ where: { id: parseInt(categoryId, 10) } });
+    // The new category determines whether a portfolio item link is needed. Both
+    // it and the new account must belong to the caller's tenant (#90).
+    const owned = await findOwnedCategoryAndAccount(tenantId, categoryId, accountId);
+    if (owned.error) {
+      res.status(StatusCodes.BAD_REQUEST).json({ error: owned.error });
+      return;
+    }
+    const newCategory = owned.category;
     const missingEnrichment = missingInvestmentFields(newCategory, { ticker, assetQuantity, assetPrice });
     if (missingEnrichment.length > 0) {
       res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(newCategory, missingEnrichment));
       return;
     }
-    if (newCategory && (newCategory.type === 'Investments' || newCategory.type === 'Debt')) {
+    if (newCategory.type === 'Investments' || newCategory.type === 'Debt') {
       // Generate symbol using the same logic as the backend's asset-aggregator.js
       let symbol;
       switch (newCategory.portfolioItemKeyStrategy) {

@@ -58,8 +58,8 @@ const { mockPrisma } = vi.hoisted(() => ({
       delete: vi.fn(),
       createMany: vi.fn(),
     },
-    category: { findUnique: vi.fn() },
-    account: { findUnique: vi.fn() },
+    category: { findUnique: vi.fn(), findFirst: vi.fn() },
+    account: { findUnique: vi.fn(), findFirst: vi.fn() },
     tag: { findFirst: vi.fn(), create: vi.fn() },
     transactionTag: { deleteMany: vi.fn() },
     transactionEmbedding: { updateMany: vi.fn() },
@@ -372,8 +372,8 @@ describe('POST /api/transactions', () => {
       currency: 'USD',
     };
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.transaction.create.mockResolvedValueOnce(createdTx);
 
     const req = makeReq({
@@ -407,8 +407,8 @@ describe('POST /api/transactions', () => {
   it('returns 201 and auto-creates tags that do not exist', async () => {
     const newTag = { id: 5, name: 'NewTag', color: '#aaaaaa', tenantId: 'test-tenant-123' };
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.tag.findFirst.mockResolvedValueOnce(null);
     mockPrisma.tag.create.mockResolvedValueOnce(newTag);
 
@@ -553,12 +553,13 @@ describe('PUT /api/transactions', () => {
     };
     mockPrisma.transaction.findUnique.mockResolvedValueOnce(existing);
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({
+    mockPrisma.category.findFirst.mockResolvedValueOnce({
       id: 1,
       name: 'Food',
       type: 'Expense',
       portfolioItemKeyStrategy: 'IGNORE',
     });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
 
     const updatedTx = {
       id: 1,
@@ -616,8 +617,8 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
   it.each([
     ['API_STOCK'], ['API_FUND'], ['API_CRYPTO'],
   ])('POST rejects a %s buy with a ticker but no price or quantity', async (hint) => {
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ ...etf, processingHint: hint });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ ...etf, processingHint: hint });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
 
     const res = await post({ ...base, debit: 100, ticker: 'VWCE' });
 
@@ -628,8 +629,8 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
   });
 
   it('POST rejects a sell with no ticker, zero quantity and no price', async () => {
-    mockPrisma.category.findUnique.mockResolvedValueOnce(etf);
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
 
     const res = await post({ ...base, credit: 100, assetQuantity: 0 });
 
@@ -639,8 +640,8 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
   });
 
   it('POST accepts an ETF sell with ticker, a signed quantity and price', async () => {
-    mockPrisma.category.findUnique.mockResolvedValueOnce(etf);
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
     mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 7 });
     mockPrisma.transaction.create.mockResolvedValueOnce({ id: 11, portfolioItemId: 7 });
 
@@ -651,11 +652,11 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
   });
 
   it('POST still accepts a manually valued investment without enrichment', async () => {
-    mockPrisma.category.findUnique.mockResolvedValueOnce({
+    mockPrisma.category.findFirst.mockResolvedValueOnce({
       id: 21, name: 'Real Estate', type: 'Investments', processingHint: 'MANUAL',
       portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION',
     });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
     mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 8 });
     mockPrisma.transaction.create.mockResolvedValueOnce({ id: 12, portfolioItemId: 8 });
 
@@ -669,7 +670,8 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
       id: 1, tenantId: 'test-tenant-123', categoryId: 1, portfolioItemId: null,
       account: { countryId: 'PT' }, category: { type: 'Expense', group: 'Food' }, tags: [],
     });
-    mockPrisma.category.findUnique.mockResolvedValueOnce(etf);
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
 
     const res = makeRes();
     await handler(makeReq({ method: 'PUT', query: { id: '1' }, body: { ...base, debit: 100, ticker: 'VWCE' } }) as NextApiRequest,
