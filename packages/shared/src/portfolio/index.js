@@ -27,6 +27,8 @@ export * from './assetClass.js';
 export * from './lookThrough.js';
 // Insights summary of a projection (#80).
 export * from './summarize.js';
+// Investment enrichment rule for review rows (Smart Import, Plaid).
+export * from './enrichment.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

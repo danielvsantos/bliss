@@ -51,6 +51,10 @@ jest.mock('../../../queues/eventsQueue', () => ({
   enqueueEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../../utils/categoryCache', () => ({
+  getCategoriesForTenant: jest.fn().mockResolvedValue([]),
+}));
+
 const prisma = require('../../../../prisma/prisma');
 const logger = require('../../../utils/logger');
 const Sentry = require('@sentry/node');
@@ -58,6 +62,7 @@ const { computeTransactionHash } = require('../../../utils/transactionHash');
 const { resolveTagsByName } = require('../../../utils/tagUtils');
 const categorizationService = require('../../../services/categorizationService');
 const { addDescriptionEntry } = require('../../../utils/descriptionCache');
+const { getCategoriesForTenant } = require('../../../utils/categoryCache');
 const { enqueueEvent } = require('../../../queues/eventsQueue');
 
 const { processCommitJob } = require('../../../workers/commitWorker');
@@ -124,6 +129,7 @@ describe('commitWorker — processCommitJob', () => {
     addDescriptionEntry.mockReset();
     resolveTagsByName.mockResolvedValue([]);
     enqueueEvent.mockResolvedValue(undefined);
+    getCategoriesForTenant.mockResolvedValue([]);
   });
 
   // ─── Validation ─────────────────────────────────────────────────────────
@@ -299,6 +305,33 @@ describe('commitWorker — processCommitJob', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Skipping row row-1')
     );
+  });
+
+  it('commits a ticker-less fund row with quantity + price but still skips a ticker-less stock row', async () => {
+    getCategoriesForTenant.mockResolvedValue([
+      { id: 20, name: 'Funds', type: 'Investments', processingHint: 'API_FUND' },
+      { id: 21, name: 'Stocks', type: 'Investments', processingHint: 'API_STOCK' },
+    ]);
+    const rows = [
+      makeRow({ id: 'fund', suggestedCategoryId: 20, requiresEnrichment: true, ticker: null, assetQuantity: '10', assetPrice: '1000', description: 'CDB PLUS FIRF' }),
+      makeRow({ id: 'stock', suggestedCategoryId: 21, requiresEnrichment: true, ticker: null, assetQuantity: '10', assetPrice: '50', description: 'Some stock' }),
+    ];
+
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({ id: 'si-1', tenantId: 'tenant-1', status: 'COMMITTING' });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(2);
+    prisma.stagedImportRow.findMany.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+    prisma.transaction.findMany.mockResolvedValueOnce([]);
+    prisma.transaction.createMany.mockResolvedValueOnce({ count: 1 });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);
+
+    const result = await processCommitJob(makeJob());
+
+    expect(result.transactionCount).toBe(1);
+    const created = prisma.transaction.createMany.mock.calls[0][0].data;
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ categoryId: 20, assetQuantity: 10, assetPrice: 1000 });
+    expect(created[0]).not.toHaveProperty('ticker');
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Skipping row stock'));
   });
 
   // ─── Missing accountId skip (regression: PrismaClientValidationError) ───

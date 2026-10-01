@@ -17,6 +17,7 @@ const categorizationService = require('../services/categorizationService');
 const { warmDescriptionCache } = require('../utils/descriptionCache');
 const { getCategoriesForTenant } = require('../utils/categoryCache');
 const { computeTransactionHash, buildDuplicateHashSet } = require('../utils/transactionHash');
+const { isInvestmentEnrichmentComplete } = require('@bliss/shared/portfolio');
 const {
     DEFAULT_AUTO_PROMOTE_THRESHOLD,
     DEFAULT_REVIEW_THRESHOLD,
@@ -137,8 +138,9 @@ function applyClassificationToRowData(rowData, result, autoPromoteThreshold, cat
  * AI-classification path — the native adapter resolves category directly from
  * a CSV column instead of calling classify(), so nothing else validates that
  * an investment-category row actually carries ticker/quantity/price before
- * it's eligible to auto-confirm. rowData.ticker/assetQuantity/assetPrice must
- * already be set before calling this.
+ * it's eligible to auto-confirm (ticker optional for API_FUND — see
+ * isInvestmentEnrichmentComplete). rowData.ticker/assetQuantity/assetPrice
+ * must already be set before calling this.
  *
  * @returns {boolean} true when the row requires enrichment (blocks auto-confirm)
  */
@@ -147,7 +149,7 @@ function applyNativeInvestmentCheck(rowData, category) {
         category.type === 'Investments' &&
         INVESTMENT_HINTS.has(category.processingHint);
     rowData.requiresEnrichment = !!isInvestmentCategory &&
-        (!rowData.ticker || rowData.assetQuantity == null || rowData.assetPrice == null);
+        !isInvestmentEnrichmentComplete(category, rowData);
     if (isInvestmentCategory) rowData.enrichmentType = 'INVESTMENT';
     return rowData.requiresEnrichment;
 }

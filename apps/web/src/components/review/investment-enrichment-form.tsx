@@ -15,6 +15,8 @@ interface InvestmentEnrichmentFormProps {
   amount: number; // Absolute transaction amount for auto-calculating quantity
   /** 'crypto' routes ticker search to Twelve Data crypto pairs; omit for stocks/funds */
   searchType?: string;
+  /** Mark the ticker as optional (funds: private / unlisted ones have none). */
+  tickerOptional?: boolean;
   onTickerChange: (value: string) => void;
   onQtyChange: (value: string) => void;
   onPriceChange: (value: string) => void;
@@ -29,6 +31,7 @@ export function InvestmentEnrichmentForm({
   details,
   amount,
   searchType,
+  tickerOptional = false,
   onTickerChange,
   onQtyChange,
   onPriceChange,
@@ -99,6 +102,7 @@ export function InvestmentEnrichmentForm({
         <div className="space-y-1.5 relative" ref={dropdownRef}>
           <Label htmlFor="drawer-ticker" className="text-xs">
             {t('review.tickerSymbol')}
+            {tickerOptional && <span className="text-muted-foreground"> ({t('review.tickerOptional')})</span>}
           </Label>
           <Input
             id="drawer-ticker"

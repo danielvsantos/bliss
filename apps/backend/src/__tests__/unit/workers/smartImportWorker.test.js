@@ -250,6 +250,27 @@ describe('smartImportWorker — helper functions', () => {
       expect(rowData.requiresEnrichment).toBe(false);
       expect(rowData.enrichmentType).toBeUndefined();
     });
+
+    // Private / unlisted funds have no ticker: quantity + price are enough.
+    describe('API_FUND (ticker optional)', () => {
+      const fundsCategory = { id: 30, name: 'Funds', type: 'Investments', processingHint: 'API_FUND' };
+
+      it('does not require enrichment for a ticker-less fund row with quantity + price', () => {
+        const rowData = { ticker: null, assetQuantity: 10, assetPrice: 1000 };
+
+        expect(applyNativeInvestmentCheck(rowData, fundsCategory)).toBe(false);
+        expect(rowData.enrichmentType).toBe('INVESTMENT');
+      });
+
+      it('still requires quantity and price', () => {
+        expect(applyNativeInvestmentCheck({ ticker: null, assetQuantity: 10, assetPrice: null }, fundsCategory)).toBe(true);
+        expect(applyNativeInvestmentCheck({ ticker: 'VWCE', assetQuantity: null, assetPrice: 100 }, fundsCategory)).toBe(true);
+      });
+
+      it('keeps the ticker mandatory for stocks', () => {
+        expect(applyNativeInvestmentCheck({ ticker: null, assetQuantity: 10, assetPrice: 1000 }, stocksCategory)).toBe(true);
+      });
+    });
   });
 
   // ─── computeUpdateDiff ─────────────────────────────────────────────────────

@@ -175,6 +175,25 @@ describe('itemNeedsEnrichment', () => {
     });
     expect(itemNeedsEnrichment(item, map)).toBe(true);
   });
+
+  // Private / unlisted funds have no ticker — quantity + price are enough.
+  it('returns false for a ticker-less fund row with quantity + price', () => {
+    const map = new Map<number, Category>([[1, makeCategory({ name: 'Funds', processingHint: 'API_FUND' })]]);
+    const item = makeReviewItem({
+      categoryId: 1,
+      originalImportRow: makeImportRow({ ticker: null, assetQuantity: 10, assetPrice: 1000 }),
+    });
+    expect(itemNeedsEnrichment(item, map)).toBe(false);
+  });
+
+  it('returns true for a ticker-less stock row even with quantity + price', () => {
+    const map = new Map<number, Category>([[1, makeCategory({ processingHint: 'API_STOCK' })]]);
+    const item = makeReviewItem({
+      categoryId: 1,
+      originalImportRow: makeImportRow({ ticker: null, assetQuantity: 10, assetPrice: 150 }),
+    });
+    expect(itemNeedsEnrichment(item, map)).toBe(true);
+  });
 });
 
 describe('itemNeedsAccount', () => {

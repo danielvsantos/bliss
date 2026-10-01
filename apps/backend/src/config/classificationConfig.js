@@ -82,13 +82,11 @@ const TOP_N_SEEDS = 10;
 const PHASE2_CONCURRENCY = 5;
 
 // ── Investment enrichment ────────────────────────────────────────────────────
-// Single source of truth for which Investments-category processingHints
-// require ticker/quantity/price before a transaction can auto-confirm through
-// an automated pipeline (Plaid classification, Smart Import). Previously
-// duplicated as a local `INVESTMENT_HINTS` set in both smartImportWorker.js
-// and plaidProcessorWorker.js, which had drifted out of sync with each other
-// and with the frontend's mandatory/optional split (apps/web/src/lib/
-// investment-utils.ts) — keep those two in sync if this changes.
+// Which Investments-category processingHints require enrichment before a
+// transaction can auto-confirm through an automated pipeline (Plaid
+// classification, Smart Import). The list and the per-hint field rule
+// (API_FUND needs no ticker) live in @bliss/shared/portfolio (enrichment.js),
+// shared with the API; the web review UI mirrors it in investment-utils.ts.
 //
 // MANUAL is deliberately excluded: manual transaction creation (transaction-
 // form.tsx, transactions/index.js) has never required ticker/quantity/price
@@ -99,7 +97,7 @@ const PHASE2_CONCURRENCY = 5;
 // present in the source file/feed, so requiring it catches real omissions),
 // but that rationale doesn't apply to MANUAL, which by definition never has
 // a market-quotable ticker to begin with.
-const MANDATORY_ENRICHMENT_HINTS = ['API_STOCK', 'API_CRYPTO', 'API_FUND'];
+const { MANDATORY_ENRICHMENT_HINTS } = require('@bliss/shared/portfolio');
 
 // ── Subscriptions & recurring-charge detection ───────────────────────────────
 // Consumed by services/recurringDetectionService.js + subscriptionDetectionWorker.js.

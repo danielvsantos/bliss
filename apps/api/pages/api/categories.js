@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { cors } from '../../utils/cors.js';
 import { rateLimiters } from '../../utils/rateLimit.js';
 import { ALLOWED_CATEGORY_TYPES } from '../../lib/constants.js';
+import { CUSTOM_CATEGORY_HINTS, customCategorySystemFields, systemFieldsForTypeChange } from '../../lib/customCategoryDefaults.js';
 import { withAuth } from '../../utils/withAuth.js';
 import { produceEvent } from '../../utils/produceEvent.js';
 
@@ -170,9 +171,11 @@ async function handlePost(req, res, session, tenantId) {
   }
 
   // System-managed fields are never accepted from users.
-  // processingHint, portfolioItemKeyStrategy, and defaultCategoryCode are set
-  // only at tenant seeding (signup) and must not be user-editable.
-  // isRecurring is the exception — it IS user-toggleable (Subscriptions view).
+  // processingHint and portfolioItemKeyStrategy are derived from the type
+  // (Investments → manually priced holding, Debt → simple liability) so a
+  // custom category actually tracks a portfolio item; defaultCategoryCode is
+  // set only at tenant seeding. isRecurring is the exception — it IS
+  // user-toggleable (Subscriptions view).
 
   try {
     // Create category and audit log in a transaction
@@ -185,6 +188,7 @@ async function handlePost(req, res, session, tenantId) {
           tenantId,
           icon,
           description: description ?? null,
+          ...customCategorySystemFields(type),
           ...(typeof isRecurring === 'boolean' && { isRecurring }),
         },
       });
@@ -249,7 +253,11 @@ async function handlePut(req, res, session, tenantId) {
     const result = await prisma.$transaction(async (prisma) => {
       const updatedCategory = await prisma.category.update({
         where: { id: categoryId },
-        data: { name, group, type, icon, description, ...(typeof isRecurring === 'boolean' && { isRecurring }) }
+        data: {
+          name, group, type, icon, description,
+          ...systemFieldsForTypeChange(existingCategory, type),
+          ...(typeof isRecurring === 'boolean' && { isRecurring }),
+        }
       });
 
       return updatedCategory;
@@ -292,8 +300,9 @@ async function handleDelete(req, res, session, tenantId) {
       return;
     }
 
-    // Deletion protection for system-critical groups
-    if (categoryToDelete.processingHint && categoryToDelete.processingHint !== 'MANUAL') {
+    // Deletion protection for system-critical groups. Hints a custom category
+    // receives (MANUAL, SIMPLE_LIABILITY) are never system-critical.
+    if (categoryToDelete.processingHint && !CUSTOM_CATEGORY_HINTS.includes(categoryToDelete.processingHint)) {
       const count = await prisma.category.count({
         where: {
           tenantId,

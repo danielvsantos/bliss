@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
 import { withAuth } from '../../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../../utils/tagUtils.js';
+import { TICKER_OPTIONAL_HINTS, isValidTicker } from '@bliss/shared/portfolio';
 // Hash-based dedup removed from single-promote — plaidProcessorWorker already
 // performed dedup at classification time. The externalId check (line ~176) is
 // sufficient for the promote path. This avoids a costly buildDuplicateHashSet
@@ -157,9 +158,10 @@ export default withAuth(async function handler(req, res) {
       const INVESTMENT_HINTS = ['API_STOCK', 'API_CRYPTO', 'API_FUND', 'MANUAL'];
       const isInvestmentCategory = category.type === 'Investments' &&
         INVESTMENT_HINTS.includes(category.processingHint);
-      // Validate ticker contains at least one letter — pure numeric "0" is not a valid ticker
-      const hasValidTicker = ticker && /[a-zA-Z]/.test(ticker);
-      if (isInvestmentCategory && (!hasValidTicker || assetQuantity == null || assetPrice == null)) {
+      // Validate ticker contains at least one letter — pure numeric "0" is not a valid ticker.
+      // Funds (API_FUND) may be ticker-less: private / unlisted funds have none.
+      const tickerOk = TICKER_OPTIONAL_HINTS.includes(category.processingHint) || isValidTicker(ticker);
+      if (isInvestmentCategory && (!tickerOk || assetQuantity == null || assetPrice == null)) {
         return res.status(StatusCodes.BAD_REQUEST).json({
           error: 'Investment transactions require a valid ticker (with letters), assetQuantity, and assetPrice.',
           requiresEnrichment: true,

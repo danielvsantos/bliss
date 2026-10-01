@@ -23,6 +23,7 @@ import { Loader2, AlertTriangle, RotateCw } from 'lucide-react';
 import { StatusBadge } from './status-badge';
 import { AIAnalysisPanel } from './ai-analysis-panel';
 import { InvestmentEnrichmentForm } from './investment-enrichment-form';
+import { isInvestmentEnrichmentComplete, requiresTicker } from '@/lib/investment-utils';
 import { TagInput } from '@/components/entities/tag-input';
 import { useTags, useCreateTag } from '@/hooks/use-tags';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -171,11 +172,14 @@ export function DeepDiveDrawer({
     item.requiresEnrichment ||
     (isInvestmentCategory && (INVESTMENT_HINTS_MANDATORY.has(processingHint) || INVESTMENT_HINTS_OPTIONAL.has(processingHint)));
 
-  // Enrichment is mandatory for API_STOCK / API_CRYPTO, optional for MANUAL
+  // Enrichment is mandatory for API_STOCK / API_CRYPTO / API_FUND, optional for
+  // MANUAL. Funds may be ticker-less (private / unlisted) — shared rule.
   const enrichmentMandatory =
     showEnrichment && INVESTMENT_HINTS_MANDATORY.has(processingHint);
+  const tickerRequired = requiresTicker(processingHint);
   const enrichmentMissing =
-    enrichmentMandatory && (!ticker.trim() || !qty.trim() || !price.trim());
+    enrichmentMandatory &&
+    !isInvestmentEnrichmentComplete(selectedCat, { ticker: ticker.trim(), assetQuantity: qty.trim(), assetPrice: price.trim() });
 
   // Account is missing when it's an import row with no accountId
   const accountMissing = item.source === 'import' && !drawerAccountId;
@@ -324,7 +328,7 @@ export function DeepDiveDrawer({
               {enrichmentMandatory && enrichmentMissing && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-warning/10 border border-warning/20 text-xs text-warning">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  {t('review.investmentEnrichmentRequired')}
+                  {t(tickerRequired ? 'review.investmentEnrichmentRequired' : 'review.investmentEnrichmentRequiredTickerOptional')}
                 </div>
               )}
               <InvestmentEnrichmentForm
@@ -334,6 +338,7 @@ export function DeepDiveDrawer({
                 details={details}
                 amount={Math.abs(item.amount)}
                 searchType={processingHint === 'API_CRYPTO' ? 'crypto' : undefined}
+                tickerOptional={enrichmentMandatory && !tickerRequired}
                 onTickerChange={setTicker}
                 onQtyChange={setQty}
                 onPriceChange={setPrice}

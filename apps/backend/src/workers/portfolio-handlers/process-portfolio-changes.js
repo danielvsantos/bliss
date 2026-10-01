@@ -225,7 +225,9 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previou
                         ...(transaction.assetCurrency && { assetCurrency: transaction.assetCurrency }),
                     },
                 });
-                if (SECURITY_PROCESSING_HINTS.has(transaction.category?.processingHint)) {
+                // A ticker-less fund is keyed "<category>:<description>" — not a
+                // symbol Twelve Data can resolve, so it never joins the refresh.
+                if (SECURITY_PROCESSING_HINTS.has(transaction.category?.processingHint) && assetKey === transaction.ticker) {
                     createdSecuritySymbol = assetKey;
                 }
             }
@@ -683,7 +685,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     const newSecuritySymbols = [...new Set(
         portfolioItemsToCreate
-            .filter((d) => SECURITY_PROCESSING_HINTS.has(d.processingHint))
+            // Ticker-less (MANUAL-source) funds have no market symbol to refresh.
+            .filter((d) => SECURITY_PROCESSING_HINTS.has(d.processingHint) && d.source !== 'MANUAL')
             .map((d) => d.symbol)
     )];
 
