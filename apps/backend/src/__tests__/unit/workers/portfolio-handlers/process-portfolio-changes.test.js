@@ -549,3 +549,97 @@ describe('process-portfolio-changes — scoped update reconciles the previous it
     expect(prisma.portfolioItem.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10 } }));
   });
 });
+
+// ─── Transaction DELETE (#94) ───────────────────────────────────────────────
+//
+// The row is already gone when the job runs; the event scheduler passes the
+// deleted row's fields as `deletedTransaction`. Before #94 a delete only re-ran
+// valuation: quantity/lots were never recomputed, emptied items were never
+// pruned, and PORTFOLIO_CHANGES_PROCESSED was never emitted (no cash/analytics).
+describe('process-portfolio-changes — transaction delete reconciles the item and cascades', () => {
+  const { calculatePortfolioItemState } = require('../../../../utils/portfolioItemStateCalculator.js');
+
+  const ITEM = { id: 10, symbol: 'VWCE', accountId: 5, categoryId: 7, source: 'SYNCED' };
+  const CASH = { id: 20 };
+  const deleted = (overrides = {}) => ({
+    id: 42,
+    portfolioItemId: ITEM.id,
+    accountId: 5,
+    transaction_date: '2026-08-04T00:00:00.000Z',
+    currency: 'EUR',
+    country: 'PT',
+    categoryType: 'Investments',
+    categoryGroup: 'ETFs',
+    ...overrides,
+  });
+  const item = (transactions = [], overrides = {}) => ({ ...ITEM, transactions, category: { type: 'Investments' }, ...overrides });
+  const emitted = () => enqueueEvent.mock.calls.find(([t]) => t === 'PORTFOLIO_CHANGES_PROCESSED')?.[1];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    installEmptyTenantMocks();
+    // First findFirst = the deleted row's item, second = its cash item.
+    prisma.portfolioItem.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(where.category?.processingHint === 'CASH' ? CASH : null));
+  });
+
+  it('prunes an item whose only buy was deleted, detaching its income terms, and does not read the deleted row', async () => {
+    prisma.portfolioItem.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(where.category?.processingHint === 'CASH' ? CASH : item()));
+    prisma.incomeTerms.findMany.mockResolvedValue([{ id: 900, assetId: 10 }]);
+
+    await processPortfolioChanges(makeJob({ deletedTransaction: deleted() }));
+
+    expect(prisma.transaction.findUnique).not.toHaveBeenCalled();
+    expect(prisma.portfolioItem.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 10, tenantId: 'tenant-1' },
+    }));
+    expect(prisma.incomeTerms.update).toHaveBeenCalledWith({
+      where: { id: 900 },
+      data: expect.objectContaining({ assetId: null, orphanedLabel: 'VWCE' }),
+    });
+    expect(prisma.portfolioItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [10] } } });
+    expect(prisma.portfolioItem.update).not.toHaveBeenCalled();
+    expect(emitted().portfolioItemIds).toEqual([20]);
+  });
+
+  it('recalculates quantity/lots from the remaining buys and re-seeds MANUAL prices when one of several buys is deleted', async () => {
+    const remainingBuy = { id: 43, debit: 100, currency: 'EUR', transaction_date: new Date('2026-07-01') };
+    prisma.portfolioItem.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(where.category?.processingHint === 'CASH' ? CASH : item([remainingBuy], { source: 'MANUAL' })));
+
+    await processPortfolioChanges(makeJob({ deletedTransaction: deleted() }));
+
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(calculatePortfolioItemState).toHaveBeenCalledWith([remainingBuy]);
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10 } }));
+    expect(prisma.manualAssetValue.deleteMany).toHaveBeenCalledWith({
+      where: { assetId: 10, notes: 'Auto-seeded from purchase transaction' },
+    });
+    const seeded = prisma.manualAssetValue.createMany.mock.calls.map(([arg]) => arg.data).flat();
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].value.toString()).toBe('100');
+    expect(emitted().portfolioItemIds).toEqual([10, 20]);
+  });
+
+  it('emits PORTFOLIO_CHANGES_PROCESSED with the deleted row\'s date scope so cash and analytics cascade', async () => {
+    await processPortfolioChanges(makeJob({ deletedTransaction: deleted(), _rebuildMeta: { rebuildType: 'x' } }));
+
+    expect(emitted()).toEqual({
+      tenantId: 'tenant-1',
+      portfolioItemIds: [20],
+      newSecuritySymbols: [],
+      dateScopes: [{ year: 2026, month: 8, currency: 'EUR', type: 'Investments', group: 'ETFs', country: 'PT' }],
+      _rebuildMeta: { rebuildType: 'x' },
+    });
+    // The cash item is looked up, never created by a delete.
+    expect(prisma.portfolioItem.upsert).not.toHaveBeenCalled();
+  });
+
+  it('still emits the cascade when the deleted row had no portfolio item', async () => {
+    await processPortfolioChanges(makeJob({ deletedTransaction: deleted({ portfolioItemId: null }) }));
+
+    expect(prisma.portfolioItem.deleteMany).not.toHaveBeenCalled();
+    expect(emitted().dateScopes).toHaveLength(1);
+  });
+});
