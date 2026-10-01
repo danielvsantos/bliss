@@ -36,9 +36,9 @@ const userManualValuesWhere = (assetIds) => ({
  * IncomeTerms / DebtTerms (both 1:1 per asset) keeps its own: the orphan's
  * IncomeTerms are then detached and its DebtTerms cascade as before.
  *
- * Intentional deletions (the user deletes an asset, or recalculate-portfolio-item
- * removes an item with no transactions left) are NOT routed through here, so
- * their terms still cascade away.
+ * Deleting an item's last transaction also prunes through here (no new items,
+ * so its IncomeTerms are detached — #94). Deleting the asset itself is NOT
+ * routed through here, so its terms still cascade away.
  *
  * @param {Object} tx         Prisma transaction client
  * @param {Array<{id, symbol, accountId, categoryId}>} orphans  items about to be pruned

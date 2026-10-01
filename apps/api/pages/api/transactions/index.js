@@ -878,6 +878,8 @@ async function handleDelete(req, res) {
         transaction_date: existing.transaction_date,
         portfolioItemId: existing.portfolioItemId,
         isDeletion: true, // Add a flag to indicate deletion
+        // Identifies the deleted row's cash item (Cash <currency> per account) (#94).
+        accountId: existing.accountId,
         currency: existing.currency,
         country: existing.account?.countryId,
         categoryType: existing.category?.type,

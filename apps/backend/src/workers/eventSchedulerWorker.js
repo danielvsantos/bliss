@@ -183,7 +183,7 @@ const processEventJob = async (job) => {
 
             case 'MANUAL_TRANSACTION_MODIFIED': // Fall-through
             case 'MANUAL_TRANSACTION_CREATED': {
-                const { tenantId, transactionId, categoryType, transaction_date, currency, country, categoryGroup, isDeletion, portfolioItemId, previousPortfolioItemId } = data;
+                const { tenantId, transactionId, categoryType, transaction_date, currency, country, categoryGroup, isDeletion, portfolioItemId, previousPortfolioItemId, accountId } = data;
                 if (!tenantId || !transactionId) {
                     logger.warn(`${name} event is missing tenantId or transactionId.`);
                     return;
@@ -192,19 +192,26 @@ const processEventJob = async (job) => {
                 // Path A: For transactions that affect complex portfolio items (Investments/Debt).
                 // These MUST run through the portfolio processor first to link the transaction to an item.
                 if (['Investments', 'Debt'].includes(categoryType)) {
-                    if (isDeletion && portfolioItemId) {
-                        // Transaction is already deleted — rebuild the portfolio item from remaining history
-                        // instead of process-portfolio-changes, which requires the transaction to exist.
-                        logger.info(`[Event] Routing deleted Investment/Debt transaction to portfolio item recalculation.`);
-                        await scheduleDebouncedJob(
-                            getPortfolioQueue(),
-                            'recalculate-portfolio-items',
-                            { tenantId, portfolioItemIds: [portfolioItemId] },
-                            'portfolioItemIds',
-                            DEBOUNCE_DELAY_SECONDS,
-                            DEBOUNCE_MERGERS['recalculate-portfolio-items']
-                        );
-                    } else if (!isDeletion) {
+                    if (isDeletion) {
+                        // The row is already gone, so the scoped update (which reads the
+                        // transaction) can't run. The deletion path reconciles the item from
+                        // its remaining history and emits PORTFOLIO_CHANGES_PROCESSED with the
+                        // deleted row's date scope, so cash and analytics cascade (#94).
+                        logger.info(`[Event] Routing deleted Investment/Debt transaction to portfolio processor (deletion path).`);
+                        await getPortfolioQueue().add('process-portfolio-changes', {
+                            tenantId,
+                            deletedTransaction: {
+                                id: transactionId,
+                                portfolioItemId: portfolioItemId || null,
+                                accountId: accountId || null,
+                                transaction_date,
+                                currency,
+                                country,
+                                categoryType,
+                                categoryGroup,
+                            },
+                        });
+                    } else {
                         logger.info(`[Event] Routing Investment/Debt transaction to portfolio processor.`);
                         // `previousPortfolioItemId` lets the scoped update reconcile the item an
                         // edit moved the transaction away from (the API relinks before emitting).

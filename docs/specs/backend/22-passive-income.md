@@ -50,7 +50,18 @@ Editing a transaction can re-key it (e.g. a new description on a `category:descr
 
 An edit emits two events, and `scheduleDebouncedJob` keeps only the latest event's fields, so it **unions `portfolioItemIds`** across debounced events; otherwise the new-state event dropped the old item before `value-portfolio-items` and its stale value history survived.
 
-A transaction whose new category yields no asset key is unlinked (`portfolioItemId = null`), as a full rebuild would do. `recalculate-portfolio-item.js` (item with no transactions left) and user deletions are intentional removals and still cascade.
+A transaction whose new category yields no asset key is unlinked (`portfolioItemId = null`), as a full rebuild would do. Deleting the asset itself is an intentional removal and its terms still cascade.
+
+### Transaction deletes (#94)
+
+A DELETE of an Investments/Debt transaction routes to `process-portfolio-changes` with `deletedTransaction` (the deleted row's `portfolioItemId`, `accountId`, date, currency, country, category type/group) — the row is gone, so `handleScopedUpdate` can't run. `handleDeletion` calls `reconcilePreviousItem(tenantId, portfolioItemId, null, { pruneEmpty: true })`, the same table as above except for an emptied item:
+
+| Item after the delete | Outcome |
+|---|---|
+| Still has transactions | Recalculated and MANUAL prices re-seeded, as above |
+| Empty | **Pruned** via `pruneItemsPreservingTerms(prisma, [item], [])`: `IncomeTerms` are **detached**; `DebtTerms`, the asset class override and user-entered manual values cascade with the item, exactly as a full rebuild would prune it. A delete is deliberate and there is no UI to remove a zeroed item, so zeroing would leave a 0-value ghost |
+
+It then emits `PORTFOLIO_CHANGES_PROCESSED` with the deleted row's `{ year, month, currency, type, group, country }` and `portfolioItemIds` = surviving item + the row's existing cash item, so cash, scoped analytics and valuation cascade without a full rebuild.
 
 ## 22.4. Trigger map
 

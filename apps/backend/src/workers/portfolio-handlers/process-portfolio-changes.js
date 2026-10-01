@@ -95,11 +95,15 @@ const isClearReplacement = (oldItem, replacement) =>
  *   to the replacement (see `income-terms-preserver.js`).
  * - Empty, no clear replacement → keep the item but zero its state, so user
  *   data (manual values, terms) survives an edit the user may revert.
+ * - Empty after a DELETE (`pruneEmpty`) → prune it, as a full rebuild would.
+ *   A delete is deliberate and there is no UI to remove a zeroed item, so it
+ *   would only linger as a 0-value ghost. Income terms are detached (not lost);
+ *   debt terms and manual values cascade with the item, as on a rebuild (#94).
  *
  * @returns {Promise<object|null>} the surviving item (to include in the blast
  *   radius, so valuation rebuilds its history), or null when pruned/not found.
  */
-const reconcilePreviousItem = async (tenantId, itemId, replacement) => {
+const reconcilePreviousItem = async (tenantId, itemId, replacement, { pruneEmpty = false } = {}) => {
     const previousItem = await prisma.portfolioItem.findFirst({
         where: { id: itemId, tenantId },
         include: { transactions: { orderBy: { transaction_date: 'asc' }, include: { category: true } }, category: true },
@@ -124,10 +128,16 @@ const reconcilePreviousItem = async (tenantId, itemId, replacement) => {
         return previousItem;
     }
 
+    const toRef = (i) => ({ id: i.id, symbol: i.symbol, accountId: i.accountId, categoryId: i.categoryId });
     if (isClearReplacement(previousItem, replacement)) {
         logger.info(`[Scoped] Portfolio item ${itemId} (${previousItem.symbol}) was re-keyed to ${replacement.id} (${replacement.symbol}). Pruning orphan.`);
-        const toRef = (i) => ({ id: i.id, symbol: i.symbol, accountId: i.accountId, categoryId: i.categoryId });
         await pruneItemsPreservingTerms(prisma, [toRef(previousItem)], [toRef(replacement)]);
+        return null;
+    }
+
+    if (pruneEmpty) {
+        logger.info(`[Delete] Portfolio item ${itemId} (${previousItem.symbol}) has no transactions left after a delete. Pruning it.`);
+        await pruneItemsPreservingTerms(prisma, [toRef(previousItem)], []);
         return null;
     }
 
@@ -137,7 +147,7 @@ const reconcilePreviousItem = async (tenantId, itemId, replacement) => {
 };
 
 const processPortfolioChanges = async (job) => {
-    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta, previousPortfolioItemId } = job.data;
+    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta, previousPortfolioItemId, deletedTransaction } = job.data;
 
     // Thread the BullMQ lock heartbeat attached by `portfolioWorker`
     // through to `handleFullRebuild`'s inner loops. Without this,
@@ -146,7 +156,10 @@ const processPortfolioChanges = async (job) => {
     // `ReferenceError: job is not defined`.
     const heartbeat = job.heartbeat;
 
-    if (transactionId) {
+    if (deletedTransaction) {
+        // --- Deletion of a single Investments/Debt transaction (#94) ---
+        return await handleDeletion(tenantId, deletedTransaction, _rebuildMeta);
+    } else if (transactionId) {
         // --- Scoped Update Logic (single transaction) ---
         return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta, previousPortfolioItemId);
     } else if (accountIds && accountIds.length > 0) {
@@ -343,6 +356,56 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previou
     if (_rebuildMeta) payload._rebuildMeta = _rebuildMeta;
     await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', payload);
     logger.info(`[Scoped] Emitted PORTFOLIO_CHANGES_PROCESSED event.`, payload);
+
+    return { success: true, affectedItemCount: affectedPortfolioItems.size };
+};
+
+/**
+ * A single Investments/Debt transaction was deleted (#94). The row is gone, so
+ * the scoped update can't run; the API passes the deleted row's fields instead.
+ *
+ * 1. Reconcile its portfolio item from the remaining history (quantity, lots,
+ *    MANUAL auto-seeded prices), pruning it when nothing is left.
+ * 2. Emit PORTFOLIO_CHANGES_PROCESSED with the deleted row's date scope, so the
+ *    cash processor and scoped analytics drop its contribution, and valuation
+ *    rebuilds the surviving items' history.
+ */
+const handleDeletion = async (tenantId, deleted, _rebuildMeta) => {
+    logger.info(`--- Starting Portfolio Delete Reconciliation for tenant: ${tenantId}, transaction: ${deleted.id} ---`);
+    const affectedPortfolioItems = new Map();
+
+    if (deleted.portfolioItemId) {
+        const reconciled = await reconcilePreviousItem(tenantId, deleted.portfolioItemId, null, { pruneEmpty: true });
+        if (reconciled) affectedPortfolioItems.set(reconciled.id, reconciled);
+    }
+
+    // The deleted row's cash item. Not created here: if its (currency, account)
+    // has no transactions left, the cash processor prunes it.
+    if (deleted.accountId && deleted.currency) {
+        const cashItem = await prisma.portfolioItem.findFirst({
+            where: { tenantId, accountId: deleted.accountId, currency: deleted.currency, category: { processingHint: 'CASH' } },
+            select: { id: true },
+        });
+        if (cashItem) affectedPortfolioItems.set(cashItem.id, cashItem);
+    }
+
+    const date = new Date(deleted.transaction_date);
+    const payload = {
+        tenantId,
+        portfolioItemIds: Array.from(affectedPortfolioItems.keys()),
+        newSecuritySymbols: [],
+        dateScopes: [{
+            year: date.getUTCFullYear(),
+            month: date.getUTCMonth() + 1,
+            currency: deleted.currency,
+            type: deleted.categoryType,
+            group: deleted.categoryGroup,
+            country: deleted.country,
+        }],
+    };
+    if (_rebuildMeta) payload._rebuildMeta = _rebuildMeta;
+    await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', payload);
+    logger.info(`[Delete] Emitted PORTFOLIO_CHANGES_PROCESSED event.`, payload);
 
     return { success: true, affectedItemCount: affectedPortfolioItems.size };
 };
