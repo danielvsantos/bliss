@@ -477,7 +477,7 @@ Projected dividends, bond coupons, rent, interest and other income streams for t
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/portfolio/items/[assetId]/asset-class`, `GET /api/portfolio/items/[assetId]/income-terms`, `GET /api/portfolio/items/[assetId]/debt-terms`, `GET /api/portfolio/items/[assetId]/manual-values`
 
-Everything about one holding: asset class (and whether it is overridden), income terms (dividends, coupons, rent, interest), debt terms (loans) and the most recent manual valuations.
+Everything about one holding: asset class (and whether it is overridden), income terms (dividends, coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -502,7 +502,7 @@ Override the automatic asset class of a holding (null restores the automatic one
 **Access:** Write (Read & write keys only) · can delete or discard data  
 **Wraps:** `POST /api/portfolio/items/[assetId]/manual-values`, `PUT /api/portfolio/items/[assetId]/manual-values/[valueId]`, `DELETE /api/portfolio/items/[assetId]/manual-values/[valueId]`
 
-Manual valuations price holdings without market data (property, private assets, cash-like accounts). add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. Each change triggers a portfolio revaluation. valueId comes from get_holding_details.
+Manual valuations price holdings without market data (property, private assets, cash-like accounts). value is the PRICE PER UNIT, not the position total: market value = value × quantity. To enter a statement total, divide it by the holding quantity first (get_portfolio_holdings). add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. add/update return currentQuantity and impliedMarketValue so the result can be checked. Each change triggers a portfolio revaluation. valueId comes from get_holding_details.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -510,7 +510,7 @@ Manual valuations price holdings without market data (property, private assets, 
 | `action` | `add` \| `update` \| `delete` | yes |  |
 | `valueId` | string | no |  |
 | `date` | string | no | Valuation date (YYYY-MM-DD) |
-| `value` | number | no | Total value of the holding on that date. |
+| `value` | number | no | Price per unit on that date (NOT the position total; market value = value × quantity). |
 | `currency` | string | no |  |
 | `notes` | string | no |  |
 

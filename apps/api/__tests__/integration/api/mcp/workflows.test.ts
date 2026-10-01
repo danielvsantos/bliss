@@ -237,7 +237,7 @@ describe('AC8 — manual values', () => {
       data: { name: 'Real Estate', group: 'Property', type: 'Asset', processingHint: 'MANUAL', tenantId: a.tenant.tenantId },
     });
     const asset = await prisma.portfolioItem.create({
-      data: { tenantId: a.tenant.tenantId, categoryId: category.id, symbol: 'Real Estate:Flat', currency: 'USD', source: 'MANUAL', quantity: 1 },
+      data: { tenantId: a.tenant.tenantId, categoryId: category.id, symbol: 'Real Estate:Flat', currency: 'USD', source: 'MANUAL', quantity: 2 },
     });
 
     const client = await connectMcp(server.baseUrl, a.key);
@@ -248,6 +248,8 @@ describe('AC8 — manual values', () => {
       assetId: asset.id, action: 'add', date: '2026-05-01', value: 250000, currency: 'USD',
     });
     expect(added.isError).toBe(false);
+    // value is a per-unit price: the tool echoes the quantity and the total it implies.
+    expect(added.data.added).toMatchObject({ currentQuantity: 2, impliedMarketValue: { value: 500000, currency: 'USD' } });
     expect(vi.mocked(produceEvent)).toHaveBeenCalledWith(expect.objectContaining({
       type: 'MANUAL_PORTFOLIO_PRICE_UPDATED', portfolioItemId: asset.id, tenantId: a.tenant.tenantId,
     }));

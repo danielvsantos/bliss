@@ -138,6 +138,9 @@ describe('/api/portfolio/items/[assetId]/manual-values/[valueId]', () => {
 
       expect(res._status).toBe(200);
       expect(res._body.value).toEqual(new Decimal(2500));
+      expect(mockPrisma.manualAssetValue.update).toHaveBeenCalledWith(expect.objectContaining({
+        include: { asset: { select: { quantity: true } } },
+      }));
       expect(mockProduceEvent).toHaveBeenCalledWith({
         type: 'MANUAL_PORTFOLIO_PRICE_UPDATED',
         portfolioItemId: 42,
