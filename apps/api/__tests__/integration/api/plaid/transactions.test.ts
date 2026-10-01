@@ -302,12 +302,19 @@ describe('PUT /api/plaid/transactions/:id', () => {
       return makeReq({ method: 'PUT', body: { promotionStatus: 'PROMOTED', suggestedCategoryId: category.id, ...body } });
     }
 
-    it('promotes a ticker-less fund with quantity + price (private / unlisted funds)', async () => {
-      const req = promoteInto({ id: 30, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_FUND' }, { assetQuantity: 10, assetPrice: 1000 });
+    it('promotes a ticker-less fund with quantity + price in the Funds category (private / unlisted funds)', async () => {
+      const req = promoteInto({ id: 30, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' }, { assetQuantity: 10, assetPrice: 1000 });
       const res = makeRes();
       await handler(req as NextApiRequest, res as unknown as NextApiResponse);
       expect(res._status).toBe(200);
       expect(mockPrisma.transaction.create.mock.calls[0][0].data).not.toHaveProperty('ticker');
+    });
+
+    it('still rejects a ticker-less ETF (same API_FUND hint, ETFS category)', async () => {
+      const req = promoteInto({ id: 32, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' }, { assetQuantity: 10, assetPrice: 100 });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(400);
     });
 
     it('still rejects a ticker-less stock', async () => {

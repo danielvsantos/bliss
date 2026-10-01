@@ -99,6 +99,7 @@ describe('TransactionForm — stock / ETF / crypto enrichment is mandatory', () 
   const etfCategory = { id: 20, name: 'ETFs', type: 'Investments', group: 'ETFs', processingHint: 'API_FUND' };
   const realEstate = { id: 21, name: 'Real Estate', type: 'Investments', group: 'Real Estate', processingHint: 'MANUAL' };
   const stocks = { id: 22, name: 'Stocks', type: 'Investments', group: 'Stocks', processingHint: 'API_STOCK' };
+  const funds = { id: 23, name: 'Funds', type: 'Investments', group: 'Funds', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' };
 
   const renderWith = (tx: Partial<ApiTransaction> & { category: object }) => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -113,7 +114,7 @@ describe('TransactionForm — stock / ETF / crypto enrichment is mandatory', () 
     vi.clearAllMocks();
     vi.mocked(useAccounts).mockReturnValue(mockQueryResult([account]) as ReturnType<typeof useAccounts>);
     vi.mocked(useCategories).mockReturnValue(
-      mockQueryResult([category, etfCategory, realEstate, stocks]) as ReturnType<typeof useCategories>);
+      mockQueryResult([category, etfCategory, realEstate, stocks, funds]) as ReturnType<typeof useCategories>);
     vi.mocked(useTickerSearch).mockReturnValue(mockQueryResult([]) as ReturnType<typeof useTickerSearch>);
     vi.mocked(usePortfolioItems).mockReturnValue(mockQueryResult([]) as ReturnType<typeof usePortfolioItems>);
     vi.mocked(api.updateTransaction).mockResolvedValue({} as Awaited<ReturnType<typeof api.updateTransaction>>);
@@ -130,19 +131,19 @@ describe('TransactionForm — stock / ETF / crypto enrichment is mandatory', () 
     expect(api.updateTransaction).not.toHaveBeenCalled();
   });
 
-  it('blocks saving an ETF sell with no price or quantity either', async () => {
+  it('blocks saving an ETF sell with no enrichment either', async () => {
     renderWith({ categoryId: etfCategory.id, category: etfCategory, debit: null, credit: 500 });
 
     fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
 
-    expect(await screen.findByText('transactionFormPage.priceRequired')).toBeInTheDocument();
-    expect(screen.queryByText('transactionFormPage.tickerRequired')).not.toBeInTheDocument();
+    expect(await screen.findByText('transactionFormPage.tickerRequired')).toBeInTheDocument();
     expect(api.updateTransaction).not.toHaveBeenCalled();
   });
 
-  // Private / unlisted funds have no ticker: price + quantity are enough.
+  // Private / unlisted funds have no ticker: in the built-in Funds category,
+  // price + quantity are enough.
   it('saves a ticker-less fund transaction once price and quantity are set', async () => {
-    renderWith({ categoryId: etfCategory.id, category: etfCategory, ticker: null, assetPrice: 1000, assetQuantity: 10 });
+    renderWith({ categoryId: funds.id, category: funds, ticker: null, assetPrice: 1000, assetQuantity: 10 });
 
     fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
 

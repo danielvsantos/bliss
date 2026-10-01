@@ -13,7 +13,7 @@ const COMMIT_BATCH_SIZE = 200;
 
 /**
  * A row still flagged requiresEnrichment may be committed once it carries what
- * its category needs (shared rule: ticker optional for API_FUND). An unknown
+ * its category needs (shared rule: ticker optional in the built-in Funds category). An unknown
  * category keeps the strict ticker + quantity + price check.
  */
 function isEnrichedForCommit(row, category) {

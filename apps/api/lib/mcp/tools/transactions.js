@@ -125,9 +125,9 @@ const createTransaction = defineTool({
   description:
     'Record a manual transaction. Same effect as adding it in the app: analytics and portfolio update and the '
     + 'category choice trains the classifier. Stock, ETF/fund and crypto categories (buys and sells) require '
-    + 'assetQuantity and assetPrice (both > 0), plus a ticker for stocks and crypto; for ETF/fund categories the '
-    + 'ticker is optional (private / unlisted funds have none). All three are optional for manually valued '
-    + 'investments.',
+    + 'assetQuantity and assetPrice (both > 0) and a ticker. Only in the built-in Funds category is the ticker '
+    + 'optional (private / unlisted funds have none); ETFs always need one. All three are optional for manually '
+    + 'valued investments.',
   input: {
     date: dateString('Transaction date'),
     accountId: intId('Account ID from list_accounts.'),
@@ -171,8 +171,8 @@ const updateTransaction = defineTool({
   description:
     'Change fields of a transaction (only the ones you pass). Re-categorising here is identical to doing it in '
     + 'the app: it teaches the classifier and refreshes analytics. `tags` replaces the whole tag list. A stock, '
-    + 'ETF/fund or crypto transaction must end up with assetQuantity and assetPrice (both > 0), plus a ticker '
-    + 'for stocks and crypto (optional for ETF/fund).',
+    + 'ETF/fund or crypto transaction must end up with assetQuantity and assetPrice (both > 0) and a ticker '
+    + '(optional only in the built-in Funds category).',
   input: {
     transactionId: intId('Transaction ID from search_transactions.'),
     date: dateString('New date').optional(),

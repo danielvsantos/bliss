@@ -270,8 +270,8 @@ describe('DeepDiveDrawer — ticker-less funds', () => {
     vi.mocked(UseTags.useCreateTag).mockReturnValue(mockMutationResult({ mutateAsync: vi.fn() }));
   });
 
-  const category = (id: number, processingHint: string) => ({
-    id, name: processingHint, group: processingHint, type: 'Investments', tenantId: 't', processingHint,
+  const category = (id: number, processingHint: string, defaultCategoryCode: string | null = null) => ({
+    id, name: processingHint, group: processingHint, type: 'Investments', tenantId: 't', processingHint, defaultCategoryCode,
   });
   const fundRow = (categoryId: number): ReviewItem => ({
     ...IMPORT_ITEM,
@@ -283,11 +283,19 @@ describe('DeepDiveDrawer — ticker-less funds', () => {
   const saveButton = () => screen.getByRole('button', { name: 'review.saveAndPromote' });
 
   it('enables save for a fund with quantity + price and no ticker, and marks the ticker optional', () => {
-    renderDrawer({ item: fundRow(30), categories: [category(30, 'API_FUND')] as never });
+    renderDrawer({ item: fundRow(30), categories: [category(30, 'API_FUND', 'INVESTMENT_FUNDS')] as never });
 
     expect(saveButton()).not.toBeDisabled();
     expect(screen.queryByText('review.investmentEnrichmentRequired')).not.toBeInTheDocument();
     expect(screen.getByText(/review\.tickerOptional/)).toBeInTheDocument();
+  });
+
+  it('keeps save disabled for an ETF without a ticker (same API_FUND hint)', () => {
+    renderDrawer({ item: fundRow(32), categories: [category(32, 'API_FUND', 'ETFS')] as never });
+
+    expect(saveButton()).toBeDisabled();
+    expect(screen.getByText('review.investmentEnrichmentRequired')).toBeInTheDocument();
+    expect(screen.queryByText(/review\.tickerOptional/)).not.toBeInTheDocument();
   });
 
   it('keeps save disabled for a stock without a ticker', () => {

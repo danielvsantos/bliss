@@ -7,6 +7,7 @@ import {
 } from '../../../utils/investmentEnrichment.js';
 
 const cat = (processingHint: string | null, type = 'Investments') => ({ name: 'ETFs', type, processingHint });
+const funds = { name: 'Funds', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' };
 
 describe('investmentEnrichment', () => {
   it('applies to stock, fund/ETF and crypto investments only', () => {
@@ -23,10 +24,20 @@ describe('investmentEnrichment', () => {
     expect(missingInvestmentFields(cat('API_FUND'), { ticker: 'VWCE' })).toEqual(['assetQuantity', 'assetPrice']);
   });
 
-  // Private / unlisted funds have no ticker: quantity + price are enough.
-  it('does not require a ticker for funds (API_FUND)', () => {
-    expect(missingInvestmentFields(cat('API_FUND'), {})).toEqual(['assetQuantity', 'assetPrice']);
-    expect(missingInvestmentFields(cat('API_FUND'), { assetQuantity: 10, assetPrice: 1000 })).toEqual([]);
+  // Private / unlisted funds have no ticker: in the built-in Funds category,
+  // quantity + price are enough.
+  it('does not require a ticker in the built-in Funds category', () => {
+    expect(missingInvestmentFields(funds, {})).toEqual(['assetQuantity', 'assetPrice']);
+    expect(missingInvestmentFields(funds, { assetQuantity: 10, assetPrice: 1000 })).toEqual([]);
+  });
+
+  // ETFs share API_FUND but always have a ticker; a code-less API_FUND category
+  // (pre-code tenant) stays strict too.
+  it('still requires a ticker for ETFs and for API_FUND categories without a code', () => {
+    const qtyPrice = { assetQuantity: 10, assetPrice: 100 };
+    expect(missingInvestmentFields({ ...cat('API_FUND'), defaultCategoryCode: 'ETFS' }, qtyPrice)).toEqual(['ticker']);
+    expect(missingInvestmentFields({ ...cat('API_FUND'), defaultCategoryCode: null }, qtyPrice)).toEqual(['ticker']);
+    expect(missingInvestmentFields(cat('API_FUND'), qtyPrice)).toEqual(['ticker']);
   });
 
   it('treats zero, empty strings, non-numbers and letter-less tickers as missing', () => {
@@ -51,8 +62,8 @@ describe('investmentEnrichment', () => {
       error: expect.stringContaining('Stocks transactions require ticker, assetQuantity and assetPrice'),
       missingFields: ['ticker'],
     });
-    expect(missingInvestmentFieldsError(cat('API_FUND'), ['assetPrice'])).toEqual({
-      error: expect.stringContaining('ETFs transactions require assetQuantity and assetPrice (greater than 0); ticker is optional'),
+    expect(missingInvestmentFieldsError(funds, ['assetPrice'])).toEqual({
+      error: expect.stringContaining('Funds transactions require assetQuantity and assetPrice (greater than 0); ticker is optional'),
       missingFields: ['assetPrice'],
     });
   });

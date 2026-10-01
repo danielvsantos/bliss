@@ -85,7 +85,7 @@ const PHASE2_CONCURRENCY = 5;
 // Which Investments-category processingHints require enrichment before a
 // transaction can auto-confirm through an automated pipeline (Plaid
 // classification, Smart Import). The list and the per-hint field rule
-// (API_FUND needs no ticker) live in @bliss/shared/portfolio (enrichment.js),
+// (built-in Funds category needs no ticker) live in @bliss/shared/portfolio (enrichment.js),
 // shared with the API; the web review UI mirrors it in investment-utils.ts.
 //
 // MANUAL is deliberately excluded: manual transaction creation (transaction-

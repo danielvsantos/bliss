@@ -123,7 +123,7 @@ export default withAuth(async function handler(req, res) {
       // Validate category belongs to tenant
       const category = await prisma.category.findFirst({
         where: { id: categoryId, tenantId: user.tenantId },
-        select: { id: true, type: true, processingHint: true },
+        select: { id: true, type: true, processingHint: true, defaultCategoryCode: true },
       });
       if (!category) {
         return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Category not found or does not belong to your tenant' });
@@ -133,7 +133,7 @@ export default withAuth(async function handler(req, res) {
       updateData.classificationSource = 'USER_OVERRIDE';
 
       // Detect whether the new category requires mandatory investment enrichment
-      // (ticker optional for API_FUND — see @bliss/shared/portfolio enrichment.js).
+      // (ticker optional in the built-in Funds category — see @bliss/shared/portfolio enrichment.js).
       if (requiresInvestmentEnrichment(category)) {
         if (!isInvestmentEnrichmentComplete(category, effectiveEnrichment(updateData, row))) {
           updateData.requiresEnrichment = true;
@@ -154,7 +154,7 @@ export default withAuth(async function handler(req, res) {
       const currentCategory = row.suggestedCategoryId
         ? await prisma.category.findFirst({
           where: { id: row.suggestedCategoryId, tenantId: user.tenantId },
-          select: { id: true, type: true, processingHint: true },
+          select: { id: true, type: true, processingHint: true, defaultCategoryCode: true },
         })
         : null;
       const complete = currentCategory

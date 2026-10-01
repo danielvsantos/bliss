@@ -85,7 +85,8 @@ describe('PUT /api/imports/[id]/rows/[rowId]', () => {
 
   // Private / unlisted funds have no ticker: quantity + price must clear the flag.
   describe('investment enrichment', () => {
-    const funds = { id: 30, type: 'Investments', processingHint: 'API_FUND' };
+    const funds = { id: 30, type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' };
+    const etfs = { id: 32, type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' };
     const stocks = { id: 31, type: 'Investments', processingHint: 'API_STOCK' };
     const flagged = { ...baseRow, requiresEnrichment: true, enrichmentType: 'INVESTMENT', ticker: null, assetQuantity: null, assetPrice: null };
 
@@ -102,6 +103,11 @@ describe('PUT /api/imports/[id]/rows/[rowId]', () => {
     it('clears the flag on a ticker-less fund row once quantity + price are entered', async () => {
       const data = await put({ ...flagged, suggestedCategoryId: 30 }, funds, { assetQuantity: '10', assetPrice: '1000' });
       expect(data.requiresEnrichment).toBe(false);
+    });
+
+    it('keeps the flag on a ticker-less ETF row (ETFs always need a ticker)', async () => {
+      const data = await put({ ...flagged, suggestedCategoryId: 32 }, etfs, { assetQuantity: '10', assetPrice: '100' });
+      expect(data).not.toHaveProperty('requiresEnrichment', false);
     });
 
     it('keeps the flag on a ticker-less stock row', async () => {

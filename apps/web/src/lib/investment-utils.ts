@@ -11,8 +11,12 @@ import type { ReviewItem } from '@/components/review/types';
 /** Categories whose portfolio items are priced via external APIs — enrichment is MANDATORY. */
 const INVESTMENT_HINTS_MANDATORY = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND']);
 
-/** Mandatory hints that can be enriched without a ticker (private / unlisted funds). */
-const TICKER_OPTIONAL_HINTS = new Set(['API_FUND']);
+/**
+ * Built-in category codes whose rows can be enriched without a ticker: only Funds
+ * (private / unlisted funds have none). ETFs share the API_FUND hint but always
+ * need one; API_FUND categories without a code stay strict.
+ */
+const TICKER_OPTIONAL_CATEGORY_CODES = new Set(['INVESTMENT_FUNDS']);
 
 /** Categories whose assets are tracked manually — enrichment is OPTIONAL. */
 const INVESTMENT_HINTS_OPTIONAL = new Set(['MANUAL']);
@@ -31,10 +35,11 @@ export function isMandatoryEnrichmentCategory(category: Category | null | undefi
 // Mirrors packages/shared/src/portfolio/enrichment.js (the web bundle doesn't
 // depend on @bliss/shared) — keep the two in sync.
 
-/** True when the hint needs a ticker on top of quantity + price. */
-export function requiresTicker(processingHint: string | null | undefined): boolean {
-  const hint = processingHint ?? '';
-  return INVESTMENT_HINTS_MANDATORY.has(hint) && !TICKER_OPTIONAL_HINTS.has(hint);
+/** True when a mandatory-enrichment category needs a ticker on top of quantity + price. */
+export function requiresTicker(category: Category | null | undefined): boolean {
+  if (!isMandatoryEnrichmentCategory(category)) return false;
+  return !(category!.processingHint === 'API_FUND'
+    && TICKER_OPTIONAL_CATEGORY_CODES.has(category!.defaultCategoryCode ?? ''));
 }
 
 type EnrichmentFields = {
@@ -45,7 +50,7 @@ type EnrichmentFields = {
 
 /**
  * True when `row` carries everything its category needs: quantity + price,
- * plus a ticker (with at least one letter) unless the category is a fund.
+ * plus a ticker (with at least one letter) unless it's the built-in Funds category.
  * Categories that don't require enrichment are always complete.
  */
 export function isInvestmentEnrichmentComplete(
@@ -55,7 +60,7 @@ export function isInvestmentEnrichmentComplete(
   if (!isMandatoryEnrichmentCategory(category)) return true;
   const present = (v: unknown) => v !== null && v !== undefined && v !== '';
   if (!present(row?.assetQuantity) || !present(row?.assetPrice)) return false;
-  return !requiresTicker(category!.processingHint) || /[a-zA-Z]/.test(row?.ticker ?? '');
+  return !requiresTicker(category) || /[a-zA-Z]/.test(row?.ticker ?? '');
 }
 
 const isPositiveNumber = (value: unknown): boolean => {
@@ -68,7 +73,8 @@ const isPositiveNumber = (value: unknown): boolean => {
  * Enrichment fields a transaction in a mandatory-enrichment category is missing
  * (empty for any other category). Applies to buys and sells. Mirrors
  * `missingInvestmentFields` in apps/api/utils/investmentEnrichment.js: the ticker
- * needs a letter (optional for funds — private / unlisted ones have none); price
+ * needs a letter (optional in the built-in Funds category — private / unlisted
+ * funds have none); price
  * and quantity (by magnitude, for signed sells) must be > 0.
  */
 export function getMissingInvestmentFields(
@@ -77,7 +83,7 @@ export function getMissingInvestmentFields(
 ): Array<'ticker' | 'assetPrice' | 'assetQuantity'> {
   if (!isMandatoryEnrichmentCategory(category)) return [];
   const missing: Array<'ticker' | 'assetPrice' | 'assetQuantity'> = [];
-  if (requiresTicker(category!.processingHint) && (!values.ticker || !/[a-zA-Z]/.test(values.ticker))) {
+  if (requiresTicker(category) && (!values.ticker || !/[a-zA-Z]/.test(values.ticker))) {
     missing.push('ticker');
   }
   if (!isPositiveNumber(values.assetPrice)) missing.push('assetPrice');
@@ -116,7 +122,7 @@ export function itemNeedsEnrichment(
   if (!isMandatoryEnrichmentCategory(cat)) return false;
   // Row already carries enrichment data (e.g. native-adapter CSV imports that
   // supply ticker/quantity/price directly) — nothing left to fill in, so Approve
-  // stays open. Shared rule: the ticker is optional for funds (API_FUND).
+  // stays open. Shared rule: the ticker is optional in the built-in Funds category.
   const row = item.originalImportRow;
   return !(row && isInvestmentEnrichmentComplete(cat, row));
 }

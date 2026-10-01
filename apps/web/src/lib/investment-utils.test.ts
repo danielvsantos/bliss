@@ -179,7 +179,7 @@ describe('itemNeedsEnrichment', () => {
 
   // Private / unlisted funds have no ticker — quantity + price are enough.
   it('returns false for a ticker-less fund row with quantity + price', () => {
-    const map = new Map<number, Category>([[1, makeCategory({ name: 'Funds', processingHint: 'API_FUND' })]]);
+    const map = new Map<number, Category>([[1, makeCategory({ name: 'Funds', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' })]]);
     const item = makeReviewItem({
       categoryId: 1,
       originalImportRow: makeImportRow({ ticker: null, assetQuantity: 10, assetPrice: 1000 }),
@@ -273,11 +273,20 @@ describe('getMissingInvestmentFields', () => {
   });
 
   // Private / unlisted funds have no ticker: price + quantity are enough.
-  it('requires price and quantity but no ticker for API_FUND', () => {
-    const fund = makeCategory({ processingHint: 'API_FUND' });
+  it('requires price and quantity but no ticker in the built-in Funds category', () => {
+    const fund = makeCategory({ processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' });
     expect(getMissingInvestmentFields(fund, {})).toEqual(['assetPrice', 'assetQuantity']);
     expect(getMissingInvestmentFields(fund, { assetQuantity: 10, assetPrice: 1000 })).toEqual([]);
     expect(getMissingInvestmentFields(fund, full)).toEqual([]);
+  });
+
+  // ETFs share API_FUND but always have a ticker; code-less API_FUND categories stay strict.
+  it('still requires a ticker for ETFs and code-less API_FUND categories', () => {
+    const qtyPrice = { assetQuantity: 10, assetPrice: 100 };
+    expect(getMissingInvestmentFields(makeCategory({ processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' }), qtyPrice))
+      .toEqual(['ticker']);
+    expect(getMissingInvestmentFields(makeCategory({ processingHint: 'API_FUND', defaultCategoryCode: null }), qtyPrice))
+      .toEqual(['ticker']);
   });
 
   it('flags only the missing fields (ticker entered, price and quantity not)', () => {

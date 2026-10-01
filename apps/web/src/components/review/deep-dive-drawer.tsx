@@ -173,10 +173,11 @@ export function DeepDiveDrawer({
     (isInvestmentCategory && (INVESTMENT_HINTS_MANDATORY.has(processingHint) || INVESTMENT_HINTS_OPTIONAL.has(processingHint)));
 
   // Enrichment is mandatory for API_STOCK / API_CRYPTO / API_FUND, optional for
-  // MANUAL. Funds may be ticker-less (private / unlisted) — shared rule.
+  // MANUAL. The built-in Funds category may be ticker-less (private / unlisted
+  // funds) — shared rule; ETFs always need a ticker.
   const enrichmentMandatory =
     showEnrichment && INVESTMENT_HINTS_MANDATORY.has(processingHint);
-  const tickerRequired = requiresTicker(processingHint);
+  const tickerRequired = requiresTicker(selectedCat);
   const enrichmentMissing =
     enrichmentMandatory &&
     !isInvestmentEnrichmentComplete(selectedCat, { ticker: ticker.trim(), assetQuantity: qty.trim(), assetPrice: price.trim() });

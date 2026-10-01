@@ -309,7 +309,7 @@ describe('commitWorker — processCommitJob', () => {
 
   it('commits a ticker-less fund row with quantity + price but still skips a ticker-less stock row', async () => {
     getCategoriesForTenant.mockResolvedValue([
-      { id: 20, name: 'Funds', type: 'Investments', processingHint: 'API_FUND' },
+      { id: 20, name: 'Funds', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' },
       { id: 21, name: 'Stocks', type: 'Investments', processingHint: 'API_STOCK' },
     ]);
     const rows = [

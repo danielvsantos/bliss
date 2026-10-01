@@ -138,7 +138,7 @@ function applyClassificationToRowData(rowData, result, autoPromoteThreshold, cat
  * AI-classification path — the native adapter resolves category directly from
  * a CSV column instead of calling classify(), so nothing else validates that
  * an investment-category row actually carries ticker/quantity/price before
- * it's eligible to auto-confirm (ticker optional for API_FUND — see
+ * it's eligible to auto-confirm (ticker optional in the built-in Funds category — see
  * isInvestmentEnrichmentComplete). rowData.ticker/assetQuantity/assetPrice
  * must already be set before calling this.
  *
