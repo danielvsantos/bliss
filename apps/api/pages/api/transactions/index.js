@@ -185,10 +185,10 @@ async function handleGet(req, res) {
   const actualSortOrder = sortOrder === 'asc' ? 'asc' : 'desc';
 
   // Custom sorting for credit and debit fields
-  let orderBy;
+  let primaryOrder;
   if (actualSortField === 'credit') {
     // For credit: nulls last, then sort by value
-    orderBy = {
+    primaryOrder = {
       credit: {
         sort: actualSortOrder,
         nulls: 'last'
@@ -196,15 +196,19 @@ async function handleGet(req, res) {
     };
   } else if (actualSortField === 'debit') {
     // For debit: nulls last, then sort by value
-    orderBy = {
+    primaryOrder = {
       debit: {
         sort: actualSortOrder,
         nulls: 'last'
       }
     };
   } else {
-    orderBy = { [actualSortField]: actualSortOrder };
+    primaryOrder = { [actualSortField]: actualSortOrder };
   }
+  // `id` tiebreaker: Postgres gives no stable order among rows that tie on the
+  // sort field (e.g. same-day transactions), so skip/take pages could repeat or
+  // drop rows without it.
+  const orderBy = [primaryOrder, { id: actualSortOrder }];
 
   try {
     // Get filtered transactions with pagination and calculate totals

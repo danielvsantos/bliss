@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 vi.mock('../../../utils/rateLimit.js', () => ({
@@ -270,6 +270,75 @@ describe('GET /api/transactions — list', () => {
     expect(res._status).toBe(200);
     expect(res._body.transactions).toEqual([]);
     expect(res._body.total).toBe(0);
+  });
+});
+
+describe('GET /api/transactions — stable ordering (#91)', () => {
+  afterEach(() => {
+    mockPrisma.transaction.findMany.mockReset();
+    mockPrisma.transaction.count.mockReset();
+    mockPrisma.transaction.aggregate.mockReset();
+  });
+
+  it.each([
+    ['transaction_date', 'desc', { transaction_date: 'desc' }],
+    ['transaction_date', 'asc', { transaction_date: 'asc' }],
+    ['currency', 'asc', { currency: 'asc' }],
+    ['credit', 'desc', { credit: { sort: 'desc', nulls: 'last' } }],
+    ['debit', 'asc', { debit: { sort: 'asc', nulls: 'last' } }],
+  ])('sortBy=%s sortOrder=%s orders by the field then id', async (sortBy, sortOrder, primary) => {
+    mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
+    mockPrisma.transaction.count.mockResolvedValueOnce(0);
+    mockPrisma.transaction.aggregate.mockResolvedValueOnce({ _sum: { credit: null, debit: null } });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'GET', query: { sortBy, sortOrder } }), res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.transaction.findMany.mock.calls[0][0].orderBy).toEqual([primary, { id: sortOrder }]);
+  });
+
+  it('pages through 30 same-day transactions with no repeats or gaps', async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({
+      id: i + 1,
+      transaction_date: new Date('2025-06-15T00:00:00Z'),
+      credit: null,
+      debit: 10,
+      currency: 'USD',
+      tags: [],
+    }));
+    // Mimic Postgres: rows that tie on every ORDER BY key come back in arbitrary order.
+    mockPrisma.transaction.findMany.mockImplementation(async ({ orderBy, skip, take }: any) => {
+      const keys = (Array.isArray(orderBy) ? orderBy : [orderBy]).map((o: any) => {
+        const [field, spec] = Object.entries(o)[0] as [string, any];
+        return { field, dir: typeof spec === 'string' ? spec : spec.sort };
+      });
+      const shuffled = [...rows].sort(() => Math.random() - 0.5);
+      shuffled.sort((a: any, b: any) => {
+        for (const { field, dir } of keys) {
+          const av = +a[field];
+          const bv = +b[field];
+          if (av !== bv) return dir === 'asc' ? av - bv : bv - av;
+        }
+        return 0;
+      });
+      return shuffled.slice(skip, skip + take);
+    });
+    mockPrisma.transaction.count.mockResolvedValue(rows.length);
+    mockPrisma.transaction.aggregate.mockResolvedValue({ _sum: { credit: null, debit: 300 } });
+
+    const seen: number[] = [];
+    for (const page of ['1', '2', '3']) {
+      const res = makeRes();
+      await handler(makeReq({ method: 'GET', query: { page, limit: '10' } }), res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      expect(res._body.transactions).toHaveLength(10);
+      seen.push(...res._body.transactions.map((t: any) => t.id));
+    }
+
+    expect(seen).toHaveLength(30);
+    expect(new Set(seen).size).toBe(30);
+    expect([...seen].sort((a, b) => a - b)).toEqual(rows.map((r) => r.id));
   });
 });
 
