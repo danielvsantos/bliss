@@ -58,8 +58,8 @@ const { mockPrisma } = vi.hoisted(() => ({
       delete: vi.fn(),
       createMany: vi.fn(),
     },
-    category: { findUnique: vi.fn() },
-    account: { findUnique: vi.fn() },
+    category: { findUnique: vi.fn(), findFirst: vi.fn() },
+    account: { findUnique: vi.fn(), findFirst: vi.fn() },
     tag: { findFirst: vi.fn(), create: vi.fn() },
     transactionTag: { deleteMany: vi.fn() },
     transactionEmbedding: { updateMany: vi.fn() },
@@ -303,8 +303,8 @@ describe('POST /api/transactions', () => {
       currency: 'USD',
     };
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.transaction.create.mockResolvedValueOnce(createdTx);
 
     const req = makeReq({
@@ -338,8 +338,8 @@ describe('POST /api/transactions', () => {
   it('returns 201 and auto-creates tags that do not exist', async () => {
     const newTag = { id: 5, name: 'NewTag', color: '#aaaaaa', tenantId: 'test-tenant-123' };
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.tag.findFirst.mockResolvedValueOnce(null);
     mockPrisma.tag.create.mockResolvedValueOnce(newTag);
 
@@ -484,12 +484,13 @@ describe('PUT /api/transactions', () => {
     };
     mockPrisma.transaction.findUnique.mockResolvedValueOnce(existing);
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({
+    mockPrisma.category.findFirst.mockResolvedValueOnce({
       id: 1,
       name: 'Food',
       type: 'Expense',
       portfolioItemKeyStrategy: 'IGNORE',
     });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
 
     const updatedTx = {
       id: 1,
