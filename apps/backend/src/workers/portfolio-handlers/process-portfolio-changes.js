@@ -226,7 +226,8 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previou
                     },
                 });
                 // A ticker-less fund is keyed "<category>:<description>" — not a
-                // symbol Twelve Data can resolve, so it never joins the refresh.
+                // symbol Twelve Data can resolve. filterSecuritySymbols() drops it
+                // from every refresh; this just avoids enqueuing one for nothing.
                 if (SECURITY_PROCESSING_HINTS.has(transaction.category?.processingHint) && assetKey === transaction.ticker) {
                     createdSecuritySymbol = assetKey;
                 }
@@ -685,7 +686,8 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     const newSecuritySymbols = [...new Set(
         portfolioItemsToCreate
-            // Ticker-less (MANUAL-source) funds have no market symbol to refresh.
+            // Ticker-less (MANUAL-source) funds have no market symbol — don't trigger
+            // a refresh for them (filterSecuritySymbols() drops them anyway).
             .filter((d) => SECURITY_PROCESSING_HINTS.has(d.processingHint) && d.source !== 'MANUAL')
             .map((d) => d.symbol)
     )];

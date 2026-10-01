@@ -334,8 +334,14 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote, isEtf = 
  * ETFs or has no row for yet (the first profile fetch resolves the type).
  * Mutual funds (API_FUND with a non-ETF row) are skipped: Twelve Data has no
  * useful fundamentals for them.
+ *
+ * MANUAL-source items are always skipped: they were created without a ticker
+ * (e.g. a private / unlisted fund), so their symbol is the TICKER-strategy
+ * fallback "<category>:<description>" — not something Twelve Data can resolve.
+ * Every refresh path (nightly, per-tenant, post-rebuild) goes through here.
  */
-async function filterSecuritySymbols(items) {
+async function filterSecuritySymbols(allItems) {
+    const items = allItems.filter(i => i.source !== 'MANUAL');
     const fundSymbols = [...new Set(items.filter(i => i.category?.processingHint === 'API_FUND').map(i => i.symbol))];
     const smRows = fundSymbols.length
         ? await prisma.securityMaster.findMany({
@@ -365,6 +371,7 @@ async function filterSecuritySymbols(items) {
 const SECURITY_ITEM_SELECT = {
     symbol: true,
     exchange: true,
+    source: true,
     category: { select: { processingHint: true } },
 };
 
