@@ -8,6 +8,7 @@ import { handleDebtRepayment } from '../../../services/transaction.service.js';
 import { produceEvent } from '../../../utils/produceEvent.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../utils/tagUtils.js';
+import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../utils/investmentEnrichment.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -348,6 +349,12 @@ async function handlePost(req, res) {
     transactionData.categoryId = category.id;
     transactionData.accountId = account.id;
 
+    // Stock / ETF / crypto rows need ticker, quantity and price — before any write.
+    const missingEnrichment = missingInvestmentFields(category, transactionData);
+    if (missingEnrichment.length > 0) {
+      return res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(category, missingEnrichment));
+    }
+
     let tagConnections;
     let resolvedTagIds = [];
     if (tags && Array.isArray(tags)) {
@@ -619,6 +626,11 @@ async function handlePut(req, res) {
       return;
     }
     const newCategory = owned.category;
+    const missingEnrichment = missingInvestmentFields(newCategory, { ticker, assetQuantity, assetPrice });
+    if (missingEnrichment.length > 0) {
+      res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(newCategory, missingEnrichment));
+      return;
+    }
     if (newCategory.type === 'Investments' || newCategory.type === 'Debt') {
       // Generate symbol using the same logic as the backend's asset-aggregator.js
       let symbol;

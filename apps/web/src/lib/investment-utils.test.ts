@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isMandatoryEnrichmentCategory,
+  getMissingInvestmentFields,
   isInvestmentCategory,
   itemNeedsEnrichment,
   itemNeedsAccount,
@@ -240,5 +241,36 @@ describe('itemNeedsReview', () => {
       }),
     });
     expect(itemNeedsReview(item, map)).toBe(false);
+  });
+});
+
+describe('getMissingInvestmentFields', () => {
+  const full = { ticker: 'VWCE', assetQuantity: 2, assetPrice: 100 };
+
+  it.each(['API_STOCK', 'API_FUND', 'API_CRYPTO'])('requires ticker, price and quantity for %s', (hint) => {
+    expect(getMissingInvestmentFields(makeCategory({ processingHint: hint }), {}))
+      .toEqual(['ticker', 'assetPrice', 'assetQuantity']);
+    expect(getMissingInvestmentFields(makeCategory({ processingHint: hint }), full)).toEqual([]);
+  });
+
+  it('flags only the missing fields (ticker entered, price and quantity not)', () => {
+    expect(getMissingInvestmentFields(makeCategory({ processingHint: 'API_FUND' }), { ticker: 'VWCE' }))
+      .toEqual(['assetPrice', 'assetQuantity']);
+  });
+
+  it('rejects zero values and a ticker without letters', () => {
+    expect(getMissingInvestmentFields(makeCategory(), { ticker: '0', assetQuantity: 0, assetPrice: '0' }))
+      .toEqual(['ticker', 'assetPrice', 'assetQuantity']);
+  });
+
+  it('accepts a signed sell quantity and string inputs from the form', () => {
+    expect(getMissingInvestmentFields(makeCategory(), { ticker: 'AAPL', assetQuantity: '-3', assetPrice: '180.5' }))
+      .toEqual([]);
+  });
+
+  it('does not require them for manually valued investments or non-investments', () => {
+    expect(getMissingInvestmentFields(makeCategory({ processingHint: 'MANUAL' }), {})).toEqual([]);
+    expect(getMissingInvestmentFields(makeCategory({ type: 'Essentials', processingHint: null }), {})).toEqual([]);
+    expect(getMissingInvestmentFields(undefined, {})).toEqual([]);
   });
 });

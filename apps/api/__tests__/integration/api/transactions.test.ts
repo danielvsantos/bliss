@@ -602,6 +602,87 @@ describe('PUT /api/transactions', () => {
   });
 });
 
+// Stocks, ETFs/funds and crypto are priced from market data: a buy or sell
+// without ticker, quantity and price was saved and then counted as 1 unit.
+describe('POST/PUT /api/transactions — mandatory investment enrichment', () => {
+  const etf = { id: 20, name: 'ETFs', type: 'Investments', processingHint: 'API_FUND', portfolioItemKeyStrategy: 'TICKER' };
+  const base = { transaction_date: '2026-08-04', categoryId: 20, accountId: 1, description: 'VWCE buy', currency: 'EUR' };
+
+  const post = async (body: Record<string, unknown>) => {
+    const res = makeRes();
+    await handler(makeReq({ method: 'POST', body }) as NextApiRequest, res as unknown as NextApiResponse);
+    return res;
+  };
+
+  it.each([
+    ['API_STOCK'], ['API_FUND'], ['API_CRYPTO'],
+  ])('POST rejects a %s buy with a ticker but no price or quantity', async (hint) => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ ...etf, processingHint: hint });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, debit: 100, ticker: 'VWCE' });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['assetQuantity', 'assetPrice']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+    expect(mockPrisma.portfolioItem.upsert).not.toHaveBeenCalled();
+  });
+
+  it('POST rejects a sell with no ticker, zero quantity and no price', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, credit: 100, assetQuantity: 0 });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['ticker', 'assetQuantity', 'assetPrice']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('POST accepts an ETF sell with ticker, a signed quantity and price', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 7 });
+    mockPrisma.transaction.create.mockResolvedValueOnce({ id: 11, portfolioItemId: 7 });
+
+    const res = await post({ ...base, credit: 100, ticker: 'VWCE', assetQuantity: -1, assetPrice: 100 });
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.transaction.create).toHaveBeenCalled();
+  });
+
+  it('POST still accepts a manually valued investment without enrichment', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({
+      id: 21, name: 'Real Estate', type: 'Investments', processingHint: 'MANUAL',
+      portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION',
+    });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 8 });
+    mockPrisma.transaction.create.mockResolvedValueOnce({ id: 12, portfolioItemId: 8 });
+
+    const res = await post({ ...base, categoryId: 21, description: 'Flat', debit: 200000 });
+
+    expect(res._status).toBe(201);
+  });
+
+  it('PUT rejects re-categorising into an ETF category without enrichment', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValueOnce({
+      id: 1, tenantId: 'test-tenant-123', categoryId: 1, portfolioItemId: null,
+      account: { countryId: 'PT' }, category: { type: 'Expense', group: 'Food' }, tags: [],
+    });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'PUT', query: { id: '1' }, body: { ...base, debit: 100, ticker: 'VWCE' } }) as NextApiRequest,
+      res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['assetQuantity', 'assetPrice']);
+    expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('DELETE /api/transactions', () => {
   it('returns 400 for invalid id', async () => {
     const req = makeReq({ method: 'DELETE', query: { id: 'abc' } });

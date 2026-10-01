@@ -26,6 +26,7 @@ import { CategoryCombobox } from './category-combobox';
 import { TagInput } from './tag-input';
 import { usePortfolioItems } from '@/hooks/use-normalized-portfolio-items';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
+import { getMissingInvestmentFields } from '@/lib/investment-utils';
 
 // Form schema
 const transactionSchema = z.object({
@@ -228,6 +229,19 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
         type: 'manual',
         message: t('transactionFormPage.currencyMismatch', { currency: values.assetCurrency }),
       });
+      return;
+    }
+    // Stocks, ETFs/funds and crypto need ticker, price and quantity on buys and
+    // sells alike (the API enforces the same rule).
+    const missing = getMissingInvestmentFields(selectedCategory, values);
+    if (missing.length > 0) {
+      const messages = {
+        ticker: 'transactionFormPage.tickerRequired',
+        assetPrice: 'transactionFormPage.priceRequired',
+        assetQuantity: 'transactionFormPage.quantityRequired',
+      } as const;
+      missing.forEach((field) => form.setError(field, { type: 'manual', message: t(messages[field]) }));
+      setInvestmentAccordionValue('investment-details');
       return;
     }
     setIsSubmitting(true);
