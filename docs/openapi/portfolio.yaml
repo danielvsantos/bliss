@@ -182,7 +182,10 @@ components:
           description: The effective date the price applies to (may be backdated).
         value:
           type: number
-          description: The price, serialized from a Prisma Decimal (string in JSON).
+          description: >-
+            The price PER UNIT (not the position total), serialized from a
+            Prisma Decimal (string in JSON). The valuation engine multiplies it
+            by the holding's quantity: market value = value × quantity.
         currency:
           type: string
           description: >-
@@ -426,6 +429,7 @@ paths:
                   format: date
                 value:
                   type: number
+                  description: Price per unit (not the position total).
                 currency:
                   type: string
                 notes:
@@ -433,11 +437,22 @@ paths:
                   description: Optional free-text note (e.g. valuation source).
       responses:
         '201':
-          description: The newly created manual value.
+          description: >-
+            The newly created manual value. Includes `asset.quantity` (the holding's
+            current quantity) so callers can check the implied total.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ManualAssetValue'
+                allOf:
+                  - $ref: '#/components/schemas/ManualAssetValue'
+                  - type: object
+                    properties:
+                      asset:
+                        type: object
+                        properties:
+                          quantity:
+                            type: string
+                            description: Current holding quantity (Decimal serialized as string).
         '404':
           description: Portfolio item not found.
 
@@ -472,17 +487,29 @@ paths:
                   format: date
                 value:
                   type: number
+                  description: Price per unit (not the position total).
                 currency:
                   type: string
                 notes:
                   type: string
       responses:
         '200':
-          description: The updated manual value.
+          description: >-
+            The updated manual value. Includes `asset.quantity` (the holding's
+            current quantity) so callers can check the implied total.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ManualAssetValue'
+                allOf:
+                  - $ref: '#/components/schemas/ManualAssetValue'
+                  - type: object
+                    properties:
+                      asset:
+                        type: object
+                        properties:
+                          quantity:
+                            type: string
+                            description: Current holding quantity (Decimal serialized as string).
         '404':
           description: Portfolio item or manual value not found.
     delete:
