@@ -94,3 +94,63 @@ describe('TransactionForm — portfolio cache invalidation', () => {
     );
   });
 });
+
+describe('TransactionForm — stock / ETF / crypto enrichment is mandatory', () => {
+  const etfCategory = { id: 20, name: 'ETFs', type: 'Investments', group: 'ETFs', processingHint: 'API_FUND' };
+  const realEstate = { id: 21, name: 'Real Estate', type: 'Investments', group: 'Real Estate', processingHint: 'MANUAL' };
+
+  const renderWith = (tx: Partial<ApiTransaction> & { category: object }) => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransactionForm transaction={{ ...editTransaction, ...tx } as unknown as ApiTransaction} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAccounts).mockReturnValue(mockQueryResult([account]) as ReturnType<typeof useAccounts>);
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult([category, etfCategory, realEstate]) as ReturnType<typeof useCategories>);
+    vi.mocked(useTickerSearch).mockReturnValue(mockQueryResult([]) as ReturnType<typeof useTickerSearch>);
+    vi.mocked(usePortfolioItems).mockReturnValue(mockQueryResult([]) as ReturnType<typeof usePortfolioItems>);
+    vi.mocked(api.updateTransaction).mockResolvedValue({} as Awaited<ReturnType<typeof api.updateTransaction>>);
+  });
+
+  it('blocks saving an ETF buy with a ticker but no price or quantity', async () => {
+    renderWith({ categoryId: etfCategory.id, category: etfCategory, ticker: 'VWCE' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
+
+    expect(await screen.findByText('transactionFormPage.priceRequired')).toBeInTheDocument();
+    expect(screen.getByText('transactionFormPage.quantityRequired')).toBeInTheDocument();
+    expect(screen.queryByText('transactionFormPage.tickerRequired')).not.toBeInTheDocument();
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('blocks saving an ETF sell with no enrichment either', async () => {
+    renderWith({ categoryId: etfCategory.id, category: etfCategory, debit: null, credit: 500 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
+
+    expect(await screen.findByText('transactionFormPage.tickerRequired')).toBeInTheDocument();
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('saves an ETF transaction once ticker, price and quantity are set', async () => {
+    renderWith({ categoryId: etfCategory.id, category: etfCategory, ticker: 'VWCE', assetPrice: 21, assetQuantity: 2 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
+
+    await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledTimes(1));
+  });
+
+  it('still saves a manually valued investment without enrichment', async () => {
+    renderWith({ categoryId: realEstate.id, category: realEstate });
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
+
+    await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledTimes(1));
+  });
+});

@@ -8,6 +8,7 @@ import { handleDebtRepayment } from '../../../services/transaction.service.js';
 import { produceEvent } from '../../../utils/produceEvent.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../utils/tagUtils.js';
+import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../utils/investmentEnrichment.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -336,6 +337,11 @@ async function handlePost(req, res) {
       prisma.account.findUnique({ where: { id: transactionData.accountId } })
     ]);
 
+    const missingEnrichment = missingInvestmentFields(category, transactionData);
+    if (missingEnrichment.length > 0) {
+      return res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(category, missingEnrichment));
+    }
+
     if (category && (category.type === 'Investments' || category.type === 'Debt')) {
       const { ticker, description, currency } = transactionData;
 
@@ -587,6 +593,11 @@ async function handlePut(req, res) {
     let portfolioItem;
     // We fetch the new category to determine if a portfolio item link is needed.
     const newCategory = await prisma.category.findUnique({ where: { id: parseInt(categoryId, 10) } });
+    const missingEnrichment = missingInvestmentFields(newCategory, { ticker, assetQuantity, assetPrice });
+    if (missingEnrichment.length > 0) {
+      res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(newCategory, missingEnrichment));
+      return;
+    }
     if (newCategory && (newCategory.type === 'Investments' || newCategory.type === 'Debt')) {
       // Generate symbol using the same logic as the backend's asset-aggregator.js
       let symbol;

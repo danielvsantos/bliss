@@ -135,7 +135,7 @@ Past bank-synced (Plaid) transactions whose merchant or name contains `descripti
 **Access:** Write (Read & write keys only)  
 **Wraps:** `POST /api/transactions`
 
-Record a manual transaction. Same effect as adding it in the app: analytics and portfolio update and the category choice trains the classifier. For investment categories pass ticker, assetQuantity and assetPrice.
+Record a manual transaction. Same effect as adding it in the app: analytics and portfolio update and the category choice trains the classifier. Stock, ETF/fund and crypto categories (buys and sells) require ticker, assetQuantity and assetPrice (both > 0); they are optional for manually valued investments.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -156,7 +156,7 @@ Record a manual transaction. Same effect as adding it in the app: analytics and 
 **Access:** Write (Read & write keys only)  
 **Wraps:** `GET /api/transactions`, `PUT /api/transactions`
 
-Change fields of a transaction (only the ones you pass). Re-categorising here is identical to doing it in the app: it teaches the classifier and refreshes analytics. `tags` replaces the whole tag list.
+Change fields of a transaction (only the ones you pass). Re-categorising here is identical to doing it in the app: it teaches the classifier and refreshes analytics. `tags` replaces the whole tag list. A stock, ETF/fund or crypto transaction must end up with ticker, assetQuantity and assetPrice (both > 0).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

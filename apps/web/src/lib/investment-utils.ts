@@ -25,6 +25,33 @@ export function isMandatoryEnrichmentCategory(category: Category | null | undefi
   return category.type === 'Investments' && INVESTMENT_HINTS_MANDATORY.has(category.processingHint ?? '');
 }
 
+const isPositiveNumber = (value: unknown): boolean => {
+  if (value === null || value === undefined || value === '') return false;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0;
+};
+
+/**
+ * Enrichment fields a transaction in a mandatory-enrichment category is missing
+ * (empty for any other category). Applies to buys and sells. Mirrors
+ * `missingInvestmentFields` in apps/api/utils/investmentEnrichment.js: the ticker
+ * needs a letter; price and quantity (by magnitude, for signed sells) must be > 0.
+ */
+export function getMissingInvestmentFields(
+  category: Category | null | undefined,
+  values: { ticker?: string | null; assetQuantity?: number | string | null; assetPrice?: number | string | null },
+): Array<'ticker' | 'assetPrice' | 'assetQuantity'> {
+  if (!isMandatoryEnrichmentCategory(category)) return [];
+  const missing: Array<'ticker' | 'assetPrice' | 'assetQuantity'> = [];
+  if (!values.ticker || !/[a-zA-Z]/.test(values.ticker)) missing.push('ticker');
+  if (!isPositiveNumber(values.assetPrice)) missing.push('assetPrice');
+  const qty = values.assetQuantity;
+  if (!isPositiveNumber(qty === null || qty === undefined || qty === '' ? qty : Math.abs(Number(qty)))) {
+    missing.push('assetQuantity');
+  }
+  return missing;
+}
+
 /**
  * True when the category is any investment type (mandatory or optional enrichment).
  */
