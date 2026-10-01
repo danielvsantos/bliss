@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 vi.mock('../../../utils/rateLimit.js', () => ({
@@ -58,8 +58,8 @@ const { mockPrisma } = vi.hoisted(() => ({
       delete: vi.fn(),
       createMany: vi.fn(),
     },
-    category: { findUnique: vi.fn() },
-    account: { findUnique: vi.fn() },
+    category: { findUnique: vi.fn(), findFirst: vi.fn() },
+    account: { findUnique: vi.fn(), findFirst: vi.fn() },
     tag: { findFirst: vi.fn(), create: vi.fn() },
     transactionTag: { deleteMany: vi.fn() },
     transactionEmbedding: { updateMany: vi.fn() },
@@ -273,6 +273,75 @@ describe('GET /api/transactions — list', () => {
   });
 });
 
+describe('GET /api/transactions — stable ordering (#91)', () => {
+  afterEach(() => {
+    mockPrisma.transaction.findMany.mockReset();
+    mockPrisma.transaction.count.mockReset();
+    mockPrisma.transaction.aggregate.mockReset();
+  });
+
+  it.each([
+    ['transaction_date', 'desc', { transaction_date: 'desc' }],
+    ['transaction_date', 'asc', { transaction_date: 'asc' }],
+    ['currency', 'asc', { currency: 'asc' }],
+    ['credit', 'desc', { credit: { sort: 'desc', nulls: 'last' } }],
+    ['debit', 'asc', { debit: { sort: 'asc', nulls: 'last' } }],
+  ])('sortBy=%s sortOrder=%s orders by the field then id', async (sortBy, sortOrder, primary) => {
+    mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
+    mockPrisma.transaction.count.mockResolvedValueOnce(0);
+    mockPrisma.transaction.aggregate.mockResolvedValueOnce({ _sum: { credit: null, debit: null } });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'GET', query: { sortBy, sortOrder } }), res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.transaction.findMany.mock.calls[0][0].orderBy).toEqual([primary, { id: sortOrder }]);
+  });
+
+  it('pages through 30 same-day transactions with no repeats or gaps', async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({
+      id: i + 1,
+      transaction_date: new Date('2025-06-15T00:00:00Z'),
+      credit: null,
+      debit: 10,
+      currency: 'USD',
+      tags: [],
+    }));
+    // Mimic Postgres: rows that tie on every ORDER BY key come back in arbitrary order.
+    mockPrisma.transaction.findMany.mockImplementation(async ({ orderBy, skip, take }: any) => {
+      const keys = (Array.isArray(orderBy) ? orderBy : [orderBy]).map((o: any) => {
+        const [field, spec] = Object.entries(o)[0] as [string, any];
+        return { field, dir: typeof spec === 'string' ? spec : spec.sort };
+      });
+      const shuffled = [...rows].sort(() => Math.random() - 0.5);
+      shuffled.sort((a: any, b: any) => {
+        for (const { field, dir } of keys) {
+          const av = +a[field];
+          const bv = +b[field];
+          if (av !== bv) return dir === 'asc' ? av - bv : bv - av;
+        }
+        return 0;
+      });
+      return shuffled.slice(skip, skip + take);
+    });
+    mockPrisma.transaction.count.mockResolvedValue(rows.length);
+    mockPrisma.transaction.aggregate.mockResolvedValue({ _sum: { credit: null, debit: 300 } });
+
+    const seen: number[] = [];
+    for (const page of ['1', '2', '3']) {
+      const res = makeRes();
+      await handler(makeReq({ method: 'GET', query: { page, limit: '10' } }), res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      expect(res._body.transactions).toHaveLength(10);
+      seen.push(...res._body.transactions.map((t: any) => t.id));
+    }
+
+    expect(seen).toHaveLength(30);
+    expect(new Set(seen).size).toBe(30);
+    expect([...seen].sort((a, b) => a - b)).toEqual(rows.map((r) => r.id));
+  });
+});
+
 describe('POST /api/transactions', () => {
   it('returns 400 for invalid transaction_date', async () => {
     const req = makeReq({
@@ -303,8 +372,8 @@ describe('POST /api/transactions', () => {
       currency: 'USD',
     };
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.transaction.create.mockResolvedValueOnce(createdTx);
 
     const req = makeReq({
@@ -338,8 +407,8 @@ describe('POST /api/transactions', () => {
   it('returns 201 and auto-creates tags that do not exist', async () => {
     const newTag = { id: 5, name: 'NewTag', color: '#aaaaaa', tenantId: 'test-tenant-123' };
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
-    mockPrisma.account.findUnique.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ id: 1, name: 'Food', type: 'Expense' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
     mockPrisma.tag.findFirst.mockResolvedValueOnce(null);
     mockPrisma.tag.create.mockResolvedValueOnce(newTag);
 
@@ -484,12 +553,13 @@ describe('PUT /api/transactions', () => {
     };
     mockPrisma.transaction.findUnique.mockResolvedValueOnce(existing);
 
-    mockPrisma.category.findUnique.mockResolvedValueOnce({
+    mockPrisma.category.findFirst.mockResolvedValueOnce({
       id: 1,
       name: 'Food',
       type: 'Expense',
       portfolioItemKeyStrategy: 'IGNORE',
     });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, name: 'Checking', countryId: 'US' });
 
     const updatedTx = {
       id: 1,
@@ -529,6 +599,126 @@ describe('PUT /api/transactions', () => {
       { id: 1, name: 'Lunch', color: '#ff0000', emoji: null },
     ]);
     expect(mockPrisma.transaction.update).toHaveBeenCalled();
+  });
+});
+
+// Stocks, ETFs/funds and crypto are priced from market data: a buy or sell
+// without ticker, quantity and price was saved and then counted as 1 unit.
+describe('POST/PUT /api/transactions — mandatory investment enrichment', () => {
+  const etf = { id: 20, name: 'ETFs', type: 'Investments', processingHint: 'API_FUND', portfolioItemKeyStrategy: 'TICKER' };
+  const base = { transaction_date: '2026-08-04', categoryId: 20, accountId: 1, description: 'VWCE buy', currency: 'EUR' };
+
+  const post = async (body: Record<string, unknown>) => {
+    const res = makeRes();
+    await handler(makeReq({ method: 'POST', body }) as NextApiRequest, res as unknown as NextApiResponse);
+    return res;
+  };
+
+  it.each([
+    ['API_STOCK'], ['API_FUND'], ['API_CRYPTO'],
+  ])('POST rejects a %s buy with a ticker but no price or quantity', async (hint) => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ ...etf, processingHint: hint });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, debit: 100, ticker: 'VWCE' });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['assetQuantity', 'assetPrice']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+    expect(mockPrisma.portfolioItem.upsert).not.toHaveBeenCalled();
+  });
+
+  it('POST rejects a sell with zero quantity and no price (ticker optional for ETF/fund)', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, credit: 100, assetQuantity: 0 });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['assetQuantity', 'assetPrice']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+  });
+
+  // Private / unlisted funds have no ticker: quantity + price are enough.
+  it('POST accepts a ticker-less fund buy with quantity and price', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 9 });
+    mockPrisma.transaction.create.mockResolvedValueOnce({ id: 13, portfolioItemId: 9 });
+
+    const res = await post({ ...base, debit: 1000, description: 'CDB PLUS FIRF', assetQuantity: 10, assetPrice: 100 });
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.transaction.create).toHaveBeenCalled();
+  });
+
+  it('POST accepts an ETF sell with ticker, a signed quantity and price', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 7 });
+    mockPrisma.transaction.create.mockResolvedValueOnce({ id: 11, portfolioItemId: 7 });
+
+    const res = await post({ ...base, credit: 100, ticker: 'VWCE', assetQuantity: -1, assetPrice: 100 });
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.transaction.create).toHaveBeenCalled();
+  });
+
+  it('POST still accepts a manually valued investment without enrichment', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({
+      id: 21, name: 'Real Estate', type: 'Investments', processingHint: 'MANUAL',
+      portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION',
+    });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 8 });
+    mockPrisma.transaction.create.mockResolvedValueOnce({ id: 12, portfolioItemId: 8 });
+
+    const res = await post({ ...base, categoryId: 21, description: 'Flat', debit: 200000 });
+
+    expect(res._status).toBe(201);
+  });
+
+  it('PUT rejects re-categorising into an ETF category without enrichment', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValueOnce({
+      id: 1, tenantId: 'test-tenant-123', categoryId: 1, portfolioItemId: null,
+      account: { countryId: 'PT' }, category: { type: 'Expense', group: 'Food' }, tags: [],
+    });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'PUT', query: { id: '1' }, body: { ...base, debit: 100, ticker: 'VWCE' } }) as NextApiRequest,
+      res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['assetQuantity', 'assetPrice']);
+    expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
+  });
+
+  it('POST still requires a ticker for a stock', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ ...etf, name: 'Stocks', processingHint: 'API_STOCK' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, debit: 1000, assetQuantity: 10, assetPrice: 100 });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['ticker']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('PUT validation passes for a ticker-less fund that has quantity and price', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValueOnce({
+      id: 1, tenantId: 'test-tenant-123', categoryId: 20, portfolioItemId: null,
+      account: { countryId: 'PT' }, category: { type: 'Investments', group: 'Funds' }, tags: [],
+    });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'PUT', query: { id: '1' }, body: { ...base, description: 'CDB PLUS FIRF (renamed)', debit: 1000, assetQuantity: 10, assetPrice: 100 } }) as NextApiRequest,
+      res as unknown as NextApiResponse);
+
+    expect(res._body?.missingFields).toBeUndefined();
   });
 });
 

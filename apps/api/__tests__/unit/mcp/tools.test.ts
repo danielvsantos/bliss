@@ -489,15 +489,34 @@ describe('portfolio tools', () => {
     const ac = await run('set_asset_class', { assetId: 7, assetClass: null }, { 'PUT /api/portfolio/items/7/asset-class': { assetClass: 'STOCK', updatedCount: 1 } });
     expect(ac.calls[0].body).toEqual({ assetClass: null, applyToSymbol: false });
     const routes = {
-      'POST /api/portfolio/items/7/manual-values': ({ body }: any) => ({ id: 'v1', ...body }),
-      'PUT /api/portfolio/items/7/manual-values/v1': ({ body }: any) => ({ id: 'v1', date: '2026-01-01', value: body.value, currency: body.currency ?? 'EUR' }),
+      'POST /api/portfolio/items/7/manual-values': ({ body }: any) => ({ id: 'v1', ...body, asset: { quantity: '553.5' } }),
+      'PUT /api/portfolio/items/7/manual-values/v1': ({ body }: any) => ({ id: 'v1', date: '2026-01-01', value: body.value, currency: body.currency ?? 'EUR', asset: { quantity: '2' } }),
       'DELETE /api/portfolio/items/7/manual-values/v1': null,
     };
-    expect((await run('manage_manual_values', { assetId: 7, action: 'add', date: '2026-01-01', value: 10, currency: 'EUR' }, routes)).result).toEqual({ added: { valueId: 'v1', date: '2026-01-01', value: { value: 10, currency: 'EUR' } } });
-    expect((await run('manage_manual_values', { assetId: 7, action: 'update', valueId: 'v1', value: 11 }, routes)).result.updated.value).toEqual({ value: 11, currency: 'EUR' });
+    expect((await run('manage_manual_values', { assetId: 7, action: 'add', date: '2026-01-01', value: 10, currency: 'EUR' }, routes)).result).toEqual({
+      added: { valueId: 'v1', date: '2026-01-01', value: { value: 10, currency: 'EUR' }, currentQuantity: 553.5, impliedMarketValue: { value: 5535, currency: 'EUR' } },
+    });
+    const updated = (await run('manage_manual_values', { assetId: 7, action: 'update', valueId: 'v1', value: 11 }, routes)).result.updated;
+    expect(updated.value).toEqual({ value: 11, currency: 'EUR' });
+    expect(updated.impliedMarketValue).toEqual({ value: 22, currency: 'EUR' });
     expect((await run('manage_manual_values', { assetId: 7, action: 'delete', valueId: 'v1' }, routes)).result).toEqual({ deleted: 'v1' });
     await expect(run('manage_manual_values', { assetId: 7, action: 'add', date: '2026-01-01' }, routes)).rejects.toThrow(/add requires/);
     await expect(run('manage_manual_values', { assetId: 7, action: 'delete' }, routes)).rejects.toThrow(/valueId/);
+  });
+
+  it('manage_manual_values documents value as a per-unit price, never a position total', () => {
+    const tool = getTool('manage_manual_values')!;
+    const valueDoc = (tool.input as any).value.description as string;
+    expect(valueDoc).toMatch(/per unit/i);
+    expect(valueDoc).not.toMatch(/^total value/i);
+    expect(tool.description).toMatch(/PRICE PER UNIT/);
+  });
+
+  it('manage_manual_values leaves impliedMarketValue null when the quantity is unknown', async () => {
+    const { result } = await run('manage_manual_values', { assetId: 7, action: 'add', date: '2026-01-01', value: 10, currency: 'EUR' }, {
+      'POST /api/portfolio/items/7/manual-values': ({ body }: any) => ({ id: 'v1', ...body }),
+    });
+    expect(result.added).toMatchObject({ currentQuantity: null, impliedMarketValue: null });
   });
 
   it('manage_income_and_debt_terms routes each action', async () => {

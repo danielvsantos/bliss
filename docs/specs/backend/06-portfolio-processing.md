@@ -45,6 +45,8 @@ Triggered by a manual transaction change (e.g., `MANUAL_TRANSACTION_MODIFIED` ev
 3.  **`scoped-update-analytics`**: Recalculates analytics
 4.  **`value-portfolio-items`**: Updates valuations
 
+**Deleting an Investment/Debt transaction (#94):** the event carries `isDeletion: true`, so the scheduler enqueues `process-portfolio-changes` with `deletedTransaction` (the row no longer exists). `handleDeletion` recalculates the item from its remaining transactions (quantity, FIFO lots, MANUAL auto-seeded prices) or prunes it when empty (income terms detached — see `22-passive-income.md`), then emits `PORTFOLIO_CHANGES_PROCESSED` with the deleted row's date scope, so steps 2–4 run as for an edit. Before #94 a delete only re-ran valuation (`recalculate-portfolio-items`): quantity stayed stale, emptied items lingered and cash/analytics never ran.
+
 **For Simple Transactions (Expenses, Income, etc.):**
 1.  **`process-cash-holdings`**: Direct cash processing (scoped)
 2.  **`scoped-update-analytics`**: Recalculates analytics
@@ -358,7 +360,7 @@ The `holdings-calculator.js` infers the transaction type from its financial prop
 
 ## 6.5. Recalculate Portfolio Items (`recalculate-portfolio-items`)
 
-This job is dispatched by the `eventSchedulerWorker` when individual portfolio items need recalculation (e.g., after a manual transaction modification). It groups the provided `portfolioItemIds` by their processing type and dispatches them to the correct processors:
+This job is dispatched by the `eventSchedulerWorker` when individual portfolio items need revaluing (`MANUAL_PORTFOLIO_PRICE_UPDATED`). It only runs valuation — it never recomputes quantity/lots from transactions — so transaction deletes no longer use it (#94, see *Scoped Update*). It groups the provided `portfolioItemIds` by their processing type and dispatches them to the correct processors:
 
 - **Investments** (default): sent to `generatePortfolioValuation`.
 - **Simple Liabilities** (`processingHint === 'SIMPLE_LIABILITY'`): sent to `simpleLiabilityProcessor`.

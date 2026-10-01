@@ -303,7 +303,7 @@ const getHoldingDetails = defineTool({
   title: 'Get holding details',
   description:
     'Everything about one holding: asset class (and whether it is overridden), income terms (dividends, '
-    + 'coupons, rent, interest), debt terms (loans) and the most recent manual valuations.',
+    + 'coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices).',
   input: {
     assetId,
     manualValuesLimit: z.number().int().min(0).max(100).optional().describe('Most recent manual values (default 20).'),
@@ -372,6 +372,19 @@ const setAssetClass = defineTool({
   },
 });
 
+/** A written manual value plus the total it implies at the holding's current quantity. */
+function shapeManualValue(v) {
+  const quantity = num(v.asset?.quantity);
+  const price = num(v.value);
+  return {
+    valueId: v.id,
+    date: isoDate(v.date),
+    value: money(v.value, v.currency),
+    currentQuantity: quantity,
+    impliedMarketValue: quantity == null || price == null ? null : money(price * quantity, v.currency),
+  };
+}
+
 const manageManualValues = defineTool({
   name: 'manage_manual_values',
   access: 'write',
@@ -379,14 +392,17 @@ const manageManualValues = defineTool({
   title: 'Add, update or delete a manual valuation',
   description:
     'Manual valuations price holdings without market data (property, private assets, cash-like accounts). '
+    + 'value is the PRICE PER UNIT, not the position total: market value = value × quantity. To enter a '
+    + 'statement total, divide it by the holding quantity first (get_portfolio_holdings). '
     + 'add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. '
+    + 'add/update return currentQuantity and impliedMarketValue so the result can be checked. '
     + 'Each change triggers a portfolio revaluation. valueId comes from get_holding_details.',
   input: {
     assetId,
     action: z.enum(['add', 'update', 'delete']),
     valueId: pathId().optional(),
     date: dateString('Valuation date').optional(),
-    value: z.number().optional().describe('Total value of the holding on that date.'),
+    value: z.number().optional().describe('Price per unit on that date (NOT the position total; market value = value × quantity).'),
     currency: currencyCode.optional(),
     notes: z.string().max(500).optional(),
   },
@@ -401,13 +417,13 @@ const manageManualValues = defineTool({
     if (args.action === 'add') {
       if (!args.date || args.value == null || !args.currency) throw new ToolInputError('add requires date, value and currency.');
       const v = await api.post(base, { date: args.date, value: args.value, currency: args.currency, notes: args.notes });
-      return { added: { valueId: v.id, date: isoDate(v.date), value: money(v.value, v.currency) } };
+      return { added: shapeManualValue(v) };
     }
     if (!args.valueId) throw new ToolInputError(`${args.action} requires valueId.`);
     const path = `${base}/${encodeURIComponent(args.valueId)}`;
     if (args.action === 'update') {
       const v = await api.put(path, { date: args.date, value: args.value, currency: args.currency, notes: args.notes });
-      return { updated: { valueId: v.id, date: isoDate(v.date), value: money(v.value, v.currency) } };
+      return { updated: shapeManualValue(v) };
     }
     await api.del(path);
     return { deleted: args.valueId };

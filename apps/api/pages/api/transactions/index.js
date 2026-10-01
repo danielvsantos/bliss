@@ -8,9 +8,32 @@ import { handleDebtRepayment } from '../../../services/transaction.service.js';
 import { produceEvent } from '../../../utils/produceEvent.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../utils/tagUtils.js';
+import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../utils/investmentEnrichment.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
+
+/**
+ * Loads the category and account referenced by a write, scoped to the caller's
+ * tenant (#90). The foreign keys only prove the rows exist, so an unscoped
+ * lookup would let tenant A attach a transaction (and a PortfolioItem) to
+ * tenant B's account or category. Returns `{ error }` when either ID is
+ * missing, malformed, or belongs to another tenant.
+ */
+async function findOwnedCategoryAndAccount(tenantId, rawCategoryId, rawAccountId) {
+  const categoryId = Number(rawCategoryId);
+  const accountId = Number(rawAccountId);
+  if (!Number.isInteger(categoryId) || !Number.isInteger(accountId)) {
+    return { error: 'categoryId and accountId must be integers.' };
+  }
+  const [category, account] = await Promise.all([
+    prisma.category.findFirst({ where: { id: categoryId, tenantId } }),
+    prisma.account.findFirst({ where: { id: accountId, tenantId } }),
+  ]);
+  if (!category) return { error: 'Category not found in this tenant.' };
+  if (!account) return { error: 'Account not found in this tenant.' };
+  return { category, account };
+}
 
 export default withAuth(async function handler(req, res) {
   // Apply rate limiting
@@ -185,10 +208,10 @@ async function handleGet(req, res) {
   const actualSortOrder = sortOrder === 'asc' ? 'asc' : 'desc';
 
   // Custom sorting for credit and debit fields
-  let orderBy;
+  let primaryOrder;
   if (actualSortField === 'credit') {
     // For credit: nulls last, then sort by value
-    orderBy = {
+    primaryOrder = {
       credit: {
         sort: actualSortOrder,
         nulls: 'last'
@@ -196,15 +219,19 @@ async function handleGet(req, res) {
     };
   } else if (actualSortField === 'debit') {
     // For debit: nulls last, then sort by value
-    orderBy = {
+    primaryOrder = {
       debit: {
         sort: actualSortOrder,
         nulls: 'last'
       }
     };
   } else {
-    orderBy = { [actualSortField]: actualSortOrder };
+    primaryOrder = { [actualSortField]: actualSortOrder };
   }
+  // `id` tiebreaker: Postgres gives no stable order among rows that tie on the
+  // sort field (e.g. same-day transactions), so skip/take pages could repeat or
+  // drop rows without it.
+  const orderBy = [primaryOrder, { id: actualSortOrder }];
 
   try {
     // Get filtered transactions with pagination and calculate totals
@@ -313,6 +340,21 @@ async function handlePost(req, res) {
     const day = date.getUTCDate();
     const quarter = `Q${Math.ceil(month / 3)}`;
 
+    // Validate ownership before any write (tags, PortfolioItem, DebtTerms).
+    const owned = await findOwnedCategoryAndAccount(tenantId, transactionData.categoryId, transactionData.accountId);
+    if (owned.error) {
+      return res.status(StatusCodes.BAD_REQUEST).json({ error: owned.error });
+    }
+    const { category, account } = owned;
+    transactionData.categoryId = category.id;
+    transactionData.accountId = account.id;
+
+    // Stock / ETF / crypto rows need ticker, quantity and price — before any write.
+    const missingEnrichment = missingInvestmentFields(category, transactionData);
+    if (missingEnrichment.length > 0) {
+      return res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(category, missingEnrichment));
+    }
+
     let tagConnections;
     let resolvedTagIds = [];
     if (tags && Array.isArray(tags)) {
@@ -327,12 +369,7 @@ async function handlePost(req, res) {
 
     // 1. Find or create the PortfolioItem
     let portfolioItem;
-    const [category, account] = await Promise.all([
-      prisma.category.findUnique({ where: { id: transactionData.categoryId } }),
-      prisma.account.findUnique({ where: { id: transactionData.accountId } })
-    ]);
-
-    if (category && (category.type === 'Investments' || category.type === 'Debt')) {
+    if (category.type === 'Investments' || category.type === 'Debt') {
       const { ticker, description, currency } = transactionData;
 
       // Generate symbol using the same logic as the backend's asset-aggregator.js
@@ -581,9 +618,20 @@ async function handlePut(req, res) {
 
     // 2. Find or create the PortfolioItem for the updated transaction
     let portfolioItem;
-    // We fetch the new category to determine if a portfolio item link is needed.
-    const newCategory = await prisma.category.findUnique({ where: { id: parseInt(categoryId, 10) } });
-    if (newCategory && (newCategory.type === 'Investments' || newCategory.type === 'Debt')) {
+    // The new category determines whether a portfolio item link is needed. Both
+    // it and the new account must belong to the caller's tenant (#90).
+    const owned = await findOwnedCategoryAndAccount(tenantId, categoryId, accountId);
+    if (owned.error) {
+      res.status(StatusCodes.BAD_REQUEST).json({ error: owned.error });
+      return;
+    }
+    const newCategory = owned.category;
+    const missingEnrichment = missingInvestmentFields(newCategory, { ticker, assetQuantity, assetPrice });
+    if (missingEnrichment.length > 0) {
+      res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(newCategory, missingEnrichment));
+      return;
+    }
+    if (newCategory.type === 'Investments' || newCategory.type === 'Debt') {
       // Generate symbol using the same logic as the backend's asset-aggregator.js
       let symbol;
       switch (newCategory.portfolioItemKeyStrategy) {
@@ -878,6 +926,8 @@ async function handleDelete(req, res) {
         transaction_date: existing.transaction_date,
         portfolioItemId: existing.portfolioItemId,
         isDeletion: true, // Add a flag to indicate deletion
+        // Identifies the deleted row's cash item (Cash <currency> per account) (#94).
+        accountId: existing.accountId,
         currency: existing.currency,
         country: existing.account?.countryId,
         categoryType: existing.category?.type,

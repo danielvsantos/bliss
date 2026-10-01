@@ -244,8 +244,5 @@ call check against any deployment.
 
 ## 24.11. Known limitations
 
-- `GET /api/transactions` orders by one field (date by default) with no
-  tiebreaker, so same-day rows have no stable order across pages; an agent paging
-  a busy day may see a row twice or miss one. Fix belongs in the REST route.
 - Tool names are not a stable contract (decided); the reference is regenerated
   from the registry.

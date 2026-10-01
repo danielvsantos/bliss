@@ -319,6 +319,56 @@ describe('eventSchedulerWorker — processEventJob', () => {
     );
   });
 
+  it('routes a deleted Investment transaction to the portfolio processor deletion path, not valuation-only (#94)', async () => {
+    const job = makeJob('MANUAL_TRANSACTION_MODIFIED', {
+      tenantId: 't1',
+      transactionId: 'tx1',
+      isDeletion: true,
+      portfolioItemId: 10,
+      accountId: 5,
+      categoryType: 'Investments',
+      categoryGroup: 'ETFs',
+      transaction_date: '2026-08-04T00:00:00.000Z',
+      currency: 'EUR',
+      country: 'PT',
+    });
+
+    await processEventJob(job);
+
+    expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-portfolio-changes', {
+      tenantId: 't1',
+      deletedTransaction: {
+        id: 'tx1',
+        portfolioItemId: 10,
+        accountId: 5,
+        transaction_date: '2026-08-04T00:00:00.000Z',
+        currency: 'EUR',
+        country: 'PT',
+        categoryType: 'Investments',
+        categoryGroup: 'ETFs',
+      },
+    });
+    expect(scheduleDebouncedJob).not.toHaveBeenCalledWith(
+      expect.anything(), 'recalculate-portfolio-items', expect.anything(),
+      expect.anything(), expect.anything(), expect.anything()
+    );
+  });
+
+  it('still cascades a deleted Debt transaction that had no portfolio item (#94)', async () => {
+    await processEventJob(makeJob('MANUAL_TRANSACTION_MODIFIED', {
+      tenantId: 't1',
+      transactionId: 'tx1',
+      isDeletion: true,
+      categoryType: 'Debt',
+      transaction_date: '2026-08-04',
+      currency: 'EUR',
+    }));
+
+    expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-portfolio-changes', expect.objectContaining({
+      deletedTransaction: expect.objectContaining({ id: 'tx1', portfolioItemId: null }),
+    }));
+  });
+
   it('routes simple transaction to cash processor', async () => {
     const job = makeJob('MANUAL_TRANSACTION_CREATED', {
       tenantId: 't1',

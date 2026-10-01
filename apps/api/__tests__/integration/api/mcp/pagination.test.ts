@@ -5,8 +5,8 @@
  * default page (50), hasMore + nextCursor, stays under the ~25k character
  * target, and following the cursor gives the next page with no overlap.
  *
- * Each row has its own date: GET /api/transactions orders by date only, so
- * same-day rows have no stable order across pages (a REST-side limitation).
+ * Dates repeat (7 rows per day), so the 50-row page boundary splits a day:
+ * no overlap relies on the route's `id` tiebreaker (#91).
  *
  * Rows are inserted with raw SQL and one shared ciphertext: every encrypted
  * field has its own PBKDF2-derived key, so 5,000 Prisma creates would take
@@ -53,7 +53,7 @@ beforeAll(async () => {
     INSERT INTO "Transaction" (transaction_date, year, quarter, month, day, "categoryId", description, currency, "accountId", "tenantId", debit, "updatedAt")
     SELECT d, extract(year FROM d)::int, 'Q' || extract(quarter FROM d)::int, extract(month FROM d)::int, extract(day FROM d)::int,
            ${category.id}, ${description}, 'USD', ${account.id}, ${tenant.tenantId}, 10 + (g % 100), now()
-    FROM generate_series(0, ${COUNT - 1}::int) AS g, LATERAL (SELECT (date '2025-12-31' - g) AS d) AS dates`;
+    FROM generate_series(0, ${COUNT - 1}::int) AS g, LATERAL (SELECT (date '2025-12-31' - (g / 7)) AS d) AS dates`;
   const key = (await createIntegrationKey(tenant, { accessLevel: 'READ_ONLY' })).token;
   client = await connectMcp(server.baseUrl, key);
 }, 120_000);

@@ -182,10 +182,12 @@ The endpoint returns a wrapped object: `{ portfolioCurrency: string, resolution:
 
 ### `POST /api/portfolio/items/{assetId}/manual-values`
 - **Responsibility**: Adds a new manual price point for a specific asset. Accepts `date`, `value`, `currency`, and optional `notes`.
+- **`value` is a per-unit price, never the position total.** The valuation engine (`strategies/MANUAL.js`) uses it as the price and multiplies by the holding's quantity, and auto-seeded rows store the buy price per unit. Submitting a statement total inflates market value by exactly `quantity`.
+- **Response**: the created row plus `asset: { quantity }` (the holding's current quantity), so a caller can check `value × quantity` against the total it expected. The MCP `manage_manual_values` tool surfaces this as `currentQuantity` / `impliedMarketValue`.
 - **Event Emission**: After successfully creating the `ManualAssetValue` record, it dispatches a `MANUAL_PORTFOLIO_PRICE_UPDATED` event to the backend. This event contains the `portfolioItemId`, which allows the `portfolioWorker` to efficiently target and recalculate only the affected item.
 
 ### `PUT /api/portfolio/items/{assetId}/manual-values/{valueId}`
-- **Responsibility**: Updates an existing manual price point. `{valueId}` is the row's **cuid string** (not an integer). Any subset of `date`, `value`, `currency`, `notes` may be supplied.
+- **Responsibility**: Updates an existing manual price point. `{valueId}` is the row's **cuid string** (not an integer). Any subset of `date`, `value`, `currency`, `notes` may be supplied. `value` is a per-unit price; the response includes `asset: { quantity }` like `POST`.
 - **Event Emission**: Dispatches `MANUAL_PORTFOLIO_PRICE_UPDATED` after update.
 
 ### `DELETE /api/portfolio/items/{assetId}/manual-values/{valueId}`

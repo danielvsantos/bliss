@@ -2,6 +2,7 @@ const { Decimal } = require('decimal.js');
 const logger = require('../../utils/logger');
 const { enqueueEvent } = require('../../queues/eventsQueue');
 const { getOrCreateCurrencyRate } = require('../../services/currencyService');
+const { pruneItemsPreservingTerms } = require('./income-terms-preserver');
 
 const prisma = require('../../../prisma/prisma.js');
 
@@ -44,6 +45,7 @@ async function processCashHoldings(tenantId, scope = {}) {
             // Process all (currency, accountId) pairs — each account has its own cash balance.
             const allPairs = await getDistinctCurrencyAccountPairs(tenantId);
             logger.info(`[CashWorker] Processing ${allPairs.length} (currency, account) pairs.`);
+            await pruneEmptyCashItems(tenantId, allPairs);
 
             for (const { currency, accountId } of allPairs) {
                 await processCurrencyAccountHoldings(tenantId, currency, accountId, null);
@@ -54,6 +56,16 @@ async function processCashHoldings(tenantId, scope = {}) {
                 ? await getDistinctCurrencyAccountPairs(tenantId, scope.currency, scope.accountId)
                 : await getDistinctCurrencyAccountPairs(tenantId);
             logger.info(`[CashWorker] Scoped rebuild for ${targetPairs.length} (currency, account) pairs.`);
+
+            // Pairs whose last transaction was deleted never show up in targetPairs
+            // (built from transactions), so their holdings would linger (#94).
+            await pruneEmptyCashItems(tenantId, targetPairs, scope.currency, scope.accountId);
+
+            // The scope's period start. Holdings only exist on transaction dates, so
+            // rebuilding from here is always correct, and it covers a deleted (or
+            // re-dated) row that was the earliest in scope: starting at the oldest
+            // *remaining* transaction left its holdings in place (#94).
+            const periodStart = getScopePeriodStart(scope);
 
             for (const { currency, accountId } of targetPairs) {
                 // Find oldest transaction in the scope
@@ -84,8 +96,12 @@ async function processCashHoldings(tenantId, scope = {}) {
                     continue;
                 }
 
-                const rebuildStartDate = oldestInScope.transaction_date;
-                logger.info(`[CashWorker] Rebuilding ${currency} / account ${accountId} from ${rebuildStartDate.toISOString().split('T')[0]} to present`);
+                // No date bound → rebuild the whole pair (null = from the beginning).
+                const oldestDate = oldestInScope.transaction_date;
+                const rebuildStartDate = periodStart
+                    ? (periodStart < oldestDate ? periodStart : oldestDate)
+                    : null;
+                logger.info(`[CashWorker] Rebuilding ${currency} / account ${accountId} from ${rebuildStartDate ? rebuildStartDate.toISOString().split('T')[0] : 'the beginning'} to present`);
 
                 // Delete all holdings from rebuild start date onwards for this (currency, account) pair.
                 await deleteCashHoldingsFromDate(tenantId, currency, accountId, rebuildStartDate);
@@ -408,9 +424,49 @@ async function deleteCashHoldingsFromDate(tenantId, currency, accountId, fromDat
                 accountId,
                 category: { processingHint: 'CASH' }
             },
-            date: { gte: fromDate }
+            ...(fromDate && { date: { gte: fromDate } }),
         }
     });
+}
+
+/**
+ * Start of the scope's year (or month), or null when the scope has no date bound.
+ */
+function getScopePeriodStart(scope) {
+    if (scope.year && scope.month) return new Date(Date.UTC(scope.year, scope.month - 1, 1));
+    if (scope.year) return new Date(Date.UTC(scope.year, 0, 1));
+    return null;
+}
+
+/**
+ * Prune the cash items (optionally of one currency / account) whose (currency,
+ * account) pair has no transactions left, e.g. after its last transaction was
+ * deleted. Their holdings and value history cascade with the item, so the
+ * balance and the history series disappear. Interest IncomeTerms on the item
+ * are detached, never lost. Legacy cash items without an account are left alone.
+ *
+ * @param {Array<{currency, accountId}>} activePairs pairs that still have transactions
+ */
+async function pruneEmptyCashItems(tenantId, activePairs, currency = null, accountId = null) {
+    const cashItems = await prisma.portfolioItem.findMany({
+        where: {
+            tenantId,
+            category: { processingHint: 'CASH' },
+            accountId: accountId || { not: null },
+            ...(currency && { currency }),
+        },
+        select: { id: true, symbol: true, currency: true, accountId: true, categoryId: true },
+    });
+    const active = new Set(activePairs.map((p) => `${p.currency}::${p.accountId}`));
+    const empty = cashItems.filter((item) => !active.has(`${item.currency}::${item.accountId}`));
+    if (empty.length === 0) return 0;
+
+    logger.info(`[CashWorker] Pruning ${empty.length} cash items with no transactions left.`, {
+        tenantId,
+        items: empty.map((i) => `${i.symbol} / account ${i.accountId}`),
+    });
+    await pruneItemsPreservingTerms(prisma, empty, []);
+    return empty.length;
 }
 
 /**

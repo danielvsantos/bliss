@@ -102,6 +102,8 @@ async function handlePost(req, res) {
           currency,
           notes,
         },
+        // `value` is a per-unit price; the current quantity lets callers check the implied total.
+        include: { asset: { select: { quantity: true } } },
       });
 
       return newValue;

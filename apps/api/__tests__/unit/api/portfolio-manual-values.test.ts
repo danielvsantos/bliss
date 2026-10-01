@@ -163,6 +163,10 @@ describe('/api/portfolio/items/[assetId]/manual-values', () => {
 
       expect(res._status).toBe(201);
       expect(res._body).toEqual(createdValue);
+      // value is a per-unit price: the response carries the quantity so callers can check the total.
+      expect(mockPrisma.manualAssetValue.create).toHaveBeenCalledWith(expect.objectContaining({
+        include: { asset: { select: { quantity: true } } },
+      }));
       expect(mockProduceEvent).toHaveBeenCalledWith({
         type: 'MANUAL_PORTFOLIO_PRICE_UPDATED',
         portfolioItemId: 42,

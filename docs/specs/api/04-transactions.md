@@ -19,11 +19,23 @@ A key design principle of the transaction management system is that the backend 
 -   **`PUT /api/transactions?id={transactionId}`**: Manages the updating of existing transactions. Similar to the `POST` endpoint, it will intelligently update any associated `PortfolioItem` links if the transaction's category or other key details are changed.
 -   **`DELETE /api/transactions?id={transactionId}`**: Handles the deletion of transactions. To ensure data integrity, it also removes any associated `TransactionTag` entries.
 
+### Mandatory Investment Enrichment
+
+`POST` and `PUT` reject with `400` (`{ error, missingFields }`) a transaction whose category is `type = 'Investments'` with `processingHint` `API_STOCK`, `API_FUND` (ETFs and funds) or `API_CRYPTO` unless it carries:
+- an `assetQuantity` whose magnitude is greater than 0 (a sell may send it signed)
+- an `assetPrice` greater than 0
+- for `API_STOCK` and `API_CRYPTO` only, a `ticker` containing at least one letter.
+
+This applies to buys and sells alike. Without a quantity, the portfolio engine counts a buy as 1 unit worth the whole amount. Without a ticker, a stock or crypto holding can't be market-priced. For `API_FUND` the ticker is optional because private / unlisted funds have none: the holding is keyed `<category>:<description>`, created with `source: MANUAL`, priced from manual values and never sent to Twelve Data. `MANUAL` investments (e.g. real estate) stay optional.
+
+The check is `missingInvestmentFields` in `apps/api/utils/investmentEnrichment.js`. Its hint list and ticker rule (`requiresTicker`) come from `@bliss/shared/portfolio` (`enrichment.js`), shared with the Plaid and Smart Import review gates; the web form mirrors it with `getMissingInvestmentFields` (`apps/web/src/lib/investment-utils.ts`).
+
 ### Security & Encryption
 - **Encryption at Rest**: Two fields on the `Transaction` model are encrypted at rest in the database using AES-256-GCM:
     - `description` (non-searchable)
     - `details` (non-searchable)
 - This encryption is handled transparently by a Prisma middleware. Because these fields use non-searchable encryption (with a random salt for each entry), they cannot be used in `WHERE` clauses for filtering. All data is automatically decrypted upon being read from the database.
+- **Tenant ownership of foreign keys (#90)**: `POST` and `PUT` load the body's `categoryId` and `accountId` with `findFirst({ where: { id, tenantId } })` before any write. A missing, non-integer or other-tenant ID returns `400` and writes nothing (no Transaction, PortfolioItem, DebtTerms or tag). The foreign keys alone only prove the rows exist, so this check is what prevents a session or Read & write integration token from attaching a transaction to another tenant's account or category.
 
 ### Debt Terms Support
 

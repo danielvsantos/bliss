@@ -138,7 +138,8 @@ value-all-assets (reads cash holdings)
 ### 7.5.2. Smart Deletion
 
 - **Full Rebuild**: Deletes all cash holdings upfront
-- **Scoped Rebuild**: Deletes only holdings from rebuild start date forward
+- **Scoped Rebuild**: Deletes only holdings from rebuild start date forward. The start date is the **earlier** of the scope's period start (Jan 1 of `year`, or the 1st of `month`) and the pair's oldest transaction in scope. Holdings exist only on transaction dates, so starting at the period start is always correct; starting at the oldest *remaining* transaction left a deleted (or re-dated) earliest row's holdings and balance in place (#94). A scope with no `year` rebuilds the whole pair.
+- **Emptied pairs**: `getDistinctCurrencyAccountPairs` is built from transactions, so a (currency, account) pair whose last transaction was deleted is never visited. Both full and scoped runs therefore prune the cash `PortfolioItem`s in scope (same `currency` / `accountId` filter; legacy items without an account are skipped) whose pair has no transactions left, via `pruneItemsPreservingTerms` (interest `IncomeTerms` detached). Holdings and value history cascade, so the balance and the history series disappear (#94).
 - **Targeted Scope**: Can target specific currencies/years for surgical updates
 
 ### 7.5.3. Memory Management
