@@ -742,6 +742,36 @@ describe('securityMasterService', () => {
     });
   });
 
+  // Ticker-less holdings (e.g. private / unlisted funds) are keyed
+  // "<category>:<description>" and created with source MANUAL — that key is not
+  // a Twelve Data symbol, so no refresh path may send it.
+  describe('MANUAL-source (ticker-less) holdings', () => {
+    const items = [
+      { symbol: 'VWCE', exchange: 'XETR', source: 'SYNCED', category: { processingHint: 'API_FUND' } },
+      { symbol: 'Funds:CDB PLUS FIRF', exchange: null, source: 'MANUAL', category: { processingHint: 'API_FUND' } },
+      { symbol: 'Stocks:Private Co', exchange: null, source: 'MANUAL', category: { processingHint: 'API_STOCK' } },
+    ];
+
+    it('nightly refresh: skips them and never looks them up in SecurityMaster', async () => {
+      prisma.portfolioItem.findMany.mockResolvedValue(items);
+      prisma.securityMaster.findMany.mockResolvedValue([]);
+
+      const result = await getAllActiveSecuritySymbols();
+
+      expect(prisma.portfolioItem.findMany.mock.calls[0][0].select).toMatchObject({ source: true });
+      expect(result).toEqual([{ symbol: 'VWCE', exchange: 'XETR' }]);
+      expect(prisma.securityMaster.findMany.mock.calls[0][0].where.symbol.in).toEqual(['VWCE']);
+    });
+
+    it('tenant refresh (scan, Maintenance, rebuild): skips them too', async () => {
+      prisma.portfolioItem.findMany.mockResolvedValue(items);
+
+      const result = await getTenantSecuritySymbols('t1', { force: true });
+
+      expect(result.map((r) => r.symbol)).toEqual(['VWCE']);
+    });
+  });
+
   describe('getTenantSecuritySymbols', () => {
     const items = [
       { symbol: 'KO', exchange: 'XNYS', category: { processingHint: 'API_STOCK' } },

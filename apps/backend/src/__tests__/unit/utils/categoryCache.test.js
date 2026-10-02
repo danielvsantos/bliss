@@ -60,6 +60,7 @@ describe('categoryCache', () => {
           group: true,
           type: true,
           processingHint: true,
+          defaultCategoryCode: true,
         },
       });
       expect(result).toEqual(mockCategories);

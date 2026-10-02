@@ -83,6 +83,49 @@ describe('PUT /api/imports/[id]/rows/[rowId]', () => {
     expect(res._status).toBe(200);
   });
 
+  // Private / unlisted funds have no ticker: quantity + price must clear the flag.
+  describe('investment enrichment', () => {
+    const funds = { id: 30, type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' };
+    const etfs = { id: 32, type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' };
+    const stocks = { id: 31, type: 'Investments', processingHint: 'API_STOCK' };
+    const flagged = { ...baseRow, requiresEnrichment: true, enrichmentType: 'INVESTMENT', ticker: null, assetQuantity: null, assetPrice: null };
+
+    async function put(row: any, category: any, body: any) {
+      mockPrisma.stagedImportRow.findUnique.mockResolvedValue(row);
+      mockPrisma.category.findFirst.mockResolvedValue(category);
+      mockPrisma.stagedImportRow.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
+      const res = makeRes();
+      await handler(makeReq({ query: { id: 'import-1', rowId: 'row-1' }, body }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      return mockPrisma.stagedImportRow.update.mock.calls.at(-1)![0].data;
+    }
+
+    it('clears the flag on a ticker-less fund row once quantity + price are entered', async () => {
+      const data = await put({ ...flagged, suggestedCategoryId: 30 }, funds, { assetQuantity: '10', assetPrice: '1000' });
+      expect(data.requiresEnrichment).toBe(false);
+    });
+
+    it('keeps the flag on a ticker-less ETF row (ETFs always need a ticker)', async () => {
+      const data = await put({ ...flagged, suggestedCategoryId: 32 }, etfs, { assetQuantity: '10', assetPrice: '100' });
+      expect(data).not.toHaveProperty('requiresEnrichment', false);
+    });
+
+    it('keeps the flag on a ticker-less stock row', async () => {
+      const data = await put({ ...flagged, suggestedCategoryId: 31 }, stocks, { assetQuantity: '10', assetPrice: '50' });
+      expect(data).not.toHaveProperty('requiresEnrichment', false);
+    });
+
+    it('re-categorising into Funds with quantity + price and no ticker needs no enrichment', async () => {
+      const data = await put({ ...baseRow, suggestedCategoryId: 5 }, funds, { suggestedCategoryId: 30, assetQuantity: 10, assetPrice: 1000 });
+      expect(data.requiresEnrichment).toBe(false);
+    });
+
+    it('re-categorising into Stocks without a ticker flags the row', async () => {
+      const data = await put({ ...baseRow, suggestedCategoryId: 5 }, stocks, { suggestedCategoryId: 31, assetQuantity: 10, assetPrice: 50 });
+      expect(data).toMatchObject({ requiresEnrichment: true, enrichmentType: 'INVESTMENT' });
+    });
+  });
+
   it('returns 404 when row not found', async () => {
     mockPrisma.stagedImportRow.findUnique.mockResolvedValue(null);
 

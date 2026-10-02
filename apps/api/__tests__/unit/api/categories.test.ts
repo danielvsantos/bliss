@@ -200,6 +200,31 @@ describe('POST /api/categories', () => {
     expect(res._status).toBe(201);
   });
 
+  it.each([
+    ['Investments', { processingHint: 'MANUAL', portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION' }],
+    ['Debt', { processingHint: 'SIMPLE_LIABILITY', portfolioItemKeyStrategy: 'CATEGORY_NAME' }],
+    ['Essentials', { processingHint: null, portfolioItemKeyStrategy: 'IGNORE' }],
+  ])('derives the system fields of a new %s category from its type', async (type, fields) => {
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      mockPrisma.category.create.mockResolvedValue({ id: 11, type });
+      return fn(mockPrisma);
+    });
+
+    const req = makeReq({
+      method: 'POST',
+      // A user-supplied hint is ignored: the type decides.
+      body: { name: 'COE', group: 'Structured Notes', type, processingHint: 'API_STOCK' },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.category.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type, ...fields }),
+    });
+  });
+
   it('returns 400 when required fields are missing', async () => {
     const req = makeReq({ method: 'POST', body: { name: 'Partial' } });
     const res = makeRes();
@@ -264,6 +289,47 @@ describe('PUT /api/categories', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(200);
+  });
+
+  describe('type change re-derives system fields of custom categories', () => {
+    async function put(existing: any, body: any) {
+      mockPrisma.category.findUnique.mockResolvedValue(existing);
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+        mockPrisma.category.update.mockResolvedValue({ ...existing, ...body });
+        return fn(mockPrisma);
+      });
+      const res = makeRes();
+      await handler(makeReq({ method: 'PUT', query: { id: '3' }, body }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      return mockPrisma.category.update.mock.calls.at(-1)![0].data;
+    }
+    const custom = { id: 3, tenantId: 'tenant-abc', defaultCategoryCode: null };
+
+    it('Lifestyle → Investments becomes a manually priced holding', async () => {
+      const data = await put({ ...custom, type: 'Lifestyle', processingHint: null, portfolioItemKeyStrategy: 'IGNORE' }, { type: 'Investments' });
+      expect(data).toMatchObject({ processingHint: 'MANUAL', portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION' });
+    });
+
+    it('Investments → Lifestyle stops tracking a holding', async () => {
+      const data = await put({ ...custom, type: 'Investments', processingHint: 'MANUAL', portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION' }, { type: 'Lifestyle' });
+      expect(data).toMatchObject({ processingHint: null, portfolioItemKeyStrategy: 'IGNORE' });
+    });
+
+    it('Investments → Debt becomes a simple liability', async () => {
+      const data = await put({ ...custom, type: 'Investments', processingHint: 'MANUAL', portfolioItemKeyStrategy: 'CATEGORY_NAME_PLUS_DESCRIPTION' }, { type: 'Debt' });
+      expect(data).toMatchObject({ processingHint: 'SIMPLE_LIABILITY', portfolioItemKeyStrategy: 'CATEGORY_NAME' });
+    });
+
+    it('never touches a built-in category', async () => {
+      const data = await put({ id: 3, tenantId: 'tenant-abc', defaultCategoryCode: 'STOCKS', type: 'Investments', processingHint: 'API_STOCK', portfolioItemKeyStrategy: 'TICKER' }, { type: 'Lifestyle' });
+      expect(data).not.toHaveProperty('processingHint');
+      expect(data).not.toHaveProperty('portfolioItemKeyStrategy');
+    });
+
+    it('leaves fields alone when the type does not change', async () => {
+      const data = await put({ ...custom, type: 'Investments', processingHint: null, portfolioItemKeyStrategy: 'IGNORE' }, { name: 'Renamed', type: 'Investments' });
+      expect(data).not.toHaveProperty('processingHint');
+    });
   });
 
   it('returns 400 for invalid id', async () => {
@@ -468,6 +534,24 @@ describe('DELETE /api/categories', () => {
     expect(mockProduceEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'TRANSACTIONS_IMPORTED' })
     );
+  });
+
+  it('allows deleting the last custom Debt category of its group', async () => {
+    mockPrisma.category.findFirst.mockResolvedValue({
+      id: 5, name: 'Car Loan', tenantId: 'tenant-abc', processingHint: 'SIMPLE_LIABILITY', group: 'Car Loans', defaultCategoryCode: null,
+    });
+    mockPrisma.category.count.mockResolvedValue(0); // last one in group
+    mockPrisma.transaction.count.mockResolvedValue(0);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      mockPrisma.category.delete.mockResolvedValue({ id: 5 });
+      return fn(mockPrisma);
+    });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'DELETE', query: { id: '5' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.message).toMatch(/deleted successfully/i);
   });
 
   it('returns 400 when last system-critical category is deleted', async () => {

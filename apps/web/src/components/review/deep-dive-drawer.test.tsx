@@ -11,6 +11,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/hooks/use-tags');
+vi.mock('@/hooks/use-ticker-search', () => ({ useTickerSearch: () => ({ data: [] }) }));
 
 // TagInput's own internals (Radix Popover + cmdk) are exercised by manual
 // QA / the component's own usage on the Transactions page; here we stub it
@@ -257,5 +258,51 @@ describe('DeepDiveDrawer — FAILED classification', () => {
     renderDrawer({ item: PLAID_ITEM, onRetry: vi.fn() });
 
     expect(screen.queryByText('review.retryClassification')).not.toBeInTheDocument();
+  });
+});
+
+// Private / unlisted funds have no ticker: quantity + price must be enough to
+// save, while stocks keep requiring one.
+describe('DeepDiveDrawer — ticker-less funds', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(UseTags.useTags).mockReturnValue(mockQueryResult(TAGS));
+    vi.mocked(UseTags.useCreateTag).mockReturnValue(mockMutationResult({ mutateAsync: vi.fn() }));
+  });
+
+  const category = (id: number, processingHint: string, defaultCategoryCode: string | null = null) => ({
+    id, name: processingHint, group: processingHint, type: 'Investments', tenantId: 't', processingHint, defaultCategoryCode,
+  });
+  const fundRow = (categoryId: number): ReviewItem => ({
+    ...IMPORT_ITEM,
+    categoryId,
+    requiresEnrichment: true,
+    enrichmentType: 'INVESTMENT',
+    originalImportRow: { ...IMPORT_ITEM.originalImportRow!, tags: [], ticker: null, assetQuantity: 10, assetPrice: 1000 },
+  });
+  const saveButton = () => screen.getByRole('button', { name: 'review.saveAndPromote' });
+
+  it('enables save for a fund with quantity + price and no ticker, and marks the ticker optional', () => {
+    renderDrawer({ item: fundRow(30), categories: [category(30, 'API_FUND', 'INVESTMENT_FUNDS')] as never });
+
+    expect(saveButton()).not.toBeDisabled();
+    expect(screen.queryByText('review.investmentEnrichmentRequired')).not.toBeInTheDocument();
+    expect(screen.getByText(/review\.tickerOptional/)).toBeInTheDocument();
+  });
+
+  it('keeps save disabled for an ETF without a ticker (same API_FUND hint)', () => {
+    renderDrawer({ item: fundRow(32), categories: [category(32, 'API_FUND', 'ETFS')] as never });
+
+    expect(saveButton()).toBeDisabled();
+    expect(screen.getByText('review.investmentEnrichmentRequired')).toBeInTheDocument();
+    expect(screen.queryByText(/review\.tickerOptional/)).not.toBeInTheDocument();
+  });
+
+  it('keeps save disabled for a stock without a ticker', () => {
+    renderDrawer({ item: fundRow(31), categories: [category(31, 'API_STOCK')] as never });
+
+    expect(saveButton()).toBeDisabled();
+    expect(screen.getByText('review.investmentEnrichmentRequired')).toBeInTheDocument();
+    expect(screen.queryByText(/review\.tickerOptional/)).not.toBeInTheDocument();
   });
 });

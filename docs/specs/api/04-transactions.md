@@ -22,13 +22,13 @@ A key design principle of the transaction management system is that the backend 
 ### Mandatory Investment Enrichment
 
 `POST` and `PUT` reject with `400` (`{ error, missingFields }`) a transaction whose category is `type = 'Investments'` with `processingHint` `API_STOCK`, `API_FUND` (ETFs and funds) or `API_CRYPTO` unless it carries:
-- a `ticker` containing at least one letter
 - an `assetQuantity` whose magnitude is greater than 0 (a sell may send it signed)
-- an `assetPrice` greater than 0.
+- an `assetPrice` greater than 0
+- a `ticker` containing at least one letter, except in the built-in Funds category (`API_FUND` + `defaultCategoryCode = 'INVESTMENT_FUNDS'`).
 
-This applies to buys and sells alike. Without a quantity, the portfolio engine counts a buy as 1 unit worth the whole amount, and without a ticker the holding can't be market-priced. `MANUAL` investments (e.g. real estate) stay optional.
+This applies to buys and sells alike. Without a quantity, the portfolio engine counts a buy as 1 unit worth the whole amount. Without a ticker, the holding can't be market-priced. The Funds category is the one exemption because private / unlisted funds have no ticker: the holding is keyed `<category>:<description>`, created with `source: MANUAL`, priced from manual values and never sent to Twelve Data. ETFs share the `API_FUND` hint but always have a ticker, so the ETFs category stays strict: a ticker-less ETF would lose market pricing, dividends and look-through and split into a second holding. The exemption is strict by default: an `API_FUND` category without a code (created before codes existed) requires a ticker. `MANUAL` investments (e.g. real estate) stay optional.
 
-The check is `missingInvestmentFields` in `apps/api/utils/investmentEnrichment.js`. It uses the same category set as the Plaid and Smart Import review gates, and the web form mirrors it with `getMissingInvestmentFields` (`apps/web/src/lib/investment-utils.ts`).
+The check is `missingInvestmentFields` in `apps/api/utils/investmentEnrichment.js`. Its hint list and ticker rule (`requiresTicker`) come from `@bliss/shared/portfolio` (`enrichment.js`), shared with the Plaid and Smart Import review gates; the web form mirrors it with `getMissingInvestmentFields` (`apps/web/src/lib/investment-utils.ts`).
 
 ### Security & Encryption
 - **Encryption at Rest**: Two fields on the `Transaction` model are encrypted at rest in the database using AES-256-GCM:

@@ -120,7 +120,7 @@ async function getCategoryMaps() {
  * categorization service needs.
  *
  * @param {string} tenantId
- * @returns {Promise<Array<{id: number, name: string, group: string, type: string, processingHint: string|null}>>}
+ * @returns {Promise<Array<{id: number, name: string, group: string, type: string, processingHint: string|null, defaultCategoryCode: string|null}>>}
  */
 async function getCategoriesForTenant(tenantId) {
   const now = new Date();
@@ -139,6 +139,8 @@ async function getCategoriesForTenant(tenantId) {
         group: true,
         type: true,
         processingHint: true,
+        // Enrichment rule: only the built-in Funds category exempts the ticker.
+        defaultCategoryCode: true,
       },
     });
 

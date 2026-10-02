@@ -639,6 +639,33 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
     expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
   });
 
+  // Private / unlisted funds have no ticker: in the built-in Funds category,
+  // quantity + price are enough. ETFs (same API_FUND hint) stay strict.
+  const funds = { ...etf, name: 'Funds', defaultCategoryCode: 'INVESTMENT_FUNDS' };
+
+  it('POST rejects a ticker-less ETF even with quantity and price', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ ...etf, defaultCategoryCode: 'ETFS' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, debit: 1000, assetQuantity: 10, assetPrice: 100 });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['ticker']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('POST accepts a ticker-less fund buy with quantity and price in the Funds category', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce(funds);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+    mockPrisma.portfolioItem.upsert.mockResolvedValueOnce({ id: 9 });
+    mockPrisma.transaction.create.mockResolvedValueOnce({ id: 13, portfolioItemId: 9 });
+
+    const res = await post({ ...base, debit: 1000, description: 'CDB PLUS FIRF', assetQuantity: 10, assetPrice: 100 });
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.transaction.create).toHaveBeenCalled();
+  });
+
   it('POST accepts an ETF sell with ticker, a signed quantity and price', async () => {
     mockPrisma.category.findFirst.mockResolvedValueOnce(etf);
     mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
@@ -680,6 +707,32 @@ describe('POST/PUT /api/transactions — mandatory investment enrichment', () =>
     expect(res._status).toBe(400);
     expect(res._body.missingFields).toEqual(['assetQuantity', 'assetPrice']);
     expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
+  });
+
+  it('POST still requires a ticker for a stock', async () => {
+    mockPrisma.category.findFirst.mockResolvedValueOnce({ ...etf, name: 'Stocks', processingHint: 'API_STOCK' });
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = await post({ ...base, debit: 1000, assetQuantity: 10, assetPrice: 100 });
+
+    expect(res._status).toBe(400);
+    expect(res._body.missingFields).toEqual(['ticker']);
+    expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('PUT validation passes for a ticker-less fund that has quantity and price', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValueOnce({
+      id: 1, tenantId: 'test-tenant-123', categoryId: 20, portfolioItemId: null,
+      account: { countryId: 'PT' }, category: { type: 'Investments', group: 'Funds' }, tags: [],
+    });
+    mockPrisma.category.findFirst.mockResolvedValueOnce(funds);
+    mockPrisma.account.findFirst.mockResolvedValueOnce({ id: 1, countryId: 'PT' });
+
+    const res = makeRes();
+    await handler(makeReq({ method: 'PUT', query: { id: '1' }, body: { ...base, description: 'CDB PLUS FIRF (renamed)', debit: 1000, assetQuantity: 10, assetPrice: 100 } }) as NextApiRequest,
+      res as unknown as NextApiResponse);
+
+    expect(res._body?.missingFields).toBeUndefined();
   });
 });
 

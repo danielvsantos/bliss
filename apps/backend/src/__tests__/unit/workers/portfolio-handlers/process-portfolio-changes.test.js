@@ -415,6 +415,60 @@ describe('process-portfolio-changes — income terms & new security symbols', ()
       newSecuritySymbols: ['KO'],
     }));
   });
+
+  // A ticker-less fund is keyed "<category>:<description>" (TICKER fallback) and
+  // priced from manual values — its key must never reach the Twelve Data refresh.
+  describe('ticker-less funds', () => {
+    const { generateAssetKey } = require('../../../../workers/portfolio-handlers/asset-aggregator');
+    const fundCategory = { id: 40, type: 'Investments', group: 'Funds', processingHint: 'API_FUND' };
+    beforeEach(() => {
+      generateAssetKey.mockImplementation((tx) => tx.ticker || `Funds:${tx.description}`);
+    });
+    afterEach(() => {
+      generateAssetKey.mockImplementation((tx) => tx.ticker || null);
+    });
+
+    it('full rebuild: excludes a ticker-less fund from newSecuritySymbols', async () => {
+      prisma.transaction.findMany.mockResolvedValue([
+        bondTx({ id: 1, ticker: 'VWCE', category: fundCategory, categoryId: 40 }),
+        bondTx({ id: 2, ticker: null, description: 'CDB PLUS FIRF', category: fundCategory, categoryId: 40 }),
+      ]);
+      prisma.portfolioItem.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        { id: 10, symbol: 'VWCE', accountId: 5, categoryId: 40 },
+        { id: 11, symbol: 'Funds:CDB PLUS FIRF', accountId: 5, categoryId: 40 },
+      ]);
+
+      await processPortfolioChanges(makeJob());
+
+      const created = prisma.portfolioItem.createMany.mock.calls[0][0].data;
+      expect(created.find((d) => d.symbol === 'Funds:CDB PLUS FIRF')).toMatchObject({ source: 'MANUAL' });
+      const [, payload] = enqueueEvent.mock.calls[0];
+      expect(payload.newSecuritySymbols).toEqual(['VWCE']);
+    });
+
+    it('scoped update: a new ticker-less fund item emits no security symbol', async () => {
+      prisma.transaction.findUnique.mockResolvedValue({
+        id: 43, tenantId: 'tenant-1', categoryId: 40, accountId: 5, currency: 'BRL',
+        transaction_date: new Date('2026-03-01'), year: 2026, month: 3,
+        credit: 0, debit: 1000, ticker: null, description: 'CDB PLUS FIRF',
+        category: fundCategory,
+        account: { countryId: 'BR' },
+      });
+      prisma.portfolioItem.create.mockResolvedValue({ id: 6, symbol: 'Funds:CDB PLUS FIRF', source: 'MANUAL' });
+      prisma.portfolioItem.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 6, transactions: [] });
+
+      await processPortfolioChanges(makeJob({ transactionId: 43 }));
+
+      expect(prisma.portfolioItem.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ symbol: 'Funds:CDB PLUS FIRF', source: 'MANUAL' }),
+      }));
+      expect(enqueueEvent).toHaveBeenCalledWith('PORTFOLIO_CHANGES_PROCESSED', expect.objectContaining({
+        newSecuritySymbols: [],
+      }));
+    });
+  });
 });
 
 // ─── Scoped update re-keys a transaction (#86 ghost items) ──────────────────

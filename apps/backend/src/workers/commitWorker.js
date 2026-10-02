@@ -6,8 +6,20 @@ const { resolveTagsByName } = require('../utils/tagUtils');
 const categorizationService = require('../services/categorizationService');
 const { addDescriptionEntry } = require('../utils/descriptionCache');
 const { enqueueEvent } = require('../queues/eventsQueue');
+const { getCategoriesForTenant } = require('../utils/categoryCache');
+const { isInvestmentEnrichmentComplete } = require('@bliss/shared/portfolio');
 
 const COMMIT_BATCH_SIZE = 200;
+
+/**
+ * A row still flagged requiresEnrichment may be committed once it carries what
+ * its category needs (shared rule: ticker optional in the built-in Funds category). An unknown
+ * category keeps the strict ticker + quantity + price check.
+ */
+function isEnrichedForCommit(row, category) {
+    if (category) return isInvestmentEnrichmentComplete(category, row);
+    return !!row.ticker && row.assetQuantity != null && row.assetPrice != null;
+}
 
 /**
  * Process a smart-import commit job.
@@ -112,6 +124,9 @@ const processCommitJob = async (job) => {
         // (duplicate-flagged rows are filtered upstream in rowWhere).
         const hashOccurrenceCount = new Map(); // baseHash → count seen so far
 
+        // Category lookup for the enrichment guard (ticker optional for API_FUND).
+        const categoryById = new Map((await getCategoriesForTenant(tenantId)).map((c) => [c.id, c]));
+
         while (true) {
             const batch = await prisma.stagedImportRow.findMany({
                 where: rowWhere,
@@ -132,7 +147,7 @@ const processCommitJob = async (job) => {
             const transactionData = [];
 
             for (const row of createRows) {
-                if (row.requiresEnrichment && (!row.ticker || row.assetQuantity == null || row.assetPrice == null)) {
+                if (row.requiresEnrichment && !isEnrichedForCommit(row, categoryById.get(row.suggestedCategoryId))) {
                     logger.warn(`[CommitWorker] Skipping row ${row.id} — requiresEnrichment=true, ticker=${row.ticker}, qty=${row.assetQuantity}, price=${row.assetPrice}`);
                     continue;
                 }

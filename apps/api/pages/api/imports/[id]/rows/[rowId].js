@@ -4,6 +4,13 @@ import { rateLimiters } from '../../../../../utils/rateLimit.js';
 import { cors } from '../../../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { withAuth } from '../../../../../utils/withAuth.js';
+import { isInvestmentEnrichmentComplete, requiresInvestmentEnrichment } from '@bliss/shared/portfolio';
+
+/** Enrichment fields after this update: the request's values win over the row's. */
+function effectiveEnrichment(updateData, row) {
+  const pick = (key) => (updateData[key] !== undefined ? updateData[key] : row[key]);
+  return { ticker: pick('ticker'), assetQuantity: pick('assetQuantity'), assetPrice: pick('assetPrice') };
+}
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -116,7 +123,7 @@ export default withAuth(async function handler(req, res) {
       // Validate category belongs to tenant
       const category = await prisma.category.findFirst({
         where: { id: categoryId, tenantId: user.tenantId },
-        select: { id: true, type: true, processingHint: true },
+        select: { id: true, type: true, processingHint: true, defaultCategoryCode: true },
       });
       if (!category) {
         return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Category not found or does not belong to your tenant' });
@@ -126,16 +133,9 @@ export default withAuth(async function handler(req, res) {
       updateData.classificationSource = 'USER_OVERRIDE';
 
       // Detect whether the new category requires mandatory investment enrichment
-      const MANDATORY_HINTS = ['API_STOCK', 'API_CRYPTO', 'API_FUND'];
-      const isMandatoryInvestment =
-        category.type === 'Investments' && MANDATORY_HINTS.includes(category.processingHint);
-
-      if (isMandatoryInvestment) {
-        // Check if enrichment data is present (from this request or existing row)
-        const effectiveTicker = updateData.ticker !== undefined ? updateData.ticker : row.ticker;
-        const effectiveQty = updateData.assetQuantity !== undefined ? updateData.assetQuantity : row.assetQuantity;
-        const effectivePrice = updateData.assetPrice !== undefined ? updateData.assetPrice : row.assetPrice;
-        if (!effectiveTicker || effectiveQty == null || effectivePrice == null) {
+      // (ticker optional in the built-in Funds category — see @bliss/shared/portfolio enrichment.js).
+      if (requiresInvestmentEnrichment(category)) {
+        if (!isInvestmentEnrichmentComplete(category, effectiveEnrichment(updateData, row))) {
           updateData.requiresEnrichment = true;
           updateData.enrichmentType = 'INVESTMENT';
         } else {
@@ -146,13 +146,21 @@ export default withAuth(async function handler(req, res) {
         updateData.requiresEnrichment = false;
         updateData.enrichmentType = null;
       }
-    } else {
-      // No category change — if all investment fields are now present, clear the enrichment flag.
-      // Merge current update with existing row data so partial updates still clear the flag correctly.
-      const effectiveTicker = updateData.ticker !== undefined ? updateData.ticker : row.ticker;
-      const effectiveQty = updateData.assetQuantity !== undefined ? updateData.assetQuantity : row.assetQuantity;
-      const effectivePrice = updateData.assetPrice !== undefined ? updateData.assetPrice : row.assetPrice;
-      if (effectiveTicker && effectiveQty != null && effectivePrice != null) {
+    } else if (row.requiresEnrichment) {
+      // No category change — clear the enrichment flag once the row carries what its
+      // current category needs. Merge current update with existing row data so partial
+      // updates still clear the flag correctly. Unknown category → strict check.
+      const enrichment = effectiveEnrichment(updateData, row);
+      const currentCategory = row.suggestedCategoryId
+        ? await prisma.category.findFirst({
+          where: { id: row.suggestedCategoryId, tenantId: user.tenantId },
+          select: { id: true, type: true, processingHint: true, defaultCategoryCode: true },
+        })
+        : null;
+      const complete = currentCategory
+        ? isInvestmentEnrichmentComplete(currentCategory, enrichment)
+        : !!enrichment.ticker && enrichment.assetQuantity != null && enrichment.assetPrice != null;
+      if (complete) {
         updateData.requiresEnrichment = false;
       }
     }

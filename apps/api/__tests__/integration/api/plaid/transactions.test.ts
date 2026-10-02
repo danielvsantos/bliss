@@ -285,6 +285,54 @@ describe('PUT /api/plaid/transactions/:id', () => {
     );
   });
 
+  describe('investment enrichment on promote', () => {
+    function promoteInto(category: any, body: any) {
+      mockPrisma.plaidTransaction.findUnique.mockResolvedValueOnce({ ...PLAID_TX });
+      mockPrisma.category.findFirst.mockResolvedValueOnce(category);
+      mockPrisma.account.findFirst.mockResolvedValueOnce(LOCAL_ACCOUNT);
+      mockPrisma.transaction.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.transaction.create.mockResolvedValueOnce(NEW_TRANSACTION);
+      mockPrisma.plaidTransaction.update.mockResolvedValueOnce(PROMOTED_PLAID_TX);
+      mockPrisma.$transaction.mockImplementationOnce(async (cb: any) =>
+        cb({
+          transaction: { create: mockPrisma.transaction.create },
+          plaidTransaction: { update: mockPrisma.plaidTransaction.update },
+        }),
+      );
+      return makeReq({ method: 'PUT', body: { promotionStatus: 'PROMOTED', suggestedCategoryId: category.id, ...body } });
+    }
+
+    it('promotes a ticker-less fund with quantity + price in the Funds category (private / unlisted funds)', async () => {
+      const req = promoteInto({ id: 30, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' }, { assetQuantity: 10, assetPrice: 1000 });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      expect(mockPrisma.transaction.create.mock.calls[0][0].data).not.toHaveProperty('ticker');
+    });
+
+    it('still rejects a ticker-less ETF (same API_FUND hint, ETFS category)', async () => {
+      const req = promoteInto({ id: 32, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' }, { assetQuantity: 10, assetPrice: 100 });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(400);
+    });
+
+    it('still rejects a ticker-less stock', async () => {
+      const req = promoteInto({ id: 31, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_STOCK' }, { assetQuantity: 10, assetPrice: 50 });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(400);
+      expect(res._body.requiresEnrichment).toBe(true);
+    });
+
+    it('still rejects a fund without quantity', async () => {
+      const req = promoteInto({ id: 30, tenantId: 'test-tenant-123', type: 'Investments', processingHint: 'API_FUND' }, { ticker: 'VWCE', assetPrice: 100 });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(400);
+    });
+  });
+
   it('promotes without tags when tags is omitted — no tag creation calls', async () => {
     setUpPromoteMocks();
 

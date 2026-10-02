@@ -6,7 +6,7 @@ This document specifies the backend service changes for the global SecurityMaste
 
 The SecurityMaster table stores global (non-tenant) stock fundamental data sourced from Twelve Data APIs. This enables equity-specific analysis like sector allocation, industry breakdown, and fundamental screening.
 
-**Scope**: Stocks (`API_STOCK`) and, since #77 (Passive Income), ETFs — `API_FUND` holdings whose SecurityMaster `assetType` is `ETF`, or which have no row yet (the first profile fetch resolves the type). Mutual funds (`API_FUND` with a non-ETF row) are skipped. For ETFs the refresh **never calls `/earnings`** (Twelve Data returns meaningless EPS for funds) and `upsertFromProfile` **stores no sector, industry or country** (empty for US ETFs, misleading for UCITS ETFs — VWCE came back as "Basic Materials / Netherlands").
+**Scope**: Stocks (`API_STOCK`) and, since #77 (Passive Income), ETFs — `API_FUND` holdings whose SecurityMaster `assetType` is `ETF`, or which have no row yet (the first profile fetch resolves the type). Mutual funds (`API_FUND` with a non-ETF row) are skipped. Holdings with `source: MANUAL` are always skipped: they were created without a ticker (e.g. private / unlisted funds), so their symbol is the TICKER-strategy fallback `<category>:<description>`, which Twelve Data cannot resolve. For ETFs the refresh **never calls `/earnings`** (Twelve Data returns meaningless EPS for funds) and `upsertFromProfile` **stores no sector, industry or country** (empty for US ETFs, misleading for UCITS ETFs — VWCE came back as "Basic Materials / Netherlands").
 
 **Data sources (available on our Grow plan):**
 - Twelve Data `/profile` (10 credits) — sector, industry, country, CEO, employees, description, website, exchange, ISIN
@@ -33,7 +33,7 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 | `upsertFromProfile(symbol, profileData)` | Upsert profile fields + `lastProfileUpdate` |
 | `upsertFundamentals(symbol, { earnings, dividends, quote })` | Compute and upsert fundamental fields |
 | `upsertEtfComposition(symbol, composition)` | Store `etfComposition` (normalized to fractions by `normalizeEtfComposition` from `@bliss/shared/portfolio`) + `lastCompositionUpdate` (#79) |
-| `getAllActiveSecuritySymbols()` | Distinct `{ symbol, exchange }` pairs from PortfolioItem with `quantity > 0`: `API_STOCK`, plus `API_FUND` whose SecurityMaster `assetType` is `ETF` or which has no row yet (replaced `getAllActiveStockSymbols` in #77) |
+| `getAllActiveSecuritySymbols()` | Distinct `{ symbol, exchange }` pairs from PortfolioItem with `quantity > 0`: `API_STOCK`, plus `API_FUND` whose SecurityMaster `assetType` is `ETF` or which has no row yet (replaced `getAllActiveStockSymbols` in #77). Excludes `source: MANUAL` (ticker-less) items |
 | `getTenantSecuritySymbols(tenantId, { force, staleDays = 7 })` | Same selection for one tenant. `force: false` keeps only symbols with no row or `lastFundamentalsUpdate` older than `staleDays` |
 | `isEtfAssetType(type)` | `true` for the Twelve Data profile type `ETF` |
 | `getAllSecurityMasterSymbols()` | All `{ symbol, exchange }` pairs from the SecurityMaster table, ordered by symbol. Used for full-table refresh |

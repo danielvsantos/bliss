@@ -21,7 +21,10 @@ function shapeTransaction(t) {
       : { id: t.categoryId },
     tags: (t.tags || []).map((tag) => tag.name),
     source: t.source ?? null,
-    ...(t.ticker && { ticker: t.ticker, assetQuantity: num(t.assetQuantity), assetPrice: num(t.assetPrice) }),
+    // Ticker-less fund transactions still carry quantity + price.
+    ...((t.ticker || t.assetQuantity != null) && {
+      ticker: t.ticker ?? null, assetQuantity: num(t.assetQuantity), assetPrice: num(t.assetPrice),
+    }),
   };
 }
 
@@ -122,7 +125,9 @@ const createTransaction = defineTool({
   description:
     'Record a manual transaction. Same effect as adding it in the app: analytics and portfolio update and the '
     + 'category choice trains the classifier. Stock, ETF/fund and crypto categories (buys and sells) require '
-    + 'ticker, assetQuantity and assetPrice (both > 0); they are optional for manually valued investments.',
+    + 'assetQuantity and assetPrice (both > 0) and a ticker. Only in the built-in Funds category is the ticker '
+    + 'optional (private / unlisted funds have none); ETFs always need one. All three are optional for manually '
+    + 'valued investments.',
   input: {
     date: dateString('Transaction date'),
     accountId: intId('Account ID from list_accounts.'),
@@ -166,7 +171,8 @@ const updateTransaction = defineTool({
   description:
     'Change fields of a transaction (only the ones you pass). Re-categorising here is identical to doing it in '
     + 'the app: it teaches the classifier and refreshes analytics. `tags` replaces the whole tag list. A stock, '
-    + 'ETF/fund or crypto transaction must end up with ticker, assetQuantity and assetPrice (both > 0).',
+    + 'ETF/fund or crypto transaction must end up with assetQuantity and assetPrice (both > 0) and a ticker '
+    + '(optional only in the built-in Funds category).',
   input: {
     transactionId: intId('Transaction ID from search_transactions.'),
     date: dateString('New date').optional(),

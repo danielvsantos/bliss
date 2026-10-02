@@ -250,6 +250,35 @@ describe('smartImportWorker — helper functions', () => {
       expect(rowData.requiresEnrichment).toBe(false);
       expect(rowData.enrichmentType).toBeUndefined();
     });
+
+    // Private / unlisted funds have no ticker: in the built-in Funds category,
+    // quantity + price are enough. ETFs share API_FUND but stay strict.
+    describe('Funds category (ticker optional)', () => {
+      const fundsCategory = { id: 30, name: 'Funds', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' };
+
+      it('does not require enrichment for a ticker-less fund row with quantity + price', () => {
+        const rowData = { ticker: null, assetQuantity: 10, assetPrice: 1000 };
+
+        expect(applyNativeInvestmentCheck(rowData, fundsCategory)).toBe(false);
+        expect(rowData.enrichmentType).toBe('INVESTMENT');
+      });
+
+      it('still requires quantity and price', () => {
+        expect(applyNativeInvestmentCheck({ ticker: null, assetQuantity: 10, assetPrice: null }, fundsCategory)).toBe(true);
+        expect(applyNativeInvestmentCheck({ ticker: 'VWCE', assetQuantity: null, assetPrice: 100 }, fundsCategory)).toBe(true);
+      });
+
+      it('keeps the ticker mandatory for stocks', () => {
+        expect(applyNativeInvestmentCheck({ ticker: null, assetQuantity: 10, assetPrice: 1000 }, stocksCategory)).toBe(true);
+      });
+
+      it('keeps the ticker mandatory for ETFs and code-less API_FUND categories', () => {
+        const etfs = { id: 31, name: 'ETFs', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: 'ETFS' };
+        const legacyFunds = { id: 32, name: 'Funds', type: 'Investments', processingHint: 'API_FUND', defaultCategoryCode: null };
+        expect(applyNativeInvestmentCheck({ ticker: null, assetQuantity: 10, assetPrice: 100 }, etfs)).toBe(true);
+        expect(applyNativeInvestmentCheck({ ticker: null, assetQuantity: 10, assetPrice: 100 }, legacyFunds)).toBe(true);
+      });
+    });
   });
 
   // ─── computeUpdateDiff ─────────────────────────────────────────────────────

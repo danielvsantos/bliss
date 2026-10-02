@@ -11,6 +11,13 @@ import type { ReviewItem } from '@/components/review/types';
 /** Categories whose portfolio items are priced via external APIs — enrichment is MANDATORY. */
 const INVESTMENT_HINTS_MANDATORY = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND']);
 
+/**
+ * Built-in category codes whose rows can be enriched without a ticker: only Funds
+ * (private / unlisted funds have none). ETFs share the API_FUND hint but always
+ * need one; API_FUND categories without a code stay strict.
+ */
+const TICKER_OPTIONAL_CATEGORY_CODES = new Set(['INVESTMENT_FUNDS']);
+
 /** Categories whose assets are tracked manually — enrichment is OPTIONAL. */
 const INVESTMENT_HINTS_OPTIONAL = new Set(['MANUAL']);
 
@@ -25,6 +32,37 @@ export function isMandatoryEnrichmentCategory(category: Category | null | undefi
   return category.type === 'Investments' && INVESTMENT_HINTS_MANDATORY.has(category.processingHint ?? '');
 }
 
+// Mirrors packages/shared/src/portfolio/enrichment.js (the web bundle doesn't
+// depend on @bliss/shared) — keep the two in sync.
+
+/** True when a mandatory-enrichment category needs a ticker on top of quantity + price. */
+export function requiresTicker(category: Category | null | undefined): boolean {
+  if (!isMandatoryEnrichmentCategory(category)) return false;
+  return !(category!.processingHint === 'API_FUND'
+    && TICKER_OPTIONAL_CATEGORY_CODES.has(category!.defaultCategoryCode ?? ''));
+}
+
+type EnrichmentFields = {
+  ticker?: string | null;
+  assetQuantity?: string | number | null;
+  assetPrice?: string | number | null;
+};
+
+/**
+ * True when `row` carries everything its category needs: quantity + price,
+ * plus a ticker (with at least one letter) unless it's the built-in Funds category.
+ * Categories that don't require enrichment are always complete.
+ */
+export function isInvestmentEnrichmentComplete(
+  category: Category | null | undefined,
+  row: EnrichmentFields | null | undefined,
+): boolean {
+  if (!isMandatoryEnrichmentCategory(category)) return true;
+  const present = (v: unknown) => v !== null && v !== undefined && v !== '';
+  if (!present(row?.assetQuantity) || !present(row?.assetPrice)) return false;
+  return !requiresTicker(category) || /[a-zA-Z]/.test(row?.ticker ?? '');
+}
+
 const isPositiveNumber = (value: unknown): boolean => {
   if (value === null || value === undefined || value === '') return false;
   const n = Number(value);
@@ -35,7 +73,9 @@ const isPositiveNumber = (value: unknown): boolean => {
  * Enrichment fields a transaction in a mandatory-enrichment category is missing
  * (empty for any other category). Applies to buys and sells. Mirrors
  * `missingInvestmentFields` in apps/api/utils/investmentEnrichment.js: the ticker
- * needs a letter; price and quantity (by magnitude, for signed sells) must be > 0.
+ * needs a letter (optional in the built-in Funds category — private / unlisted
+ * funds have none); price
+ * and quantity (by magnitude, for signed sells) must be > 0.
  */
 export function getMissingInvestmentFields(
   category: Category | null | undefined,
@@ -43,7 +83,9 @@ export function getMissingInvestmentFields(
 ): Array<'ticker' | 'assetPrice' | 'assetQuantity'> {
   if (!isMandatoryEnrichmentCategory(category)) return [];
   const missing: Array<'ticker' | 'assetPrice' | 'assetQuantity'> = [];
-  if (!values.ticker || !/[a-zA-Z]/.test(values.ticker)) missing.push('ticker');
+  if (requiresTicker(category) && (!values.ticker || !/[a-zA-Z]/.test(values.ticker))) {
+    missing.push('ticker');
+  }
   if (!isPositiveNumber(values.assetPrice)) missing.push('assetPrice');
   const qty = values.assetQuantity;
   if (!isPositiveNumber(qty === null || qty === undefined || qty === '' ? qty : Math.abs(Number(qty)))) {
@@ -74,15 +116,15 @@ export function itemNeedsEnrichment(
 ): boolean {
   // Server already flagged this item
   if (item.requiresEnrichment) return true;
-  // Row already carries enrichment data (e.g. native-adapter CSV imports that
-  // supply ticker/quantity/price directly) — nothing left to fill in, so the
-  // category-based fallback below would otherwise block Approve for no reason.
-  const row = item.originalImportRow;
-  if (row && row.ticker && row.assetQuantity != null && row.assetPrice != null) return false;
   // Category-based check (covers UI category changes before backend sync)
   if (!item.categoryId) return false;
   const cat = categoriesMap.get(item.categoryId);
-  return isMandatoryEnrichmentCategory(cat);
+  if (!isMandatoryEnrichmentCategory(cat)) return false;
+  // Row already carries enrichment data (e.g. native-adapter CSV imports that
+  // supply ticker/quantity/price directly) — nothing left to fill in, so Approve
+  // stays open. Shared rule: the ticker is optional in the built-in Funds category.
+  const row = item.originalImportRow;
+  return !(row && isInvestmentEnrichmentComplete(cat, row));
 }
 
 /**
