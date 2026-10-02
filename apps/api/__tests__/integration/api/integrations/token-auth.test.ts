@@ -275,7 +275,6 @@ describe('integration tokens — end to end', () => {
     });
 
     it.each([
-      ['POST', '/api/accounts', () => accountsHandler],
       ['PUT', '/api/accounts', () => accountsHandler],
       ['DELETE', '/api/accounts', () => accountsHandler],
       ['POST', '/api/categories', () => categoriesHandler],
@@ -291,6 +290,16 @@ describe('integration tokens — end to end', () => {
       expect(res._body.code).toBe('NOT_AVAILABLE_TO_INTEGRATIONS');
       expect(await prisma.account.count({ where: { tenantId: a.tenantId } })).toBe(accounts);
       expect(await prisma.category.count({ where: { tenantId: a.tenantId } })).toBe(categories);
+    });
+
+    it('POST /api/accounts reaches the handler (#98 create allowance) and is validated there', async () => {
+      const accounts = await prisma.account.count({ where: { tenantId: a.tenantId } });
+      const res = await call(accountsHandler, makeReq({
+        method: 'POST', url: '/api/accounts', headers: bearer(readWrite), body: { name: 'Hacked' },
+      }));
+      expect(res._status).toBe(400);
+      expect(res._body.error).toBe('Missing required fields');
+      expect(await prisma.account.count({ where: { tenantId: a.tenantId } })).toBe(accounts);
     });
 
     it('GET /api/accounts is still allowed', async () => {

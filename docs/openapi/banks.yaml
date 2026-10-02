@@ -92,10 +92,13 @@ paths:
     post:
       summary: Create or link a bank
       description: >
-        Creates a new bank or links an existing one to the tenant.
-        If a bank with the given name already exists globally, it is reused;
-        otherwise a new Bank record is created. A TenantBank link is upserted
-        in both cases. The operation is wrapped in a transaction with audit logging.
+        Creates a new bank or links an existing one to the tenant. Idempotent.
+        If a bank with the given name already exists globally (case-insensitive,
+        exact casing preferred), it is reused; otherwise a new Bank record is
+        created. The TenantBank link is created when missing. Responds `201`
+        when this call linked the bank to the tenant and `200` when it was
+        already linked (#98: MCP `create_bank` reports this as `created`).
+        Reachable by Read & write integration tokens.
       tags:
         - Banks
       requestBody:
@@ -106,7 +109,13 @@ paths:
               $ref: '#/components/schemas/BankCreateRequest'
       responses:
         '201':
-          description: Bank created/linked successfully.
+          description: Bank created and/or newly linked to the tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bank'
+        '200':
+          description: The bank was already linked to the tenant; the existing bank is returned.
           content:
             application/json:
               schema:

@@ -2,7 +2,7 @@
 
 <!-- Generated from apps/api/lib/mcp/registry.js by `pnpm --filter @bliss/api mcp:reference`. Do not edit by hand. -->
 
-Bliss exposes **38 tools** over MCP at `POST /api/mcp`: **21 read** tools available to every integration key and **17 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
+Bliss exposes **40 tools** over MCP at `POST /api/mcp`: **21 read** tools available to every integration key and **19 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
 
 Conventions: dates are `YYYY-MM-DD`; amounts are `{ value, currency }`; transaction amounts are signed (positive = money in, negative = money out); lists return `hasMore` and `nextCursor` — pass `nextCursor` back as `cursor` for the next page (default 50 items, max 100).
 
@@ -94,6 +94,35 @@ create: new tag (name required). update: change name, color, emoji, budget or da
 | `budget` | number \| null | no | Budget amount; null clears it. |
 | `startDate` | string \| null | no | Start date (YYYY-MM-DD) |
 | `endDate` | string \| null | no | End date (YYYY-MM-DD) |
+
+## Workspace setup
+
+### `create_bank` — Create bank
+
+**Access:** Write (Read & write keys only)  
+**Wraps:** `POST /api/banks`
+
+Add a bank (or broker, card issuer…) to the user's workspace and return its ID for create_account. Idempotent: if a bank with this name already exists (any casing) it is reused and linked, never duplicated; `created` is false when the workspace already had it. This is the way to get a bankId — the banks in get_reference_data are a global list that may include banks this workspace has not linked. Bank creation shares a budget of 10 requests per 5 minutes with bank listing: reuse IDs you already have (from list_accounts or earlier calls) instead of calling this again.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | Bank name, e.g. "Revolut" (2-100 characters). |
+
+### `create_account` — Create account
+
+**Access:** Write (Read & write keys only)  
+**Wraps:** `POST /api/accounts`
+
+Create a manual account (bank, card, savings, brokerage…) in the user's workspace, then use its `id` as accountId when creating transactions or importing. Get bankId from create_bank. currencyCode and countryId must already be enabled for the workspace (get_reference_data → tenant lists them); if not, ask the user to enable them in Settings. Owners default to the admin who connected Bliss; other users can be added in the app. Safe to retry: a second account with the same bank, currency and name is refused with the existing account's id. Bank-synced (Plaid) accounts are connected in the app, not here.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | Account name, e.g. "Revolut EUR" (1-100 characters). |
+| `bankId` | integer | yes | Bank ID from create_bank. |
+| `currencyCode` | string | yes | Account currency, 3-letter ISO 4217 code, e.g. EUR. |
+| `countryId` | string | yes | Account country, ISO 3166 alpha-3 code as listed by get_reference_data (e.g. DEU, USA, GBR). |
+| `accountNumber` | string | yes | Account number or IBAN. Stored encrypted and never shown back (only the last 4 characters) — use the last 4 digits or a short label if the user prefers not to share it. |
+| `ownerIds` | array of string | no | User IDs of the owners. Omit to make the connecting admin the owner. |
 
 ## Transactions
 
@@ -603,7 +632,6 @@ These REST operations are reachable with an integration key but have no tool, on
 | `GET /api/plaid/items` | Plaid connections are managed in the app |
 | `GET /api/plaid/accounts` | Plaid connections are managed in the app |
 | `GET /api/plaid/sync-logs` | Plaid connections are managed in the app |
-| `POST /api/banks` | Reference-data writes stay in the app |
 | `POST /api/currency-rates` | Reference-data writes stay in the app |
 | `PUT /api/currency-rates` | Reference-data writes stay in the app |
 | `DELETE /api/currency-rates` | Reference-data writes stay in the app |

@@ -29,7 +29,13 @@ describe('root middleware.js — integration denylist at the edge', () => {
     ['DELETE', '/api/plaid/items/hard-delete'],
     ['PUT', '/api/users'],
     ['GET', '/api/integrations'],
-    ['POST', '/api/accounts'],
+    ['PUT', '/api/accounts'],
+    ['DELETE', '/api/accounts'],
+    ['PUT', '/api/Accounts/'],
+    ['DELETE', '/api/x/../accounts'],
+    ['POST', '/api/accounts/1'],
+    ['POST', '/api/categories'],
+    ['POST', '/api/tenants'],
   ])('%s %s with a bliss_ token → 403 NOT_AVAILABLE_TO_INTEGRATIONS', async (method, path) => {
     const res = middleware(request(path, { method, auth: `Bearer ${TOKEN}` }));
     expect(res.status).toBe(403);
@@ -46,6 +52,10 @@ describe('root middleware.js — integration denylist at the edge', () => {
     ['POST', '/api/transactions'],
     ['GET', '/api/accounts'],
     ['PUT', '/api/plaid/transactions/abc'],
+    ['POST', '/api/accounts'],
+    ['POST', '/api/Accounts/'],
+    ['POST', '/api/x/../accounts'],
+    ['POST', '/api/banks'],
   ])('%s %s with a bliss_ token passes through', (method, path) => {
     const res = middleware(request(path, { method, auth: `Bearer ${TOKEN}` }));
     expect(res.headers.get('x-middleware-next')).toBe('1');

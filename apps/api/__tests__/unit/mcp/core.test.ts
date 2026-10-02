@@ -65,6 +65,11 @@ describe('shape', () => {
     expect(omitDeep({ a: 1, rawJson: 'x', nested: [{ keyHash: 'h', embedding: [1], b: 2 }] })).toEqual({ a: 1, nested: [{ b: 2 }] });
   });
 
+  it('omitDeep drops full account numbers but keeps the last 4 (#98)', () => {
+    expect(omitDeep({ account: { id: 1, accountNumber: 'DE89370400440532013000', accountNumberLast4: '3000' } }))
+      .toEqual({ account: { id: 1, accountNumberLast4: '3000' } });
+  });
+
   it('capResponse leaves small results alone and trims + flags large ones without a misleading cursor', () => {
     const small = { items: [1, 2] };
     expect(capResponse(small)).toBe(small);
@@ -190,6 +195,18 @@ describe('loopback', () => {
     expect(api.calls.map((c) => c.status)).toEqual([204, 429, 429, 0, 500]);
   });
 
+  it('postWithStatus resolves { status, data } so 201 and 200 can be told apart (#98)', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(response(201, { id: 5 }))
+      .mockResolvedValueOnce(response(200, { id: 5 }))
+      .mockResolvedValueOnce(response(429, { error: 'Too many' }));
+    const api = createLoopbackClient({ req, tool: 'create_bank', fetchImpl });
+    await expect(api.postWithStatus('/api/banks', { name: 'B' })).resolves.toEqual({ status: 201, data: { id: 5 } });
+    await expect(api.postWithStatus('/api/banks', { name: 'B' })).resolves.toEqual({ status: 200, data: { id: 5 } });
+    await expect(api.postWithStatus('/api/banks', { name: 'B' })).rejects.toMatchObject({ status: 429 });
+    expect(fetchImpl.mock.calls[0][1].method).toBe('POST');
+  });
+
   it('optional() turns a 404 into the fallback only', async () => {
     await expect(optional(Promise.reject(new LoopbackError({ status: 404, method: 'GET', route: '/x' })), 'fb')).resolves.toBe('fb');
     await expect(optional(Promise.reject(new LoopbackError({ status: 500, method: 'GET', route: '/x' })))).rejects.toMatchObject({ status: 500 });
@@ -211,10 +228,20 @@ describe('loopback', () => {
 });
 
 describe('registry', () => {
-  it('has 38 tools: 21 read, 17 write, unique names', () => {
-    expect(ALL_TOOLS).toHaveLength(38);
+  it('has 40 tools: 21 read, 19 write, unique names', () => {
+    expect(ALL_TOOLS).toHaveLength(40);
     expect(READ_TOOLS).toHaveLength(21);
-    expect(new Set(ALL_TOOLS.map((t) => t.name)).size).toBe(38);
+    expect(new Set(ALL_TOOLS.map((t) => t.name)).size).toBe(40);
+  });
+
+  it('create_bank and create_account are write tools, hidden from read-only keys (#98)', () => {
+    for (const name of ['create_bank', 'create_account']) {
+      expect(getTool(name)!.access).toBe('write');
+      expect(getTool(name)!.annotations.destructiveHint).toBe(false);
+      expect(READ_TOOLS.some((t) => t.name === name)).toBe(false);
+    }
+    expect(getTool('create_bank')!.wraps).toEqual([{ method: 'POST', route: '/api/banks' }]);
+    expect(getTool('create_account')!.wraps).toEqual([{ method: 'POST', route: '/api/accounts' }]);
   });
 
   it('filters by role: viewer → read tools, member → all', () => {

@@ -4,9 +4,10 @@ Bliss includes an **MCP server**, so Claude (Cowork, claude.ai, Claude Desktop,
 Claude Code) and other
 [Model Context Protocol](https://modelcontextprotocol.io) clients can work with
 your finances in plain language. You don't need to teach the agent the REST API:
-it gets **38 tools** — search and re-categorise transactions, work the bank-sync
-review queue, review an imported statement, answer spending and portfolio
-questions, clean up subscriptions — and a short briefing on how Bliss works.
+it gets **40 tools** — set up your banks and accounts, search and re-categorise
+transactions, work the bank-sync review queue, review an imported statement,
+answer spending and portfolio questions, clean up subscriptions — and a short
+briefing on how Bliss works.
 
 It takes about five minutes. There are two ways to connect:
 
@@ -40,7 +41,7 @@ with OAuth instead:
    connection lasts (30 days, **90 days** by default, 1 year, or never). Click
    **Allow**.
 5. Claude shows the Bliss tools. Read-only connections get the 21 read tools;
-   Read & write all 38.
+   Read & write all 40.
 
 The connection appears in **Settings → Integrations** as *Connected via OAuth ·
 Claude*. Claude renews its access every hour in the background; revoke the
@@ -65,8 +66,9 @@ Follow [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents#
 
 - **Read-only** — the agent sees the **21 read tools** only. It can answer
   questions but cannot change anything, whatever it's told.
-- **Read & write** — all **38 tools**, including re-categorising, approving
-  review items, committing imports and editing portfolio data.
+- **Read & write** — all **40 tools**, including creating banks and manual
+  accounts, re-categorising, approving review items, committing imports and
+  editing portfolio data.
 
 When the key is shown, the dialog also shows the **MCP server URL** and a
 ready-made **Claude Code command** with the key filled in. Copy it before you
@@ -140,6 +142,17 @@ doesn't need it, and it would be readable by anyone with access to the service.
 Some prompts to start with. No endpoint names, IDs or formats needed — the
 agent finds them with the tools.
 
+**Setting up** (Read & write)
+- *"I bank with Revolut (EUR and GBP accounts) and Schwab (USD) — set them up."*
+- *"Add my ING savings account in EUR; the IBAN ends in 4821."*
+
+The agent creates the banks and **manual** accounts (bank-synced accounts are
+connected in the app). Account numbers are stored encrypted and never shown
+back — only the last 4 characters — so a short label is fine too. New accounts
+are owned by the admin who connected Bliss; add other owners in the app. An
+account's currency and country must already be enabled in **Settings**; the
+agent tells you when one isn't. Asking twice never creates a duplicate.
+
 **Spending** (any key)
 - *"What did I spend on groceries last month vs the month before?"*
 - *"Break down my Lifestyle spending by group for this year, month by month."*
@@ -185,8 +198,10 @@ On purpose, some things stay in the Bliss app:
 - **Bank connections.** Linking, re-authenticating, syncing or disconnecting
   Plaid, and connection status, are managed in the app. The agent works the
   *review queue* of synced transactions.
-- **Accounts, categories, users, tenant settings, integrations and maintenance.**
-  Integration keys can't change these at all (see
+- **Editing accounts and banks.** The agent can *create* banks and manual
+  accounts, but renaming, re-owning or deleting them happens in the app.
+- **Categories, users, tenant settings (currencies, countries), integrations and
+  maintenance.** Integration keys can't change these at all (see
   [access levels](/docs/guides/connecting-ai-agents#access-levels)).
 - **Searching transaction descriptions.** Descriptions are encrypted at rest,
   so the agent filters by date, account, category or tag, and looks merchants

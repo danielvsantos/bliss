@@ -35,7 +35,7 @@ const { stub } = makeFetchStub(realFetch, () => server.baseUrl);
 let a: IsolatedTenant;
 let b: IsolatedTenant;
 let keyA: string;
-let ownA: { transactionId: number; assetId: number };
+let ownA: { transactionId: number; assetId: number; bankId: number };
 let B: Record<string, any>;
 
 async function seedB() {
@@ -88,7 +88,10 @@ async function seedB() {
   await prisma.recurringCharge.create({
     data: { tenantId: b.tenantId, descriptionHash: 'b-hash-1', merchantLabel: `${MARK} sub`, categoryId: category.id, cadence: 'MONTHLY', chargeKey: 'b-key-1' },
   });
+  const bank = await prisma.bank.create({ data: { name: `${MARK} bank ${Date.now()}` } });
+  await prisma.tenantBank.create({ data: { tenantId: b.tenantId, bankId: bank.id } });
   return {
+    bankId: bank.id, userId: b.userId,
     categoryId: category.id, incomeCategoryId: incomeCat.id, accountId: account.id, tagId: tag.id, transactionId: tx.id,
     insightId: insight.id, plaidItemId: plaidItem.id, plaidTxId: ptx.id, importId: staged.id, rowId: staged.rows[0].id,
     assetId: asset.id, valueId: value.id, streamId: stream.id, detachedId: detached.id, subscriptionId: 'b-hash-1',
@@ -112,7 +115,7 @@ async function snapshotB() {
 }
 
 type Expect = 'notFound' | 'empty' | 'error' | 'perItemNotFound' | 'noEffect';
-interface Case { tool: string; args: () => Record<string, unknown>; expect: Expect }
+interface Case { tool: string; args: () => Record<string, unknown>; expect: Expect; text?: RegExp }
 
 const CASES: Case[] = [
   { tool: 'manage_tags', args: () => ({ action: 'update', tagId: B.tagId, name: 'x' }), expect: 'notFound' },
@@ -156,6 +159,8 @@ const CASES: Case[] = [
   { tool: 'manage_passive_income_streams', args: () => ({ action: 'update', streamId: B.streamId, name: 'x' }), expect: 'notFound' },
   { tool: 'manage_passive_income_streams', args: () => ({ action: 'delete', streamId: B.streamId }), expect: 'notFound' },
   { tool: 'manage_passive_income_streams', args: () => ({ action: 'create', categoryId: B.incomeCategoryId, name: 'x', amountPerPayment: 1, frequency: 'MONTHLY', currency: 'USD', startDate: '2026-01-01' }), expect: 'error' },
+  { tool: 'create_account', args: () => ({ name: 'x', bankId: B.bankId, currencyCode: 'USD', countryId: 'USA', accountNumber: '1' }), expect: 'error', text: /^Bank \d+ isn't linked to this workspace/ },
+  { tool: 'create_account', args: () => ({ name: 'x', bankId: ownA.bankId, currencyCode: 'USD', countryId: 'USA', accountNumber: '1', ownerIds: [B.userId] }), expect: 'error', text: /ownerIds aren't users of this workspace/ },
   { tool: 'list_subscriptions', args: () => ({ view: 'all', categoryId: B.categoryId }), expect: 'empty' },
   { tool: 'update_subscription', args: () => ({ action: 'dismiss', subscriptionId: B.subscriptionId }), expect: 'notFound' },
   { tool: 'update_subscription', args: () => ({ action: 'confirm', transactionId: B.transactionId }), expect: 'notFound' },
@@ -183,7 +188,11 @@ beforeAll(async () => {
     data: { transaction_date: new Date('2026-01-05T00:00:00Z'), year: 2026, month: 1, day: 5, quarter: 'Q1', categoryId: catA.id, accountId: accA.id, description: 'A desc', debit: 1, currency: 'USD', tenantId: a.tenantId },
   });
   const assetA = await prisma.portfolioItem.create({ data: { tenantId: a.tenantId, categoryId: assetCatA.id, symbol: 'A flat', currency: 'USD', source: 'MANUAL', quantity: 1 } });
-  ownA = { transactionId: txA.id, assetId: assetA.id };
+  // A can create accounts at its own bank in USD / USA (#98 create_account cases).
+  await prisma.tenantBank.create({ data: { tenantId: a.tenantId, bankId: ref.bankId } });
+  await prisma.tenantCurrency.create({ data: { tenantId: a.tenantId, currencyId: ref.currencyCode } });
+  await prisma.tenantCountry.create({ data: { tenantId: a.tenantId, countryId: ref.countryId } });
+  ownA = { transactionId: txA.id, assetId: assetA.id, bankId: ref.bankId };
   keyA = (await createIntegrationKey(a, { accessLevel: 'READ_WRITE' })).token;
   client = await connectMcp(server.baseUrl, keyA);
 });
@@ -191,6 +200,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await client?.close();
   await prisma.transactionTag.deleteMany({ where: { tag: { tenantId: b.tenantId } } });
+  for (const tenantId of [a.tenantId, b.tenantId]) {
+    await prisma.tenantBank.deleteMany({ where: { tenantId } });
+    await prisma.tenantCurrency.deleteMany({ where: { tenantId } });
+    await prisma.tenantCountry.deleteMany({ where: { tenantId } });
+  }
   await teardownTenant(a.tenantId);
   await teardownTenant(b.tenantId);
   await server.close();
@@ -220,6 +234,8 @@ describe('MCP tenant isolation (AC10)', () => {
         break;
       case 'error':
         expect(result.isError, result.text).toBe(true);
+        if (c.text) expect(result.text).toMatch(c.text);
+        if (c.tool === 'create_account') expect(await prisma.account.count({ where: { tenantId: a.tenantId } })).toBe(1);
         break;
       case 'empty':
         expect(result.isError, result.text).toBe(false);

@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 
 import {
   INTEGRATION_DENYLIST,
+  INTEGRATION_WRITE_ALLOWED,
   effectiveRole,
   extractIntegrationToken,
   isDeniedForIntegration,
   isIntegrationToken,
+  isIntegrationWriteAllowed,
   normalizeApiPath,
   redactIntegrationTokens,
 } from '../../../utils/integrationPolicy.js';
@@ -62,7 +64,7 @@ describe('isDeniedForIntegration', () => {
   });
 
   describe('NON_GET entries', () => {
-    it.each(['/api/accounts', '/api/categories', '/api/tenants', '/api/tenants/settings', '/api/plaid/items'])(
+    it.each(['/api/categories', '/api/tenants', '/api/tenants/settings', '/api/plaid/items'])(
       '%s allows GET/HEAD and denies writes',
       (path) => {
         expect(isDeniedForIntegration(path, 'GET')).toBe(false);
@@ -72,6 +74,62 @@ describe('isDeniedForIntegration', () => {
         }
       },
     );
+  });
+
+  describe('INTEGRATION_WRITE_ALLOWED (#98)', () => {
+    it('starts with exactly the account and bank creates', () => {
+      expect(INTEGRATION_WRITE_ALLOWED).toEqual([
+        { path: '/api/accounts', methods: ['POST'] },
+        { path: '/api/banks', methods: ['POST'] },
+      ]);
+    });
+
+    it('/api/accounts allows GET/HEAD and POST, denies every other write', () => {
+      expect(isDeniedForIntegration('/api/accounts', 'GET')).toBe(false);
+      expect(isDeniedForIntegration('/api/accounts', 'HEAD')).toBe(false);
+      expect(isDeniedForIntegration('/api/accounts', 'POST')).toBe(false);
+      for (const method of ['PUT', 'PATCH', 'DELETE']) {
+        expect(isDeniedForIntegration('/api/accounts', method)).toBe(true);
+        expect(isDeniedForIntegration('/api/accounts?id=1', method)).toBe(true);
+      }
+    });
+
+    it('/api/banks POST is allowed', () => {
+      expect(isDeniedForIntegration('/api/banks', 'POST')).toBe(false);
+      expect(isIntegrationWriteAllowed('/api/banks', 'post')).toBe(true);
+    });
+
+    it.each(['/api/Accounts/', '/api//accounts', '/api/x/../accounts', '/api/%61ccounts', '/api/accounts?id=1', '/API/BANKS'])(
+      '%s stays exact after normalisation: POST only',
+      (path) => {
+        expect(isDeniedForIntegration(path, 'POST')).toBe(false);
+        if (path.toLowerCase().includes('ccounts')) {
+          expect(isDeniedForIntegration(path, 'PUT')).toBe(true);
+          expect(isDeniedForIntegration(path, 'DELETE')).toBe(true);
+        }
+      },
+    );
+
+    it.each([
+      '/api/accounts/x',
+      '/api/accounts/../categories',
+      '/api/categories',
+      '/api/tenants',
+      '/api/tenants/settings',
+      '/api/users',
+      '/api/integrations',
+      '/api/oauth/token',
+    ])('POST %s is still denied', (path) => {
+      expect(isDeniedForIntegration(path, 'POST')).toBe(true);
+      expect(isIntegrationWriteAllowed(path, 'POST')).toBe(false);
+    });
+
+    it('never matches a prefix or another method', () => {
+      expect(isIntegrationWriteAllowed('/api/accounts/1', 'POST')).toBe(false);
+      expect(isIntegrationWriteAllowed('/api/banksx', 'POST')).toBe(false);
+      expect(isIntegrationWriteAllowed('/api/accounts', 'PUT')).toBe(false);
+      expect(isIntegrationWriteAllowed('/api/accounts', undefined as any)).toBe(false);
+    });
   });
 
   it('matches on whole segments only', () => {
@@ -99,7 +157,8 @@ describe('isDeniedForIntegration', () => {
     expect(isDeniedForIntegration('/API/USERS', 'GET')).toBe(true);
     expect(isDeniedForIntegration('/api/%75sers', 'GET')).toBe(true);
     expect(isDeniedForIntegration('/api/transactions/../integrations', 'GET')).toBe(true);
-    expect(isDeniedForIntegration('/api/Accounts/', 'post')).toBe(true);
+    expect(isDeniedForIntegration('/api/Accounts/', 'put')).toBe(true);
+    expect(isDeniedForIntegration('/api/%61ccounts', 'DELETE')).toBe(true);
   });
 
   it('fails closed when the path is unknown', () => {

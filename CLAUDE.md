@@ -70,7 +70,7 @@ Use BullMQ queues for any CPU-intensive or long-running operation. API routes sh
 
 ### Integration tokens: classify every new API route
 
-AI agents, scripts and other systems authenticate with `Authorization: Bearer bliss_<prefix>_<secret>` (#84). `withAuth` turns a token into a normal `req.user` acting as the admin who created the integration, with the role capped (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, **never `admin`**), so existing viewer/admin checks apply unchanged. A central denylist in `apps/api/utils/integrationPolicy.js` (also applied by the root `apps/api/middleware.js`) refuses sessions, users, integrations, the Plaid connection lifecycle and account/category/tenant writes. **Every new route under `apps/api/pages/api` must be added to `apps/api/__tests__/unit/middleware/integrationRouteMatrix.data.ts`** with its expected token outcome — `integrationRouteMatrix.test.ts` fails otherwise. Add the route to `INTEGRATION_DENYLIST` if a token must not reach it, and never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route. Tokens are stored as SHA-256 hash + public prefix only. See [`docs/specs/api/23-integrations-api.md`](docs/specs/api/23-integrations-api.md) and the guide [`docs/guides/connecting-ai-agents.md`](docs/guides/connecting-ai-agents.md).
+AI agents, scripts and other systems authenticate with `Authorization: Bearer bliss_<prefix>_<secret>` (#84). `withAuth` turns a token into a normal `req.user` acting as the admin who created the integration, with the role capped (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, **never `admin`**), so existing viewer/admin checks apply unchanged. A central denylist in `apps/api/utils/integrationPolicy.js` (also applied by the root `apps/api/middleware.js`) refuses sessions, users, integrations, the Plaid connection lifecycle and account/category/tenant writes — except the exact, method-scoped `INTEGRATION_WRITE_ALLOWED` pairs (`POST /api/accounts`, `POST /api/banks`, #98); never add a prefix-style entry there. **Every new route under `apps/api/pages/api` must be added to `apps/api/__tests__/unit/middleware/integrationRouteMatrix.data.ts`** with its expected token outcome — `integrationRouteMatrix.test.ts` fails otherwise. Add the route to `INTEGRATION_DENYLIST` if a token must not reach it, and never re-read the caller's own `User` row (and its `role`) by `req.user.id` in a token-reachable route. Tokens are stored as SHA-256 hash + public prefix only. See [`docs/specs/api/23-integrations-api.md`](docs/specs/api/23-integrations-api.md) and the guide [`docs/guides/connecting-ai-agents.md`](docs/guides/connecting-ai-agents.md).
 
 ### MCP coverage: every token-reachable route needs a tool or an exclusion
 
@@ -103,10 +103,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 4,188 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 1,867 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,225 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 1,096 tests |
+| All | `pnpm test` | -- | 4,372 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 1,987 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,270 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 1,115 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -191,13 +191,14 @@ Key patterns:
 `POST /api/mcp` in `apps/api` is a tools-only [MCP](https://modelcontextprotocol.io) server for Claude Code, Claude Desktop (via `mcp-remote`) and other MCP clients. See [`docs/specs/api/24-mcp-server.md`](docs/specs/api/24-mcp-server.md) and the guide [`docs/guides/using-bliss-with-claude-mcp.md`](docs/guides/using-bliss-with-claude-mcp.md).
 
 - **Transport:** `@modelcontextprotocol/sdk` (pinned) Streamable HTTP, **stateless JSON mode** — a new `McpServer` + transport per request, no `Mcp-Session-Id`, so any replica answers. `GET`/`DELETE` → 405.
-- **Auth:** integration keys only (cookie sessions / user JWTs → 401). Read-only keys may POST here thanks to an **exact-path** allowance (`VIEWER_POST_ALLOWED = ['/api/mcp']` in `utils/integrationPolicy.js`). `tools/list` is role-filtered: Read-only → 21 read tools, Read & write → all 38.
-- **Execution model:** every tool (`lib/mcp/tools/*.js`: reference, transactions, analytics, plaid review queue, imports review, portfolio, subscriptions) calls existing REST routes **over loopback** (`http://127.0.0.1:$PORT`, override `MCP_LOOPBACK_URL`) with the caller's own key, forwarding the client IP for the rate limiters. withAuth, the denylist, tenant scoping, decryption and events therefore apply to every tool call. REST errors map to one-line tool errors (`isError: true`).
+- **Auth:** integration keys only (cookie sessions / user JWTs → 401). Read-only keys may POST here thanks to an **exact-path** allowance (`VIEWER_POST_ALLOWED = ['/api/mcp']` in `utils/integrationPolicy.js`). `tools/list` is role-filtered: Read-only → 21 read tools, Read & write → all 40.
+- **Execution model:** every tool (`lib/mcp/tools/*.js`: reference, workspace setup, transactions, analytics, plaid review queue, imports review, portfolio, subscriptions) calls existing REST routes **over loopback** (`http://127.0.0.1:$PORT`, override `MCP_LOOPBACK_URL`) with the caller's own key, forwarding the client IP for the rate limiters. withAuth, the denylist, tenant scoping, decryption and events therefore apply to every tool call. REST errors map to one-line tool errors (`isError: true`).
 - **Shaping:** opaque cursors (default 50 / max 100), `{ value, currency }` money, signed transaction amounts (+ in / − out), ISO dates, hashes/raw payloads stripped; default pages < 25k chars, 50k hard cap that drops `nextCursor` when it trims.
-- **Out of scope by design:** file upload, Plaid connection management, reference-data writes, `fullScan`. `search_transactions` has no text filter (descriptions are encrypted with per-value PBKDF2 keys).
+- **Workspace setup (#98):** `create_bank` (idempotent, `created: true|false` from the route's 201/200) and `create_account` (manual accounts; `accountNumber` required, encrypted, never echoed — `accountNumberLast4` only; owners default to the connecting admin; integration callers get `409 ACCOUNT_EXISTS` for the same bank + currency + name). They reach the routes through `INTEGRATION_WRITE_ALLOWED` — a method-scoped exact-path allowance (`POST /api/accounts`, `POST /api/banks`) checked before the denylist; `PUT`/`DELETE /api/accounts` stay denied.
+- **Out of scope by design:** file upload, Plaid connection management, account/bank edits and deletes, category/tenant/currency-rate writes, `fullScan`. `search_transactions` has no text filter (descriptions are encrypted with per-value PBKDF2 keys).
 - **OAuth for custom connectors:** Claude Cowork / claude.ai / Claude Desktop connectors can't send a header, so `apps/api` also runs an OAuth 2.1 server (PKCE S256, RFC 9728/8414 discovery via `/.well-known/*` rewrites, dynamic client registration limited by `OAUTH_ALLOWED_REDIRECT_HOSTS`, refresh rotation with reuse detection, RFC 7009 revoke). Every 401 from `/api/mcp` carries a `WWW-Authenticate … resource_metadata` challenge. **The access token is an integration key**: consent at `/oauth/consent` (web, admins only) creates an Integration with `oauthClientId` + `connectionExpiresAt` (default 90 days) whose single ApiKey is re-keyed on each refresh, so everything above applies unchanged and Settings → Integrations revokes it. `/api/oauth` is on `INTEGRATION_DENYLIST` (a key never mints a key). See [`docs/specs/api/25-oauth.md`](docs/specs/api/25-oauth.md).
 - **Observability:** `integration_request` log lines carry `mcpTool` (from the sanitised `x-bliss-mcp-tool` header); one `mcp_tool_call` line per tool call.
-- **Coverage:** 86 token-reachable REST operations, 65 wrapped, 21 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
+- **Coverage:** 87 token-reachable REST operations, 67 wrapped, 20 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
 
 ### Smart import (CSV/XLSX)
 

@@ -55,10 +55,10 @@ describe('MCP coverage of reachable REST operations', () => {
     }
   });
 
-  it('totals: 86 reachable, 65 covered, 21 excluded', () => {
-    expect(reachable.size).toBe(86);
-    expect([...reachable].filter((o) => wrapped.has(o)).length).toBe(65);
-    expect(excluded.size).toBe(21);
+  it('totals: 87 reachable, 67 covered, 20 excluded', () => {
+    expect(reachable.size).toBe(87);
+    expect([...reachable].filter((o) => wrapped.has(o)).length).toBe(67);
+    expect(excluded.size).toBe(20);
   });
 
   it('no file upload or Plaid connection operation is wrapped (AC2)', () => {

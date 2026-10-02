@@ -14,10 +14,13 @@ export const TARGET_RESPONSE_CHARS = 25_000;
 /** Hard cap enforced by capResponse (a max-limit page of wide rows still fits). */
 export const MAX_RESPONSE_CHARS = 50_000;
 
-/** Keys never shown to an agent: hashes, raw provider payloads, embeddings. */
+/**
+ * Keys never shown to an agent: hashes, raw provider payloads, embeddings,
+ * full account numbers (#98: tools show `accountNumberLast4` only).
+ */
 const OMIT_KEYS = Object.freeze([
   'rawJson', 'rawData', 'embedding', 'hash', 'keyHash', 'accessToken', 'dedupeHash',
-  'transactionHash', 'plaidTransactionId', 'externalId',
+  'transactionHash', 'plaidTransactionId', 'externalId', 'accountNumber',
 ]);
 
 export function encodeCursor(state) {

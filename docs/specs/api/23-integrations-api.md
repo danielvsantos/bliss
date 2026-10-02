@@ -149,12 +149,28 @@ match `/api/usersettings`). A token request whose path is unknown is refused
 | `/api/oauth` | all | A key must never mint or approve another token (#89 OAuth, [25-oauth.md](./25-oauth.md)) |
 | `/api/plaid/create-link-token`, `exchange-public-token`, `disconnect`, `rotate-token`, `items/hard-delete`, `resync`, `sync-accounts`, `fetch-historical` | all | Plaid connection lifecycle |
 | `/api/plaid/items` | non-GET | `PATCH` resets connection status after re-auth (lifecycle) |
-| `/api/accounts` | non-GET | No account writes for tokens |
+| `/api/accounts` | non-GET (except `POST`, see below) | No account updates or deletes for tokens |
 | `/api/categories` | non-GET | No category writes for tokens |
 | `/api/tenants` | non-GET | No tenant writes for tokens |
 
 The Plaid **review queue** (`/api/plaid/transactions/*`: promote, bulk-promote,
 bulk-requeue, retry, confirm-seeds) stays available to read-write tokens.
+
+**Create allowance (#98).** `INTEGRATION_WRITE_ALLOWED` lists exact
+(normalised) path + method pairs that `isDeniedForIntegration()` lets through
+before the denylist runs: `POST /api/accounts` and `POST /api/banks`, so an
+agent can set up a workspace's banks and manual accounts (MCP `create_bank` /
+`create_account`). Entries are method-scoped because `/api/accounts` serves
+GET/POST/PUT/DELETE on one path — `PUT`/`DELETE` stay denied — and match one
+path exactly, never a prefix (`/api/accounts/1`, `/api/accounts/../categories`
+are still refused; `/api/Accounts/` and `/api/x/../accounts` normalise to the
+same exact path and are allowed only for `POST`). Read-only tokens still get
+`403 READ_ONLY_INTEGRATION` from withAuth's viewer rule. On `POST
+/api/accounts`, `ownerIds` defaults to the acting user (the creating admin, used
+only for the `AccountOwner` insert — the route never re-reads that `User` row),
+and integration callers get `409 ACCOUNT_EXISTS` for a second account with the
+same bank + currency + name. Session callers are not duplicate-checked: in-app
+onboarding legitimately names several accounts after their bank.
 
 ### Root `middleware.js`
 
@@ -187,7 +203,7 @@ a token-reachable route must also be wrapped by an MCP tool or listed in
 ### MCP server (#89)
 
 Integration keys are also the only credential of the MCP endpoint
-`POST /api/mcp`, which exposes 38 tools over these same REST routes (every tool
+`POST /api/mcp`, which exposes 40 tools over these same REST routes (every tool
 call goes through this authentication path again). See
 [24-mcp-server.md](./24-mcp-server.md).
 
@@ -248,7 +264,7 @@ Key `status` is derived: `revoked` (wins) → `expired` → `active`.
 | File | Covers |
 |---|---|
 | `unit/utils/apiKeys.test.ts` | Format/entropy, hashing, parsing, verify outcomes, lastUsed throttle |
-| `unit/utils/integrationPolicy.test.ts` | Path normalisation, every denylist entry, segment matching, role cap, redaction |
+| `unit/utils/integrationPolicy.test.ts` | Path normalisation, every denylist entry, the exact method-scoped create allowance (#98) and its path variants, segment matching, role cap, redaction |
 | `unit/middleware/withAuth.test.ts` (token block) | req.user shape, cookie ignored, 401/403 codes, optional mode, attribution log, no token in logs |
 | `unit/middleware/nextMiddleware.test.ts` | Root middleware deny/pass-through |
 | `unit/middleware/integrationRouteMatrix.test.ts` | Route enumeration (AC9) |

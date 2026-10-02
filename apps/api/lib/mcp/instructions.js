@@ -9,8 +9,12 @@ Conventions
 - Amounts are { value, currency }. Transaction amounts are signed: positive = money in (credit), negative = money out (debit), in the transaction's own currency.
 - Summaries (get_spending_summary, portfolio, subscriptions) are converted into the user's display currency. Call get_reference_data first to learn it, the enabled currencies and the years that have data.
 - Categories have a type (e.g. Income, Essentials, Lifestyle, Investments, Transfers) and a group (e.g. Food). get_spending_summary works per group; for one category use search_transactions with categoryId.
-- IDs come from listing tools: list_accounts, list_categories, list_tags, search_transactions, get_portfolio_holdings, list_subscriptions, get_plaid_review_queue, list_imports.
+- IDs come from listing tools (and create_bank / create_account): list_accounts, list_categories, list_tags, search_transactions, get_portfolio_holdings, list_subscriptions, get_plaid_review_queue, list_imports.
 - Lists are paged: pass nextCursor back as cursor while hasMore is true.
+
+Setting up
+- create_bank (idempotent) returns the bankId for create_account. Banks and manual accounts can be created here; renaming or deleting them, and bank connections (Plaid), are done in the app.
+- An account's currency and country must already be enabled for the workspace (get_reference_data → tenant). If one is missing, ask the user to enable it in Settings.
 
 Two review queues
 - Bank sync (Plaid): get_plaid_review_queue → review_plaid_transactions. Approving creates the transaction.

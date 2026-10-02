@@ -361,7 +361,10 @@ describe('withAuth() — integration tokens', () => {
     ['PUT', '/api/users'],
     ['GET', '/api/integrations'],
     ['POST', '/api/plaid/create-link-token'],
-    ['POST', '/api/accounts'],
+    ['PUT', '/api/accounts?id=1'],
+    ['DELETE', '/api/accounts?id=1'],
+    ['PUT', '/api/Accounts/?id=1'],
+    ['POST', '/api/accounts/1'],
     ['DELETE', '/api/categories?id=1'],
   ])('denylisted %s %s → 403 NOT_AVAILABLE_TO_INTEGRATIONS', async (method, url) => {
     (mockPrisma.apiKey.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(keyRow({}, { accessLevel: 'READ_WRITE' }));
@@ -372,6 +375,31 @@ describe('withAuth() — integration tokens', () => {
 
     expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_AVAILABLE_TO_INTEGRATIONS' }));
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['POST', '/api/accounts'],
+    ['POST', '/api/Accounts/'],
+    ['POST', '/api/x/../accounts'],
+    ['POST', '/api/banks'],
+  ])('READ_WRITE token reaches the create allowance %s %s (#98)', async (method, url) => {
+    (mockPrisma.apiKey.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(keyRow({}, { accessLevel: 'READ_WRITE' }));
+    const handler = vi.fn().mockResolvedValue(undefined);
+
+    await withAuth(handler)(tokenReq({ method, url }), makeRes());
+
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it.each(['/api/accounts', '/api/banks'])('READ_ONLY token → 403 READ_ONLY_INTEGRATION on POST %s (#98)', async (url) => {
+    const handler = vi.fn();
+    const res = makeRes();
+
+    await withAuth(handler)(tokenReq({ method: 'POST', url }), res);
+
+    expect(res.status).toHaveBeenCalledWith(StatusCodes.FORBIDDEN);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Read-only integration', code: 'READ_ONLY_INTEGRATION' });
     expect(handler).not.toHaveBeenCalled();
   });
 
