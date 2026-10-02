@@ -161,6 +161,16 @@ describe('classifyAssetClass', () => {
     expect(cls({ ...fund, security: { assetType: 'etf', name: 'X', sector: 'Technology' } })).toBe('INDEX_ETF');
   });
 
+  it('classifies an ETF-category holding without SecurityMaster data as INDEX_ETF', () => {
+    expect(cls({ ...fund })).toBe('INDEX_ETF'); // VWCE before refresh-tenant-securities
+    expect(cls({ ...fund, security: null })).toBe('INDEX_ETF');
+    expect(cls({ processingHint: 'API_FUND', categoryGroup: 'ETFs' })).toBe('INDEX_ETF'); // custom ETF category
+    // SecurityMaster knows it is not an ETF → a fund, whatever the category
+    expect(cls({ ...fund, security: { assetType: 'Mutual Fund' } })).toBe('FUND');
+    // Other fund categories stay FUND without data
+    expect(cls({ processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS' })).toBe('FUND');
+  });
+
   it('falls back to OTHER', () => {
     expect(cls({ processingHint: 'MANUAL', defaultCategoryCode: 'COLLECTIBLE' })).toBe('OTHER');
     expect(cls({})).toBe('OTHER');

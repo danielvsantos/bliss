@@ -116,7 +116,8 @@ export function normalizeEtfComposition(raw) {
  *   4. SecurityMaster assetType REIT (US REITs and Brazilian FIIs)
  *   5. SecurityMaster assetType ETF → BOND_ETF / SECTOR_ETF / INDEX_ETF
  *   6. stock categories (API_STOCK) → STOCK
- *   7. fund categories (API_FUND) → FUND
+ *   7. fund categories (API_FUND) → FUND, except an ETF category (ETFS code
+ *      or "ETFs" group) with no SecurityMaster assetType yet → INDEX_ETF
  *   8. OTHER
  *
  * The profile's sector/industry are never used for ETFs (unreliable, #77 spike).
@@ -172,7 +173,13 @@ function autoAssetClass({ processingHint, defaultCategoryCode, categoryGroup, se
 
   // 6–8
   if (processingHint === 'API_STOCK') return 'STOCK';
-  if (processingHint === 'API_FUND') return 'FUND';
+  if (processingHint === 'API_FUND') {
+    // An ETF-category holding SecurityMaster doesn't know yet (new buy, or no
+    // Twelve Data key) is still an ETF — the same rule classifyIncomeAsset uses.
+    const unknownSecurity = !(typeof security?.assetType === 'string' && security.assetType.trim());
+    if (unknownSecurity && (code === 'ETFS' || categoryGroup === 'ETFs')) return 'INDEX_ETF';
+    return 'FUND';
+  }
   return 'OTHER';
 }
 

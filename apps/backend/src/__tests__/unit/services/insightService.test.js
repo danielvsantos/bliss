@@ -828,14 +828,15 @@ describe('insightService (v1)', () => {
 
       const result = await gatherEquityFundamentals('tenant-1', 'USD', {});
 
-      expect(result.holdings.map((h) => h.assetClass)).toEqual(['FUND', 'CRYPTO', 'REAL_ESTATE']);
+      // An ETF-category holding SecurityMaster doesn't know yet is still an ETF (#93 D7).
+      expect(result.holdings.map((h) => h.assetClass)).toEqual(['INDEX_ETF', 'CRYPTO', 'REAL_ESTATE']);
       expect(result.holdings.map((h) => h.sector)).toEqual([null, null, null]);
-      // Nothing here is an equity with a sector → no sector buckets at all
+      // The ETF has no composition → "Diversified", never a sector bucket
       expect(result.sectorAllocation).toEqual({});
       expect(result.sectorAllocation['Alternative Assets']).toBeUndefined();
       expect(result.sectorAllocation['ETFs & Funds']).toBeUndefined();
       // …but the asset-class mix covers everything
-      expect(result.assetClassAllocation.map((a) => a.assetClass)).toEqual(['REAL_ESTATE', 'FUND', 'CRYPTO']);
+      expect(result.assetClassAllocation.map((a) => a.assetClass)).toEqual(['REAL_ESTATE', 'INDEX_ETF', 'CRYPTO']);
     });
 
     // Passive Income #77 regression: once ETFs are refreshed nightly they have

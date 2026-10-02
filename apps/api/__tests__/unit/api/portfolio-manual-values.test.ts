@@ -204,5 +204,47 @@ describe('/api/portfolio/items/[assetId]/manual-values', () => {
       expect(res._status).toBe(404);
       expect(res._body.error).toContain('not found');
     });
+
+    it.each(['API_STOCK', 'API_CRYPTO'])('refuses a manual value on a %s holding (valuation never reads it)', async (hint) => {
+      mockPrisma.portfolioItem.findFirst.mockResolvedValueOnce({
+        id: 42, tenantId: 'test-tenant-123', category: { processingHint: hint },
+      });
+
+      const req = makeReq({
+        method: 'POST',
+        query: { assetId: '42' },
+        body: { date: '2026-04-01', value: 3000, currency: 'USD' },
+      });
+      const res = makeRes();
+
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+      expect(res._status).toBe(400);
+      expect(res._body.error).toContain('priced from market data');
+      expect(mockPrisma.manualAssetValue.create).not.toHaveBeenCalled();
+      expect(mockProduceEvent).not.toHaveBeenCalled();
+    });
+
+    it.each(['API_FUND', 'MANUAL'])('accepts a manual value on a %s holding', async (hint) => {
+      mockPrisma.portfolioItem.findFirst.mockResolvedValueOnce({
+        id: 42, tenantId: 'test-tenant-123', category: { processingHint: hint },
+      });
+      mockPrisma.manualAssetValue.create.mockResolvedValueOnce({ id: 'mv-4' });
+
+      const req = makeReq({
+        method: 'POST',
+        query: { assetId: '42' },
+        body: { date: '2026-04-01', value: 3000, currency: 'USD' },
+      });
+      const res = makeRes();
+
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+      expect(res._status).toBe(201);
+      expect(mockPrisma.portfolioItem.findFirst).toHaveBeenCalledWith({
+        where: { id: 42, tenantId: 'test-tenant-123' },
+        include: { category: { select: { processingHint: true } } },
+      });
+    });
   });
 });

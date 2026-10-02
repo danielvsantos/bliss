@@ -169,6 +169,16 @@ export default withAuth(async function handler(req, res) {
       (item) => item.category?.processingHint === 'API_STOCK' || isEtf(smMap[item.symbol]),
     );
 
+    // Funds left out only because SecurityMaster has no row for them yet (a new
+    // buy before refresh-tenant-securities has run, or no Twelve Data key), so
+    // we can't tell an ETF from a mutual fund. Ticker-less (MANUAL) funds are
+    // never looked up, so they are not pending.
+    const pendingSecuritySymbols = [...new Set(
+      candidateItems
+        .filter((item) => item.category?.processingHint === 'API_FUND' && item.source !== 'MANUAL' && !smMap[item.symbol])
+        .map((item) => item.symbol),
+    )];
+
     // 3. Enrich holdings with live prices and SecurityMaster data
     const enrichedHoldings = await Promise.all(
       stockItems.map(async (item) => {
@@ -347,6 +357,11 @@ export default withAuth(async function handler(req, res) {
         holdingsCount: mergedHoldings.length,
         weightedPeRatio,
         weightedDividendYield,
+      },
+      // Funds missing from these views until their security data is fetched.
+      pendingSecurityData: {
+        count: pendingSecuritySymbols.length,
+        symbols: pendingSecuritySymbols,
       },
       groups: groupings[groupBy],
       groupings,

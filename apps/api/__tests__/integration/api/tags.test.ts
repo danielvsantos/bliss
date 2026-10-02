@@ -155,6 +155,32 @@ describe('POST /api/tags', () => {
     expect(mockPrisma.tag.create).not.toHaveBeenCalled();
   });
 
+  it.each(['notacolor', '#FFF', '#12345G', 'red', 123])('returns 400 for an invalid color (%s)', async (color) => {
+    const req = makeReq({ method: 'POST', body: { name: 'Travel', color } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body).toEqual({ error: 'Invalid color. Use a #RRGGBB hex value or null' });
+    expect(mockPrisma.tag.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['#6D657A', '#ff00aa', null])('accepts color %s', async (color) => {
+    mockPrisma.tag.findUnique.mockResolvedValueOnce(null);
+    mockPrisma.tag.create.mockResolvedValueOnce({ id: 2, name: 'Travel', color });
+
+    const req = makeReq({ method: 'POST', body: { name: 'Travel', color } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.tag.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: 'Travel', color }),
+    });
+  });
+
   it('returns 201 with created tag on success', async () => {
     // No conflict
     mockPrisma.tag.findUnique.mockResolvedValueOnce(null);
@@ -269,6 +295,32 @@ describe('PUT /api/tags', () => {
     expect(res._status).toBe(400);
     expect(res._body).toEqual({ error: 'Invalid tag ID' });
     expect(mockPrisma.tag.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for an invalid color', async () => {
+    const req = makeReq({ method: 'PUT', query: { id: '1' }, body: { color: 'notacolor' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body).toEqual({ error: 'Invalid color. Use a #RRGGBB hex value or null' });
+    expect(mockPrisma.tag.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.tag.update).not.toHaveBeenCalled();
+  });
+
+  it('clears the color when set to null', async () => {
+    const existingTag = { id: 1, name: 'Travel', color: '#6D657A', emoji: null, tenantId: 'test-tenant-123' };
+    mockPrisma.tag.findUnique.mockResolvedValueOnce(existingTag);
+    mockPrisma.tag.update.mockResolvedValueOnce({ ...existingTag, color: null });
+
+    const req = makeReq({ method: 'PUT', query: { id: '1' }, body: { color: null } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockPrisma.tag.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { color: null } });
   });
 
   it('returns 404 when tag does not exist', async () => {

@@ -82,6 +82,8 @@ Body `{ action, … }`:
 | `refresh` | — | 30-min per-tenant cooldown → `429 { retryAfter }`, else `produceEvent(SUBSCRIPTION_DETECTION_REQUESTED, mode: 'incremental')` → `202`. |
 | `fullScan` | — | `produceEvent(SUBSCRIPTION_DETECTION_REQUESTED, mode: 'full')` → `202`. No cooldown (called from the admin Maintenance tab). |
 
+`404` messages speak of the **subscription id** (`No subscription with that id`, `No source/target subscription with that id`, `No dismissed/merged subscription with that id`) rather than the `descriptionHash` column — the hash is the id clients (and the MCP `subscriptionId`) pass in.
+
 ## Related change: `GET /api/transactions?ids=`
 
 `transactions/index.js` now accepts `ids` (comma-separated integers) →

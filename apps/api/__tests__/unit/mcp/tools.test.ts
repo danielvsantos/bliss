@@ -438,6 +438,15 @@ describe('portfolio tools', () => {
     expect(eq.result.groups[0]).toEqual({ name: 'US', value: { value: 70, currency: 'USD' }, weightPct: 70, holdings: 1 });
     expect(eq.result.topHoldings).toHaveLength(1);
     expect(eq.result.topHoldings[0]).toMatchObject({ weight: 70, dividendYieldPct: 0.5 });
+    expect(eq.result.pendingSecurityData).toEqual({ count: 0, symbols: [] });
+
+    const pending = await run('get_equity_analysis', {}, {
+      'GET /api/portfolio/equity-analysis': {
+        portfolioCurrency: 'EUR', summary: { holdingsCount: 0 }, groups: [], holdings: [],
+        pendingSecurityData: { count: 1, symbols: ['VWCE'] },
+      },
+    });
+    expect(pending.result.pendingSecurityData).toEqual({ count: 1, symbols: ['VWCE'] });
   });
 
   it('get_passive_income bundles projection, streams and detached terms', async () => {
@@ -483,6 +492,17 @@ describe('portfolio tools', () => {
     });
     expect(result).toMatchObject({ assetClass: 'REAL_ESTATE', incomeTerms: null, debtTerms: null, manualValues: [{ valueId: 'v1', value: { value: 250000, currency: 'EUR' } }] });
     await expect(run('get_holding_details', { assetId: 8 }, {})).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('get_holding_details exposes the income grouping as incomeClass, apart from assetClass (D7)', async () => {
+    const { result } = await run('get_holding_details', { assetId: 9 }, {
+      'GET /api/portfolio/items/9/asset-class': { assetClass: 'INDEX_ETF', assetClassSource: 'AUTO', autoAssetClass: 'INDEX_ETF' },
+      'GET /api/portfolio/items/9/income-terms': { asset: { symbol: 'VWCE', assetClass: 'ETF' }, terms: null },
+      'GET /api/portfolio/items/9/debt-terms': notFound(),
+      'GET /api/portfolio/items/9/manual-values': [],
+    });
+    expect(result).toMatchObject({ symbol: 'VWCE', assetClass: 'INDEX_ETF', incomeClass: 'ETF' });
+    expect(result).not.toHaveProperty('incomeAssetClass');
   });
 
   it('set_asset_class and manage_manual_values', async () => {

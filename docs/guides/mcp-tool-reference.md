@@ -452,7 +452,7 @@ Total portfolio value over time (net worth of investments, assets and debts) in 
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/portfolio/equity-analysis`
 
-Stock and ETF holdings grouped by sector, industry, country or asset class, with weights, weighted P/E and dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false.
+Stock and ETF holdings grouped by sector, industry, country or asset class, with weights, weighted P/E and dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false. pendingSecurityData lists funds left out until their security data is fetched (new buys, or no market-data key).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -477,7 +477,7 @@ Projected dividends, bond coupons, rent, interest and other income streams for t
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/portfolio/items/[assetId]/asset-class`, `GET /api/portfolio/items/[assetId]/income-terms`, `GET /api/portfolio/items/[assetId]/debt-terms`, `GET /api/portfolio/items/[assetId]/manual-values`
 
-Everything about one holding: asset class (and whether it is overridden), income terms (dividends, coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices).
+Everything about one holding: asset class (and whether it is overridden), income terms (dividends, coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices). incomeClass is the passive-income grouping (STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER), not the asset class.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -502,7 +502,7 @@ Override the automatic asset class of a holding (null restores the automatic one
 **Access:** Write (Read & write keys only) · can delete or discard data  
 **Wraps:** `POST /api/portfolio/items/[assetId]/manual-values`, `PUT /api/portfolio/items/[assetId]/manual-values/[valueId]`, `DELETE /api/portfolio/items/[assetId]/manual-values/[valueId]`
 
-Manual valuations price holdings without market data (property, private assets, cash-like accounts). value is the PRICE PER UNIT, not the position total: market value = value × quantity. To enter a statement total, divide it by the holding quantity first (get_portfolio_holdings). add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. add/update return currentQuantity and impliedMarketValue so the result can be checked. Each change triggers a portfolio revaluation. valueId comes from get_holding_details.
+Manual valuations price holdings without market data (property, private assets, cash-like accounts). value is the PRICE PER UNIT, not the position total: market value = value × quantity. To enter a statement total, divide it by the holding quantity first (get_portfolio_holdings). Stocks and crypto are priced from market data and refuse manual values; for funds a manual value is only a fallback used when no market price is available. add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. add/update return currentQuantity and impliedMarketValue so the result can be checked. Each change triggers a portfolio revaluation. valueId comes from get_holding_details.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

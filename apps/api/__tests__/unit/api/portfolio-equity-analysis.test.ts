@@ -346,6 +346,40 @@ describe('GET /api/portfolio/equity-analysis', () => {
     expect(res._body.summary.weightedPeRatio).toBe(30);
   });
 
+  it('reports funds without SecurityMaster data as pendingSecurityData (B5)', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    const etfCategory = { name: 'ETFs', group: 'ETFs', processingHint: 'API_FUND' };
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      item(),
+      // Fresh ETF buy, held in two accounts — no SecurityMaster row yet.
+      item({ id: 2, symbol: 'VWCE', category: etfCategory }),
+      item({ id: 3, symbol: 'VWCE', category: etfCategory }),
+      // Known mutual fund: excluded on purpose, not pending.
+      item({ id: 4, symbol: 'VFIAX', category: { name: 'Funds', group: 'Funds', processingHint: 'API_FUND' } }),
+      // Ticker-less fund: never looked up, not pending.
+      item({ id: 5, symbol: 'Funds:PIC 33/60', source: 'MANUAL', category: { name: 'Funds', group: 'Funds', processingHint: 'API_FUND' } }),
+    ]);
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([sm(), sm({ symbol: 'VFIAX', assetType: 'Mutual Fund' })]);
+
+    const res = makeRes();
+    await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.summary.holdingsCount).toBe(1);
+    expect(res._body.pendingSecurityData).toEqual({ count: 1, symbols: ['VWCE'] });
+  });
+
+  it('reports no pending funds when every fund is known', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([item()]);
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([sm()]);
+
+    const res = makeRes();
+    await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._body.pendingSecurityData).toEqual({ count: 0, symbols: [] });
+  });
+
   it('uses the dividend override for yield and merges same-symbol holdings', async () => {
     mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
     // Live price is mocked at 150 → value 1500 per 10 units.

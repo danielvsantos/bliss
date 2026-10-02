@@ -216,6 +216,19 @@ components:
             True when at least one ETF holding has composition data. When false
             (e.g. the Twelve Data plan doesn't include /etfs/world/composition),
             look-through has no effect and the web hides its switch.
+        pendingSecurityData:
+          type: object
+          description: >
+            API_FUND holdings with a ticker but no SecurityMaster row yet (a new
+            buy before the securities refresh, or no Twelve Data key). They are
+            left out of every view until their security data is fetched.
+          properties:
+            count:
+              type: integer
+            symbols:
+              type: array
+              items:
+                type: string
         groups:
           type: array
           description: Groups for the requested `groupBy`.

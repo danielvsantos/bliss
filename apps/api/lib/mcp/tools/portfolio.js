@@ -173,7 +173,8 @@ const getEquityAnalysis = defineTool({
   title: 'Get equity analysis',
   description:
     'Stock and ETF holdings grouped by sector, industry, country or asset class, with weights, weighted P/E and '
-    + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false.',
+    + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false. '
+    + 'pendingSecurityData lists funds left out until their security data is fetched (new buys, or no market-data key).',
   input: {
     groupBy: z.enum(['sector', 'industry', 'country', 'assetClass']).optional(),
     accountId: intId('Only this account.').optional(),
@@ -211,6 +212,7 @@ const getEquityAnalysis = defineTool({
       })),
       topHoldings: holdings,
       holdingsCount: (data.holdings || []).length,
+      pendingSecurityData: data.pendingSecurityData ?? { count: 0, symbols: [] },
     };
   },
 });
@@ -303,7 +305,8 @@ const getHoldingDetails = defineTool({
   title: 'Get holding details',
   description:
     'Everything about one holding: asset class (and whether it is overridden), income terms (dividends, '
-    + 'coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices).',
+    + 'coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices). '
+    + 'incomeClass is the passive-income grouping (STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER), not the asset class.',
   input: {
     assetId,
     manualValuesLimit: z.number().int().min(0).max(100).optional().describe('Most recent manual values (default 20).'),
@@ -332,7 +335,7 @@ const getHoldingDetails = defineTool({
       assetClassSource: assetClass.assetClassSource,
       autoAssetClass: assetClass.autoAssetClass,
       incomeTerms: income?.terms ?? null,
-      incomeAssetClass: income?.asset?.assetClass ?? null,
+      incomeClass: income?.asset?.assetClass ?? null,
       autoDividends: income?.auto
         ? { annualDividend: income.auto.annualDividend, dividendYield: income.auto.dividendYield, frequency: income.auto.frequency, currency: income.auto.currency }
         : null,
@@ -394,6 +397,8 @@ const manageManualValues = defineTool({
     'Manual valuations price holdings without market data (property, private assets, cash-like accounts). '
     + 'value is the PRICE PER UNIT, not the position total: market value = value × quantity. To enter a '
     + 'statement total, divide it by the holding quantity first (get_portfolio_holdings). '
+    + 'Stocks and crypto are priced from market data and refuse manual values; for funds a manual value is '
+    + 'only a fallback used when no market price is available. '
     + 'add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. '
     + 'add/update return currentQuantity and impliedMarketValue so the result can be checked. '
     + 'Each change triggers a portfolio revaluation. valueId comes from get_holding_details.',

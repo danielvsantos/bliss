@@ -32,6 +32,9 @@ components:
           type: string
         color:
           type: string
+          nullable: true
+          pattern: '^#[0-9a-fA-F]{6}$'
+          description: '#RRGGBB hex color, or null for none. Anything else is rejected with 400.'
         emoji:
           type: string
 

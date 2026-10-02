@@ -453,6 +453,12 @@ paths:
                           quantity:
                             type: string
                             description: Current holding quantity (Decimal serialized as string).
+        '400':
+          description: >-
+            Missing required fields, or the holding is market-priced (API_STOCK /
+            API_CRYPTO category), whose valuation never reads manual values.
+            API_FUND holdings accept them as a fallback used only when no live or
+            stored market price exists.
         '404':
           description: Portfolio item not found.
 

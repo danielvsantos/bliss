@@ -114,12 +114,22 @@ async function handleGet(req, res) {
   }
 }
 
+// Tag colors are #RRGGBB hex strings; null/undefined means "no color".
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const isValidColor = (color) => color === undefined || color === null || (typeof color === 'string' && HEX_COLOR.test(color));
+const INVALID_COLOR_ERROR = 'Invalid color. Use a #RRGGBB hex value or null';
+
 // POST /api/tags
 async function handlePost(req, res) {
   const { name, color, emoji, budget, startDate, endDate } = req.body;
 
   if (!name) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Tag name is required' });
+    return;
+  }
+
+  if (!isValidColor(color)) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: INVALID_COLOR_ERROR });
     return;
   }
 
@@ -175,6 +185,11 @@ async function handlePut(req, res) {
   const tagId = parseInt(id, 10);
   if (isNaN(tagId)) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid tag ID' });
+    return;
+  }
+
+  if (!isValidColor(color)) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: INVALID_COLOR_ERROR });
     return;
   }
 
