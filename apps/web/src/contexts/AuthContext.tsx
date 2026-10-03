@@ -15,6 +15,7 @@ import {
 interface APIErrorResponse {
   message: string;
   error?: string;
+  code?: string;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -116,7 +117,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         || 'Failed to create account. Please try again.';
       setError(errorMessage);
       setUser(null);
-      throw new Error(errorMessage);
+      // Keep the API's machine code (e.g. SIGNUP_INVITE_REQUIRED, #99) so the
+      // form can show a localized message instead of the English one.
+      const err = new Error(errorMessage) as Error & { code?: string };
+      err.code = axiosError.response?.data?.code;
+      throw err;
     }
   };
 

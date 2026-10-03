@@ -71,6 +71,14 @@ export const ROTATION_COVERAGE = [
     fields: [{ name: 'merchantLabel', searchable: false, sanity: nonEmptyString }],
   },
   {
+    label: 'SignupInvite.email',
+    model: 'SignupInvite',
+    prismaModel: 'signupInvite',
+    idField: 'id',
+    orderBy: { id: 'asc' },
+    fields: [{ name: 'email', searchable: true, sanity: isEmail }],
+  },
+  {
     label: 'PlaidTransaction.rawJson',
     model: 'PlaidTransaction',
     prismaModel: 'plaidTransaction',

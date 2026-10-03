@@ -2,6 +2,14 @@ import prisma from '../prisma/prisma';
 import { DEFAULT_CATEGORIES } from '../lib/defaultCategories.js';
 import { hashPassword, verifyPassword, needsRehash } from './password.js';
 import { normalizeEmail } from '../utils/normalizeEmail.js';
+import { isInviteOnly } from '../utils/signupMode.js';
+import {
+  hasUnusedInvite,
+  consumeInviteInTx,
+  logInviteConsumed,
+  logInviteRejected,
+  SIGNUP_INVITE_REQUIRED,
+} from './signupInvite.service.js';
 
 export class AuthService {
   /**
@@ -117,6 +125,8 @@ export class AuthService {
    */
   static GOOGLE_EMAIL_UNVERIFIED = 'GOOGLE_EMAIL_UNVERIFIED';
   static GOOGLE_ACCOUNT_EXISTS = 'GOOGLE_ACCOUNT_EXISTS';
+  /** Invite-only mode (#99): no unused SignupInvite for this Google email. */
+  static SIGNUP_INVITE_REQUIRED = SIGNUP_INVITE_REQUIRED;
 
   /**
    * Sign in with Google: return the existing Google-linked user, or create a
@@ -161,8 +171,18 @@ export class AuthService {
       return { user: existingUser, isNew: false };
     }
 
+    // Invite-only gate (#99): only the create branch. A returning Google user
+    // has already returned above, whatever the mode. `email` is Google's
+    // verified address (checked first thing in this method).
+    if (isInviteOnly() && !(await hasUnusedInvite(email))) {
+      logInviteRejected('google', email);
+      const err = new Error('Sign-up on this instance is by invitation only.');
+      err.code = AuthService.SIGNUP_INVITE_REQUIRED;
+      throw err;
+    }
+
     // Create new tenant, user, and seed default categories in a transaction
-    const { tenant, user } = await prisma.$transaction(async (tx) => {
+    const { tenant, user, inviteId } = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
           name: `${name}'s Workspace`,
@@ -170,6 +190,10 @@ export class AuthService {
           plaidHistoryDays: parseInt(process.env.PLAID_HISTORY_DAYS ?? '1', 10),
         },
       });
+
+      // Single-use: consumed atomically with the tenant. Its error carries
+      // the same SIGNUP_INVITE_REQUIRED code if a concurrent sign-in won.
+      const inviteId = isInviteOnly() ? await consumeInviteInTx(tx, email, tenant.id) : undefined;
 
       // Create new user with Google credentials.
       // This path creates a brand-new tenant, so the user is the tenant owner — grant admin.
@@ -197,8 +221,10 @@ export class AuthService {
         skipDuplicates: true,
       });
 
-      return { tenant, user };
+      return { tenant, user, inviteId };
     });
+
+    if (inviteId !== undefined) logInviteConsumed('google', inviteId, tenant.id);
 
     return { user, isNew: true };
   }

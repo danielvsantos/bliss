@@ -72,6 +72,7 @@ model Tenant {
   incomeTerms         IncomeTerms[]
   integrations        Integration[]
   apiKeys             ApiKey[]
+  signupInvites       SignupInvite[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -80,6 +81,28 @@ model Tenant {
   // Onboarding state
   onboardingProgress    Json?       // { checklist: {...}, setupFlow: {...} }
   onboardingCompletedAt DateTime?   // null = onboarding not finished
+}
+
+/// Invite-only sign-up allowlist (SIGNUP_MODE=invite_only, #99).
+///
+/// GLOBAL (not tenant-scoped) by design: an invite exists before its tenant
+/// does. Exempt from the "every query includes tenantId" rule — do not add
+/// tenantId. Managed only through /api/admin/invites (ADMIN_API_KEY).
+///
+/// `email` is deterministically encrypted (searchable) like User.email, so a
+/// plaintext SQL insert never matches: always pass normalizeEmail(input) for
+/// reads and writes (apps/api/services/signupInvite.service.js does this).
+/// Single-use: consumed inside the tenant-creation transaction.
+model SignupInvite {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  note           String?
+  createdAt      DateTime  @default(now())
+  usedAt         DateTime?
+  usedByTenantId String?
+  usedByTenant   Tenant?   @relation(fields: [usedByTenantId], references: [id], onDelete: SetNull)
+
+  @@index([usedAt])
 }
 
 model User {

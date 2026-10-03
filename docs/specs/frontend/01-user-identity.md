@@ -56,6 +56,12 @@ Note: The register form does **not** include a confirm-password field. Instead, 
 - **"Create Account"** primary button (full width, loading spinner when pending)
 - Error messages displayed inline
 
+### Invite-only sign-up (#99):
+- `useSignupMode()` (`src/hooks/use-signup-mode.ts`, TanStack Query, `staleTime` 60 s, `retry: 1`) reads the public `GET /api/auth/signup-mode` via `api.getSignupMode()` → `{ inviteOnly }`. While loading or on any failure it reports `inviteOnly: false` (open-mode UI); the server enforces the gate either way.
+- When `inviteOnly`, the Sign Up form shows a notice at the top (`role="status"`, `data-testid="invite-only-notice"`, `bg-brand-primary/10 text-brand-deep border-brand-primary/20`): "This Bliss instance is invite-only. Use the email address you were invited with." The form fields are unchanged: there is **no invite-code field**.
+- A sign-up rejected with `code: 'SIGNUP_INVITE_REQUIRED'` (`AuthContext.signUp` now keeps the API's `code` on the thrown `Error`) shows the localized "This email hasn't been invited to this Bliss instance. Ask the person who runs it for an invite." instead of the server's English message. The Google path arrives as `?error=signup_invite_required` and renders the same message in the OAuth rejection banner (`OAUTH_ERROR_KEYS`).
+- Both strings exist in en/es/fr/pt/it.
+
 ### Key Functions:
 - **`onLoginSubmit(values)`** (inside `SignInForm`):
     - Calls the `signIn` function from `useAuth()`.
@@ -303,7 +309,7 @@ Consumers import the hook from `@/hooks/use-auth`, never from `@/contexts/AuthCo
 ### Responsibilities:
 - **State Management**: Maintains the global authentication state including the `user` object.
 - **Session Checking**: On load, `checkSession` calls `api.getSession()`. The API reads the HttpOnly `token` cookie server-side. The frontend does **not** read or store the JWT — session state is entirely cookie-driven.
-- **API Abstraction**: Wraps `api.signup` and `api.signin`. Neither returns a `token` field; the session cookie is set server-side before the response is sent.
+- **API Abstraction**: Wraps `api.signup` and `api.signin`. Neither returns a `token` field; the session cookie is set server-side before the response is sent. `signUp` rethrows API failures as an `Error` whose `message` is the server's message and whose `code` carries the API's machine code when present (e.g. `SIGNUP_INVITE_REQUIRED`).
 - **No localStorage token management**: There are no `localStorage.getItem/setItem/removeItem` calls for the JWT. The token lives exclusively in the HttpOnly cookie managed by the browser. `signIn`, `signUp`, and `signOut` do not touch `localStorage`.
 - **Google OAuth initiation (`signInWithGoogle`)**:
     1. Fetches a CSRF token from `GET ${NEXT_PUBLIC_API_URL}/api/auth/csrf` with `credentials: 'include'`.

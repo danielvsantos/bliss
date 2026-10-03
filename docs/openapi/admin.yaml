@@ -37,7 +37,8 @@ components:
       description: >
         Static admin API key set in the ADMIN_API_KEY environment variable.
         Must be provided on every request. Returns 401 if missing or incorrect.
-        Applies to the `/api/admin/default-categories/*` endpoints only.
+        Applies to the `/api/admin/default-categories/*` and `/api/admin/invites`
+        endpoints. Fails closed: with ADMIN_API_KEY unset every request gets 401.
     cookieAuth:
       type: apiKey
       in: cookie
@@ -48,6 +49,44 @@ components:
         `user.role === 'admin'` (403 otherwise).
 
   schemas:
+    SignupInvite:
+      type: object
+      description: >
+        Invite-only sign-up allowlist entry (#99). Single-use: consumed when a
+        tenant is created with it. Stored encrypted; returned decrypted only by
+        this admin route.
+      properties:
+        id:
+          type: string
+          example: 'clx...'
+        email:
+          type: string
+          format: email
+          description: Normalized (trimmed + lowercased). No dot or plus-tag folding.
+          example: ana@example.com
+        note:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: 'Ana – college'
+        createdAt:
+          type: string
+          format: date-time
+        usedAt:
+          type: string
+          format: date-time
+          nullable: true
+        usedByTenantId:
+          type: string
+          nullable: true
+          description: Tenant created with this invite. Nulled if that tenant is deleted.
+    AdminError:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
     DefaultCategoryListItem:
       type: object
       description: A default category with live database statistics.
@@ -576,6 +615,141 @@ paths:
           description: Unauthorized.
         '500':
           description: Internal Server Error (outer error, not per-row failures).
+
+  # ─── Invite-only sign-up allowlist (#99) ────────────────────────────────────
+
+  /api/admin/invites:
+    get:
+      summary: List sign-up invites
+      description: >
+        Lists the invite-only sign-up allowlist, newest first. Works whatever
+        SIGNUP_MODE is. Integration tokens are refused (403) by the central denylist.
+      tags:
+        - Admin — Sign-up Invites
+      security:
+        - adminKeyAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [unused, used]
+      responses:
+        '200':
+          description: The invites.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invites:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignupInvite'
+        '400':
+          description: Unknown status value.
+        '401':
+          description: Missing or wrong x-admin-key, or ADMIN_API_KEY not set.
+    post:
+      summary: Invite an email
+      description: >
+        Adds an email (normalized: trim + lowercase) to the allowlist. It can
+        then create exactly one tenant, via email/password sign-up or a first
+        Google sign-in with that address.
+      tags:
+        - Admin — Sign-up Invites
+      security:
+        - adminKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: ana@example.com
+                note:
+                  type: string
+                  maxLength: 200
+                  example: 'Ana – college'
+      responses:
+        '201':
+          description: Invite created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invite:
+                    $ref: '#/components/schemas/SignupInvite'
+        '400':
+          description: Invalid email, or note not a string / longer than 200 characters.
+        '401':
+          description: Missing or wrong x-admin-key, or ADMIN_API_KEY not set.
+        '409':
+          description: 'An invite for this email already exists (`code: INVITE_EXISTS`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+    delete:
+      summary: Revoke an unused invite
+      description: >
+        Deletes an unused invite, by `email` (normalized) or `id`, given in the
+        JSON body (preferred: query strings end up in access logs) or as query
+        parameters. A used invite is audit history and cannot be revoked.
+      tags:
+        - Admin — Sign-up Invites
+      security:
+        - adminKeyAuth: []
+      parameters:
+        - name: email
+          in: query
+          required: false
+          schema:
+            type: string
+            format: email
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                id:
+                  type: string
+      responses:
+        '204':
+          description: Revoked.
+        '400':
+          description: Neither email nor id given.
+        '401':
+          description: Missing or wrong x-admin-key, or ADMIN_API_KEY not set.
+        '404':
+          description: 'No such invite (`code: INVITE_NOT_FOUND`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
+        '409':
+          description: 'The invite has already been used (`code: INVITE_ALREADY_USED`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminError'
 
   # ─── Maintenance / Rebuild endpoints (tenant-admin) ─────────────────────────
 

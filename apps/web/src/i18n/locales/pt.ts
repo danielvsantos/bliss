@@ -2238,6 +2238,10 @@ const pt = {
   "Your Google account's email address is not verified. Verify it with Google, then try again.": "O endereço de e-mail da sua conta Google não está verificado. Verifique-o junto da Google e tente novamente.",
   "Sign-in with Google failed. Please try again.": "Não foi possível iniciar sessão com a Google. Tente novamente.",
   "We could not sign you in automatically. Please try signing in with your password.": "Não conseguimos iniciar a sua sessão automaticamente. Tente iniciar sessão com a sua palavra-passe.",
+
+  // Invite-only sign-up (task #99)
+  "This Bliss instance is invite-only. Use the email address you were invited with.": "Esta instância do Bliss é apenas por convite. Utilize o endereço de e-mail com que foi convidado.",
+  "This email hasn't been invited to this Bliss instance. Ask the person who runs it for an invite.": "Este e-mail não foi convidado para esta instância do Bliss. Peça um convite à pessoa que a gere.",
   "Sign up with Google": "Cadastrar com Google",
   "or continue with email": "ou continue com e-mail",
   "Email address": "Endereço de e-mail",
