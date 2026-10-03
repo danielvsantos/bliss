@@ -150,15 +150,38 @@ async function handleGet(req, res, user) {
   }
 }
 
+const ACCOUNT_NAME_MAX = 100;
+
 async function handlePost(req, res, user) {
   const tenantId = user.tenantId;
-  const { name, accountNumber, bankId, currencyCode, countryId, ownerIds = [] } = req.body;
+  const { name, accountNumber, bankId, currencyCode, countryId, ownerIds } = req.body || {};
 
-  if (!name || !accountNumber || !bankId || !currencyCode || !countryId || ownerIds.length === 0) {
+  if (!name || !accountNumber || !bankId || !currencyCode || !countryId) {
     res.status(StatusCodes.BAD_REQUEST).json({
       error: 'Missing required fields',
-      details: 'name, bankId, currencyCode, and countryId are required'
+      details: 'name, accountNumber, bankId, currencyCode and countryId are required'
     });
+    return;
+  }
+
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  if (!trimmedName || trimmedName.length > ACCOUNT_NAME_MAX) {
+    res.status(StatusCodes.BAD_REQUEST).json({
+      error: `Account name must be between 1 and ${ACCOUNT_NAME_MAX} characters`
+    });
+    return;
+  }
+
+  if (typeof accountNumber !== 'string' || typeof currencyCode !== 'string' || typeof countryId !== 'string') {
+    res.status(StatusCodes.BAD_REQUEST).json({
+      error: 'Invalid input',
+      details: 'accountNumber, currencyCode and countryId must be strings'
+    });
+    return;
+  }
+
+  if (ownerIds !== undefined && !Array.isArray(ownerIds)) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid owner IDs', details: 'ownerIds must be an array' });
     return;
   }
 
@@ -168,13 +191,16 @@ async function handlePost(req, res, user) {
     return;
   }
 
+  const upperCurrency = currencyCode.toUpperCase();
+  const upperCountry = countryId.toUpperCase();
+
   // Validate that the currency, country, and BANK exist and are available to the tenant
   const [validCurrency, validCountry, validTenantBank] = await Promise.all([
     prisma.tenantCurrency.findFirst({
-      where: { tenantId, currencyId: currencyCode.toUpperCase() }
+      where: { tenantId, currencyId: upperCurrency }
     }),
     prisma.tenantCountry.findFirst({
-      where: { tenantId, countryId: countryId.toUpperCase() }
+      where: { tenantId, countryId: upperCountry }
     }),
     // Check if the bank is linked to THIS tenant
     prisma.tenantBank.findUnique({
@@ -201,38 +227,71 @@ async function handlePost(req, res, user) {
     return;
   }
 
-  // Validate that all owners exist and belong to the tenant
-  const validUsers = await prisma.user.findMany({
-    where: {
-      id: { in: ownerIds },
-      tenantId
-    }
-  });
+  // Owners default to the acting user (#98). For an integration token that is
+  // the admin who created it; the id is only used for the AccountOwner insert,
+  // never to re-read that user's row or role.
+  const owners = ownerIds && ownerIds.length > 0 ? ownerIds : [user.id];
 
-  if (validUsers.length !== ownerIds.length) {
-    res.status(StatusCodes.BAD_REQUEST).json({ 
-      error: 'Invalid owner IDs',
-      details: 'Some users do not exist in this tenant'
+  if (ownerIds && ownerIds.length > 0) {
+    // Validate that all supplied owners exist and belong to the tenant
+    const validUsers = await prisma.user.findMany({
+      where: {
+        id: { in: ownerIds },
+        tenantId
+      },
+      select: { id: true }
     });
-    return;
+
+    if (validUsers.length !== new Set(ownerIds).size) {
+      res.status(StatusCodes.BAD_REQUEST).json({ 
+        error: 'Invalid owner IDs',
+        details: 'Some users do not exist in this tenant'
+      });
+      return;
+    }
+  }
+
+  // Integration callers (MCP agents, scripts) retry: refuse a second account
+  // with the same bank + currency + name (#98). Best-effort, not a unique
+  // index: the in-app onboarding legitimately names several accounts after
+  // their bank, so session callers are not checked.
+  if (user.authType === 'integration') {
+    const existing = await prisma.account.findFirst({
+      where: {
+        tenantId,
+        bankId: parsedBankId,
+        currencyCode: upperCurrency,
+        name: { equals: trimmedName, mode: 'insensitive' }
+      },
+      select: { id: true }
+    });
+    if (existing) {
+      res.status(StatusCodes.CONFLICT).json({
+        error: 'ACCOUNT_EXISTS',
+        code: 'ACCOUNT_EXISTS',
+        accountId: existing.id,
+        details: { accountId: existing.id }
+      });
+      return;
+    }
   }
 
   // Create account and audit log in a transaction
   const result = await prisma.$transaction(async (prisma) => {
     const newAccount = await prisma.account.create({
       data: {
-        name,
+        name: trimmedName,
         accountNumber,
         bankId: parsedBankId,
-        currencyCode: currencyCode.toUpperCase(),
-        countryId: countryId.toUpperCase(),
+        currencyCode: upperCurrency,
+        countryId: upperCountry,
         tenantId,
         owners: {
-          create: ownerIds.map(userId => ({ userId }))
+          create: [...new Set(owners)].map(userId => ({ userId }))
         }
       },
       include: { 
-        owners: { include: { user: true } },
+        owners: { include: { user: { select: { id: true, email: true } } } },
         country: true,
         currency: true,
         bank: true
@@ -242,7 +301,11 @@ async function handlePost(req, res, user) {
     return newAccount;
   });
 
-  res.status(StatusCodes.CREATED).json(result);
+  // The full account number is never echoed back on create (#98); the GETs
+  // are unchanged.
+  const { accountNumber: storedNumber, ...account } = result;
+  const number = typeof storedNumber === 'string' ? storedNumber : accountNumber;
+  res.status(StatusCodes.CREATED).json({ ...account, accountNumberLast4: number.slice(-4) });
   return;
 }
 

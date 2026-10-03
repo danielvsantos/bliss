@@ -7,7 +7,9 @@
  * viewer rule and admin check applies to them unchanged. This module adds the
  * one thing roles cannot express: a small central denylist of non-admin routes
  * a token must never reach (sessions, user profiles, token management, the
- * Plaid connection lifecycle, and account/category/tenant writes).
+ * Plaid connection lifecycle, and account/category/tenant writes). A short,
+ * method-scoped exact-path allowance (INTEGRATION_WRITE_ALLOWED) carves the
+ * account and bank *creates* back out of it (#98).
  *
  * PURE MODULE: no Node built-ins, no Prisma. It is imported both by withAuth
  * (Node runtime) and by the root Next.js middleware.js (Edge runtime).
@@ -51,7 +53,8 @@ export const INTEGRATION_DENYLIST = Object.freeze([
   { prefix: '/api/plaid/fetch-historical', methods: 'ALL' },
   // PATCH resets connection status after re-auth — lifecycle, not data.
   { prefix: '/api/plaid/items', methods: 'NON_GET' },
-  // No account/category/tenant writes for tokens.
+  // No account/category/tenant writes for tokens (account create excepted,
+  // see INTEGRATION_WRITE_ALLOWED).
   { prefix: '/api/accounts', methods: 'NON_GET' },
   { prefix: '/api/categories', methods: 'NON_GET' },
   { prefix: '/api/tenants', methods: 'NON_GET' },
@@ -64,6 +67,19 @@ export const INTEGRATION_DENYLIST = Object.freeze([
  * Exact match only — never a prefix.
  */
 export const VIEWER_POST_ALLOWED = Object.freeze(['/api/mcp']);
+
+/**
+ * Exact (normalised) path + method pairs a token may reach even though a
+ * denylist prefix covers them (#98): creating banks and manual accounts, so an
+ * agent can set up a workspace. `/api/accounts` serves GET/POST/PUT/DELETE on
+ * the same path, so entries are method-scoped — PUT/DELETE stay denied.
+ * Exact match only — never a prefix. A prefix-style entry here is a review
+ * blocker. Read-only tokens are still refused by withAuth's viewer rule.
+ */
+export const INTEGRATION_WRITE_ALLOWED = Object.freeze([
+  Object.freeze({ path: '/api/accounts', methods: Object.freeze(['POST']) }),
+  Object.freeze({ path: '/api/banks', methods: Object.freeze(['POST']) }),
+]);
 
 function safeDecode(segment) {
   try {
@@ -110,6 +126,18 @@ function matchesPrefix(path, prefix) {
 /**
  * @param {string} url     Raw request URL or path.
  * @param {string} method  HTTP method.
+ * @returns {boolean} true when this exact path + method is on
+ *   INTEGRATION_WRITE_ALLOWED.
+ */
+export function isIntegrationWriteAllowed(url, method) {
+  const path = normalizeApiPath(url);
+  const upper = String(method || '').toUpperCase();
+  return INTEGRATION_WRITE_ALLOWED.some((entry) => entry.path === path && entry.methods.includes(upper));
+}
+
+/**
+ * @param {string} url     Raw request URL or path.
+ * @param {string} method  HTTP method.
  * @returns {boolean} true when an integration token must be refused.
  */
 export function isDeniedForIntegration(url, method) {
@@ -118,6 +146,7 @@ export function isDeniedForIntegration(url, method) {
   if (!path || path === '/') return true;
 
   const upper = String(method || 'GET').toUpperCase();
+  if (isIntegrationWriteAllowed(path, upper)) return false;
   const isRead = upper === 'GET' || upper === 'HEAD';
 
   return INTEGRATION_DENYLIST.some(({ prefix, methods }) => {

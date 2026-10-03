@@ -18,7 +18,6 @@ export const EXCLUDED_OPERATIONS = Object.freeze([
   { method: 'GET', route: '/api/plaid/items', reason: 'Plaid connections are managed in the app' },
   { method: 'GET', route: '/api/plaid/accounts', reason: 'Plaid connections are managed in the app' },
   { method: 'GET', route: '/api/plaid/sync-logs', reason: 'Plaid connections are managed in the app' },
-  { method: 'POST', route: '/api/banks', reason: 'Reference-data writes stay in the app' },
   { method: 'POST', route: '/api/currency-rates', reason: 'Reference-data writes stay in the app' },
   { method: 'PUT', route: '/api/currency-rates', reason: 'Reference-data writes stay in the app' },
   { method: 'DELETE', route: '/api/currency-rates', reason: 'Reference-data writes stay in the app' },

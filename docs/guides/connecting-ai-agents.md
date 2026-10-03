@@ -50,7 +50,8 @@ the access level.
 | Income terms, debt terms, manual asset values | ❌ | ✅ |
 | Trigger insights or a subscriptions scan | ❌ | ✅ |
 | Read accounts, categories and tenant settings | ✅ | ✅ |
-| Create / edit / delete accounts or categories | ❌ | ❌ |
+| Create banks and manual accounts (`POST /api/banks`, `POST /api/accounts`) | ❌ | ✅ |
+| Edit / delete accounts, or create / edit / delete categories | ❌ | ❌ |
 | Change tenant settings, manage users or roles | ❌ | ❌ |
 | Connect, disconnect, re-sync or rotate Plaid bank connections | ❌ | ❌ |
 | Maintenance rebuilds, fundamentals refresh (admin actions) | ❌ | ❌ |
@@ -95,7 +96,7 @@ curl -H "Authorization: Bearer $BLISS_TOKEN" \
 
 ### Claude Code, Claude Desktop or another MCP client
 
-**Use the MCP server.** Bliss exposes 38 agent-ready tools at
+**Use the MCP server.** Bliss exposes 40 agent-ready tools at
 `$BLISS_API_URL/api/mcp`, authenticated with this same token — the agent
 doesn't need to learn the REST API. See
 [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp):

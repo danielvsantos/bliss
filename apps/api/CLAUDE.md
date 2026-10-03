@@ -31,7 +31,7 @@ apps/api/
     tags.js             # Tag management
     insights.js         # AI insights
     users.js            # User profile
-    banks.js            # Bank listing
+    banks.js            # Bank listing + idempotent create/link (201 new link, 200 already linked)
     countries.js        # Supported countries
     currencies.js       # Supported currencies
     currency-rates.js   # Exchange rates
@@ -97,7 +97,7 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 |------|---------|
 | `withAuth.js` | Integration-token path (role cap + denylist + attribution log), then JWT validation, Redis denylist check; hydrates `req.user` |
 | `apiKeys.js` | Integration tokens: generate, SHA-256 hash, parse, `verifyApiKey`, throttled `touchLastUsed` |
-| `integrationPolicy.js` | Pure (Edge-safe) token policy: path normalisation, `INTEGRATION_DENYLIST`, `VIEWER_POST_ALLOWED` (`/api/mcp`), `effectiveRole`, token extraction/redaction |
+| `integrationPolicy.js` | Pure (Edge-safe) token policy: path normalisation, `INTEGRATION_DENYLIST`, `INTEGRATION_WRITE_ALLOWED` (exact `POST /api/accounts` + `POST /api/banks`, #98), `VIEWER_POST_ALLOWED` (`/api/mcp`), `effectiveRole`, token extraction/redaction |
 | `cors.js` | Dynamic origin whitelist from `FRONTEND_URL`, auto-adds localhost in dev |
 | `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config |
 | `rateLimit.js` | Per-route rate limiters (incl. `integrations`, `oauth`, `oauthRegister`) |
@@ -198,6 +198,6 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 ## Lib
 
-- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (38 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
+- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (40 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
 - `constants.js` -- Category types: Income, Essentials, Lifestyle, Growth, Ventures, Investments, Asset, Debt, Transfers
 - `defaultCategories.js` -- ~70 pre-seeded categories for new tenants (with type, group, icon, processingHint)

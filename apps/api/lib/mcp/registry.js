@@ -5,6 +5,7 @@ import plaidTools from './tools/plaid.js';
 import importTools from './tools/imports.js';
 import portfolioTools from './tools/portfolio.js';
 import subscriptionTools from './tools/subscriptions.js';
+import setupTools from './tools/setup.js';
 
 /**
  * The MCP tool catalogue (#89). Read tools are available to every key; write
@@ -20,6 +21,7 @@ export const ALL_TOOLS = Object.freeze([
   ...importTools,
   ...portfolioTools,
   ...subscriptionTools,
+  ...setupTools,
 ]);
 
 const seen = new Set();

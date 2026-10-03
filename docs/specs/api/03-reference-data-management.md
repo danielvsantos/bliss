@@ -11,7 +11,7 @@ This document outlines the API implementation for managing reference data entiti
 All endpoints require JWT authentication via `withAuth`.
 
 -   **`GET /api/banks`**: Returns the full global list of banks, ordered alphabetically by name. Banks are reference data (like countries and currencies) — users see all available banks so they can select from the full list during onboarding and settings. Tenant-specific bank selection is managed via the `TenantBank` join table through the tenants API.
--   **`POST /api/banks`**: Creates or links a bank for the tenant. Accepts `{ name: string }`. The name is trimmed and validated (2–100 characters). If a bank with that name already exists globally, it is reused; otherwise a new global `Bank` record is created. In both cases, a `TenantBank` link is upserted for the user's tenant. All operations are wrapped in a `prisma.$transaction`.
+-   **`POST /api/banks`**: Creates or links a bank for the tenant. Idempotent. Accepts `{ name: string }`. The name is trimmed and validated (2–100 characters). If a bank with that name already exists globally it is reused — exact name first, otherwise the oldest case-insensitive match, so "revolut" and "Revolut" resolve to one bank; otherwise a new global `Bank` record is created. The `TenantBank` link is created when missing. Responds **`201`** when this call created the tenant link and **`200`** when the bank was already linked (same body; #98, used by MCP `create_bank` to report `created`). A concurrent create of the same new name (`P2002`) is retried once. All operations are wrapped in a `prisma.$transaction`. Reachable by Read & write integration tokens.
 
 ### `pages/api/countries.js`
 

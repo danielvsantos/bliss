@@ -11,6 +11,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { getTool, ALL_TOOLS } from '../../../lib/mcp/registry.js';
 import { LoopbackError } from '../../../lib/mcp/loopback.js';
+import { errorMessage } from '../../../lib/mcp/errors.js';
 import { encodeCursor } from '../../../lib/mcp/shape.js';
 import { periodQuery } from '../../../lib/mcp/tools/analytics.js';
 
@@ -18,14 +19,17 @@ type Responder = unknown | ((opts: any) => unknown);
 
 function fakeApi(routes: Record<string, Responder>) {
   const calls: Array<{ method: string; path: string; query?: any; body?: any }> = [];
-  const call = vi.fn(async (method: string, path: string, { query, body }: any = {}) => {
+  const call = vi.fn(async (method: string, path: string, { query, body, withStatus }: any = {}) => {
     calls.push({ method, path, query, body });
     const key = `${method} ${path}`;
     if (!(key in routes)) throw new LoopbackError({ status: 404, error: `No fake for ${key}`, method, route: path });
     const r = routes[key];
     const value = typeof r === 'function' ? (r as any)({ query, body }) : r;
     if (value instanceof Error) throw value;
-    return value;
+    // `{ __status, data }` fakes a specific 2xx status for withStatus calls.
+    const status = (value as any)?.__status ?? 200;
+    const data = (value as any)?.__status ? (value as any).data : value;
+    return withStatus ? { status, data } : data;
   });
   return {
     calls,
@@ -34,6 +38,7 @@ function fakeApi(routes: Record<string, Responder>) {
       call,
       get: (p: string, query?: any) => call('GET', p, { query }),
       post: (p: string, body?: any, query?: any) => call('POST', p, { body, query }),
+      postWithStatus: (p: string, body?: any, query?: any) => call('POST', p, { body, query, withStatus: true }),
       put: (p: string, body?: any, query?: any) => call('PUT', p, { body, query }),
       del: (p: string, query?: any) => call('DELETE', p, { query }),
     },
@@ -88,7 +93,7 @@ describe('reference tools', () => {
     });
     expect(calls[0].query).toMatchObject({ page: 2, limit: 1 });
     expect(result).toEqual({
-      items: [{ id: 1, name: 'Main', bank: 'B', currency: 'EUR', country: 'Germany', accountNumberLast4: '1234', linkedToPlaid: true }],
+      items: [{ id: 1, name: 'Main', bankId: null, bank: 'B', currency: 'EUR', country: 'Germany', accountNumberLast4: '1234', linkedToPlaid: true }],
       total: 3, hasMore: true, nextCursor: encodeCursor({ page: 3 }),
     });
   });
@@ -154,6 +159,88 @@ describe('reference tools', () => {
     await expect(run('manage_tags', { action: 'create' }, routes)).rejects.toThrow(/name/);
     await expect(run('manage_tags', { action: 'delete' }, routes)).rejects.toThrow(/tagId/);
     await expect(run('manage_tags', { action: 'update', tagId: 7 }, routes)).rejects.toThrow(/at least one/);
+  });
+});
+
+describe('setup tools (#98)', () => {
+  const FULL = 'DE89370400440532013000';
+  const args = { name: 'Revolut EUR', bankId: 7, currencyCode: 'EUR', countryId: 'DEU', accountNumber: FULL };
+  const loopErr = (status: number, extra: Record<string, unknown> = {}) =>
+    new LoopbackError({ status, method: 'POST', route: '/api/accounts', ...extra });
+
+  it('create_bank reports created from the status code', async () => {
+    const created = await run('create_bank', { name: '  Revolut ' }, { 'POST /api/banks': { __status: 201, data: { id: 9, name: 'Revolut', createdAt: 'x' } } });
+    expect(created.calls).toEqual([{ method: 'POST', path: '/api/banks', body: { name: 'Revolut' }, query: undefined }]);
+    expect(created.result).toEqual({ id: 9, name: 'Revolut', created: true });
+
+    const existing = await run('create_bank', { name: 'revolut' }, { 'POST /api/banks': { __status: 200, data: { id: 9, name: 'Revolut' } } });
+    expect(existing.result).toEqual({ id: 9, name: 'Revolut', created: false });
+  });
+
+  it('create_bank validates the name length', () => {
+    const schema = z.object(getTool('create_bank')!.input);
+    expect(schema.safeParse({ name: ' A ' }).success).toBe(false);
+    expect(schema.safeParse({ name: 'x'.repeat(101) }).success).toBe(false);
+    expect(schema.safeParse({ name: 'BB' }).success).toBe(true);
+  });
+
+  it('create_account posts the manual-account body and returns the list_accounts shape', async () => {
+    const { result, calls } = await run('create_account', args, {
+      'POST /api/accounts': {
+        id: 42, name: 'Revolut EUR', bankId: 7, currencyCode: 'EUR', countryId: 'DEU', accountNumberLast4: '3000',
+        bank: { id: 7, name: 'Revolut' }, country: { id: 'DEU', name: 'Germany' },
+        owners: [{ userId: 'u1', user: { id: 'u1', email: 'a@b.c' } }],
+      },
+    });
+    expect(calls[0].body).toEqual({ name: 'Revolut EUR', bankId: 7, currencyCode: 'EUR', countryId: 'DEU', accountNumber: FULL });
+    expect(result).toEqual({
+      account: { id: 42, name: 'Revolut EUR', bankId: 7, bank: 'Revolut', currency: 'EUR', country: 'Germany', accountNumberLast4: '3000', linkedToPlaid: false },
+    });
+    expect(JSON.stringify(result)).not.toContain(FULL);
+  });
+
+  it('create_account forwards ownerIds only when given and validates inputs', async () => {
+    const { calls } = await run('create_account', { ...args, ownerIds: ['u1'] }, { 'POST /api/accounts': { id: 1 } });
+    expect(calls[0].body.ownerIds).toEqual(['u1']);
+    const schema = z.object(getTool('create_account')!.input);
+    expect(schema.safeParse({ ...args, countryId: 'DE' }).success).toBe(false);
+    expect(schema.safeParse({ ...args, currencyCode: 'eur' }).success).toBe(false);
+    expect(schema.safeParse({ ...args, accountNumber: '' }).success).toBe(false);
+    expect(schema.safeParse({ ...args, accountNumber: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...args, ownerIds: ['../x'] }).success).toBe(false);
+  });
+
+  async function failWith(err: Error, input: Record<string, unknown> = args) {
+    const tool = getTool('create_account')!;
+    const { api } = fakeApi({ 'POST /api/accounts': err });
+    try {
+      await tool.handler(z.object(tool.input).parse(input), { api });
+    } catch (e) {
+      return errorMessage(e, { tool: 'create_account' });
+    }
+    throw new Error('expected the tool to fail');
+  }
+
+  it.each([
+    [loopErr(409, { code: 'ACCOUNT_EXISTS', error: 'ACCOUNT_EXISTS', details: { accountId: 42 } }), /already exists \(id 42\)\. Use that id/],
+    [loopErr(400, { error: 'Invalid input', details: { bankId: 'x' } }), /^Bank 7 isn't linked to this workspace\. Call create_bank/],
+    [loopErr(400, { error: 'Invalid input', details: { currency: 'x' } }), /^Currency EUR isn't enabled .* Settings → Currencies\.$/],
+    [loopErr(400, { error: 'Invalid input', details: { country: 'x' } }), /^Country DEU isn't enabled .* Settings → Countries\.$/],
+    [loopErr(400, { error: 'Invalid owner IDs', details: 'Some users do not exist in this tenant' }), /Omit ownerIds/],
+    [loopErr(429, { retryAfter: null }), /^Rate limited by Bliss\. Wait a few minutes/],
+    [loopErr(403, { code: 'READ_ONLY_INTEGRATION' }), /read-only/],
+  ])('create_account maps %# to one line without the account number', async (err, pattern) => {
+    const message = await failWith(err);
+    expect(message).toMatch(pattern);
+    expect(message).not.toContain('\n');
+    expect(message).not.toContain(FULL);
+  });
+
+  it('create_bank turns a 429 into a one-line rate-limit error', async () => {
+    const tool = getTool('create_bank')!;
+    const { api } = fakeApi({ 'POST /api/banks': new LoopbackError({ status: 429, retryAfter: 120, method: 'POST', route: '/api/banks' }) });
+    const err = await tool.handler({ name: 'Revolut' }, { api }).catch((e: unknown) => e);
+    expect(errorMessage(err, { tool: 'create_bank' })).toBe('Rate limited by Bliss. Retry after 120 seconds.');
   });
 });
 

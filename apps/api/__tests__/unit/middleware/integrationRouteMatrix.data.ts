@@ -40,8 +40,8 @@ const WRITES_DENIED = (methods: string[]): Record<string, Pair> =>
   Object.fromEntries(methods.map((m) => [m, m === 'GET' ? 'A/A' : 'D/D'])) as Record<string, Pair>;
 
 export const ROUTE_MATRIX: Record<string, RouteSpec> = {
-  // ── Accounts / categories / tenants: reads only ───────────────────────────
-  'accounts.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'POST', 'PUT', 'DELETE']) },
+  // ── Accounts: reads + create (#98) / categories / tenants: reads only ─────
+  'accounts.js': { auth: 'withAuth', methods: { GET: 'A/A', POST: 'R/A', PUT: 'D/D', DELETE: 'D/D' } },
   'categories.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'POST', 'PUT', 'DELETE']) },
   'tenants.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'PUT', 'DELETE']) },
   'tenants/settings.js': { auth: 'withAuth', inlineAdmin: ['PUT'], methods: WRITES_DENIED(['GET', 'PUT']) },

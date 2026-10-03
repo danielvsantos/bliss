@@ -10,6 +10,7 @@ import { EXCLUDED_OPERATIONS } from './exclusions.js';
 
 const DOMAINS = [
   ['Reference data', ['list_accounts', 'list_categories', 'get_reference_data', 'search_ticker', 'list_tags', 'manage_tags']],
+  ['Workspace setup', ['create_bank', 'create_account']],
   ['Transactions', ['search_transactions', 'get_merchant_history', 'create_transaction', 'update_transaction', 'delete_transaction']],
   ['Analytics, insights & notifications', ['get_spending_summary', 'get_tag_summary', 'list_insights', 'generate_insights', 'dismiss_insight', 'get_notifications_summary']],
   ['Bank-sync (Plaid) review queue', ['get_plaid_review_queue', 'review_plaid_transactions', 'requeue_plaid_transactions', 'list_plaid_seeds', 'confirm_plaid_seeds']],

@@ -1,6 +1,16 @@
 # Initial Account Setup
 
-When you first set up Bliss, you need to create the accounts, banks, and currencies that reflect your financial reality. You can do this one by one through the UI, or use the bulk seed script to set everything up at once.
+When you first set up Bliss, you need to create the accounts, banks, and currencies that reflect your financial reality. You can do this one by one through the UI, ask Claude to do it for you over MCP, or use the bulk seed script to set everything up at once.
+
+## Let Claude create your banks and accounts
+
+With a **Read & write** MCP connection ([Use Bliss with Claude](/docs/guides/using-bliss-with-claude-mcp)), Claude can create banks and **manual** accounts for you — no need to add them in the app first. Tell it what you hold, for example *"I bank with Revolut (EUR and GBP accounts) and Schwab (USD) — set them up"*, and it uses the `create_bank` and `create_account` tools. A few things to know:
+
+- **Currencies and countries** must be enabled for your workspace first (**Settings**, or the seed script below). Claude tells you when one is missing.
+- **Account numbers** are stored encrypted and never shown back — only the last 4 characters. A short label works too.
+- **Owners** default to the admin who connected Claude; add other owners in the app.
+- **Asking twice is safe**: an existing bank is reused, and a second account with the same bank, currency and name is refused with the existing account's ID.
+- Renaming or deleting accounts, and bank-synced (Plaid) connections, stay in the app.
 
 ## Global reference data (seeded automatically)
 
