@@ -6,9 +6,9 @@
 server inside the API app (#89). MCP clients (Claude Code, Claude Desktop via
 `mcp-remote`, the MCP Inspector, other agents) connect with a Bliss
 **integration API key** (#84, [23-integrations-api.md](./23-integrations-api.md))
-and get 38 agent-oriented **tools** covering transactions, analytics, insights,
-the Plaid review queue, staged-import review, portfolio & passive income and
-subscriptions.
+and get 40 agent-oriented **tools** covering workspace setup (banks and manual
+accounts, #98), transactions, analytics, insights, the Plaid review queue,
+staged-import review, portfolio & passive income and subscriptions.
 
 v1 is **tools only**: no resources, prompts, sampling, elicitation or
 server-initiated notifications, and no OAuth (claude.ai web connectors are not
@@ -87,7 +87,7 @@ an integration key, so nothing on this endpoint changes for them.
 ## 24.4. Tools and roles
 
 `tools/list` is filtered by the key's role: **Read-only** (`viewer`) → the 21
-read tools; **Read & write** (`member`) → all 38. Write tools are not even
+read tools; **Read & write** (`member`) → all 40. Write tools are not even
 registered for read-only keys (calling one by name is a "tool not found" error),
 and their REST calls would be refused with `403 READ_ONLY_INTEGRATION` anyway.
 Annotations: read tools `readOnlyHint: true`; write tools that delete, discard,
@@ -96,6 +96,7 @@ merge or dismiss `destructiveHint: true`.
 | Domain | Read tools | Write tools |
 |---|---|---|
 | Reference data | `list_accounts`, `list_categories`, `get_reference_data`, `search_ticker`, `list_tags` | `manage_tags` |
+| Workspace setup (#98) | — | `create_bank`, `create_account` |
 | Transactions | `search_transactions`, `get_merchant_history` | `create_transaction`, `update_transaction`, `delete_transaction` |
 | Analytics, insights, notifications | `get_spending_summary`, `get_tag_summary`, `list_insights`, `get_notifications_summary` | `generate_insights`, `dismiss_insight` |
 | Plaid review queue | `get_plaid_review_queue`, `list_plaid_seeds` | `review_plaid_transactions`, `requeue_plaid_transactions`, `confirm_plaid_seeds` |
@@ -108,6 +109,21 @@ Parameters and wrapped routes per tool: the generated
 
 Notable contracts:
 
+- **Workspace setup (#98).** `create_bank` wraps `POST /api/banks`, which reuses
+  an existing bank whatever its casing and links it to the tenant; it answers
+  `201` when it created the tenant link and `200` when the bank was already
+  linked, and the tool reports that as `created: true|false` (loopback
+  `postWithStatus`). It is the way to obtain a `bankId`: `get_reference_data`
+  banks is the global list, which includes banks the tenant has not linked.
+  `create_account` wraps `POST /api/accounts` for **manual accounts only** (no
+  Plaid fields): `accountNumber` is required, stored encrypted and never echoed
+  (the route returns `accountNumberLast4` only); `ownerIds` defaults to the
+  connecting admin; currency and country must already be enabled for the
+  tenant. Integration callers get `409 ACCOUNT_EXISTS` (`details.accountId`)
+  for a second account with the same bank + currency + name
+  (case-insensitive), which the tool reports as a one-line "already exists (id
+  N)" error so a retry never duplicates. Renaming and deleting accounts or banks
+  stay app-only (`PUT`/`DELETE /api/accounts` are denylisted for tokens).
 - **Tenant ownership pre-checks.** `POST`/`PUT /api/transactions` do not check
   that `accountId`/`categoryId` belong to the tenant, so `create_transaction` and
   `update_transaction` first read them through the tenant-scoped
@@ -150,8 +166,8 @@ Notable contracts:
   Its monthly/yearly series stay plain numbers in the top-level `currency`.
 - **Hidden fields:** `omitDeep()` removes `rawJson`, `rawData`, `embedding`,
   `hash`, `keyHash`, `accessToken`, `dedupeHash`, `transactionHash`,
-  `plaidTransactionId`, `externalId` at any depth. Account numbers are reduced to
-  the last 4 digits.
+  `plaidTransactionId`, `externalId` and `accountNumber` at any depth. Account
+  numbers are reduced to the last 4 digits (`accountNumberLast4`).
 - **Size:** default pages stay under ~25k characters (asserted in tests with a
   5,000-transaction tenant). `capResponse()` is a 50k-character backstop: it
   trims the longest list, sets `truncated: true` and **drops `nextCursor`** so an
@@ -167,7 +183,7 @@ REST failures become MCP tool results with `isError: true` and one sentence:
 | `403 READ_ONLY_INTEGRATION` | This Bliss connection is read-only… |
 | `403 NOT_AVAILABLE_TO_INTEGRATIONS` | This operation is not available to integrations… |
 | `403` (other) / `404` | `Not found: <route message>. <which tool lists the IDs>` — the hint names the tool that lists the missing kind of ID (a transaction tool failing on a category ID points to `list_categories`); cross-tenant IDs never reveal more |
-| `400` / `409` / `422` | The route's `error` (+ `details`) |
+| `400` / `409` / `422` | The route's `error` (+ `details`); `create_account` maps its 400s (bank not linked, currency/country not enabled, foreign owner) and `409 ACCOUNT_EXISTS` to specific one-liners |
 | `429` | Rate limited by Bliss. Retry after N seconds (from `Retry-After` or body `retryAfter`) |
 | `5xx`, timeout, unreachable | Generic message; 5xx and unexpected errors go to Sentry |
 
@@ -208,7 +224,7 @@ not counted.
 
 | Domain | Reachable | Covered | Not covered (why) |
 |---|---|---|---|
-| Reference data (accounts, categories, tags, banks, countries, currencies, FX, ticker, tenant) | 17 | 13 | `banks` POST, `currency-rates` POST/PUT/DELETE: stay in the app |
+| Reference data & setup (accounts, categories, tags, banks, countries, currencies, FX, ticker, tenant) | 18 | 15 | `currency-rates` POST/PUT/DELETE: stay in the app |
 | Transactions | 6 | 5 | `transactions/export` (CSV): `search_transactions` pages the same data |
 | Analytics | 5 | 2 | `analytics` POST/PUT/DELETE: cache maintenance (501 today) |
 | Insights, notifications, onboarding | 7 | 4 | `notifications/summary` PUT (marks the creating admin's notifications seen); `onboarding/progress` GET/PUT: UI state |
@@ -216,12 +232,14 @@ not counted.
 | Smart Import | 14 | 7 | `upload`, `detect-adapter`: file upload stays in the app; `adapters` ×4: adapter configuration; `similar` GET: raw classifier embedding matches (no description), and staged rows already carry the suggested category |
 | Portfolio & passive income | 25 | 25 | — |
 | Subscriptions | 2 | 2 | action `fullScan` only |
-| **Total** | **86** | **65 (76%)** | **21** |
+| **Total** | **87** | **67 (77%)** | **20** |
 
 The PRD counted 84 reachable operations; the route matrix also classifies
 `GET /api/tenants` and `GET /api/tenants/settings` as reachable. Both are
 wrapped by `get_reference_data` (`tenant` kind: display currency, enabled
-currencies/countries, transaction years, thresholds).
+currencies/countries, transaction years, thresholds). #98 made `POST
+/api/accounts` reachable (86 → 87) and wrapped it and `POST /api/banks`
+(65 → 67 covered, 21 → 20 excluded).
 
 ## 24.10. Tests
 
@@ -230,10 +248,10 @@ currencies/countries, transaction years, thresholds).
 | `unit/mcp/core.test.ts` | Shaping, cursors, `capResponse`, error mapping, loopback headers/timeouts/errors, registry counts and annotations, `isViewerPostAllowed` |
 | `unit/mcp/tools.test.ts` | Each tool's exact REST call(s) and output shape (fake loopback) |
 | `unit/mcp/auth.test.ts` | withAuth viewer POST allowance (exact path), `mcpTool` sanitisation, `wrapTool` logging |
-| `unit/mcp/coverage.test.ts` | 86 reachable / 65 covered / 21 excluded; no upload or Plaid-connection tool |
+| `unit/mcp/coverage.test.ts` | 87 reachable / 67 covered / 20 excluded; no upload or Plaid-connection tool |
 | `unit/mcp/reference.test.ts` | The committed tool reference matches the registry |
-| `integration/api/mcp/protocol.test.ts` | SDK client end to end: 21/38 tools by role, auth 401s, 405s, stateless, IP forwarding, smoke script |
-| `integration/api/mcp/workflows.test.ts` | `update_transaction` ≡ REST PUT (DB, events, feedback, logs); Plaid approve + bulk promote; import review/commit/cancel; manual values; subscription merge/unmerge |
+| `integration/api/mcp/protocol.test.ts` | SDK client end to end: 21/40 tools by role (read-only never sees `create_bank` / `create_account`), auth 401s, 405s, stateless, IP forwarding, smoke script |
+| `integration/api/mcp/workflows.test.ts` | `update_transaction` ≡ REST PUT (DB, events, feedback, logs); Plaid approve + bulk promote; import review/commit/cancel; manual values; subscription merge/unmerge; workspace setup (`create_bank` created → existing, `create_account` duplicate one-liner, owner default, usable by `list_accounts` / `create_transaction`, account number never in output or logs) |
 | `integration/api/mcp/isolation.test.ts` | Tenant A's key with tenant B's IDs on every ID-taking tool: not found or empty, nothing leaked, B unchanged |
 | `integration/api/mcp/pagination.test.ts` | 5,000 transactions: ≤50 items, `hasMore`, < 25k chars, cursor without overlap |
 

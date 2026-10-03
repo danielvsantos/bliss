@@ -10,15 +10,17 @@ const ACCOUNT_HINT = 'Use list_accounts to find account IDs.';
 const CATEGORY_HINT = 'Use list_categories to find category IDs.';
 const TAG_HINT = 'Use list_tags to find tag IDs.';
 
-function shapeAccount(a) {
+/** Shared by list_accounts and create_account (#98). */
+export function shapeAccount(a) {
   const number = typeof a.accountNumber === 'string' ? a.accountNumber : '';
   return {
     id: a.id,
     name: a.name,
+    bankId: a.bankId ?? a.bank?.id ?? null,
     bank: a.bank?.name ?? null,
     currency: a.currencyCode,
     country: a.country?.name ?? a.countryId ?? null,
-    accountNumberLast4: number ? number.slice(-4) : null,
+    accountNumberLast4: number ? number.slice(-4) : (a.accountNumberLast4 ?? null),
     linkedToPlaid: a.plaidAccountId != null,
   };
 }

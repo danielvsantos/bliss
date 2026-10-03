@@ -7,6 +7,9 @@
  *      (review_import_rows → finalize_import commit / cancel) leave their queues
  * AC8  manage_manual_values add → visible in get_holding_details, revaluation event fired
  * AC9  update_subscription merge / unmerge behave like the REST actions
+ * #98  create_bank / create_account set up a workspace: idempotent, duplicate-
+ *      safe, visible to list_accounts and create_transaction, account number
+ *      never echoed or logged
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -298,5 +301,89 @@ describe('AC9 — subscriptions', () => {
     row = await prisma.recurringCharge.findFirst({ where: { tenantId: a.tenant.tenantId, descriptionHash: 'hash-netflix-1' } });
     expect(row!.mergedIntoHash).toBeNull();
     await client.close();
+  });
+});
+
+describe('#98 — set up a workspace with create_bank and create_account', () => {
+  const FULL_NUMBER = 'DE89370400440532013000';
+  let setup: IsolatedTenant;
+  let key: string;
+  let categoryId: number;
+
+  beforeAll(async () => {
+    setup = await createIsolatedTenant('mcp-wf-setup');
+    const ref = await ensureReferenceData();
+    await prisma.tenantCurrency.create({ data: { tenantId: setup.tenantId, currencyId: ref.currencyCode, isDefault: true } });
+    await prisma.tenantCountry.create({ data: { tenantId: setup.tenantId, countryId: ref.countryId, isDefault: true } });
+    categoryId = (await prisma.category.create({ data: { name: 'Groceries', group: 'Food', type: 'Essentials', tenantId: setup.tenantId } })).id;
+    key = (await createIntegrationKey(setup, { accessLevel: 'READ_WRITE' })).token;
+  });
+
+  afterAll(async () => {
+    // TenantBank/TenantCurrency/TenantCountry and AccountOwner do not cascade.
+    await prisma.transaction.deleteMany({ where: { tenantId: setup.tenantId } });
+    await prisma.accountOwner.deleteMany({ where: { account: { tenantId: setup.tenantId } } });
+    await prisma.account.deleteMany({ where: { tenantId: setup.tenantId } });
+    await prisma.tenantBank.deleteMany({ where: { tenantId: setup.tenantId } });
+    await prisma.tenantCurrency.deleteMany({ where: { tenantId: setup.tenantId } });
+    await prisma.tenantCountry.deleteMany({ where: { tenantId: setup.tenantId } });
+    await teardownTenant(setup.tenantId);
+  });
+
+  it('creates a bank and an account idempotently, usable like one made in the app', async () => {
+    const ref = await ensureReferenceData();
+    const bankName = `MCP Setup Bank ${Date.now()}`;
+    const logSpy = vi.spyOn(console, 'info');
+    const client = await connectMcp(server.baseUrl, key);
+
+    const first = await callTool(client, 'create_bank', { name: bankName });
+    expect(first.isError, first.text).toBe(false);
+    expect(first.data).toEqual({ id: expect.any(Number), name: bankName, created: true });
+    const again = await callTool(client, 'create_bank', { name: bankName.toUpperCase() });
+    expect(again.data).toEqual({ id: first.data.id, name: bankName, created: false });
+    expect(await prisma.tenantBank.count({ where: { tenantId: setup.tenantId, bankId: first.data.id } })).toBe(1);
+    expect(await prisma.bank.count({ where: { name: { equals: bankName, mode: 'insensitive' } } })).toBe(1);
+
+    const accountArgs = {
+      name: 'Main EUR', bankId: first.data.id, currencyCode: ref.currencyCode, countryId: ref.countryId, accountNumber: FULL_NUMBER,
+    };
+    const created = await callTool(client, 'create_account', accountArgs);
+    expect(created.isError, created.text).toBe(false);
+    expect(created.data.account).toMatchObject({
+      id: expect.any(Number), name: 'Main EUR', bankId: first.data.id, bank: bankName, currency: ref.currencyCode,
+      accountNumberLast4: '3000', linkedToPlaid: false,
+    });
+    const accountId = created.data.account.id;
+
+    // Same bank + currency + name (any casing) → one-line duplicate error with the id, no second row.
+    const duplicate = await callTool(client, 'create_account', { ...accountArgs, name: ' main eur ' });
+    expect(duplicate.isError).toBe(true);
+    expect(duplicate.text).toContain(`already exists (id ${accountId})`);
+    expect(await prisma.account.count({ where: { tenantId: setup.tenantId } })).toBe(1);
+
+    // Stored like a UI account: encrypted number round-trips, owner defaults to the connecting admin.
+    const row = await prisma.account.findUnique({ where: { id: accountId }, include: { owners: true } });
+    expect(row!.accountNumber).toBe(FULL_NUMBER);
+    expect(row!.owners.map((o) => o.userId)).toEqual([setup.userId]);
+
+    const listed = await callTool(client, 'list_accounts', {});
+    expect(listed.data.items.map((a: any) => a.id)).toContain(accountId);
+
+    const tx = await callTool(client, 'create_transaction', {
+      date: '2026-03-01', accountId, categoryId, description: 'Corner shop', amount: -12.5, currency: ref.currencyCode,
+    });
+    expect(tx.isError, tx.text).toBe(false);
+
+    const notEnabled = await callTool(client, 'create_account', { ...accountArgs, name: 'Swiss', currencyCode: 'CHF' });
+    expect(notEnabled.isError).toBe(true);
+    expect(notEnabled.text).toBe('Currency CHF isn\'t enabled for this workspace — ask the user to enable it in Settings → Currencies.');
+
+    await client.close();
+
+    const logged = logSpy.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
+    expect(logged).toContain('"tool":"create_account"');
+    expect(logged).not.toContain(FULL_NUMBER);
+    for (const r of [first, again, created, duplicate, listed]) expect(r.text).not.toContain(FULL_NUMBER);
+    logSpy.mockRestore();
   });
 });

@@ -91,7 +91,11 @@ export function createLoopbackClient({ req, tool, fetchImpl = fetchWithTimeout }
   /** `{ method, route, status, ms }` for every REST call this tool made. */
   const calls = [];
 
-  async function call(method, path, { query, body } = {}) {
+  /**
+   * With `withStatus`, resolves `{ status, data }` instead of `data`, for
+   * routes whose 2xx status carries meaning (201 created vs 200 existing).
+   */
+  async function call(method, path, { query, body, withStatus = false } = {}) {
     const qs = buildQuery(query);
     const url = `${base}${path}${qs ? `?${qs}` : ''}`;
     const started = Date.now();
@@ -136,7 +140,7 @@ export function createLoopbackClient({ req, tool, fetchImpl = fetchWithTimeout }
         route: path,
       });
     }
-    return data;
+    return withStatus ? { status: response.status, data } : data;
   }
 
   return {
@@ -144,6 +148,7 @@ export function createLoopbackClient({ req, tool, fetchImpl = fetchWithTimeout }
     call,
     get: (path, query) => call('GET', path, { query }),
     post: (path, body, query) => call('POST', path, { body, query }),
+    postWithStatus: (path, body, query) => call('POST', path, { body, query, withStatus: true }),
     put: (path, body, query) => call('PUT', path, { body, query }),
     del: (path, query) => call('DELETE', path, { query }),
   };

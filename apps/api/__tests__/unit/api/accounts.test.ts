@@ -13,10 +13,11 @@ vi.mock('../../../utils/rateLimit.js', () => ({
 }));
 
 const mockUser = { id: 1, tenantId: 'tenant-abc', role: 'admin', email: 'admin@test.com' };
+const { authState } = vi.hoisted(() => ({ authState: { extra: {} as Record<string, unknown> } }));
 
 vi.mock('../../../utils/withAuth.js', () => ({
   withAuth: (handler: any) => async (req: any, res: any) => {
-    req.user = { ...mockUser };
+    req.user = { ...mockUser, ...authState.extra };
     return handler(req, res);
   },
 }));
@@ -26,7 +27,7 @@ vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), init: vi.fn() }));
 
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
-    account: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    account: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     tenantCurrency: { findFirst: vi.fn() },
     tenantCountry: { findFirst: vi.fn() },
     tenantBank: { findUnique: vi.fn() },
@@ -55,7 +56,10 @@ function makeRes() {
   return res;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  authState.extra = {};
+});
 
 describe('GET /api/accounts', () => {
   it('returns paginated accounts list', async () => {
@@ -186,6 +190,132 @@ describe('POST /api/accounts', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(201);
+  });
+});
+
+describe('POST /api/accounts — #98 (MCP create_account)', () => {
+  const FULL_NUMBER = 'DE89370400440532013000';
+  const body = { name: '  Revolut EUR ', accountNumber: FULL_NUMBER, bankId: 7, currencyCode: 'eur', countryId: 'deu' };
+
+  function arrangeValid() {
+    mockPrisma.tenantCurrency.findFirst.mockResolvedValue({ currencyId: 'EUR' });
+    mockPrisma.tenantCountry.findFirst.mockResolvedValue({ countryId: 'DEU' });
+    mockPrisma.tenantBank.findUnique.mockResolvedValue({ bankId: 7 });
+    mockPrisma.account.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockPrisma.account.create.mockImplementation(async ({ data }: any) => ({
+      id: 42,
+      name: data.name,
+      accountNumber: data.accountNumber,
+      bankId: data.bankId,
+      currencyCode: data.currencyCode,
+      countryId: data.countryId,
+      tenantId: data.tenantId,
+      owners: data.owners.create.map((o: any) => ({ userId: o.userId, user: { id: o.userId, email: 'admin@test.com' } })),
+      bank: { id: 7, name: 'Revolut' },
+    }));
+  }
+
+  it('names every required field in the 400, accountNumber included', async () => {
+    const res = makeRes();
+    await handler(makeReq({ method: 'POST', body: { ...body, accountNumber: '' } }), res);
+
+    expect(res._status).toBe(400);
+    expect(res._body.details).toBe('name, accountNumber, bankId, currencyCode and countryId are required');
+  });
+
+  it('rejects a blank or over-long name after trimming', async () => {
+    for (const name of ['   ', 'x'.repeat(101)]) {
+      const res = makeRes();
+      await handler(makeReq({ method: 'POST', body: { ...body, name } }), res);
+      expect(res._status).toBe(400);
+    }
+    expect(mockPrisma.account.create).not.toHaveBeenCalled();
+  });
+
+  it('defaults owners to the acting user without re-reading the User row', async () => {
+    arrangeValid();
+    const res = makeRes();
+
+    await handler(makeReq({ method: 'POST', body }), res);
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+    const { data, include } = mockPrisma.account.create.mock.calls[0][0];
+    expect(data.owners).toEqual({ create: [{ userId: 1 }] });
+    expect(data).toMatchObject({ name: 'Revolut EUR', currencyCode: 'EUR', countryId: 'DEU', bankId: 7 });
+    expect(include.owners).toEqual({ include: { user: { select: { id: true, email: true } } } });
+  });
+
+  it('validates supplied ownerIds against the tenant', async () => {
+    arrangeValid();
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1' }]);
+    const res = makeRes();
+
+    await handler(makeReq({ method: 'POST', body: { ...body, ownerIds: ['u1', 'foreign'] } }), res);
+
+    expect(res._status).toBe(400);
+    expect(res._body.error).toBe('Invalid owner IDs');
+    expect(mockPrisma.user.findMany.mock.calls[0][0].where).toEqual({ id: { in: ['u1', 'foreign'] }, tenantId: 'tenant-abc' });
+    expect(mockPrisma.account.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['currency', 'tenantCurrency', 'findFirst'],
+    ['country', 'tenantCountry', 'findFirst'],
+    ['bankId', 'tenantBank', 'findUnique'],
+  ] as const)('reports a %s that is not enabled for the tenant under its details key', async (key, model, fn) => {
+    arrangeValid();
+    (mockPrisma as any)[model][fn].mockResolvedValue(null);
+    const res = makeRes();
+
+    await handler(makeReq({ method: 'POST', body }), res);
+
+    expect(res._status).toBe(400);
+    expect(Object.keys(res._body.details)).toEqual([key]);
+  });
+
+  it('integration callers get 409 ACCOUNT_EXISTS for the same bank + currency + name', async () => {
+    arrangeValid();
+    authState.extra = { authType: 'integration', role: 'member' };
+    mockPrisma.account.findFirst.mockResolvedValue({ id: 42 });
+    const res = makeRes();
+
+    await handler(makeReq({ method: 'POST', body: { ...body, name: 'REVOLUT eur' } }), res);
+
+    expect(res._status).toBe(409);
+    expect(res._body).toEqual({ error: 'ACCOUNT_EXISTS', code: 'ACCOUNT_EXISTS', accountId: 42, details: { accountId: 42 } });
+    expect(mockPrisma.account.findFirst.mock.calls[0][0].where).toEqual({
+      tenantId: 'tenant-abc',
+      bankId: 7,
+      currencyCode: 'EUR',
+      name: { equals: 'REVOLUT eur', mode: 'insensitive' },
+    });
+    expect(mockPrisma.account.create).not.toHaveBeenCalled();
+  });
+
+  it('session callers are not duplicate-checked (in-app onboarding names accounts after the bank)', async () => {
+    arrangeValid();
+    mockPrisma.account.findFirst.mockResolvedValue({ id: 42 });
+    const res = makeRes();
+
+    await handler(makeReq({ method: 'POST', body }), res);
+
+    expect(res._status).toBe(201);
+    expect(mockPrisma.account.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('never echoes the full account number in the 201 body', async () => {
+    arrangeValid();
+    const res = makeRes();
+
+    await handler(makeReq({ method: 'POST', body }), res);
+
+    expect(res._status).toBe(201);
+    expect(res._body).not.toHaveProperty('accountNumber');
+    expect(res._body.accountNumberLast4).toBe('3000');
+    expect(JSON.stringify(res._body)).not.toContain(FULL_NUMBER);
+    expect(Object.keys(res._body.owners[0].user).sort()).toEqual(['email', 'id']);
   });
 });
 

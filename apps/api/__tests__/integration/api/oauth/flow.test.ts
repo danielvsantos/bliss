@@ -235,13 +235,13 @@ describe('full flow', () => {
     expect((await prisma.integration.findUnique({ where: { id: integration.id } }))!.revokedAt).not.toBeNull();
   });
 
-  it('read & write consent → 38 tools; revoking in Settings stops refresh', async () => {
+  it('read & write consent → 40 tools; revoking in Settings stops refresh', async () => {
     const { body: client } = await register();
     const flow = await authorizeAndApprove({ clientId: client.client_id, accessLevel: 'READ_WRITE' });
     const { body: tokens } = await exchange(client.client_id, flow.code!, flow.verifier);
     expect(tokens.scope).toBe('mcp:read mcp:write');
     const mcp = await connectMcp(server.baseUrl, tokens.access_token);
-    expect((await mcp.listTools()).tools).toHaveLength(38);
+    expect((await mcp.listTools()).tools).toHaveLength(40);
     await mcp.close();
 
     const integrationId = (await prisma.oAuthAuthorizationRequest.findUnique({ where: { id: flow.requestId } }))!.integrationId!;

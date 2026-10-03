@@ -129,21 +129,65 @@ paths:
                 $ref: '#/components/schemas/AccountList'
     post:
       summary: Create an account
-      description: Creates a new account.
+      description: >
+        Creates a new manual account. `name`, `accountNumber`, `bankId`,
+        `currencyCode` and `countryId` are required; the bank must be linked to
+        the tenant and the currency and country enabled for it. `ownerIds` is
+        optional and defaults to the acting user (for an integration token, the
+        admin who created it). Reachable by Read & write integration tokens
+        (#98); `PUT`/`DELETE` are not. The response never contains the full
+        account number (`accountNumberLast4` instead), and each owner's `user`
+        is reduced to `{ id, email }`.
       operationId: createAccount
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Account'
+              type: object
+              required: [name, accountNumber, bankId, currencyCode, countryId]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: Trimmed before saving.
+                accountNumber:
+                  type: string
+                  description: Stored encrypted; never returned by this endpoint.
+                bankId:
+                  type: integer
+                currencyCode:
+                  type: string
+                  example: EUR
+                countryId:
+                  type: string
+                  description: ISO 3166 alpha-3 code.
+                  example: DEU
+                ownerIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Defaults to the acting user when omitted.
       responses:
         '201':
-          description: Account created.
+          description: Account created. Same shape as `Account`, without `accountNumber` and with `accountNumberLast4`.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Account'
+        '400':
+          description: >
+            Missing required fields, invalid `bankId`, a bank/currency/country not
+            available for the tenant (`details` keyed by `bankId` / `currency` /
+            `country`), or owner IDs outside the tenant.
+        '403':
+          description: Read-only integration token (`READ_ONLY_INTEGRATION`).
+        '409':
+          description: >
+            Integration callers only: an account with the same bank, currency and
+            name (case-insensitive) already exists.
+            Body `{ error: "ACCOUNT_EXISTS", code: "ACCOUNT_EXISTS", accountId, details: { accountId } }`.
 
   /api/accounts/{id}:
     put:

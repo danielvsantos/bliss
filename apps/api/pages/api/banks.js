@@ -71,33 +71,19 @@ async function handlePost(req, res, user, tenantId) {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      // Upsert the global bank record (shared across tenants)
-      const bank = await tx.bank.upsert({
-        where: { name: trimmedName },
-        update: {},
-        create: { name: trimmedName },
-      });
+    let result;
+    try {
+      result = await linkBank(tenantId, trimmedName);
+    } catch (error) {
+      // Two concurrent creates of the same new name race on Bank.name: the
+      // loser retries once and finds the winner's row.
+      if (error?.code !== 'P2002') throw error;
+      result = await linkBank(tenantId, trimmedName);
+    }
 
-      // Link bank to tenant
-      await tx.tenantBank.upsert({
-        where: {
-          tenantId_bankId: {
-            tenantId,
-            bankId: bank.id,
-          },
-        },
-        update: {},
-        create: {
-          tenantId,
-          bankId: bank.id,
-        },
-      });
-
-      return bank;
-    });
-
-    res.status(StatusCodes.CREATED).json(result);
+    // 201 when this call linked the bank to the tenant, 200 when it already
+    // was (#98: lets create_bank report `created`). Same body either way.
+    res.status(result.linked ? StatusCodes.CREATED : StatusCodes.OK).json(result.bank);
   } catch (error) {
     Sentry.captureException(error);
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
@@ -105,4 +91,39 @@ async function handlePost(req, res, user, tenantId) {
       ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
+}
+
+/**
+ * Find-or-create the global bank (an existing name is reused whatever its
+ * casing, so "revolut" and "Revolut" resolve to one bank) and link it to the
+ * tenant. Idempotent.
+ *
+ * @returns {Promise<{ bank: object, linked: boolean }>} `linked` is true when
+ *   the TenantBank row was created by this call.
+ */
+async function linkBank(tenantId, trimmedName) {
+  return prisma.$transaction(async (tx) => {
+    // Prefer the exact name; fall back to the oldest case-insensitive match.
+    const existing = await tx.bank.findUnique({ where: { name: trimmedName } })
+      ?? await tx.bank.findFirst({
+        where: { name: { equals: trimmedName, mode: 'insensitive' } },
+        orderBy: { id: 'asc' },
+      });
+
+    // Upsert the global bank record (shared across tenants)
+    const bank = existing ?? await tx.bank.upsert({
+      where: { name: trimmedName },
+      update: {},
+      create: { name: trimmedName },
+    });
+
+    const link = await tx.tenantBank.findUnique({
+      where: { tenantId_bankId: { tenantId, bankId: bank.id } },
+    });
+    if (link) return { bank, linked: false };
+
+    // Link bank to tenant
+    await tx.tenantBank.create({ data: { tenantId, bankId: bank.id } });
+    return { bank, linked: true };
+  });
 }
