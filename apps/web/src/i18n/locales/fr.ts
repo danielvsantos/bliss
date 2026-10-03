@@ -2196,6 +2196,10 @@ const fr = {
   "Your Google account's email address is not verified. Verify it with Google, then try again.": "L'adresse e-mail de votre compte Google n'est pas vérifiée. Vérifiez-la auprès de Google, puis réessayez.",
   "Sign-in with Google failed. Please try again.": "La connexion avec Google a échoué. Veuillez réessayer.",
   "We could not sign you in automatically. Please try signing in with your password.": "Nous n'avons pas pu vous connecter automatiquement. Essayez de vous connecter avec votre mot de passe.",
+
+  // Invite-only sign-up (task #99)
+  "This Bliss instance is invite-only. Use the email address you were invited with.": "Cette instance de Bliss est sur invitation uniquement. Utilisez l'adresse e-mail avec laquelle vous avez été invité.",
+  "This email hasn't been invited to this Bliss instance. Ask the person who runs it for an invite.": "Cette adresse e-mail n'a pas été invitée sur cette instance de Bliss. Demandez une invitation à la personne qui la gère.",
   "Sign up with Google": "S'inscrire avec Google",
   "or continue with email": "ou continuer avec l'e-mail",
   "Email address": "Adresse e-mail",

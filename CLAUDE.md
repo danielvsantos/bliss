@@ -22,7 +22,7 @@ Monorepo with four services behind a single `.env` file:
 
 Bumping the compose image is **not** a drop-in change: a `PGDATA` directory initialised by PG16 will not start under PG18 (`database files are incompatible with server`), so every existing self-host volume needs a dump/restore or `pg_upgrade` first.
 
-**Multi-tenancy:** Query-level isolation. Every Prisma query must include `tenantId`. No RLS.
+**Multi-tenancy:** Query-level isolation. Every Prisma query must include `tenantId`. No RLS. (Sole deliberate exception: the global `SignupInvite` table — see "Invite-only sign-up".)
 
 ## Critical rules
 
@@ -103,10 +103,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 4,188 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 1,867 tests (unit + integration) |
+| All | `pnpm test` | -- | 4,391 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 2,038 tests (unit + integration) |
 | Backend | `pnpm test:backend` | Jest (CJS) | 1,225 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 1,096 tests |
+| Frontend | `pnpm test:web` | Vitest + RTL | 1,128 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -198,6 +198,18 @@ Key patterns:
 - **OAuth for custom connectors:** Claude Cowork / claude.ai / Claude Desktop connectors can't send a header, so `apps/api` also runs an OAuth 2.1 server (PKCE S256, RFC 9728/8414 discovery via `/.well-known/*` rewrites, dynamic client registration limited by `OAUTH_ALLOWED_REDIRECT_HOSTS`, refresh rotation with reuse detection, RFC 7009 revoke). Every 401 from `/api/mcp` carries a `WWW-Authenticate … resource_metadata` challenge. **The access token is an integration key**: consent at `/oauth/consent` (web, admins only) creates an Integration with `oauthClientId` + `connectionExpiresAt` (default 90 days) whose single ApiKey is re-keyed on each refresh, so everything above applies unchanged and Settings → Integrations revokes it. `/api/oauth` is on `INTEGRATION_DENYLIST` (a key never mints a key). See [`docs/specs/api/25-oauth.md`](docs/specs/api/25-oauth.md).
 - **Observability:** `integration_request` log lines carry `mcpTool` (from the sanitised `x-bliss-mcp-tool` header); one `mcp_tool_call` line per tool call.
 - **Coverage:** 86 token-reachable REST operations, 65 wrapped, 21 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
+
+### Invite-only sign-up (#99)
+
+`SIGNUP_MODE=invite_only` lets an operator host Bliss for a known group. Unset / empty / `open` (the default) changes nothing; **any other value fails closed to invite_only** with a boot warning (`apps/api/utils/signupMode.js` is the only reader, evaluated per request).
+
+- **Gate on both tenant-creating paths, never on sign-in:** `POST /api/auth/signup` (checked **before** the existing-user check, so a registered email without an invite gets the same `403 SIGNUP_INVITE_REQUIRED` as an unknown one — no account-existence oracle) and the create branch of `AuthService.findOrCreateGoogleUser` (→ `/auth?error=signup_invite_required`).
+- **`SignupInvite` is a global table — the one deliberate exception to "every query includes `tenantId`"** (an invite exists before its tenant). `email` is deterministically encrypted like `User.email` (registered in `encryptedFields` **and** `ROTATION_COVERAGE`), so always go through `services/signupInvite.service.js`, which normalizes (trim + lowercase, no dot/plus folding) on every read and write. A plaintext SQL insert never matches.
+- **Single-use, atomic:** consumed inside the tenant `$transaction` by a conditional `updateMany … usedAt: null` requiring `count === 1`; concurrent sign-ups create at most one tenant. `usedByTenantId` → `Tenant` `onDelete: SetNull`.
+- **Operator tooling only (no UI, no MCP):** `GET|POST|DELETE /api/admin/invites` (`ADMIN_API_KEY`, also on `INTEGRATION_DENYLIST`) and `apps/api/scripts/manage-invites.mjs add|list|revoke` over HTTP. The SPA reads the public `GET /api/auth/signup-mode` → `{ inviteOnly }` only.
+- Logs never carry the plaintext email: `signup_invite_rejected { path, emailFp }`, `signup_invite_consumed { inviteId, tenantId, path }`.
+
+See [`docs/specs/api/01-user-identity.md`](docs/specs/api/01-user-identity.md#invite-only-gate-99) and [`docs/specs/api/11-admin-api.md`](docs/specs/api/11-admin-api.md#invite-only-sign-up-allowlist).
 
 ### Smart import (CSV/XLSX)
 
@@ -346,6 +358,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 
 **Optional integrations (degrade gracefully):**
 - Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — enables Google Sign-In; email/password auth works without it
+- Sign-up: `SIGNUP_MODE` (`open` default | `invite_only`; unknown values fail closed to `invite_only`). Invites are managed with `ADMIN_API_KEY` (see "Invite-only sign-up")
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, `PLAID_WEBHOOK_URL`, `PLAID_HISTORY_DAYS`
 - AI (required): `LLM_PROVIDER` (gemini|openai|anthropic), `EMBEDDING_PROVIDER` (required when `LLM_PROVIDER=anthropic`), `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (matching your provider), optional overrides `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL`
 - Market data: `TWELVE_DATA_API_KEY` (also the default FX-rate source — see below)

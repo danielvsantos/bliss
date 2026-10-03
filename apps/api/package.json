@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "mcp:reference": "node scripts/generate-mcp-reference.mjs",
-    "mcp:smoke": "node scripts/mcp-inspector-smoke.mjs"
+    "mcp:smoke": "node scripts/mcp-inspector-smoke.mjs",
+    "invites": "node scripts/manage-invites.mjs"
   },
   "dependencies": {
     "@bliss/shared": "workspace:*",

@@ -11,7 +11,7 @@ All files use `import` / `export`. Never use `require()` in this app.
 ```
 apps/api/
   pages/api/            # File-based API routes (the core of this app)
-    auth/               # signin, signup, signout, session, change-password, google-token, [...nextauth]
+    auth/               # signin, signup, signup-mode (public invite-only flag, #99), signout, session, change-password, google-token, [...nextauth]
     integrations/       # index, [id], [id]/keys (index, [keyId]) — admin-only integration token management (#84)
     transactions/       # CRUD (index), export, merchant-history
     imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
@@ -20,7 +20,7 @@ apps/api/
     plaid/              # create-link-token, exchange-public-token, accounts, sync-accounts, sync-logs, fetch-historical, resync, disconnect, rotate-token, items, items/hard-delete, webhook, transactions/ (index, [id], bulk-promote, bulk-requeue, seeds, confirm-seeds)
     notifications/      # summary
     onboarding/         # progress
-    admin/              # default-categories (index, [code], [code]/regenerate-embeddings)
+    admin/              # default-categories (index, [code], [code]/regenerate-embeddings), invites (sign-up allowlist, ADMIN_API_KEY, #99)
     tenants.js          # Tenant management
     tenants/            # settings
     ticker/             # search
@@ -109,7 +109,8 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 | `transactionHash.js` | SHA-256 dedup hash: `(date + description + amount + accountId)` |
 | `descriptionHash.js` | SHA-256 hash for description-based cache lookups |
 | `encryption.js` | Encryption field configuration and helpers |
-| `validateEnv.js` | Startup validation of required env vars |
+| `validateEnv.js` | Startup validation of required env vars (warns on an unknown `SIGNUP_MODE`) |
+| `signupMode.js` | `getSignupMode()` / `isInviteOnly()` — the only reader of `SIGNUP_MODE`, per request, fails closed (#99) |
 
 ## Prisma client (`prisma/prisma.js`)
 
@@ -192,6 +193,7 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 | `passiveIncome.service.js` | Passive income `loadInputs()` (Prisma + FX) and response assembly around `project()` from `@bliss/shared/portfolio` |
 | `incomeTerms.service.js` | IncomeTerms body validation/whitelisting, serialization, stream-category eligibility |
 | `integrations.service.js` | Integrations & API keys (#84): body validation, key creation payload (`buildApiKey`), serialization that never exposes `keyHash` (adds `oauth` for OAuth connections) |
+| `signupInvite.service.js` | Invite-only sign-up (#99): `hasUnusedInvite`, `consumeInviteInTx` (atomic, single-use), admin CRUD; normalizes every email, never logs one |
 | `oauth.service.js` | OAuth 2.1 for MCP connectors (#89): client registration, authorization requests, consent approve/deny, code exchange, refresh rotation + reuse detection, revocation |
 
 ## Lib

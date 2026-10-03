@@ -1,3 +1,5 @@
+import { isInviteOnly, isUnknownSignupMode } from './signupMode.js';
+
 const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 
 // Minimum length for the four secrets that guard everything else. Length only —
@@ -77,6 +79,20 @@ export function validateEnv() {
   }
   if (!process.env.SENTRY_DSN) {
     warnings.push('SENTRY_DSN not set — error tracking will be disabled');
+  }
+
+  // ─── Sign-up mode (#99) ──────────────────────────────────────────────────
+  if (isUnknownSignupMode()) {
+    warnings.push(
+      `SIGNUP_MODE="${process.env.SIGNUP_MODE}" is not "open" or "invite_only" — ` +
+        'treated as invite_only (new sign-ups require an invite)'
+    );
+  }
+  if (isInviteOnly() && !process.env.ADMIN_API_KEY) {
+    warnings.push(
+      'SIGNUP_MODE is invite_only but ADMIN_API_KEY is not set — invites cannot be managed ' +
+        '(/api/admin/invites), so nobody new can sign up'
+    );
   }
 
   // ─── Report ──────────────────────────────────────────────────────────────

@@ -233,6 +233,12 @@ class APIClient {
     return response.data;
   }
 
+  /** Public sign-up mode flag (#99). Only ever `{ inviteOnly }`. */
+  async getSignupMode(): Promise<{ inviteOnly: boolean }> {
+    const response = await this.client.get('/api/auth/signup-mode');
+    return { inviteOnly: response.data?.inviteOnly === true };
+  }
+
   async signin(data: SignInRequest): Promise<{ user: User }> {
     const response = await this.client.post('/api/auth/signin', data);
     return response.data;

@@ -54,6 +54,9 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   'admin/default-categories/[code].js': { auth: 'adminKey', methods: { PUT: 'U/U' } },
   'admin/default-categories/[code]/regenerate-embeddings.js': { auth: 'adminKey', methods: { POST: 'U/U' } },
   'runtime.js': { auth: 'adminKey', methods: { GET: 'U/U' } },
+  // Invite allowlist (#99): ADMIN_API_KEY route that is also denylisted, so a
+  // token is refused before the key check runs.
+  'admin/invites.js': { auth: 'adminKey', methods: DENY_ALL(['GET', 'POST', 'DELETE']) },
 
   // ── Analytics / reference data ────────────────────────────────────────────
   'analytics.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
@@ -72,6 +75,7 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   'auth/signin.js': { auth: 'credential', methods: DENY_ALL(['POST']) },
   'auth/signout.js': { auth: 'credential', methods: DENY_ALL(['POST']) },
   'auth/signup.js': { auth: 'credential', methods: DENY_ALL(['POST']) },
+  'auth/signup-mode.js': { auth: 'public', methods: DENY_ALL(['GET']) },
 
   // ── Users & integrations management (always denied) ───────────────────────
   'users.js': { auth: 'withAuth', inlineAdmin: ['POST', 'PUT', 'DELETE'], methods: DENY_ALL(['GET', 'POST', 'PUT', 'DELETE']) },

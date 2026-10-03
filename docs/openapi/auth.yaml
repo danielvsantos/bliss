@@ -20,6 +20,15 @@ components:
         credentialed requests (withCredentials: true).
 
   schemas:
+    SignupInviteRequiredError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: 'Sign-up on this instance is by invitation only.'
+        code:
+          type: string
+          enum: [SIGNUP_INVITE_REQUIRED]
     User:
       type: object
       properties:
@@ -188,10 +197,53 @@ paths:
                 $ref: '#/components/schemas/AuthSuccessResponse'
         '400':
           description: Bad Request (e.g., missing fields, invalid email)
-        '409':
-          description: Conflict (user with this email already exists)
+        '403':
+          description: >
+            Invite-only mode (SIGNUP_MODE=invite_only, or any unknown value):
+            the email has no unused sign-up invite. Checked before the
+            existing-user check, so a registered email without an invite gets
+            this exact response too (no account-existence oracle). The body is
+            identical for every rejection and never echoes the email or list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignupInviteRequiredError'
+        '429':
+          description: Too many sign-up attempts (rejected invite attempts count too).
         '500':
           description: Internal Server Error
+
+  /api/auth/signup-mode:
+    get:
+      summary: Public sign-up mode flag
+      description: >
+        Tells the SPA whether this instance is invite-only so the auth page can
+        show a notice on the Sign Up tab. Returns only `inviteOnly` (no counts,
+        emails or environment details). Informational: the server enforces the
+        gate on sign-up itself. Integration tokens are refused (403).
+      tags:
+        - Authentication
+      security: []
+      responses:
+        '200':
+          description: The current sign-up mode.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: 'public, max-age=60'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [inviteOnly]
+                properties:
+                  inviteOnly:
+                    type: boolean
+                    example: true
+        '405':
+          description: Method Not Allowed (GET only)
 
   /api/auth/signin:
     post:
@@ -400,6 +452,11 @@ paths:
         On success the browser is redirected to Google's consent screen. After the user
         grants consent, Google redirects back to `/api/auth/callback/google` (handled
         internally by NextAuth), which then redirects to `callbackUrl`.
+
+        A rejected sign-in redirects to `${FRONTEND_URL}/auth?error=<code>` instead:
+        `google_account_exists`, `google_email_unverified`, `signup_invite_required`
+        (invite-only mode: a first Google sign-in whose verified email has no unused
+        invite; returning Google users are never gated) or `oauth_failed`.
       security: []
       requestBody:
         required: true

@@ -21,6 +21,13 @@ import {
 import { setTenantMeta } from "@/utils/tenantMetaStorage";
 import { Logo } from "@/components/logo";
 import { returnToFromLocation } from "@/lib/return-to";
+import { useSignupMode } from "@/hooks/use-signup-mode";
+
+// Invite-only sign-up (#99). Both are i18n keys.
+const INVITE_ONLY_NOTICE =
+  "This Bliss instance is invite-only. Use the email address you were invited with.";
+const INVITE_REQUIRED_MESSAGE =
+  "This email hasn't been invited to this Bliss instance. Ask the person who runs it for an invite.";
 
 /* ══════════════════════════════════════════════════════
    RESPONSIVE HOOK
@@ -306,6 +313,7 @@ function SignInForm({ demoMode = false }: { demoMode?: boolean }) {
 function SignUpForm() {
   const { t } = useTranslation();
   const { signUp } = useAuth();
+  const { inviteOnly } = useSignupMode();
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
@@ -344,7 +352,11 @@ function SignUpForm() {
       });
       navigate("/onboarding");
     } catch (err: unknown) {
-      setError((err as Error).message || t("Registration failed"));
+      if ((err as { code?: string }).code === "SIGNUP_INVITE_REQUIRED") {
+        setError(t(INVITE_REQUIRED_MESSAGE));
+      } else {
+        setError((err as Error).message || t("Registration failed"));
+      }
     } finally {
       setIsPending(false);
     }
@@ -356,6 +368,17 @@ function SignUpForm() {
         onSubmit={form.handleSubmit(onSubmit)}
         className="flex flex-col gap-4"
       >
+        {inviteOnly && (
+          <div
+            role="status"
+            data-testid="invite-only-notice"
+            className="rounded-lg bg-brand-primary/10 text-brand-deep border border-brand-primary/20"
+            style={{ padding: "10px 14px", fontSize: "0.8125rem", lineHeight: 1.6 }}
+          >
+            {t(INVITE_ONLY_NOTICE)}
+          </div>
+        )}
+
         <FormField
           control={form.control}
           name="name"
@@ -480,6 +503,7 @@ const OAUTH_ERROR_KEYS: Record<string, string> = {
   google_email_unverified:
     "Your Google account's email address is not verified. Verify it with Google, then try again.",
   oauth_failed: "Sign-in with Google failed. Please try again.",
+  signup_invite_required: INVITE_REQUIRED_MESSAGE,
   // NextAuth's own generic codes, in case it redirects here directly.
   OAuthCallback: "Sign-in with Google failed. Please try again.",
   AccessDenied: "Sign-in with Google failed. Please try again.",
