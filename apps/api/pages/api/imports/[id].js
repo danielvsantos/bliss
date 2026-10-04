@@ -4,6 +4,7 @@ import { rateLimiters } from '../../../utils/rateLimit.js';
 import { cors } from '../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../utils/eventOrigin.js';
 import { withAuth } from '../../../utils/withAuth.js';
 
 export default withAuth(async function handler(req, res) {
@@ -244,6 +245,7 @@ async function handleCommit(req, res, user, stagedImportId) {
   // Dispatch commit to the backend worker via event queue
   try {
     await produceEvent({
+      ...eventOrigin(req),
       type: 'SMART_IMPORT_COMMIT',
       tenantId: user.tenantId,
       userId: user.email,

@@ -181,7 +181,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPlaidSyncQueue.add).toHaveBeenCalledWith(
       'plaid-sync-job',
-      { plaidItemId: 'pi1', tenantId: 't1', source: 'INITIAL' }
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'INITIAL', _trigger: 'bank_sync' }
     );
   });
 
@@ -207,7 +207,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPlaidSyncQueue.add).toHaveBeenCalledWith(
       'plaid-sync-job',
-      { plaidItemId: 'pi1', tenantId: 't1', source: 'HISTORICAL_BACKFILL', fromDate: '2024-06-01' }
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'HISTORICAL_BACKFILL', fromDate: '2024-06-01', _trigger: 'bank_sync' }
     );
   });
 
@@ -245,7 +245,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPlaidProcessingQueue.add).toHaveBeenCalledWith(
       'PLAID_TRANSACTION_RETRY',
-      { plaidItemId: 'pi1', tenantId: 't1', source: 'MANUAL_RETRY' }
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'MANUAL_RETRY', _trigger: 'bank_sync' }
     );
     // User-initiated — no delay, unlike the worker's own 60s silent-retry re-queue.
     expect(mockPlaidProcessingQueue.add.mock.calls[0][2]).toBeUndefined();
@@ -405,7 +405,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
     const cashCalls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'process-cash-holdings');
     expect(cashCalls).toHaveLength(3);
     const [first] = cashCalls;
-    expect(Object.keys(first[5]).sort()).toEqual(['_rebuildMeta', 'originalScope', 'portfolioItemIds', 'scope']);
+    expect(Object.keys(first[5]).sort()).toEqual(['_rebuildMeta', '_trigger', 'originalScope', 'portfolioItemIds', 'scope']);
     cashCalls.forEach((c) => expect(c[5]).toBe(first[5]));
   });
 
@@ -415,7 +415,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'process-portfolio-changes');
     expect(calls).toHaveLength(2);
-    expect(Object.keys(calls[0][5]).sort()).toEqual(['accountIds', 'dateScopes']);
+    expect(Object.keys(calls[0][5]).sort()).toEqual(['_trigger', 'accountIds', 'dateScopes']);
     expect(calls[1][5]).toBe(calls[0][5]);
   });
 
@@ -427,7 +427,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'scoped-update-analytics');
     expect(calls).toHaveLength(2);
-    expect(Object.keys(calls[0][5]).sort()).toEqual(['_rebuildMeta', 'portfolioItemIds']);
+    expect(Object.keys(calls[0][5]).sort()).toEqual(['_rebuildMeta', '_trigger', 'portfolioItemIds']);
     expect(calls[1][5]).toBe(calls[0][5]);
   });
 

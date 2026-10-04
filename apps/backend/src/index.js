@@ -17,6 +17,7 @@ const { waitForSchemaAndRefresh } = require('./utils/categoryCache');
 const { validateEnv } = require('./utils/validateEnv');
 const { keyFingerprint } = require('./utils/encryption');
 const { startWorkerHeartbeat, stopWorkerHeartbeat } = require('./utils/workerHeartbeat');
+const { closeActivityTracker } = require('./utils/activityTracker');
 
 const PORT = process.env.PORT || 3001;
 
@@ -107,8 +108,9 @@ const gracefulShutdown = async () => {
     } catch (err) {
         logger.warn('Error closing workers during shutdown:', err.message);
     }
-    // 2. Now safe to disconnect Redis
+    // 2. Now safe to disconnect Redis (and the processing-status connection, #100)
     try {
+        await closeActivityTracker();
         await disconnectRedis();
     } catch (err) {
         logger.warn('Error disconnecting Redis during shutdown:', err.message);

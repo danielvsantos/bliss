@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
+const { trackQueue } = require('../utils/activityTracker');
 const logger = require('../utils/logger');
 
 const ANALYTICS_QUEUE_NAME = 'analytics';
@@ -25,6 +26,8 @@ const getAnalyticsQueue = () => {
                 },
             },
         });
+        // Processing status (#100): a `queued` entry for every tenant job added.
+        trackQueue(analyticsQueueInstance);
 
         // Attach event listeners only once, right after creation
         analyticsQueueInstance.on('error', (error) => {

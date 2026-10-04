@@ -164,6 +164,9 @@ const generatePortfolioValuation = async (job) => {
         // rate-limits when it is. `?.()` guards older call sites that
         // haven't been updated to thread heartbeat through yet.
         await job.heartbeat?.();
+        // Processing status (#100): assets valued / total. Throttled to one
+        // Redis write per 2 s and never throws (attached by portfolioWorker).
+        job.reportProgress?.(i, assets.length);
         try {
             logger.info(`[Valuation] Processing asset ${i + 1} of ${assets.length}: ${asset.symbol}`, { tenantId, assetId: asset.id });
 

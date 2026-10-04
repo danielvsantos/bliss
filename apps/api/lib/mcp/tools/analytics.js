@@ -243,7 +243,43 @@ const getNotificationsSummary = defineTool({
   },
 });
 
+/** Recent finished entries the tool returns (the REST payload keeps up to 200). */
+export const PROCESSING_RECENT_LIMIT = 20;
 
-const TOOLS = [getSpendingSummary, getTagSummary, listInsights, generateInsights, dismissInsight, getNotificationsSummary];
+/** `GET /api/activity` → the get_processing_status result (AC13: same data, `recent` trimmed). */
+export function shapeProcessingStatus(data) {
+  return {
+    available: data?.available ?? false,
+    workerOnline: data?.workerOnline ?? null,
+    serverTime: data?.serverTime ?? null,
+    settled: Boolean(data?.available) && (data?.inFlight || []).length === 0,
+    summary: data?.summary || {},
+    inFlight: data?.inFlight || [],
+    lastCompletedAt: data?.lastCompletedAt || {},
+    recent: (data?.recent || []).slice(0, PROCESSING_RECENT_LIMIT),
+  };
+}
+
+const getProcessingStatus = defineTool({
+  name: 'get_processing_status',
+  access: 'read',
+  title: 'Get background processing status',
+  description:
+    'Whether derived data is still being recalculated after a change. Writes (transactions, tags, '
+    + 'manual values, imports, bank-sync approvals) refresh portfolio values and analytics in the background: '
+    + 'poll this until `inFlight` has nothing whose `affects` includes the data you changed (`settled` = nothing '
+    + 'in flight at all), then read the summaries. `summary` has one row per activity type (PORTFOLIO_UPDATE, '
+    + 'ANALYTICS_UPDATE, BANK_SYNC, IMPORT, SECURITY_DATA, SUBSCRIPTION_SCAN, INSIGHTS) with state queued | running '
+    + '| stalled | failed, stage and progress (0-100). `lastCompletedAt` is per type; `recent` holds the latest '
+    + 'finished jobs (last 24 h) with errorCode on failures. `available: false` means status is unknown, not idle; '
+    + '`workerOnline: false` means the background worker is down and queued work will not start.',
+  input: {},
+  wraps: [{ method: 'GET', route: '/api/activity' }],
+  async handler(_args, { api }) {
+    return shapeProcessingStatus(await api.get('/api/activity'));
+  },
+});
+
+const TOOLS = [getSpendingSummary, getTagSummary, listInsights, generateInsights, dismissInsight, getNotificationsSummary, getProcessingStatus];
 
 export default TOOLS;

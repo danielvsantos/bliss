@@ -4,6 +4,7 @@ import { rateLimiters } from '../../../../utils/rateLimit.js';
 import { cors } from '../../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../../utils/eventOrigin.js';
 import { withAuth } from '../../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../../utils/tagUtils.js';
 import { requiresTicker, isValidTicker } from '@bliss/shared/portfolio';
@@ -273,6 +274,7 @@ export default withAuth(async function handler(req, res) {
       // Trigger downstream processing (portfolio, analytics) — scoped to this transaction
       try {
         await produceEvent({
+          ...eventOrigin(req),
           type: 'TRANSACTIONS_IMPORTED',
           tenantId: user.tenantId,
           accountIds: [localAccount.id],

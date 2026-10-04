@@ -5,6 +5,7 @@ import { cors } from '../../../../../../utils/cors.js';
 import { rateLimiters } from '../../../../../../utils/rateLimit.js';
 import { Decimal } from '@prisma/client/runtime/library';
 import { produceEvent } from '../../../../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../../../../utils/eventOrigin.js';
 import { withAuth } from '../../../../../../utils/withAuth.js';
 
 export default withAuth(async function handler(req, res) {
@@ -70,6 +71,7 @@ async function handlePut(req, res) {
       });
   
       await produceEvent({
+          ...eventOrigin(req),
           type: 'MANUAL_PORTFOLIO_PRICE_UPDATED',
           portfolioItemId: existingValue.assetId,
           tenantId: tenantId,
@@ -103,6 +105,7 @@ async function handlePut(req, res) {
       });
   
       await produceEvent({
+          ...eventOrigin(req),
           type: 'MANUAL_PORTFOLIO_PRICE_UPDATED',
           portfolioItemId: existingValue.assetId,
           tenantId: tenantId,

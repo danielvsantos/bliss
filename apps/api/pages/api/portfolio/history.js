@@ -6,6 +6,7 @@ import { rateLimiters } from '../../../utils/rateLimit.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { batchFetchRates } from '../../../utils/currencyConversion.js';
 import { produceEvent } from '../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../utils/eventOrigin.js';
 
 export default withAuth(async function handler(req, res) {
   // Apply rate limiting
@@ -123,6 +124,7 @@ async function handleGet(req, res) {
       if (latestDateStr < todayStr) {
         // Fire-and-forget: trigger revaluation via backend event
         produceEvent({
+          ...eventOrigin(req),
           type: 'PORTFOLIO_STALE_REVALUATION',
           tenantId,
         }).catch(() => {}); // Swallow errors — this is non-critical

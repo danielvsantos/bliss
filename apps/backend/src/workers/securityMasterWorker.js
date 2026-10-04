@@ -6,6 +6,7 @@ const { SECURITY_MASTER_QUEUE_NAME, getSecurityMasterQueue } = require('../queue
 const prisma = require('../../prisma/prisma.js');
 const securityMasterService = require('../services/securityMasterService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker } = require('../utils/activityTracker');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 const {
     getSymbolProfile,
@@ -439,6 +440,9 @@ const startSecurityMasterWorker = () => {
             extra: { stack: error?.stack },
         });
     });
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, SECURITY_MASTER_QUEUE_NAME);
 
     return worker;
 };

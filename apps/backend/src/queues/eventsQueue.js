@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
+const { trackQueue } = require('../utils/activityTracker');
 
 const EVENTS_QUEUE_NAME = 'events';
 
@@ -16,6 +17,8 @@ const getEventsQueue = () => {
         removeOnFail: { age: 7 * 24 * 3600 },
       },
     });
+    // Processing status (#100): a `queued` entry for every tenant job added.
+    trackQueue(eventsQueueInstance);
   }
   return eventsQueueInstance;
 };

@@ -6,6 +6,7 @@ import { rateLimiters } from '../../../utils/rateLimit.js';
 import { Decimal } from '@prisma/client/runtime/library';
 import { handleDebtRepayment } from '../../../services/transaction.service.js';
 import { produceEvent } from '../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../utils/eventOrigin.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../utils/tagUtils.js';
 import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../utils/investmentEnrichment.js';
@@ -465,6 +466,7 @@ async function handlePost(req, res) {
 
           // Enrich and send event for the principal portion
           await produceEvent({
+            ...eventOrigin(req),
             type: 'MANUAL_TRANSACTION_CREATED',
             tenantId,
             transactionId: principalTx.id,
@@ -480,6 +482,7 @@ async function handlePost(req, res) {
           if (interestTx) {
             const interestCategory = await prisma.category.findUnique({ where: { id: interestTx.categoryId } });
             await produceEvent({
+              ...eventOrigin(req),
               type: 'MANUAL_TRANSACTION_CREATED',
               tenantId,
               transactionId: interestTx.id,
@@ -508,6 +511,7 @@ async function handlePost(req, res) {
 
     // Enrich the event payload with data we already have in memory
     await produceEvent({
+      ...eventOrigin(req),
       type: 'MANUAL_TRANSACTION_CREATED',
       tenantId: req.user.tenantId,
       transactionId: transactionId,
@@ -536,6 +540,7 @@ async function handlePost(req, res) {
     // Emit TAG_ASSIGNMENT_MODIFIED if tags were set on creation
     if (resolvedTagIds.length > 0) {
       await produceEvent({
+        ...eventOrigin(req),
         type: 'TAG_ASSIGNMENT_MODIFIED',
         tenantId,
         tagIds: resolvedTagIds,
@@ -798,6 +803,7 @@ async function handlePut(req, res) {
 
     if (portfolioItemChanged || categoryChanged) {
       await produceEvent({
+        ...eventOrigin(req),
         type: 'MANUAL_TRANSACTION_MODIFIED',
         tenantId,
         transactionId: existing.id,
@@ -817,6 +823,7 @@ async function handlePut(req, res) {
     // Trigger event for the new state of the transaction.
     // The `result` object from the update includes the relations.
     await produceEvent({
+      ...eventOrigin(req),
       type: 'MANUAL_TRANSACTION_MODIFIED',
       tenantId,
       transactionId: result.id,
@@ -836,6 +843,7 @@ async function handlePut(req, res) {
 
       if (allAffectedTagIds.length > 0) {
         await produceEvent({
+          ...eventOrigin(req),
           type: 'TAG_ASSIGNMENT_MODIFIED',
           tenantId,
           tagIds: allAffectedTagIds,
@@ -920,6 +928,7 @@ async function handleDelete(req, res) {
     // After deletion, check if we need to trigger a portfolio rebuild
     if (existing) { // `existing` includes category and account
       await produceEvent({
+        ...eventOrigin(req),
         type: 'MANUAL_TRANSACTION_MODIFIED', // Use the same event type for simplicity
         tenantId,
         transactionId: existing.id,

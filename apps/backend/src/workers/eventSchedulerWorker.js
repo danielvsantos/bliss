@@ -11,6 +11,7 @@ const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetecti
 const { enqueueTenantSecuritiesRefresh } = require('../queues/securityMasterQueue');
 const { scheduleDebouncedJob, mergers } = require('../services/debounceService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker, carryTrigger } = require('../utils/activityTracker');
 
 const DEBOUNCE_DELAY_SECONDS = 5; // 5 seconds
 
@@ -23,20 +24,28 @@ const DEBOUNCE_MERGERS = {
         originalScope: mergers.analyticsScope, // feeds scoped-update-analytics
         portfolioItemIds: mergers.union,
         _rebuildMeta: mergers.keepPresent,
+        _trigger: mergers.keepPresent,         // processing-status label (#100)
     },
     'process-portfolio-changes': {
         accountIds: mergers.unionOrAll,       // absent = full rebuild
         dateScopes: mergers.union,
+        _trigger: mergers.keepPresent,
     },
-    'recalculate-portfolio-items': {},        // portfolioItemIds is the aggregation key
+    'recalculate-portfolio-items': {          // portfolioItemIds is the aggregation key
+        _trigger: mergers.keepPresent,
+    },
     'scoped-update-analytics': {
         portfolioItemIds: mergers.union,
         _rebuildMeta: mergers.keepPresent,
+        _trigger: mergers.keepPresent,
     },
     'full-rebuild-analytics': {
         _rebuildMeta: mergers.keepPresent,
+        _trigger: mergers.keepPresent,
     },
-    'value-all-assets': {},
+    'value-all-assets': {
+        _trigger: mergers.keepPresent,
+    },
 };
 
 const processEventJob = async (job) => {
@@ -52,6 +61,11 @@ const processEventJob = async (job) => {
         source: data?.source || null,
         keys: data ? Object.keys(data) : [],
     });
+
+    // Who started this chain (nightly cron, AI agent, bank sync, import), forwarded
+    // into every downstream job so the processing-status label survives end to
+    // end (#100). `{}` for plain user changes and admin rebuilds.
+    const carry = carryTrigger(EVENTS_QUEUE_NAME, job);
 
     // This is a new helper function to transform the debounced scopes array.
     const consolidateScopes = (scopes) => {
@@ -102,6 +116,7 @@ const processEventJob = async (job) => {
                     adapterId,
                     fileStorageKey: siFileKey,
                     stagedImportId,
+                    ...carry,
                 }, { jobId: smartImportJobId });
                 logger.info(`[Event] Enqueued smart import job ${smartImportJobId} for staged import ${stagedImportId}`);
                 break;
@@ -119,6 +134,7 @@ const processEventJob = async (job) => {
                     userId: scUserId,
                     stagedImportId: scStagedImportId,
                     rowIds: scRowIds || null,
+                    ...carry,
                 }, { jobId: commitJobId });
                 logger.info(`[Event] Enqueued smart import commit job ${commitJobId} for staged import ${scStagedImportId}`);
                 break;
@@ -132,7 +148,7 @@ const processEventJob = async (job) => {
                     return;
                 }
                 logger.info(`[Event] Scheduling Plaid Sync for Item ${plaidItemId} (Type: ${name}, Source: ${source || 'N/A'})`);
-                await getPlaidSyncQueue().add('plaid-sync-job', { plaidItemId, tenantId, source });
+                await getPlaidSyncQueue().add('plaid-sync-job', { plaidItemId, tenantId, source, ...carry });
                 break;
             }
 
@@ -143,7 +159,7 @@ const processEventJob = async (job) => {
                     return;
                 }
                 logger.info(`[Event] Scheduling Plaid historical backfill for Item ${plaidItemId}, fromDate=${fromDate}`);
-                await getPlaidSyncQueue().add('plaid-sync-job', { plaidItemId, tenantId, source: 'HISTORICAL_BACKFILL', fromDate });
+                await getPlaidSyncQueue().add('plaid-sync-job', { plaidItemId, tenantId, source: 'HISTORICAL_BACKFILL', fromDate, ...carry });
                 break;
             }
 
@@ -158,7 +174,7 @@ const processEventJob = async (job) => {
                 // all processed:false/PENDING rows for the item, which now includes the
                 // manually-reset row.
                 logger.info(`[Event] Scheduling manual Plaid transaction retry for Item ${plaidItemId}`);
-                await getPlaidProcessingQueue().add('PLAID_TRANSACTION_RETRY', { plaidItemId, tenantId, source: 'MANUAL_RETRY' });
+                await getPlaidProcessingQueue().add('PLAID_TRANSACTION_RETRY', { plaidItemId, tenantId, source: 'MANUAL_RETRY', ...carry });
                 break;
             }
 
@@ -173,7 +189,7 @@ const processEventJob = async (job) => {
                 await scheduleDebouncedJob(
                     getPortfolioQueue(),
                     'recalculate-portfolio-items', // The new, correct, batched job name
-                    { tenantId, portfolioItemIds: [portfolioItemId] },
+                    { tenantId, portfolioItemIds: [portfolioItemId], ...carry },
                     'portfolioItemIds', // The key for aggregation
                     DEBOUNCE_DELAY_SECONDS,
                     DEBOUNCE_MERGERS['recalculate-portfolio-items']
@@ -210,6 +226,7 @@ const processEventJob = async (job) => {
                                 categoryType,
                                 categoryGroup,
                             },
+                            ...carry,
                         });
                     } else {
                         logger.info(`[Event] Routing Investment/Debt transaction to portfolio processor.`);
@@ -219,6 +236,7 @@ const processEventJob = async (job) => {
                             tenantId,
                             transactionId,
                             ...(previousPortfolioItemId && { previousPortfolioItemId }),
+                            ...carry,
                         });
                     }
                     // Cash processing will be triggered by PORTFOLIO_CHANGES_PROCESSED
@@ -247,7 +265,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getPortfolioQueue(),
                         'process-cash-holdings',
-                        { tenantId, scope: cashScope, originalScope: finalScope, needsCashRebuild: [true] },
+                        { tenantId, scope: cashScope, originalScope: finalScope, needsCashRebuild: [true], ...carry },
                         'needsCashRebuild',
                         DEBOUNCE_DELAY_SECONDS,
                         DEBOUNCE_MERGERS['process-cash-holdings']
@@ -274,6 +292,7 @@ const processEventJob = async (job) => {
                         needsSync: [true],
                         ...(accountIds && accountIds.length > 0 && { accountIds }),
                         ...(resolvedDateScopes && resolvedDateScopes.length > 0 && { dateScopes: resolvedDateScopes }),
+                        ...carry,
                     },
                     'needsSync',
                     DEBOUNCE_DELAY_SECONDS * 2,
@@ -298,6 +317,7 @@ const processEventJob = async (job) => {
                     try {
                         await enqueueTenantSecuritiesRefresh(tenantId, {
                             force: false,
+                            ...carry,
                             ...(isFullPortfolioRebuild ? { _rebuildMeta } : {}),
                         }, isFullPortfolioRebuild ? {
                             removeOnComplete: { age: 30 * 24 * 3600 },
@@ -318,7 +338,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getPortfolioQueue(),
                         'process-cash-holdings',
-                        { tenantId, needsCashRebuild: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
+                        { tenantId, needsCashRebuild: [true], ...carry, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsCashRebuild',
                         DEBOUNCE_DELAY_SECONDS,
                         DEBOUNCE_MERGERS['process-cash-holdings']
@@ -339,7 +359,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getPortfolioQueue(),
                         'process-cash-holdings',
-                        { tenantId, scope: cashScope, originalScope: finalScope, portfolioItemIds, needsCashRebuild: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
+                        { tenantId, scope: cashScope, originalScope: finalScope, portfolioItemIds, needsCashRebuild: [true], ...carry, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsCashRebuild',
                         DEBOUNCE_DELAY_SECONDS,
                         DEBOUNCE_MERGERS['process-cash-holdings']
@@ -361,7 +381,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getAnalyticsQueue(),
                         'full-rebuild-analytics',
-                        { tenantId, needsRecalc: [true], ...(_rebuildMeta ? { _rebuildMeta } : {}) },
+                        { tenantId, needsRecalc: [true], ...carry, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'needsRecalc',
                         DEBOUNCE_DELAY_SECONDS,
                         DEBOUNCE_MERGERS['full-rebuild-analytics']
@@ -372,7 +392,7 @@ const processEventJob = async (job) => {
                     await scheduleDebouncedJob(
                         getAnalyticsQueue(),
                         'scoped-update-analytics',
-                        { tenantId, scopes: [originalScope], portfolioItemIds, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
+                        { tenantId, scopes: [originalScope], portfolioItemIds, ...carry, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         'scopes',
                         DEBOUNCE_DELAY_SECONDS,
                         DEBOUNCE_MERGERS['scoped-update-analytics']
@@ -417,16 +437,16 @@ const processEventJob = async (job) => {
                     logger.info(`Analytics recalculation complete (full) for tenant ${tenantId}. Enqueuing full valuation for ALL assets.`);
                     const valuationJob = await getPortfolioQueue().add(
                         'value-all-assets',
-                        { tenantId, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
+                        { tenantId, ...carry, ...(_rebuildMeta ? { _rebuildMeta } : {}) },
                         _rebuildMeta ? {} : fullValuationDedupOpts(tenantId),
                     );
                     logger.info(`[Event] value-all-assets for tenant ${tenantId} → job ${valuationJob?.id} (an existing job id means the request was deduplicated).`);
-                    await getPortfolioQueue().add('process-amortizing-loan', { tenantId });
-                    await getPortfolioQueue().add('process-simple-liability', { tenantId });
+                    await getPortfolioQueue().add('process-amortizing-loan', { tenantId, ...carry });
+                    await getPortfolioQueue().add('process-simple-liability', { tenantId, ...carry });
                 } else if (portfolioItemIds && portfolioItemIds.length > 0) {
                     // This is a true scoped update (e.g., from a manual transaction).
                     logger.info(`Analytics recalculation complete (scoped) for tenant ${tenantId}. Enqueuing scoped valuation.`);
-                    await getPortfolioQueue().add('value-portfolio-items', { tenantId, portfolioItemIds });
+                    await getPortfolioQueue().add('value-portfolio-items', { tenantId, portfolioItemIds, ...carry });
                 }
                 break;
             }
@@ -443,7 +463,7 @@ const processEventJob = async (job) => {
                 await scheduleDebouncedJob(
                     getAnalyticsQueue(),
                     'scoped-update-analytics',
-                    { tenantId: tagTenantId, scopes: transactionScopes || [] },
+                    { tenantId: tagTenantId, scopes: transactionScopes || [], ...carry },
                     'scopes',
                     DEBOUNCE_DELAY_SECONDS,
                     DEBOUNCE_MERGERS['scoped-update-analytics']
@@ -474,13 +494,13 @@ const processEventJob = async (job) => {
                 await scheduleDebouncedJob(
                     getPortfolioQueue(),
                     'value-all-assets',
-                    { tenantId: staleTenantId, needsRevaluation: [true] },
+                    { tenantId: staleTenantId, needsRevaluation: [true], ...carry },
                     'needsRevaluation',
                     1800, // 30 minutes
                     DEBOUNCE_MERGERS['value-all-assets']
                 );
-                await getPortfolioQueue().add('process-simple-liability', { tenantId: staleTenantId }, { jobId: `${dedupePrefix}-liability` });
-                await getPortfolioQueue().add('process-amortizing-loan', { tenantId: staleTenantId }, { jobId: `${dedupePrefix}-amortizing` });
+                await getPortfolioQueue().add('process-simple-liability', { tenantId: staleTenantId, ...carry }, { jobId: `${dedupePrefix}-liability` });
+                await getPortfolioQueue().add('process-amortizing-loan', { tenantId: staleTenantId, ...carry }, { jobId: `${dedupePrefix}-amortizing` });
                 break;
             }
 
@@ -496,7 +516,7 @@ const processEventJob = async (job) => {
                 await scheduleDebouncedJob(
                     getPortfolioQueue(),
                     'process-portfolio-changes',
-                    { tenantId, needsSync: [true] },
+                    { tenantId, needsSync: [true], ...carry },
                     'needsSync',
                     DEBOUNCE_DELAY_SECONDS * 2,
                     DEBOUNCE_MERGERS['process-portfolio-changes']
@@ -518,7 +538,7 @@ const processEventJob = async (job) => {
                 logger.info(`[Event] Scheduling subscription detection for tenant ${subTenantId} (mode: ${subMode}).`);
                 await getSubscriptionDetectionQueue().add(
                     'detect-tenant',
-                    { tenantId: subTenantId, mode: subMode, source: 'api' },
+                    { tenantId: subTenantId, mode: subMode, source: 'api', ...carry },
                     { jobId: `subs-ondemand-${subTenantId}-${Date.now()}` },
                 );
                 break;
@@ -668,6 +688,9 @@ const startEventSchedulerWorker = () => {
             extra: { jobData: job?.data },
         });
     });
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, EVENTS_QUEUE_NAME);
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;

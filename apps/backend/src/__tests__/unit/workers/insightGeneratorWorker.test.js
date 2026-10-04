@@ -36,7 +36,9 @@ jest.mock('../../../queues/insightQueue', () => ({
 
 let workerCallback;
 let workerOnHandlers = {};
-const mockWorkerOn = jest.fn((event, cb) => { workerOnHandlers[event] = cb; });
+// Keep the worker's own handler: the processing-status tracker (#100) also
+// registers 'completed' / 'failed' listeners after it.
+const mockWorkerOn = jest.fn((event, cb) => { if (!workerOnHandlers[event]) workerOnHandlers[event] = cb; });
 jest.mock('bullmq', () => ({
   Worker: jest.fn().mockImplementation((_queue, callback) => {
     workerCallback = callback;

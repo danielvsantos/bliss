@@ -6,6 +6,7 @@ const { INSIGHT_QUEUE_NAME, getInsightQueue } = require('../queues/insightQueue'
 const { generateTieredInsights, generateAllDueTiers } = require('../services/insightService');
 const prisma = require('../../prisma/prisma.js');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker, startInlineActivity } = require('../utils/activityTracker');
 
 /**
  * Processes insight generation jobs across 4 tiers.
@@ -66,8 +67,14 @@ const processInsightJob = async (job) => {
         const tierResults = {};
 
         for (const tenant of tenants) {
+          // Processing status (#100): this cron has no per-tenant child job, so
+          // each tenant's run is tracked inline (fire-and-forget, never throws).
+          const activity = startInlineActivity({
+            queueName: INSIGHT_QUEUE_NAME, id: `${job.id}:${tenant.id}`, tenantId: tenant.id, jobName: 'generate-tenant-insights',
+          });
           try {
             const results = await generateAllDueTiers(tenant.id);
+            activity.complete();
             for (const [tier, result] of Object.entries(results)) {
               if (!tierResults[tier]) tierResults[tier] = { generated: 0, skipped: 0 };
               if (result.skipped) {
@@ -78,6 +85,7 @@ const processInsightJob = async (job) => {
               }
             }
           } catch (error) {
+            activity.fail(error);
             errors++;
             logger.error('Failed to generate insights for tenant:', {
               tenantId: tenant.id,
@@ -123,12 +131,17 @@ const processInsightJob = async (job) => {
         let errors = 0;
 
         for (const tenant of tenants) {
+          const activity = startInlineActivity({
+            queueName: INSIGHT_QUEUE_NAME, id: `${job.id}:${tenant.id}`, tenantId: tenant.id, jobName: 'generate-portfolio-intel',
+          });
           try {
             const result = await generateTieredInsights(tenant.id, 'PORTFOLIO');
+            activity.complete();
             if (!result.skipped) {
               totalInsights += result.insights?.length || 0;
             }
           } catch (error) {
+            activity.fail(error);
             errors++;
             logger.error('Failed to generate portfolio insights:', {
               tenantId: tenant.id,
@@ -227,6 +240,9 @@ const startInsightGeneratorWorker = () => {
       },
     });
   });
+
+  // Processing status (#100): running / progress / completed / final failure.
+  trackWorker(worker, INSIGHT_QUEUE_NAME);
 
   return worker;
 };

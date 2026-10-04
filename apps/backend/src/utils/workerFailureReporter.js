@@ -29,6 +29,17 @@ const Sentry = require('@sentry/node');
 const logger = require('./logger');
 
 /**
+ * Whether this failure exhausted the job's attempts (BullMQ will not retry).
+ * Shared with the processing-status tracker so both apply the same rule.
+ * @param {import('bullmq').Job | null} job
+ */
+function isFinalAttempt(job) {
+    const totalAttempts = job?.opts?.attempts || 1;
+    const attemptsMade = job?.attemptsMade || 0;
+    return attemptsMade >= totalAttempts;
+}
+
+/**
  * @param {Object} params
  * @param {string} params.workerName — Short identifier (e.g. "portfolioWorker")
  * @param {import('bullmq').Job | null} params.job — BullMQ job (may be null on queue-level errors)
@@ -38,7 +49,7 @@ const logger = require('./logger');
 function reportWorkerFailure({ workerName, job, error, extra = {} }) {
     const totalAttempts = job?.opts?.attempts || 1;
     const attemptsMade = job?.attemptsMade || 0;
-    const isFinalAttempt = attemptsMade >= totalAttempts;
+    const finalAttempt = isFinalAttempt(job);
 
     const logPayload = {
         worker: workerName,
@@ -46,11 +57,11 @@ function reportWorkerFailure({ workerName, job, error, extra = {} }) {
         jobId: job?.id,
         tenantId: job?.data?.tenantId,
         attempt: `${attemptsMade}/${totalAttempts}`,
-        willRetry: !isFinalAttempt,
+        willRetry: !finalAttempt,
         error: error?.message,
     };
 
-    if (isFinalAttempt) {
+    if (finalAttempt) {
         // Final attempt exhausted — this is a real failure, log at error and page Sentry.
         logger.error(`${workerName} job failed (final attempt)`, logPayload);
 
@@ -74,4 +85,4 @@ function reportWorkerFailure({ workerName, job, error, extra = {} }) {
     }
 }
 
-module.exports = { reportWorkerFailure };
+module.exports = { reportWorkerFailure, isFinalAttempt };

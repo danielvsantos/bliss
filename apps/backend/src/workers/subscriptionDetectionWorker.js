@@ -25,6 +25,7 @@ const { Worker } = require('bullmq');
 const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker } = require('../utils/activityTracker');
 const {
   SUBSCRIPTION_DETECTION_QUEUE_NAME,
   getSubscriptionDetectionQueue,
@@ -195,7 +196,7 @@ async function handleDetectAllTenants() {
   for (const t of tenants) {
     await queue.add(
       'detect-tenant',
-      { tenantId: t.id, mode: 'incremental', source: 'nightly-cron' },
+      { tenantId: t.id, mode: 'incremental', source: 'nightly-cron', _trigger: 'nightly' },
       { jobId: `subs-${t.id}-${dateKey}` },
     );
     enqueued += 1;
@@ -252,6 +253,9 @@ const startSubscriptionDetectionWorker = () => {
       extra: { mode: job?.data?.mode, tenantId: job?.data?.tenantId },
     });
   });
+
+  // Processing status (#100): running / progress / completed / final failure.
+  trackWorker(worker, SUBSCRIPTION_DETECTION_QUEUE_NAME);
 
   return worker;
 };

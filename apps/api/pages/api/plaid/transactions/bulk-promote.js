@@ -4,6 +4,7 @@ import { rateLimiters } from '../../../../utils/rateLimit.js';
 import { cors } from '../../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../../utils/eventOrigin.js';
 import { withAuth } from '../../../../utils/withAuth.js';
 import { computeTransactionHash, buildDuplicateHashSet } from '../../../../utils/transactionHash.js';
 import { fetchWithTimeout } from '../../../../utils/fetchWithTimeout.js';
@@ -380,6 +381,7 @@ export default withAuth(async function handler(req, res) {
     // not await — the user gets their response immediately after DB work.
     if (promoted > 0) {
       produceEvent({
+        ...eventOrigin(req),
         type: 'TRANSACTIONS_IMPORTED',
         tenantId: user.tenantId,
         accountIds: Array.from(affectedAccountIds),

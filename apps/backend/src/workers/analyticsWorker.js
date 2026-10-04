@@ -6,6 +6,7 @@ const { ANALYTICS_QUEUE_NAME } = require('../queues/analyticsQueue');
 const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/currencyService');
 const { enqueueEvent } = require('../queues/eventsQueue');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker, createProgressReporter } = require('../utils/activityTracker');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
@@ -13,7 +14,7 @@ const prisma = require('../../prisma/prisma.js');
 
 // --- Enhanced Analytics Calculation Logic ---
 
-async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat = async () => {}) {
+async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat = async () => {}, onProgress = () => {}) {
   logger.info('Starting analytics calculation:', { tenantId, scope, targetCurrencies });
 
   const BATCH_SIZE = 1000;
@@ -150,6 +151,8 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
       break;
     }
     processedCount += transactions.length;
+    // Processing status (#100): fraction of Pass 2 done (sync, never throws).
+    onProgress(transactionCount > 0 ? Math.min(1, processedCount / transactionCount) : 1);
     logger.info(`[AnalyticsWorker] Processing batch of ${transactions.length}. Total processed: ${processedCount}/${transactionCount}`);
     // Renew the job lock between batches (same reasoning as Pass 1).
     await heartbeat();
@@ -309,6 +312,10 @@ const processAnalyticsJob = async (job, token) => {
         name: 'analyticsWorker',
     });
 
+    // Processing status (#100): Pass 2 of the calculation maps to 0–80 %, the
+    // cache writes to 80–100 %. Throttled Redis writes; never throws.
+    const reportProgress = createProgressReporter(job, ANALYTICS_QUEUE_NAME);
+
     logger.info(`Starting analytics job: ${name}`, {
         jobId: job.id,
         tenantId,
@@ -350,8 +357,9 @@ const processAnalyticsJob = async (job, token) => {
         switch (name) {
             case 'scoped-update-analytics':
                 if (scopes && scopes.length > 0) {
-                    for (const singleScope of scopes) {
-                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies, heartbeat);
+                    for (const [scopeIndex, singleScope] of scopes.entries()) {
+                        const onProgress = (fraction) => reportProgress((scopeIndex + fraction) * 80, scopes.length * 100);
+                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies, heartbeat, onProgress);
                         newAnalytics.push(...analytics);
                         newTagAnalytics.push(...tagAnalytics);
                     }
@@ -397,15 +405,22 @@ const processAnalyticsJob = async (job, token) => {
 
             case 'recalculate-analytics': // This is the broad job from imports
             default: {
-                const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, scope || {}, targetCurrencies, heartbeat);
+                const onProgress = (fraction) => reportProgress(fraction * 80, 100);
+                const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, scope || {}, targetCurrencies, heartbeat, onProgress);
                 newAnalytics = analytics;
                 newTagAnalytics = tagAnalytics;
                 break;
             }
         }
 
-        // Report progress
-        await job.updateProgress(50);
+        // Report progress: the calculation is done, the cache writes remain.
+        await job.updateProgress(80);
+        const totalWrites = newAnalytics.length + newTagAnalytics.length;
+        let writesDone = 0;
+        const reportWrites = (count) => {
+            writesDone += count;
+            reportProgress(80 + (totalWrites > 0 ? (writesDone / totalWrites) * 20 : 20), 100);
+        };
         logger.info('Analytics calculated, starting database updates:', {
           jobId: job.id,
           updateCount: newAnalytics.length
@@ -437,6 +452,7 @@ const processAnalyticsJob = async (job, token) => {
         for (let i = 0; i < newAnalytics.length; i += WRITE_BATCH_SIZE) {
             await heartbeat();
             const batch = newAnalytics.slice(i, i + WRITE_BATCH_SIZE);
+            reportWrites(batch.length);
             // Strip any extraneous in-memory fields (e.g. `totalDebt`)
             // and attach tenantId for createMany.
             // eslint-disable-next-line no-unused-vars
@@ -467,6 +483,7 @@ const processAnalyticsJob = async (job, token) => {
           for (let i = 0; i < newTagAnalytics.length; i += WRITE_BATCH_SIZE) {
               await heartbeat();
               const batch = newTagAnalytics.slice(i, i + WRITE_BATCH_SIZE);
+              reportWrites(batch.length);
               const rows = batch.map(entry => ({
                   tagId: entry.tagId,
                   year: entry.year,
@@ -536,6 +553,8 @@ const processAnalyticsJob = async (job, token) => {
             // (no downstream valuation cascade) from a routine full rebuild
             // that does want the cascade.
             ...(data._rebuildMeta ? { _rebuildMeta: data._rebuildMeta } : {}),
+            // Processing-status label of the chain (#100).
+            ...(data._trigger ? { _trigger: data._trigger } : {}),
         });
 
 
@@ -595,6 +614,9 @@ const startAnalyticsWorker = () => {
         extra: { scope: job?.data?.scope, stack: error?.stack },
       });
     });
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, ANALYTICS_QUEUE_NAME);
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;

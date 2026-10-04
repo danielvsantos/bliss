@@ -185,6 +185,35 @@ describe('portfolioWorker — processPortfolioJob', () => {
     });
   });
 
+  it('labels every nightly revaluation child job as nightly for processing status (#100, AC4)', async () => {
+    prisma.tenant.findMany.mockResolvedValue([{ id: 'tenant-1' }]);
+    const mockQueue = { add: jest.fn().mockResolvedValue({ id: 'q-1' }) };
+    getPortfolioQueue.mockReturnValue(mockQueue);
+
+    await processPortfolioJob(makeJob('revalue-all-tenants', {}));
+
+    expect(mockQueue.add).toHaveBeenCalledTimes(3);
+    for (const [, data] of mockQueue.add.mock.calls) {
+      expect(data).toEqual({ tenantId: 'tenant-1', _trigger: 'nightly' });
+    }
+  });
+
+  it('attaches a progress reporter as an own property that survives the handler spread (#100)', async () => {
+    const job = makeJob('process-portfolio-changes', { tenantId: 'tenant-1' });
+    await processPortfolioJob(job);
+
+    const handlerJob = processPortfolioChanges.mock.calls[0][0];
+    expect(typeof handlerJob.reportProgress).toBe('function');
+    expect(typeof { ...handlerJob }.reportProgress).toBe('function');
+    expect(() => handlerJob.reportProgress(1, 2)).not.toThrow();
+  });
+
+  it('forwards the chain trigger into the cash processor scope (#100)', async () => {
+    const job = makeJob('process-cash-holdings', { tenantId: 'tenant-1', scope: { year: 2026 }, _trigger: 'agent' });
+    await processPortfolioJob(job);
+    expect(processCashHoldings).toHaveBeenCalledWith('tenant-1', expect.objectContaining({ year: 2026, _trigger: 'agent' }));
+  });
+
   it('handles unknown job types gracefully', async () => {
     const job = makeJob('unknown-job-type', { tenantId: 'tenant-1' });
     await processPortfolioJob(job);
