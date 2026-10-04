@@ -41,18 +41,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # ─── Allowlist ───────────────────────────────────────────────────────
-      # Empty as of the security-remediation sprint: `pnpm audit --prod
-      # --audit-level=high` reports 0 critical / 0 high. Every advisory that
-      # existed was cleared, either by bumping a direct dependency or by a
-      # pinned `pnpm.overrides` entry in the root package.json (see the
-      # "//overrides" note there).
+      # Lives in the root package.json as `pnpm.auditConfig.ignoreGhsas`, with
+      # the justification and re-check date for each entry in the
+      # "//auditConfig" note next to it. (pnpm 9 has no `audit --ignore` flag;
+      # `pnpm audit` reads this config.) Every other advisory since the
+      # security-remediation sprint was cleared, either by bumping a direct
+      # dependency or by a pinned `pnpm.overrides` entry (see "//overrides").
       #
-      # To add an entry when an advisory genuinely cannot be fixed, append to
-      # the command below and record WHY on the same line. An entry without a
-      # justification should not survive review.
-      #
-      #   --ignore GHSA-xxxx-xxxx-xxxx  # <package>: build-time only, not in
-      #                                 # any runtime path. Re-check <date>.
+      # To add an entry when an advisory genuinely cannot be fixed, append its
+      # GHSA id to `ignoreGhsas` and record WHY in "//auditConfig". An entry
+      # without a justification and a re-check date should not survive review.
       #
       # "It's noisy" is not a justification. "Not reachable from a runtime
       # code path, verified by <how>" is.
