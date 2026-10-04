@@ -138,16 +138,50 @@ from the browser. Communication flow:
   API posts event
        |
        v
-  eventSchedulerWorker
+  eventSchedulerWorker            (queue: events)
        |
-       +---> smartImportQueue ---> smartImportWorker
-       +---> plaidSyncQueue   ---> plaidSyncWorker
-       +---> classifyQueue    ---> classificationWorker
-       +---> portfolioQueue   ---> portfolioValuationWorker
-       +---> analyticsQueue   ---> analyticsWorker
-       +---> insightsQueue    ---> insightsWorker
-       ...
+       +---> smart-import ---------------> smartImportWorker
+       |                                    (also runs commit-smart-import via commitWorker)
+       +---> plaid-sync -----------------> plaidSyncWorker
+       +---> plaid-processing -----------> plaidProcessorWorker
+       +---> portfolio ------------------> portfolioWorker
+       +---> analytics ------------------> analyticsWorker
+       +---> subscription-detection -----> subscriptionDetectionWorker
+
+  insights and security-master have no event route: insightGeneratorWorker and
+  securityMasterWorker run on their own nightly/weekly schedules (see
+  Scheduled Jobs) and on direct requests.
 ```
+
+### AI agents --> API (apps/api)
+
+```
+  Claude / script / other system        Next.js API (:3000)
+       |                                      |
+       +-- Authorization: Bearer bliss_... -->|  withAuth turns the token into req.user
+       |   (REST routes, or POST /api/mcp)    |  role capped: Read-only -> viewer,
+       |                                      |  Read & write -> member (never admin)
+       |                                      |
+       +-- OAuth 2.1 (PKCE) ----------------->|  /oauth/consent (admins) issues an
+           claude.ai / Cowork / Desktop       |  integration key as the access token
+```
+
+- AI agents and other systems authenticate with **integration tokens**
+  (`bliss_<prefix>_<secret>`), created by tenant admins in Settings -->
+  Integrations. Tokens are stored as a SHA-256 hash plus a public prefix, and can
+  be revoked individually.
+- A central denylist refuses what a token must never reach: sessions, users,
+  integrations, the Plaid connection lifecycle, and account, category and tenant
+  writes.
+- The **MCP server** (`POST /api/mcp`) is a stateless, tools-only layer over the
+  REST API. Every tool calls an existing route over loopback with the caller's
+  own key, so authentication, tenant scoping, decryption and event dispatch apply
+  unchanged. Read-only keys see 21 read tools; Read & write keys see all 38.
+- Claude custom connectors cannot send a header, so the API also runs an
+  **OAuth 2.1** server. Its access token is an integration key, which is why the
+  rules above apply and Settings --> Integrations revokes it.
+- See [Connecting AI Agents](/docs/guides/connecting-ai-agents) and
+  [Use Bliss with Claude](/docs/guides/using-bliss-with-claude-mcp).
 
 ---
 
@@ -187,9 +221,11 @@ from the browser. Communication flow:
 
 ### Schema Overview
 
-The database has 50+ migrations managed by Prisma. Key models:
+The database has 65+ migrations managed by Prisma. Key models:
 
 ```
+  SignupInvite   (global, no tenant: the invite-only sign-up allowlist)
+
   Tenant
     |--- User (1:N)
     |--- Account (1:N)
@@ -384,16 +420,15 @@ the Next.js API config. Temp files are cleaned up after upload completes.
   Redis 7
     |
     +-- BullMQ Queues (reliable, persistent)
+    |     events
     |     smart-import
     |     plaid-sync
-    |     plaid-processor
-    |     classification
-    |     portfolio-valuation
-    |     event-scheduler
+    |     plaid-processing
+    |     portfolio
     |     analytics
-    |     import (legacy)
     |     insights
-    |     plaid-webhook
+    |     security-master
+    |     subscription-detection
     |
     +-- Cache (ephemeral)
           Description cache (in-memory, backed by DescriptionMapping table)
@@ -402,22 +437,21 @@ the Next.js API config. Temp files are cleaned up after upload completes.
 
 ### Worker Details
 
-| Worker                    | Queue              | Concurrency | Purpose                                           |
-| ------------------------- | ------------------ | ----------- | ------------------------------------------------- |
-| smartImportWorker         | smart-import       | 1           | CSV parse, dedup, classify, stage rows            |
-| plaidSyncWorker           | plaid-sync         | 3           | Incremental transaction fetch from Plaid          |
-| plaidProcessorWorker      | plaid-processor    | 1           | Classify and persist Plaid transactions            |
-| classificationWorker      | classification     | 5           | 4-tier AI classification pipeline                  |
-| portfolioValuationWorker  | portfolio-valuation| 1           | Fetch prices, calculate holdings P&L               |
-| eventSchedulerWorker      | event-scheduler    | 3           | Route typed events to appropriate queues           |
-| analyticsWorker           | analytics          | 1           | Compute and cache spending analytics               |
-| importWorker              | import             | 1           | Legacy CSV import (kept for backward compat)       |
-| insightsWorker            | insights           | 1           | Generate AI financial insights                     |
-| plaidWebhookWorker        | plaid-webhook      | 3           | Process Plaid webhook payloads                     |
+| Worker                      | Queue                  | Concurrency | Purpose                                                             |
+| --------------------------- | ---------------------- | ----------- | ------------------------------------------------------------------- |
+| eventSchedulerWorker        | events                 | 1           | Routes typed events to the appropriate queues                       |
+| smartImportWorker           | smart-import           | 1           | CSV parse, dedup, classify, stage rows; also runs `commit-smart-import` (via `commitWorker`, a helper module, not a separate worker) |
+| plaidSyncWorker             | plaid-sync             | 1           | Incremental transaction fetch from Plaid                            |
+| plaidProcessorWorker        | plaid-processing       | 1           | Classify and persist Plaid transactions                             |
+| portfolioWorker             | portfolio              | 5           | FIFO lots, P&L, valuation, cash holdings, nightly revaluation       |
+| analyticsWorker             | analytics              | 1           | Compute and cache spending and tag analytics                        |
+| insightGeneratorWorker      | insights               | 1           | Generate tiered AI financial insights                               |
+| securityMasterWorker        | security-master        | 1           | Nightly stock and ETF fundamentals refresh                          |
+| subscriptionDetectionWorker | subscription-detection | 1           | Recurring-charge detection (nightly and on demand)                  |
 
 ### Scheduled Jobs (Nightly Cron)
 
-Three workers register BullMQ repeatable jobs that run on a nightly schedule:
+Four workers register BullMQ repeatable jobs that run on a nightly schedule:
 
 | Job | Worker | Cron (UTC) | Purpose |
 | --- | ------ | ---------- | ------- |
@@ -481,7 +515,7 @@ services:
 
 ### Isolation Model
 
-Bliss uses **query-level tenant isolation** (shared database, shared schema):
+Bliss uses **query-level tenant isolation** (shared database, shared schema). The one deliberate exception is the global `SignupInvite` table, which holds the optional invite-only sign-up allowlist and exists before the tenant it will create. It is reachable only through operator tooling (`ADMIN_API_KEY`), never through tenant-scoped routes or MCP:
 
 ```
   Request arrives
