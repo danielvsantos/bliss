@@ -130,16 +130,13 @@ export default function HomePage() {
                 >
                   Get Started
                 </Link>
-                <a
-                  href="https://github.com/danielvsantos/bliss"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl font-semibold text-sm transition-colors hover:bg-gray-50"
+                <Link
+                  href="/docs/guides/bring-your-finances-with-claude"
+                  className="inline-flex items-center justify-center px-7 py-3.5 rounded-xl font-semibold text-sm transition-colors hover:bg-gray-50"
                   style={{ border: '1px solid #E2E8F0', color: '#3A3542' }}
                 >
-                  <GitHubIcon size={16} />
-                  GitHub
-                </a>
+                  Set up with Claude
+                </Link>
                 <a
                   href="https://app.blissfinance.co/auth?origin=docs-site"
                   target="_blank"
@@ -181,7 +178,7 @@ export default function HomePage() {
             Production-Grade Infrastructure
           </p>
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-4" style={{ color: '#3A3542' }}>
-            Three services. Eight workers. Sixty endpoints. One configuration file.
+            Three services. Nine workers. Sixty endpoints. One configuration file.
           </h2>
           <p className="text-sm leading-relaxed mb-10 max-w-2xl" style={{ color: '#5A5266' }}>
             A monorepo architecture designed for privacy-first self-hosting.
@@ -192,7 +189,7 @@ export default function HomePage() {
             <div className="mx-auto" style={{ maxWidth: 1200 }}>
               <Image
                 src="/images/blissarchitecture.svg"
-                alt="Bliss architecture: Nginx entrypoint routing to React SPA, Next.js API, and Express backend with 8 BullMQ workers, PostgreSQL with pgvector, Redis, and third-party integrations"
+                alt="Bliss architecture: Nginx entrypoint routing to React SPA, Next.js API, and Express backend with 9 BullMQ workers, PostgreSQL with pgvector, Redis, and third-party integrations"
                 width={1200}
                 height={700}
                 className="w-full h-auto"
@@ -236,7 +233,7 @@ export default function HomePage() {
 │
 └──► /svc/ [ EXPRESS BACKEND :3001 ]
             ├── Event-Driven Architecture
-            ├── 10 Asynchronous BullMQ Workers
+            ├── 9 Asynchronous BullMQ Workers
             │
             ├─► Redis 7 (Cache + Job Queues)
             │
@@ -317,19 +314,29 @@ export default function HomePage() {
                     Equity Analysis
                   </h3>
                   <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                    Break down your stock portfolio by sector, industry, and country. Weighted fundamental
-                    metrics — P/E ratio, dividend yield, EPS — surface concentration risk and income opportunities
-                    at a glance.
+                    Break down your portfolio by asset class, sector, industry, and country, with ETFs
+                    looked through to their underlying holdings. Weighted fundamental metrics — P/E ratio,
+                    dividend yield, EPS — surface concentration risk and income opportunities at a glance.
                   </p>
                 </div>
 
                 <div>
                   <h3 className="text-base font-semibold mb-2" style={{ color: '#3A3542' }}>
-                    Expense Reporting
+                    Expenses &amp; Subscriptions
                   </h3>
                   <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
                     Category breakdowns, monthly totals, and tag-based budgets across currencies and countries.
-                    Every transaction triggers an incremental analytics update — never a full table scan.
+                    Recurring charges are detected automatically from your history, with no LLM involved.
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-base font-semibold mb-2" style={{ color: '#3A3542' }}>
+                    Passive Income Projection
+                  </h3>
+                  <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
+                    See what your dividends, interest, and rent could pay over the next twelve months,
+                    built from your actual holdings and income streams.
                   </p>
                 </div>
 
@@ -550,6 +557,92 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ━━ SECTION 4b: Works with Claude ━━━━━━━━━━━━━━━━━━ */}
+      <section className="py-16 md:py-24" style={{ borderTop: '1px solid #E2E8F0' }}>
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex flex-col lg:flex-row gap-12 items-center">
+            <div className="flex-1">
+              <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: '#6D657A' }}>
+                Works with Claude
+              </p>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-4" style={{ color: '#3A3542' }}>
+                Your finances, in plain language.
+              </h2>
+              <p className="text-base leading-relaxed mb-8" style={{ color: '#5A5266' }}>
+                Connect Claude to your own Bliss and talk to your money instead of clicking through it.
+              </p>
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-base font-semibold mb-1" style={{ color: '#3A3542' }}>Ask anything</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
+                    &ldquo;What did I spend on travel this year?&rdquo; &ldquo;Which subscriptions can I cancel?&rdquo;
+                    Claude reads your real data and answers with numbers.
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold mb-1" style={{ color: '#3A3542' }}>Onboarding by conversation</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
+                    Claude interviews you about what you own, builds an import plan, and guides you through
+                    each file, so you never have to reshape a spreadsheet yourself.
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold mb-1" style={{ color: '#3A3542' }}>You stay in control</h3>
+                  <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
+                    Connections use revocable tokens or OAuth, can be read-only, and never get admin rights.
+                    Imports are reviewed with you before anything is saved.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-2 mt-8">
+                <Link
+                  href="/docs/guides/bring-your-finances-with-claude"
+                  className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-[#3A3542]"
+                  style={{ color: '#6D657A' }}
+                >
+                  Bring your finances into Bliss <ArrowRight />
+                </Link>
+                <Link
+                  href="/docs/guides/using-bliss-with-claude-mcp"
+                  className="inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-[#3A3542]"
+                  style={{ color: '#6D657A' }}
+                >
+                  Connect Claude to Bliss <ArrowRight />
+                </Link>
+              </div>
+            </div>
+
+            <div className="flex-1 w-full lg:max-w-lg">
+              <div className="rounded-xl overflow-hidden" style={{ backgroundColor: '#1E1E1E' }}>
+                <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid #333' }}>
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FF5F56' }} />
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FFBD2E' }} />
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#27C93F' }} />
+                  <span className="ml-3 text-xs" style={{ color: '#888' }}>Claude + Bliss</span>
+                </div>
+                <div className="p-5 overflow-x-auto">
+                  <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap" style={{ color: '#D4D4D4' }}>
+<span style={{ color: '#FFBD2E' }}>{'You  '}</span>{`Which subscriptions are costing me
+     the most, and what is my passive
+     income outlook?
+
+`}<span style={{ color: '#27C93F' }}>{'Claude  '}</span><span style={{ color: '#888' }}>{`list_subscriptions · get_passive_income`}</span>{`
+
+`}<span style={{ color: '#D4D4D4' }}>{`Your active subscriptions come to
+about 4 percent of monthly spending,
+led by streaming and cloud storage.
+Dividends and interest project to
+steady growth over the next year.
+Want me to flag the ones you have
+not used lately?`}</span>
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ━━ SECTION 5: Production-Grade Infrastructure ━━━━━ */}
       <section className="py-16 md:py-24" style={{ borderTop: '1px solid #E2E8F0' }}>
         <div className="max-w-6xl mx-auto px-6">
@@ -621,7 +714,7 @@ export default function HomePage() {
               <div className="overflow-hidden" style={{ backgroundColor: '#F6F8FA' }}>
                 <Image
                   src="/images/cipaths.png"
-                  alt="CI pipeline showing 1,178 passing tests across the monorepo"
+                  alt="CI pipeline with all test jobs passing across the monorepo"
                   width={400}
                   height={200}
                   className="w-full h-auto"
@@ -632,7 +725,7 @@ export default function HomePage() {
                   Bulletproof Reliability
                 </h3>
                 <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                  Orchestrated by 8 independent BullMQ workers and protected by over 2,000 automated CI pipeline tests.
+                  Orchestrated by 9 independent BullMQ workers and protected by over 4,000 automated tests.
                 </p>
               </div>
             </div>
@@ -689,7 +782,7 @@ export default function HomePage() {
                     Every system — from the Plaid webhook engine to the pgvector classification pipeline — was
                     documented in isolated markdown specs before a line of code was written.{' '}
                     <Link href="/docs/specifications" className="underline underline-offset-2 transition-colors hover:text-[#3A3542]" style={{ color: '#6D657A' }}>
-                      43 specification files
+                      56 specification files
                     </Link>{' '}
                     across 3 layers.
                   </p>
@@ -707,7 +800,7 @@ export default function HomePage() {
                   <h3 className="text-base font-semibold mb-1" style={{ color: '#3A3542' }}>Type-Safe Boundaries</h3>
                   <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
                     Strict Prisma schemas and validated API contracts ensure AI-generated code
-                    won&apos;t break the data model. 50+ migrations maintain schema integrity across every change.
+                    won&apos;t break the data model. 65+ migrations maintain schema integrity across every change.
                   </p>
                 </div>
               </div>
@@ -722,7 +815,7 @@ export default function HomePage() {
                 <div>
                   <h3 className="text-base font-semibold mb-1" style={{ color: '#3A3542' }}>OpenAPI-Documented Endpoints</h3>
                   <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                    Every API surface is documented in OpenAPI 3.0 YAML specs — 19 files covering authentication,
+                    Every API surface is documented in OpenAPI 3.0 YAML specs — 24 files covering authentication,
                     transactions, portfolios, imports, and more. Browse them interactively in the{' '}
                     <Link href="/docs/api-reference" className="underline underline-offset-2 transition-colors hover:text-[#3A3542]" style={{ color: '#6D657A' }}>
                       API Reference
@@ -754,7 +847,7 @@ export default function HomePage() {
   ✓ apps/web/CLAUDE.md      — design tokens, components
   ✓ apps/docs/CLAUDE.md     — sync script, Nextra`}</span>{`
 
-`}<span style={{ color: '#27C93F' }}>{'>'}</span>{` Context loaded. `}<span style={{ color: '#6D657A' }}>5 files</span>{`, `}<span style={{ color: '#6D657A' }}>43 specs</span>{`, `}<span style={{ color: '#6D657A' }}>1,178 tests</span>{`
+`}<span style={{ color: '#27C93F' }}>{'>'}</span>{` Context loaded. `}<span style={{ color: '#6D657A' }}>5 files</span>{`, `}<span style={{ color: '#6D657A' }}>56 specs</span>{`, `}<span style={{ color: '#6D657A' }}>4,504 tests</span>{`
 
 `}<span style={{ color: '#FFBD2E' }}>{'$'}</span>{` How can I help with Bliss?`}
                   </pre>

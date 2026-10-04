@@ -76,7 +76,17 @@ If a portfolio rebuild detached some income terms from their holding, a banner a
 
 On a phone, each asset is a card with its actions in the **⋯** menu, and the filters are behind the **Filter** button.
 
+## Equity Analysis
+
+The **Equity Analysis** page (`/reports/equity-analysis`) breaks your stocks and ETFs down by **sector, industry, country or asset class**, next to weighted fundamentals such as P/E, EPS and dividend yield. It covers equities only, so its breakdowns match its KPI cards. The whole-portfolio breakdown lives on the Portfolio page, and bond details are on [Passive Income](/docs/guides/passive-income).
+
+- **Asset classes** — Bliss classifies every holding automatically into one of 12 classes: Stock, Index ETF, Sector ETF, Bond ETF, REIT, Fund, Government bond, Corporate bond, Real estate, Crypto, Cash or Other. If it gets one wrong, override it from [Manage Assets](#manage-assets).
+- **ETF look-through** — In the sector and country views, each ETF is spread across its underlying sectors and countries by weight, instead of showing up as one block. Any remainder goes to **Other**, an ETF with no composition data shows as **Diversified**, and bond ETFs show as **Fixed Income**. The industry view is never looked through. Switch **Look through ETFs** off to see each ETF as a single bucket.
+- **Where the data comes from** — ETF composition is fetched from Twelve Data and refreshed weekly. P/E stays stock-only, because it isn't meaningful for a fund.
+
 ## Next steps
+
+- [Passive income](/docs/guides/passive-income) — projected dividends, coupons, rent and interest
 
 - [Bank sync with Plaid](/docs/guides/plaid-bank-sync) — automatic investment account sync
 - [AI classification](/docs/guides/ai-classification) — how transactions are categorized

@@ -3,7 +3,7 @@
 </p>
 <p align="center">
   <strong>Self-Hosted Personal Finance for Global Citizens.</strong><br>
-  AI-powered transaction classification, real-time portfolio tracking, and event-driven analytics.<br>
+  AI-powered transaction classification, real-time portfolio tracking, passive income projection, and an MCP server for your AI agents.<br>
   Secured by AES-256 encryption. Open-source and designed for global wealth.
 </p>
 
@@ -17,7 +17,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/tests-2235%20passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-4504%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/Claude%20Code-ready-6D657A?logo=anthropic&logoColor=white" alt="Claude Code Ready" />
 </p>
@@ -69,12 +69,12 @@ Adapter-driven ingestion with 30+ preconfigured bank formats (Chase, Bank of Ame
 
 #### AI-Generated Insights
 
-Fifteen financial lenses organized into six categories (Spending, Income, Savings, Portfolio, Debt, Net Worth) analyze your patterns across four cadence tiers:
+Sixteen financial lenses organized into six categories (Spending, Income, Savings, Portfolio, Debt, Net Worth) analyze your patterns across four cadence tiers:
 
 - **Monthly Review** — Month-over-month and year-over-year health check, triggered on the 2nd of every month
 - **Quarterly Deep Dive** — Seasonal trend analysis, triggered three days after each quarter closes
 - **Annual Report** — Comprehensive year-in-review, triggered on January 3rd
-- **Portfolio Intelligence** — Equity-specific analysis (sector concentration, valuation risk, dividend opportunities) using `SecurityMaster` fundamentals, triggered every Monday
+- **Portfolio Intelligence** — Equity-specific analysis (sector concentration, asset-class mix, valuation risk, dividend opportunities) using `SecurityMaster` fundamentals, triggered every Monday. A passive income outlook is part of the portfolio, quarterly, and annual reviews
 
 Each tier is calendar-gated and runs a strict data-completeness check before generation, so partial periods never get compared to full ones. A deterministic pre-pass computes all financial deltas, baselines, and anomalies locally — the LLM writes prose about verified math rather than attempting to calculate numbers itself. Insights persist across runs, and you can manually refresh any tier for any period from the UI.
 
@@ -89,15 +89,34 @@ Your personal income statement, across borders and currencies. Bliss organizes f
 - **Drill down by year, quarter, or month** — Group-level breakdowns, period comparisons, and trend spotting
 - **Filter by country** — See your full global financial summary or isolate a single country's activity
 
+#### Subscriptions & Recurring Charges
+
+Every recurring charge in one place, found automatically across Plaid-synced and CSV-imported transactions. Detection is deterministic: no LLM, no guessing.
+
+- **One row per merchant** — Cadence, amount (native plus display currency), next expected charge, Active or Lapsed status, and monthly and annual recurring-spend totals
+- **Two detection paths** — Categories flagged "Recurring charge" qualify on a single occurrence, and an interval heuristic catches the rest (3+ stable weekly or monthly charges within 6 months)
+- **Aggregator merchants split by price** — Apple, Amazon, or PayPal bill many unrelated things under one name, so Bliss shows one row per recurring price instead of one misleading total
+- **Your decisions stick** — Confirm, dismiss, rename, merge two merchants, or correct a cadence, and future scans keep your choices
+- **Nightly scans** — Plus an on-demand "Scan now", and a full-history scan to surface annual subscriptions
+
 #### Real-Time Portfolio Tracking
 
 - **Stocks, ETFs, crypto, mutual funds** — Real-time pricing via TwelveData (10,000+ symbols)
 - **FIFO lot tracking** — Automatic cost-basis calculation with historical FX rates per buy lot
 - **Realized & unrealized P&L** — Per-holding and aggregate, in both native and display currencies
-- **Sector and geography analysis** — Break down your equity portfolio by industry, sector, or country
+- **Sector, geography and asset-class analysis** — Break down your equity portfolio by industry, sector, country, or asset class (12 classes). ETFs are looked through: each fund is spread across its underlying sectors and countries, so an index ETF no longer shows up as one opaque block
 - **Fundamentals trust gate** — Stock metrics (P/E, EPS, yield) are validated during nightly refreshes. When exchange data is inconsistent or stale, Bliss hides the affected metrics from the equity page and insight prompts rather than surfacing bad numbers
 - **Debt tracking** — Model amortizing loans with interest rates, terms, and paydown schedules
-- **Manual asset support** — Track illiquid assets (real estate, private equity) with user-provided valuations
+- **Manual asset support** — Track illiquid assets (real estate, private equity) with user-provided valuations, and manage every asset from one **Manage Assets** page that flags what needs attention
+
+#### Passive Income Projection
+
+See what your holdings and benefits are expected to pay over the next 12, 24 or 36 months, next to what you actually received over the last 12.
+
+- **Dividends, bond coupons, net rent, cash interest and allowances** — Stock and ETF dividends are projected automatically from each security's last 12 months of payments; for everything else you enter simple income terms once (coupon rate, monthly rent, APY, a pension or allowance stream)
+- **Actual vs projected** — Booked income from your Passive Income categories next to the forward projection, plus yield on value and how much of your essential spending the income covers
+- **By holding or by account** — One row per security (cash per currency) even if you hold it in several accounts, with per-account detail one click away
+- **Computed on read** — Nothing is stored, so changing a rate or a holding updates the projection immediately
 
 #### Secure Bank Sync via Plaid
 
@@ -107,6 +126,19 @@ Your personal income statement, across borders and currencies. Bliss organizes f
 - **Connection health monitoring** — Sync logs, re-auth handling, automated token rotation
 - **Encrypted at rest** — Plaid access tokens and raw payloads stored with AES-256-GCM
 
+### Built for AI Agents
+
+#### MCP Server & API Tokens
+
+Bliss ships with an [MCP](https://modelcontextprotocol.io) server, so Claude and other MCP clients can work with your finances in plain language: search and re-categorize transactions, work the bank-sync review queue, review an imported statement, answer spending and portfolio questions, and clean up subscriptions.
+
+- **40 tools, 21 of them read-only** — Behind the same REST routes the app uses, so tenant isolation, decryption, and event processing apply to every call
+- **Revocable API tokens** — Create them in Settings → Integrations. Each token is Read-only or Read & write, never admin, stored only as a hash, and can be revoked on its own
+- **One-click custom connectors** — Claude (Cowork, claude.ai, Claude Desktop) connects with just your server URL and OAuth sign-in; Claude Code and other clients use a token header
+- **You choose what an agent can see** — An agent sees whatever its tools return, so use a Read-only token if you only want analysis
+
+Setup takes about five minutes: see [Use Bliss with Claude](https://blissfinance.co/docs/guides/using-bliss-with-claude-mcp), [Connecting AI Agents](https://blissfinance.co/docs/guides/connecting-ai-agents), and the [MCP Tool Reference](https://blissfinance.co/docs/guides/mcp-tool-reference).
+
 ### Self-Hosted Infrastructure
 
 #### Multi-Tenant, Multi-User
@@ -115,7 +147,7 @@ Host completely isolated financial environments for family, friends, or a partne
 
 #### AES-256-GCM Encryption at Rest
 
-Self-hosted doesn't mean risk-free. Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database. Classification lookup tables use SHA-256 hashes instead of plaintext for performance indexes. No telemetry, no cloud sync, no third-party analytics — every byte stays on your hardware.
+Self-hosted doesn't mean risk-free. Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database. Classification lookup tables use SHA-256 hashes instead of plaintext for performance indexes. A documented [key rotation procedure](https://blissfinance.co/docs/guides/key-rotation) covers `ENCRYPTION_SECRET` and every other Bliss-owned secret. No telemetry, no cloud sync, no third-party analytics — every byte stays on your hardware, except what you choose to send to an LLM provider or hand to an AI agent you connect.
 
 #### Event-Driven Analytics
 
@@ -125,7 +157,7 @@ Every transaction triggers a scoped analytics update. Monthly aggregations acros
 
 ## Production-Grade Architecture
 
-Three services. Ten asynchronous workers. Sixty endpoints. One configuration file.
+Three services. Nine asynchronous workers. Sixty endpoints. One configuration file.
 
 ```text
 [ ENTRYPOINT: Nginx :8080 (Docker) ]
@@ -137,11 +169,12 @@ Three services. Ten asynchronous workers. Sixty endpoints. One configuration fil
 ├──► /api/ [ API LAYER ]
 │           ├── Next.js 15 (Pages Router), NextAuth
 │           ├── >60 Endpoints (Transactions, Reports, Users)
+│           ├── MCP server at /api/mcp (40 tools, token or OAuth)
 │           └── Communicates via Internal REST (API Key Auth)
 │
 └──► /svc/ [ EXPRESS BACKEND :3001 ]
             ├── Event-Driven Architecture
-            ├── 10 Asynchronous BullMQ Workers
+            ├── 9 Asynchronous BullMQ Workers
             │
             ├─► Redis 7 (Cache + Job Queues)
             │
@@ -199,7 +232,7 @@ See the [Guides](https://blissfinance.co/docs/guides) for detailed setup instruc
 
 ### Develop with Claude Code
 
-Bliss ships with carefully crafted [`CLAUDE.md`](CLAUDE.md) files that give AI assistants full context on the architecture, conventions, and subsystems. Combined with 43 technical specification files and 19 OpenAPI YAML definitions, the repo is designed for AI coding agents to onboard instantly. If you use [Claude Code](https://claude.ai/code), just open the repo and start working -- it already knows the codebase.
+Bliss ships with carefully crafted [`CLAUDE.md`](CLAUDE.md) files that give AI assistants full context on the architecture, conventions, and subsystems. Combined with 56 technical specification files and 24 OpenAPI YAML definitions, the repo is designed for AI coding agents to onboard instantly. If you use [Claude Code](https://claude.ai/code), just open the repo and start working -- it already knows the codebase.
 
 ```bash
 cd bliss

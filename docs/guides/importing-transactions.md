@@ -114,6 +114,17 @@ transactiondate,description,debit,credit,account,category,currency,ticker,assetq
 
 With Native CSV, rows skip AI classification entirely — accounts and categories are resolved by name.
 
+### Investment rows
+
+Buying or selling a stock, ETF or crypto asset needs a **`ticker`**, an **`assetquantity`** and an **`assetprice`**. Without them Bliss can't price the holding or work out cost basis, so the row can't be approved or saved until they're filled in. The same rule applies when you add a transaction by hand or approve one from bank sync.
+
+Two exceptions are worth knowing:
+
+- **Funds** (the built-in *Funds* category) can omit the ticker, as long as they have a quantity and a price. A ticker-less fund is tracked by its description and isn't priced from market data, so update its value from [Manage Assets](/docs/guides/investment-portfolios#manage-assets).
+- **ETFs** always need a ticker, even though they share the Funds pricing path.
+
+Assets in manually valued categories (real estate, private equity and similar) don't need any of these.
+
 ## Review and commit
 
 After processing, review the staged rows. The AI assigns a category and confidence score to each row. You can:
