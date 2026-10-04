@@ -164,7 +164,8 @@ provider's concern — this table exists so the inventory above is complete.
 **What breaks during this:** email/password sign-in (and Google sign-in's
 find-or-create lookup) is **down** for the few minutes the re-encryption
 script is running, because `User.email` lookups are searchable-encrypted
-with the *current* secret only (see "Why sign-in breaks mid-rotation"
+with the *current* secret only (on an invite-only instance, the sign-up invite
+check uses the same mechanism, so new sign-ups fail during that window too) (see "Why sign-in breaks mid-rotation"
 below). JWT-cookie sessions are unaffected. This is the one procedure in
 this runbook that has an irreversible failure mode if you skip a step —
 follow it in order.
@@ -233,7 +234,7 @@ follow it in order.
    so the inline prefix above is only needed if you're running it somewhere
    that doesn't already have it in its environment.
 
-   This scans `User.email`, `Account.accountNumber`,
+   This scans `User.email`, `SignupInvite.email`, `Account.accountNumber`,
    `Transaction.description`, `Transaction.details`, `PlaidItem.accessToken`,
    `RecurringCharge.merchantLabel`, and `PlaidTransaction.rawJson` — every
    field the rotation script touches — and confirms each decrypts under the
@@ -320,7 +321,7 @@ taken in the [pre-flight checklist](#pre-flight-checklist).
 ### Why sign-in breaks mid-rotation
 
 `prisma/prisma.js`'s Prisma extension encrypts WHERE-clause lookups on
-searchable fields (just `User.email` today) using the **current**
+searchable fields (`User.email` and `SignupInvite.email` today) using the **current**
 `ENCRYPTION_SECRET` only — not a dual-key attempt, because searchable
 encryption needs a single deterministic ciphertext to match against. Once
 you set the *new* key as `ENCRYPTION_SECRET` (step 2), a lookup by email will

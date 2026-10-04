@@ -88,6 +88,14 @@ node apps/api/scripts/seed-tenant-setup.mjs <tenantId>
 
 Find your `tenantId` in the database (`Tenant` table) or from the API response after signup.
 
+## Setting up accounts in the app
+
+You don't need the seed script to get started. Everything below works from the UI.
+
+- **During onboarding**, the account step lets you pick the banks you use (up to 5) and declare up to 3 accounts per bank, each with its own currency. Bliss creates them as ordinary accounts with a placeholder number such as `chase-acc-1`. They work everywhere straight away, and the account's detail panel shows a hint to **add the real account number** whenever you're ready. If you skip the step, nothing is created.
+- **Adding a bank later**: in the **Add Account** form, open the **Bank** dropdown and choose **Add bank** at the bottom. A small dialog creates the bank without leaving the form, which also unblocks account creation if you started with no banks. You can also manage banks from **Settings → Banks**.
+- **Deleting an account**: open the account on the **Accounts** page and use **Delete** in the Danger Zone card. Bliss blocks it while the account still has transactions (it tells you how many), or while it is linked to a live Plaid connection, in which case disconnect the bank first. Investment holdings tied to a deleted account are kept, just no longer linked to it.
+
 ## Managing categories
 
 Beyond the seed script, you can manage categories through the UI at any time.

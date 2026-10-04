@@ -2,6 +2,8 @@
 
 The **Subscriptions** page (`/subscriptions`) surfaces every recurring charge Bliss can find across your accounts — one row per merchant, with cadence, amount, next-expected-charge date, and a monthly + annualized recurring-spend total. Detection is deterministic (no LLM) and runs over your committed transactions, so CSV imports are covered exactly like Plaid-synced ones.
 
+![Subscriptions page listing recurring charges by merchant with cadence, amount and monthly and annual totals](/images/tracking-subscriptions.png)
+
 ## How detection works
 
 A merchant appears on the Subscriptions page through one of two paths:
@@ -54,3 +56,7 @@ These decisions are remembered per merchant, so re-imports and re-scans respect 
 ## Summary
 
 The header shows your total **monthly-normalized** recurring spend and its **annualized** figure, in your tenant's display currency. Weekly charges are scaled ×52/12, quarterly ÷3, annual ÷12. Rows with no available exchange rate are shown in their native currency and excluded from the totals (with a note).
+
+## Using Claude
+
+If you've [connected Claude to Bliss](/docs/guides/using-bliss-with-claude-mcp), it can list your subscriptions and, with a Read & write connection, confirm, dismiss, rename, merge or re-cadence them, or re-run detection, with the same 30-minute limit as **Scan now**.
