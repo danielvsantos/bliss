@@ -18,9 +18,10 @@
  * The consequence: normalization must be applied at **every** read and write.
  * Missing one site produces a login that works for some users and not others,
  * a failure that is data-dependent and invisible to fixtures written in
- * lowercase. The closed set of call sites is signup.js, signin.js, and the
+ * lowercase. The closed set of call sites is signup.js, signin.js, the
  * three AuthService methods (findUserByEmail, createUser,
- * findOrCreateGoogleUser).
+ * findOrCreateGoogleUser), and services/signupInvite.service.js, whose
+ * SignupInvite.email uses the same deterministic encryption (#99).
  *
  * @param {unknown} email
  * @returns {unknown} the normalized string, or the input unchanged when it is

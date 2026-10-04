@@ -5,6 +5,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import AuthPage from './index';
 import * as AuthHook from '@/hooks/use-auth';
 import * as TenantMeta from '@/utils/tenantMetaStorage';
+import { useSignupMode } from '@/hooks/use-signup-mode';
+import en from '@/i18n/locales/en';
+import es from '@/i18n/locales/es';
+import fr from '@/i18n/locales/fr';
+import pt from '@/i18n/locales/pt';
+import it_ from '@/i18n/locales/it';
 
 // Mock translations
 vi.mock('react-i18next', () => ({
@@ -23,6 +29,11 @@ const mockSignInWithGoogle = vi.fn();
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: vi.fn()
+}));
+
+// Invite-only flag (#99): open mode unless a test says otherwise.
+vi.mock('@/hooks/use-signup-mode', () => ({
+  useSignupMode: vi.fn(() => ({ inviteOnly: false })),
 }));
 
 // Mock window.matchMedia for jsdom
@@ -49,6 +60,7 @@ describe('AuthPage', () => {
       signInWithGoogle: mockSignInWithGoogle,
       googleOAuthEnabled: true,
     } as unknown as ReturnType<typeof AuthHook.useAuth>);
+    vi.mocked(useSignupMode).mockReturnValue({ inviteOnly: false });
   });
 
   const renderAuthPage = () => {
@@ -216,6 +228,75 @@ describe('AuthPage', () => {
       expect(screen.getByTestId('oauth-error')).toHaveTextContent(
         'An account with this email already exists. Sign in with your password instead.',
       );
+    });
+  });
+  // Invite-only sign-up (#99).
+  describe('invite-only sign-up', () => {
+    const NOTICE = 'This Bliss instance is invite-only. Use the email address you were invited with.';
+    const REJECTED =
+      "This email hasn't been invited to this Bliss instance. Ask the person who runs it for an invite.";
+
+    beforeEach(() => {
+      window.history.replaceState({}, '', '/auth');
+    });
+
+    const openSignUp = () => {
+      renderAuthPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Sign Up' }));
+    };
+
+    it('shows the notice on the Sign Up tab when the instance is invite-only', () => {
+      vi.mocked(useSignupMode).mockReturnValue({ inviteOnly: true });
+      openSignUp();
+      expect(screen.getByTestId('invite-only-notice')).toHaveTextContent(NOTICE);
+      // No invite-code field: the form is unchanged.
+      expect(screen.queryByPlaceholderText(/code/i)).not.toBeInTheDocument();
+    });
+
+    it('does not show the notice in open mode', () => {
+      openSignUp();
+      expect(screen.queryByTestId('invite-only-notice')).not.toBeInTheDocument();
+    });
+
+    it('does not show the notice on the Sign In tab', () => {
+      vi.mocked(useSignupMode).mockReturnValue({ inviteOnly: true });
+      renderAuthPage();
+      expect(screen.queryByTestId('invite-only-notice')).not.toBeInTheDocument();
+    });
+
+    it('shows the localized rejection for a SIGNUP_INVITE_REQUIRED sign-up error', async () => {
+      mockSignUp.mockRejectedValueOnce(
+        Object.assign(new Error('Sign-up on this instance is by invitation only.'), {
+          code: 'SIGNUP_INVITE_REQUIRED',
+        }),
+      );
+      openSignUp();
+      fireEvent.change(screen.getByPlaceholderText('Alex Morgan'), { target: { value: 'Alex Morgan' } });
+      fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'alex@bliss.com' } });
+      fireEvent.change(screen.getByPlaceholderText('8+ characters'), { target: { value: 'securePass1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+
+      expect(await screen.findByText(REJECTED)).toBeInTheDocument();
+      expect(screen.queryByText('Sign-up on this instance is by invitation only.')).not.toBeInTheDocument();
+    });
+
+    it('maps ?error=signup_invite_required from the Google redirect', () => {
+      window.history.replaceState({}, '', '/auth?error=signup_invite_required');
+      renderAuthPage();
+      expect(screen.getByTestId('oauth-error')).toHaveTextContent(REJECTED);
+      window.history.replaceState({}, '', '/auth');
+    });
+
+    it.each([
+      ['en', en],
+      ['es', es],
+      ['fr', fr],
+      ['pt', pt],
+      ['it', it_],
+    ])('has both strings in the %s locale', (_loc, dict) => {
+      const d = dict as unknown as Record<string, unknown>;
+      expect(typeof d[NOTICE]).toBe('string');
+      expect(typeof d[REJECTED]).toBe('string');
     });
   });
 });

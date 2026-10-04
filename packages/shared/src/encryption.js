@@ -145,4 +145,9 @@ export const encryptedFields = {
     // searchable.
     merchantLabel: { searchable: false },
   },
+  SignupInvite: {
+    // Invite-only sign-up allowlist (#99). Searchable (deterministic) like
+    // User.email so the gate can look an invite up by normalized address.
+    email: { searchable: true },
+  },
 };

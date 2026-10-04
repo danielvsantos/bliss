@@ -27,15 +27,28 @@ A duplicate now returns the **same status and body shape as a successful signup*
 
 **Client handling.** `AuthContext.signUp` checks whether a session actually materialised after the 2xx and, when it did not, surfaces "We could not sign you in automatically. Please try signing in with your password." That message is intentionally generic: it reads identically whether the address was taken or something else went wrong, so it does not reintroduce the oracle it exists to close. Without it the user would land on a protected page unauthenticated and be bounced with no explanation.
 
+### Invite-only gate (#99)
+
+When `SIGNUP_MODE=invite_only` (any unknown non-empty value is treated the same: fail closed; `utils/signupMode.js` is the only reader and evaluates per request), only an email with an **unused `SignupInvite`** may create a tenant. Open mode (unset / empty / `open`) never touches `SignupInvite`.
+
+- **Ordering — before the existing-user check.** Right after the email-format check, `hasUnusedInvite(normalizedEmail)` runs. With no unused invite the route returns `403 { error: 'Sign-up on this instance is by invitation only.', code: 'SIGNUP_INVITE_REQUIRED' }` and creates nothing. Running it *first* keeps the account-existence disclosure fix intact: a registered email without an invite and a never-seen email get a byte-identical 403. (Placed after the duplicate check, registered → fake 201 vs unknown → 403 would be an oracle again.) A registered email *with* an unused invite still gets the fake 201, and the invite stays unused.
+- **Same body for every rejection**: not listed, already used, revoked, or registered. It never echoes the list or the email.
+- **Single-use, atomic.** Inside the tenant `$transaction`, immediately after `tx.tenant.create`, `consumeInviteInTx` runs `updateMany({ where: { email, usedAt: null }, data: { usedAt: now, usedByTenantId: tenant.id } })` and requires `count === 1`. Under READ COMMITTED a concurrent sign-up with the same invite blocks on the row lock, re-evaluates the predicate after the first commits, matches 0 rows and throws `InviteRequiredError`. Its whole transaction rolls back and the route returns the same 403 (no Sentry report: it is an expected outcome). Any later failure in the transaction also rolls the consumption back.
+- **Matching**: `normalizeEmail()` only (trim + lowercase). No dot or plus-tag folding.
+- **Rate limiting**: `rateLimiters.signup` runs before the gate, so rejected attempts count against it.
+- **Logs**: `signup_invite_rejected { path: 'credentials', emailFp }` (`emailFp` = first 8 hex of SHA-256 of the normalized email) and `signup_invite_consumed { inviteId, tenantId, path }`. Never the plaintext email.
+
+The invite list itself is managed by the operator through [`/api/admin/invites`](11-admin-api.md#invite-only-sign-up-allowlist).
+
 ### Security & Encryption
 - **Password Hashing**: User passwords are not stored directly. They are hashed with **scrypt** (`N=2^17, r=8, p=1`) and a unique 16-byte random salt per user, via `services/password.js` behind `AuthService`. See §1.2 for the storage format and the migration from the previous PBKDF2 scheme.
 - **Email Encryption**: The `User.email` field is encrypted at rest in the database using AES-256-GCM. This is handled transparently by a Prisma middleware. The encryption is **searchable**, meaning the email is encrypted deterministically, allowing for lookups while keeping the raw data secure.
 
 ### Data Flow & Logic:
 1.  Receives a `POST` request with user and tenant data.
-2.  Performs a series of validation checks. Fails with `400 Bad Request` on malformed input. A duplicate email does **not** produce a distinguishing response — see "Account-existence disclosure" below.
+2.  Performs a series of validation checks. Fails with `400 Bad Request` on malformed input. In invite-only mode, an email without an unused invite gets `403 SIGNUP_INVITE_REQUIRED` here, **before** the duplicate check (see "Invite-only gate"). A duplicate email does **not** produce a distinguishing response — see "Account-existence disclosure" above.
 3.  Initiates a `prisma.$transaction`.
-4.  **`Tenant` Creation**: A new `Tenant` record is created with the `tenantName`, a default `plan` of 'FREE', and `plaidHistoryDays` set from the `PLAID_HISTORY_DAYS` environment variable (defaults to `1` if not set). This controls how many days of historical transactions are fetched on initial Plaid sync.
+4.  **`Tenant` Creation**: A new `Tenant` record is created with the `tenantName`, a default `plan` of 'FREE', and `plaidHistoryDays` set from the `PLAID_HISTORY_DAYS` environment variable (defaults to `1` if not set). This controls how many days of historical transactions are fetched on initial Plaid sync. In invite-only mode the invite is consumed right after (`usedAt`, `usedByTenantId`), in the same transaction.
 5.  **`User` Creation**: A new `User` is created.
     - The `password` is hashed via `AuthService.hashPassword()`.
     - The `email` is automatically encrypted by the Prisma middleware before being saved.
@@ -140,11 +153,16 @@ Deliberately **no account-linking UI**. Letting a user *deliberately* link an ex
 |---|---|---|
 | `GOOGLE_ACCOUNT_EXISTS` | `?error=google_account_exists` | "An account with this email already exists. Sign in with your password instead." |
 | `GOOGLE_EMAIL_UNVERIFIED` | `?error=google_email_unverified` | "Your Google account's email address is not verified…" |
+| `SIGNUP_INVITE_REQUIRED` (#99) | `?error=signup_invite_required` | "This email hasn't been invited to this Bliss instance. Ask the person who runs it for an invite." |
 | anything else | `?error=oauth_failed` | "Sign-in with Google failed. Please try again." |
 
 `apps/web/src/pages/auth/index.tsx` reads `?error=` and renders the mapped message, translated across all five locales. This was not previously possible: `auth/callback.tsx` wrote the param but the auth page never read it, so every OAuth failure arrived as silence.
 
 The param is read **during render**, not in an effect. `AuthCard` is mounted from two layouts and `useIsDesktop` resolves after the first paint, so the initial card unmounts and a fresh one replaces it — an effect that consumed the param would clear it on the first card and leave the second with nothing to show.
+
+**3. Invite-only mode gates only the create branch** (`AuthService.SIGNUP_INVITE_REQUIRED`, #99).
+
+A returning Google user returns from the existing-user branch before the gate, whatever `SIGNUP_MODE` is. In the create branch, after the `email_verified` check, an invite-only instance requires an unused `SignupInvite` for the normalized Google email (else it logs `signup_invite_rejected { path: 'google' }` and throws). The invite is consumed inside the tenant `$transaction` with the same conditional `updateMany` as credentials sign-up; a lost race throws the same code. See §1.1 "Invite-only gate".
 
 ### Email normalization
 
@@ -252,6 +270,17 @@ sequenceDiagram
 ```
 ---
 
+## 1.5a. `pages/api/auth/signup-mode.js` — Public Sign-Up Mode Flag (#99)
+
+`GET /api/auth/signup-mode` → `200 { inviteOnly: boolean }` with `Cache-Control: public, max-age=60`; `405` for any other method.
+
+- Public and unauthenticated: the SPA is a static bundle and cannot read `SIGNUP_MODE`, so the auth page asks here to decide whether to show its invite-only notice.
+- Returns **only** `inviteOnly`: no counts, no emails, no version or environment details (unlike the admin-only `/api/runtime`).
+- No database access, so no rate limiter. Integration tokens are refused by the `/api/auth` denylist entry.
+- Informational only: `signup.js` and `findOrCreateGoogleUser` enforce the gate themselves.
+
+---
+
 ## 1.5b. `pages/api/auth/signout.js` — Sign-Out Endpoint
 
 A **stateful** sign-out endpoint that actively revokes the caller's JWT server-side.
@@ -315,7 +344,7 @@ The default export is then a **custom `async function handler(req, res)`** that 
 | `CredentialsProvider` | Email + password sign-in. Delegates to `AuthService.findUserByEmail` + `AuthService.verifyPassword`. |
 
 ### Callbacks:
-- **`signIn({ user, account, profile })`**: For the Google provider, calls `AuthService.findOrCreateGoogleUser({ email, name, googleId })` which returns `{ user: googleUser, isNew }`. Mutates NextAuth's transient `user` object in-place: sets `user.id`, `user.tenantId`, `user.isNew`.
+- **`signIn({ user, account, profile })`**: For the Google provider, calls `AuthService.findOrCreateGoogleUser({ email, name, googleId, emailVerified })` which returns `{ user: googleUser, isNew }`. Mutates NextAuth's transient `user` object in-place: sets `user.id`, `user.tenantId`, `user.isNew`. A thrown error is mapped through `GOOGLE_ERROR_CODES` (`google_account_exists`, `google_email_unverified`, `signup_invite_required`, else `oauth_failed`) to a `${FRONTEND_URL}/auth?error=<code>` redirect.
 - **`jwt({ token, user })`**: On first sign-in (when `user` is present), persists `id`, `tenantId`, `email`, `name`, and `isNew` into the NextAuth JWT cookie. Subsequent requests (where `user` is absent) return the token unchanged.
 - **`session({ session, token })`**: Copies `id`, `tenantId`, `email`, and `name` from the JWT token back onto `session.user` (used only if a NextAuth session is ever read directly; the app primarily uses the `google-token` bridge).
 

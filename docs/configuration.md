@@ -60,7 +60,7 @@ The check is length only — deliberately no entropy heuristic, which produces f
 | `JWT_SECRET_PREVIOUS` | No | -- | Set during JWT secret rotation. Tokens signed with the previous secret remain valid until they expire. |
 | `NEXTAUTH_SECRET` | Yes | -- | Secret used by NextAuth.js for session cookie signing. Minimum 32 characters. |
 | `INTERNAL_API_KEY` | Yes | -- | Shared secret for server-to-server calls between the API layer and the backend service. Must be identical in both services. Minimum 32 characters. Compared in constant time by the backend's `apiKeyAuth` middleware. |
-| `ADMIN_API_KEY` | No | -- | Operator credential for administrative and diagnostic endpoints, sent as the `x-admin-key` header. Distinct from `INTERNAL_API_KEY` on purpose: that one authenticates service-to-service calls, this one authenticates a human operator running scripts, so a service compromise does not confer admin. **Fails closed** — while unset, every route guarding on it rejects all requests. Guards `/api/admin/default-categories*`, `/api/plaid/items/hard-delete` and `/api/runtime`. Compared in constant time. |
+| `ADMIN_API_KEY` | No | -- | Operator credential for administrative and diagnostic endpoints, sent as the `x-admin-key` header. Distinct from `INTERNAL_API_KEY` on purpose: that one authenticates service-to-service calls, this one authenticates a human operator running scripts, so a service compromise does not confer admin. **Fails closed** — while unset, every route guarding on it rejects all requests. Guards `/api/admin/default-categories*`, `/api/admin/invites` (invite-only sign-up allowlist), `/api/plaid/items/hard-delete` and `/api/runtime`. Compared in constant time. |
 
 ## API Layer (Next.js)
 
@@ -69,6 +69,7 @@ The check is length only — deliberately no entropy heuristic, which produces f
 | `NEXTAUTH_URL` | Yes | `http://localhost:3000` | Full public URL of the Next.js API layer. Used by NextAuth for callback URLs. **Must be `https://` for Google OAuth to work** (Google rejects plain-HTTP redirect URIs). |
 | `BACKEND_URL` | Yes | `http://localhost:3001` | Internal URL of the Express backend service. Used for server-to-server event dispatch and proxy routes. Not exposed to the browser. |
 | `COOKIE_DOMAIN` | No | -- | Cookie domain for cross-subdomain auth (e.g., `.bliss.finance`). Leave empty for localhost development. |
+| `SIGNUP_MODE` | No | `open` | Who may create a new account (tenant). `open` (default when unset or empty): anyone. `invite_only`: only an email with an unused `SignupInvite` (matched after trim + lowercase, no dot/plus folding), on both email/password sign-up and Google first sign-in; each invite creates one tenant. **Any other non-empty value is treated as `invite_only` (fails closed)** and logs a boot warning. Read per request, so changing it needs no rebuild. Existing users always sign in. Manage invites with `ADMIN_API_KEY` via `/api/admin/invites` or `node apps/api/scripts/manage-invites.mjs add|list|revoke`. See [Invite-only sign-up](#invite-only-sign-up). |
 
 ### Google OAuth and cross-domain deployments
 
@@ -81,6 +82,20 @@ The switch is gated on `NEXTAUTH_URL`: if it starts with `https://`, the cross-d
 - **HTTPS cross-domain**: `SameSite=None; Secure` is used. Google OAuth works correctly across origins.
 
 Email/password sign-in is unaffected by this distinction and works on HTTP in all configurations.
+
+### Invite-only sign-up
+
+Set `SIGNUP_MODE=invite_only` to run a hosted instance for a known group without opening sign-up to everyone. The allowlist lives in the database (`SignupInvite`, email encrypted like `User.email`), so adding or revoking an invite needs no redeploy, and invites can be loaded before the mode is turned on.
+
+```bash
+export ADMIN_API_KEY=…                 # same value as the API server
+export BLISS_API_URL=https://<api-host> # defaults to NEXTAUTH_URL, then http://localhost:3000
+node apps/api/scripts/manage-invites.mjs add ana@example.com --note "Ana – college"
+node apps/api/scripts/manage-invites.mjs list --unused
+node apps/api/scripts/manage-invites.mjs revoke ana@example.com
+```
+
+A direct SQL insert does **not** work: the email column is encrypted. An address without an unused invite gets `403 SIGNUP_INVITE_REQUIRED` on email/password sign-up and `/auth?error=signup_invite_required` on Google first sign-in, with a generic message that never reveals the list. The SPA reads the public `GET /api/auth/signup-mode` (`{ inviteOnly }` only) to show an invite-only notice on the Sign Up tab. API: [`docs/specs/api/11-admin-api.md`](specs/api/11-admin-api.md#invite-only-sign-up-allowlist).
 
 ## Backend Service (Express)
 

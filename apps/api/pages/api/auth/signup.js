@@ -9,6 +9,15 @@ import { rateLimiters } from '../../../utils/rateLimit.js';
 import { DEFAULT_CATEGORIES } from '../../../lib/defaultCategories.js';
 import { setAuthCookie } from '../../../utils/cookieUtils.js';
 import { normalizeEmail } from '../../../utils/normalizeEmail.js';
+import { isInviteOnly } from '../../../utils/signupMode.js';
+import {
+  hasUnusedInvite,
+  consumeInviteInTx,
+  logInviteConsumed,
+  logInviteRejected,
+  INVITE_REQUIRED_BODY,
+  SIGNUP_INVITE_REQUIRED,
+} from '../../../services/signupInvite.service.js';
 
 const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -60,6 +69,17 @@ export default async function handler(req, res) {
     // Validate email format
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
+      return;
+    }
+
+    // Invite-only gate (#99). Runs BEFORE the existing-user check on purpose:
+    // the fake 201 below hides whether an address is registered, and a gate
+    // placed after it would re-open that oracle (registered → 201, unknown →
+    // 403). Here every address without an unused invite gets the identical
+    // 403, registered or not. The rate limiter above still counts the attempt.
+    if (isInviteOnly() && !(await hasUnusedInvite(normalizedEmail))) {
+      logInviteRejected('credentials', normalizedEmail);
+      res.status(StatusCodes.FORBIDDEN).json(INVITE_REQUIRED_BODY);
       return;
     }
 
@@ -158,7 +178,7 @@ export default async function handler(req, res) {
     const preferredLocale = acceptLanguage.split(',')[0].replace(/-/g, '_');
     
     // Create everything in a transaction
-    const { user, tenant, token } = await prisma.$transaction(async (tx) => {
+    const { user, tenant, token, inviteId } = await prisma.$transaction(async (tx) => {
       // First create the tenant
       const tenant = await tx.tenant.create({
         data: {
@@ -167,6 +187,12 @@ export default async function handler(req, res) {
           plaidHistoryDays: parseInt(process.env.PLAID_HISTORY_DAYS ?? '1', 10),
         }
       });
+
+      // Consume the invite in the same transaction: a concurrent sign-up with
+      // the same invite (or a failure below) rolls this whole tenant back.
+      const inviteId = isInviteOnly()
+        ? await consumeInviteInTx(tx, normalizedEmail, tenant.id)
+        : undefined;
 
       // Then create the user using the AuthService.
       // The first user in a new tenant is always the owner — grant admin role.
@@ -236,8 +262,10 @@ export default async function handler(req, res) {
         { expiresIn: TOKEN_EXPIRY }
       );
 
-      return { user, tenant, token };
+      return { user, tenant, token, inviteId };
     });
+
+    if (inviteId !== undefined) logInviteConsumed('credentials', inviteId, tenant.id);
 
     // To ensure consistency with the signin response, nest tenant within user
     const userWithTenant = { ...user, tenant };
@@ -251,6 +279,12 @@ export default async function handler(req, res) {
     return;
 
   } catch (error) {
+    // Lost the race for a single-use invite: an expected outcome, not an error.
+    if (error?.code === SIGNUP_INVITE_REQUIRED) {
+      logInviteRejected('credentials', email);
+      res.status(StatusCodes.FORBIDDEN).json(INVITE_REQUIRED_BODY);
+      return;
+    }
     console.error('Signup error:', error);
     Sentry.captureException(error);
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({

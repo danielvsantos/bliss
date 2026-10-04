@@ -1,6 +1,6 @@
 # 11. Admin API
 
-Internal administration endpoints for managing default categories and the cross-tenant classification system. These endpoints are **not user-facing** — they are used by Bliss operations staff for category provisioning, metadata maintenance, and embedding quality management.
+Internal administration endpoints for managing default categories, the cross-tenant classification system and the invite-only sign-up allowlist. These endpoints are **not user-facing** — they are used by Bliss operations staff for category provisioning, metadata maintenance, and embedding quality management.
 
 > **LLM provider abstraction.** Embeddings are generated via `services/llm/` (supports Gemini, OpenAI, or Anthropic). References to "Gemini" below refer to the currently-configured embedding provider. See [Backend Spec 20 — LLM Provider Abstraction](../backend/20-llm-provider-abstraction.md).
 
@@ -127,6 +127,37 @@ Re-generates Gemini embedding vectors for all existing `GlobalEmbedding` rows un
 
 ---
 
+### Invite-only sign-up allowlist
+
+`/api/admin/invites` (`pages/api/admin/invites.js`, #99) manages the per-email allowlist enforced when `SIGNUP_MODE=invite_only` (see [User Identity §1.1](01-user-identity.md#invite-only-gate-99)). It works whatever `SIGNUP_MODE` is, so invites can be loaded before the gate is turned on, and takes effect immediately (no redeploy).
+
+Same `x-admin-key` auth as above (`isAdminAuthorized(req, 'admin/invites')`, fails closed). The route is also on `INTEGRATION_DENYLIST`, so an integration token is refused (`403 NOT_AVAILABLE_TO_INTEGRATIONS`) before the key check runs. This is the only route that returns invited emails; it never logs them.
+
+| Method | Request | Responses |
+|---|---|---|
+| `GET` | `?status=unused\|used` (optional) | `200 { invites: [{ id, email, note, createdAt, usedAt, usedByTenantId }] }` newest first; `400` for another status |
+| `POST` | `{ email, note? }` | `201 { invite }`; `400` invalid email, non-string note or note > 200 chars; `409 { code: 'INVITE_EXISTS' }` |
+| `DELETE` | JSON body `{ email }` or `{ id }` (preferred), or `?email=` / `?id=` | `204`; `400` neither given; `404 { code: 'INVITE_NOT_FOUND' }`; `409 { code: 'INVITE_ALREADY_USED' }` |
+
+- **Normalization**: every email is trimmed + lowercased on write and lookup (`services/signupInvite.service.js` does it internally). `Ana.B+x@Gmail.com` is stored as `ana.b+x@gmail.com` and matches only that address (no dot or plus folding).
+- **Single-use**: a sign-up consumes the invite (`usedAt`, `usedByTenantId`) inside the tenant-creation transaction. A used invite cannot be revoked (`409`): it is audit history and its tenant already exists. The delete is conditional on `usedAt IS NULL`, so an invite consumed between the read and the delete is not removed.
+- **No expiry**: an invite stays valid until used or revoked.
+- **Keep emails out of URLs**: request URLs end up in platform access logs, so prefer the JSON body for `DELETE` (the script does). `POST` already carries the email in its body.
+
+**Operator script** — `apps/api/scripts/manage-invites.mjs` (also `pnpm --filter @bliss/api invites …`) calls this endpoint over HTTP, so it works against a remote deployment without database credentials:
+
+```bash
+ADMIN_API_KEY=… BLISS_API_URL=https://<api-host> node apps/api/scripts/manage-invites.mjs add ana@example.com --note "Ana – college"
+ADMIN_API_KEY=… node apps/api/scripts/manage-invites.mjs list [--unused|--used] [--url https://<api-host>]
+ADMIN_API_KEY=… node apps/api/scripts/manage-invites.mjs revoke ana@example.com
+```
+
+Base URL: `--url`, else `BLISS_API_URL`, else `NEXTAUTH_URL`, else `http://localhost:3000`. Exits `1` when `ADMIN_API_KEY` is missing (before any request), on a usage error, on `401` ("ADMIN_API_KEY rejected, or not configured on the server") and on any other non-2xx.
+
+**Data model** — `SignupInvite` (`id` cuid, `email` unique, `note?`, `createdAt`, `usedAt?`, `usedByTenantId?` → `Tenant` `onDelete: SetNull`). It is a **global** table with no `tenantId`, by design: an invite exists before its tenant does. `email` is deterministically encrypted (searchable) like `User.email` and listed in the key-rotation coverage manifest, so a plaintext SQL insert never matches.
+
+---
+
 ## Data Architecture
 
 ### `defaultCategories.js`
@@ -191,5 +222,8 @@ The backend service (`apps/backend`) exposes a single admin endpoint:
 | `pages/api/admin/default-categories/index.js` | `GET` list with stats, `POST` provision to all tenants |
 | `pages/api/admin/default-categories/[code].js` | `PUT` update metadata + optional code rename |
 | `pages/api/admin/default-categories/[code]/regenerate-embeddings.js` | `POST` refresh Gemini vectors for all GlobalEmbedding rows under a code |
+| `pages/api/admin/invites.js` | `GET`/`POST`/`DELETE` the invite-only sign-up allowlist (#99) |
+| `services/signupInvite.service.js` | Invite lookup, atomic consumption, admin CRUD, privacy-safe logging |
+| `scripts/manage-invites.mjs` | Operator CLI over `/api/admin/invites` |
 | `lib/defaultCategories.js` | Source of truth — must be kept in sync with DB manually after admin changes |
 | `openapi/admin.yaml` | OpenAPI 3.0 spec for all admin endpoints |
