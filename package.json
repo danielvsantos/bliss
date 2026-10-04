@@ -58,7 +58,8 @@
       "@opentelemetry/propagator-jaeger": "^2.9.0",
       "defu": "^6.1.5",
       "deepmerge-ts": "^8.0.0",
-      "effect": "^3.20.0"
+      "effect": "^3.20.0",
+      "unplugin@1": "^1.16.1"
     }
   }
 }
