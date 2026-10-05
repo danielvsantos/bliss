@@ -194,7 +194,8 @@ describe('portfolioWorker — processPortfolioJob', () => {
 
     expect(mockQueue.add).toHaveBeenCalledTimes(3);
     for (const [, data] of mockQueue.add.mock.calls) {
-      expect(data).toEqual({ tenantId: 'tenant-1', _trigger: 'nightly' });
+      // One run id groups the tenant's three nightly jobs into one history row.
+      expect(data).toEqual({ tenantId: 'tenant-1', _trigger: 'nightly', _run: expect.stringMatching(/^nightly-revalue-tenant-1-\d{4}-\d{2}-\d{2}$/) });
     }
   });
 

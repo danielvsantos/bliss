@@ -2743,6 +2743,7 @@ const it = {
       nightly: "Notturno",
       manual_rebuild: "Ricostruzione",
       agent: "Agente IA",
+      auto_refresh: "Aggiornamento automatico",
     },
     states: {
       queued: "In coda",
@@ -2775,6 +2776,7 @@ const it = {
     },
     time: {
       justNow: "adesso",
+      underSecond: "< 1 s",
       minutesAgo: "{{count}} min fa",
       hoursAgo: "{{count}} h fa",
       daysAgo: "{{count}} g fa",
@@ -2797,6 +2799,8 @@ const it = {
       took: "durata {{time}}",
       finished: "terminato {{time}}",
       errorCode: "Errore {{code}}",
+      steps_one: "{{count}} passaggio",
+      steps_other: "{{count}} passaggi",
     },
     notification: {
       failed_one: "{{count}} aggiornamento in background non è riuscito",

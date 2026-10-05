@@ -65,7 +65,8 @@ It is a pure read of a per-tenant hash in **Redis**, written by the backend acti
 | `workerOnline` | Whether the backend worker heartbeat key (`bliss:runtime:worker`, 180 s TTL) exists. `false` + something queued = the worker is down, not slow. `null` when unavailable. |
 | `summary` | **One row per activity type** (the header chip, AC2). `state` is the most severe among that type's entries (`failed` > `stalled` > `running` > `queued`). `stage`, `progress` and `trigger` come from the longest-running entry. `count` is the number of in-flight entries. `affects` is the union. A **final failure** keeps its type in `summary` as `failed` (with `errorCode`, `count: 0` if nothing else is in flight) until that type completes again, for at most 60 min. |
 | `inFlight` | Every queued / running / stalled entry, longest-running first. |
-| `recent` | Finished entries (`completed` / `failed`) of the last 24 h, newest first, capped at 200. `errorCode` on failures only. |
+| `recent` | Finished entries (`completed` / `failed`) of the last 24 h, newest first, capped at 200. `errorCode` on failures only. One row per **job**. |
+| `runs` | `recent` grouped by **run** (every job of one edit / sync / import / rebuild / nightly run shares a `runId`): `{ id, trigger, types[], state (failed if any step failed), errorCode?, startedAt, finishedAt, durationMs, steps[] }`, newest first, steps oldest first. A run that still has work in flight is left out (it's live). This is what Settings → Processing shows. |
 | `lastCompletedAt` | Last completion per type. It has no TTL in Redis, so it survives the 24 h window. It is missing after a Redis flush, and is then hidden, never recomputed from Postgres. |
 
 Types, stages and triggers are **keys**; clients translate them.
@@ -74,7 +75,9 @@ Types, stages and triggers are **keys**; clients translate them.
 
 **Stages:** `scheduling`, `recalculating_lots`, `updating_cash`, `valuing_assets`, `updating_debts`, `updating_analytics`, `fetching_bank`, `classifying`, `processing_file`, `committing`, `refreshing_market_data`, `scanning`, `generating_insights`.
 
-**Triggers:** `user_change`, `bank_sync`, `import`, `nightly`, `manual_rebuild`, `agent`.
+**Triggers:** `user_change`, `bank_sync`, `import`, `nightly`, `manual_rebuild`, `agent`, `auto_refresh` (the on-access stale-history revaluation, not a user edit).
+
+Every `inFlight` and `recent` entry also carries `runId`.
 
 **`affects` vs `type`** (deviation D3). `type` is the current stage of the chain, which is what the chip groups by. `affects` lists every type the chain will still touch, which is what page banners match on. The first hop of a simple transaction edit is `process-cash-holdings` (type `PORTFOLIO_UPDATE`), but it `affects` `ANALYTICS_UPDATE` too, so the Expenses page shows its banner from the very first stage.
 

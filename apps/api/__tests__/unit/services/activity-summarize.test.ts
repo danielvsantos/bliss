@@ -40,12 +40,12 @@ describe('contract', () => {
     expect(ACTIVITY_TYPE_LIST).toEqual([
       'PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE', 'BANK_SYNC', 'IMPORT', 'SECURITY_DATA', 'SUBSCRIPTION_SCAN', 'INSIGHTS',
     ]);
-    expect(TRIGGER_LIST).toEqual(['user_change', 'bank_sync', 'import', 'nightly', 'manual_rebuild', 'agent']);
+    expect(TRIGGER_LIST).toEqual(['user_change', 'bank_sync', 'import', 'nightly', 'manual_rebuild', 'agent', 'auto_refresh']);
   });
 
   it('unavailable() is empty and says so', () => {
     expect(unavailable(NOW)).toEqual({
-      available: false, workerOnline: null, serverTime: '2026-10-04T12:00:00.000Z', summary: {}, inFlight: [], recent: [], lastCompletedAt: {},
+      available: false, workerOnline: null, serverTime: '2026-10-04T12:00:00.000Z', summary: {}, inFlight: [], recent: [], runs: [], lastCompletedAt: {},
     });
   });
 });
@@ -149,5 +149,41 @@ describe('summarize', () => {
     const out = summarize({ 'a:1': raw({ af: undefined }), 'a:2': raw({ af: ['ANALYTICS_UPDATE', 'EVIL'] }) }, {}, true, NOW);
     expect(out.inFlight.find((e) => e.id === 'a:1')!.affects).toEqual(['PORTFOLIO_UPDATE']);
     expect(out.inFlight.find((e) => e.id === 'a:2')!.affects).toEqual(['ANALYTICS_UPDATE']);
+  });
+
+  it('groups one chain\'s finished jobs into a single run (an edit is one history row)', () => {
+    const t0 = NOW - 10 * MIN;
+    const step = (id: string, o: Record<string, unknown>) => [id, raw({ st: 'completed', rn: 'events:1', ...o })];
+    const out = summarize(Object.fromEntries([
+      step('portfolio:1', { s: 'recalculating_lots', ra: t0, fa: t0 + 400 }),
+      step('portfolio:2', { s: 'updating_cash', ra: t0 + 6_000, fa: t0 + 6_300 }),
+      step('analytics:3', { t: 'ANALYTICS_UPDATE', s: 'updating_analytics', ra: t0 + 12_000, fa: t0 + 13_000 }),
+      step('portfolio:4', { s: 'valuing_assets', ra: t0 + 14_000, fa: t0 + 15_000 }),
+      // a separate, automatic refresh run
+      ['portfolio:9', raw({ st: 'completed', rn: 'events:7', tr: 'auto_refresh', s: 'valuing_assets', ra: t0 + 20_000, fa: t0 + 21_000 })],
+      // an entry written before run ids existed stands alone
+      ['portfolio:10', raw({ st: 'completed', s: 'updating_debts', ra: t0 + 1_000, fa: t0 + 1_100 })],
+    ]), {}, true, NOW);
+
+    expect(out.recent).toHaveLength(6); // per-job view unchanged
+    expect(out.runs.map((r) => r.id)).toEqual(['events:7', 'events:1', 'portfolio:10']);
+    const edit = out.runs[1];
+    expect(edit).toMatchObject({
+      state: 'completed', trigger: 'user_change', types: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'], durationMs: 15_000,
+    });
+    expect(edit.steps.map((s: any) => s.stage)).toEqual(['recalculating_lots', 'updating_cash', 'updating_analytics', 'valuing_assets']);
+    expect(out.runs[0].trigger).toBe('auto_refresh');
+  });
+
+  it('a run with a failed step is failed; a run still in flight is not history yet', () => {
+    const out = summarize({
+      'portfolio:1': raw({ st: 'completed', rn: 'events:1', fa: NOW - 5_000 }),
+      'analytics:2': raw({ t: 'ANALYTICS_UPDATE', st: 'failed', ec: 'P2034', rn: 'events:1', fa: NOW - 4_000 }),
+      'portfolio:3': raw({ st: 'completed', rn: 'events:2', fa: NOW - 3_000 }),
+      'analytics:4': raw({ t: 'ANALYTICS_UPDATE', st: 'running', rn: 'events:2' }),
+    }, {}, true, NOW);
+    expect(out.runs).toHaveLength(1);
+    expect(out.runs[0]).toMatchObject({ id: 'events:1', state: 'failed', errorCode: 'P2034' });
+    expect(out.inFlight[0].runId).toBe('events:2');
   });
 });

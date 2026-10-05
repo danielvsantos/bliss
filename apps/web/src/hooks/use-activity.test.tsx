@@ -50,6 +50,7 @@ const entry = (over: Partial<ActivityInFlightEntry> = {}): ActivityInFlightEntry
   progress: null,
   trigger: 'user_change',
   affects: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'],
+  runId: 'events:1',
   enqueuedAt: '2026-10-04T11:59:00.000Z',
   startedAt: '2026-10-04T11:59:10.000Z',
   updatedAt: '2026-10-04T11:59:50.000Z',

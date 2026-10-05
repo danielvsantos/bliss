@@ -11,7 +11,7 @@ const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetecti
 const { enqueueTenantSecuritiesRefresh } = require('../queues/securityMasterQueue');
 const { scheduleDebouncedJob, mergers } = require('../services/debounceService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
-const { trackWorker, carryTrigger } = require('../utils/activityTracker');
+const { trackWorker, carryOrigin } = require('../utils/activityTracker');
 
 const DEBOUNCE_DELAY_SECONDS = 5; // 5 seconds
 
@@ -25,26 +25,32 @@ const DEBOUNCE_MERGERS = {
         portfolioItemIds: mergers.union,
         _rebuildMeta: mergers.keepPresent,
         _trigger: mergers.keepPresent,         // processing-status label (#100)
+        _run: mergers.keepPresent,
     },
     'process-portfolio-changes': {
         accountIds: mergers.unionOrAll,       // absent = full rebuild
         dateScopes: mergers.union,
         _trigger: mergers.keepPresent,
+        _run: mergers.keepPresent,
     },
     'recalculate-portfolio-items': {          // portfolioItemIds is the aggregation key
         _trigger: mergers.keepPresent,
+        _run: mergers.keepPresent,
     },
     'scoped-update-analytics': {
         portfolioItemIds: mergers.union,
         _rebuildMeta: mergers.keepPresent,
         _trigger: mergers.keepPresent,
+        _run: mergers.keepPresent,
     },
     'full-rebuild-analytics': {
         _rebuildMeta: mergers.keepPresent,
         _trigger: mergers.keepPresent,
+        _run: mergers.keepPresent,
     },
     'value-all-assets': {
         _trigger: mergers.keepPresent,
+        _run: mergers.keepPresent,
     },
 };
 
@@ -62,10 +68,10 @@ const processEventJob = async (job) => {
         keys: data ? Object.keys(data) : [],
     });
 
-    // Who started this chain (nightly cron, AI agent, bank sync, import), forwarded
-    // into every downstream job so the processing-status label survives end to
-    // end (#100). `{}` for plain user changes and admin rebuilds.
-    const carry = carryTrigger(EVENTS_QUEUE_NAME, job);
+    // The chain's run id and who started it (nightly cron, AI agent, bank sync,
+    // import), forwarded into every downstream job so the processing status
+    // groups one edit's jobs into one run and keeps its label end to end (#100).
+    const carry = carryOrigin(EVENTS_QUEUE_NAME, job);
 
     // This is a new helper function to transform the debounced scopes array.
     const consolidateScopes = (scopes) => {
@@ -585,7 +591,7 @@ const processEventJob = async (job) => {
                         // process-portfolio-changes → cash-holdings → full-rebuild-analytics → value-all-assets.
                         await getPortfolioQueue().add(
                             'process-portfolio-changes',
-                            { tenantId, _rebuildMeta: rebuildMeta },
+                            { tenantId, ...carry, _rebuildMeta: rebuildMeta },
                             { jobId, ...retentionOpts },
                         );
                         break;
@@ -597,7 +603,7 @@ const processEventJob = async (job) => {
                         // the March-rows-missing scenario from 2026-04-22).
                         await getAnalyticsQueue().add(
                             'full-rebuild-analytics',
-                            { tenantId, _rebuildMeta: rebuildMeta },
+                            { tenantId, ...carry, _rebuildMeta: rebuildMeta },
                             { jobId, ...retentionOpts },
                         );
                         break;
@@ -616,6 +622,7 @@ const processEventJob = async (job) => {
                             {
                                 tenantId,
                                 scopes: [{ earliestDate }],
+                                ...carry,
                                 _rebuildMeta: rebuildMeta,
                             },
                             { jobId, ...retentionOpts },
@@ -641,6 +648,7 @@ const processEventJob = async (job) => {
                             {
                                 tenantId,
                                 portfolioItemIds: ids,
+                                ...carry,
                                 _rebuildMeta: rebuildMeta,
                             },
                             { jobId, ...retentionOpts },
@@ -652,7 +660,7 @@ const processEventJob = async (job) => {
                         // stock/ETF symbol this tenant holds, not just missing/stale.
                         await enqueueTenantSecuritiesRefresh(
                             tenantId,
-                            { force: true, _rebuildMeta: rebuildMeta },
+                            { force: true, ...carry, _rebuildMeta: rebuildMeta },
                             { jobId, ...retentionOpts },
                         );
                         break;

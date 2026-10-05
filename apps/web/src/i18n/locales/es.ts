@@ -2695,6 +2695,7 @@ const es = {
       nightly: "Nocturno",
       manual_rebuild: "Reconstrucción",
       agent: "Agente de IA",
+      auto_refresh: "Actualización automática",
     },
     states: {
       queued: "En cola",
@@ -2727,6 +2728,7 @@ const es = {
     },
     time: {
       justNow: "ahora mismo",
+      underSecond: "< 1 s",
       minutesAgo: "hace {{count}} min",
       hoursAgo: "hace {{count}} h",
       daysAgo: "hace {{count}} d",
@@ -2749,6 +2751,8 @@ const es = {
       took: "duró {{time}}",
       finished: "terminó {{time}}",
       errorCode: "Error {{code}}",
+      steps_one: "{{count}} paso",
+      steps_other: "{{count}} pasos",
     },
     notification: {
       failed_one: "{{count}} actualización en segundo plano falló",

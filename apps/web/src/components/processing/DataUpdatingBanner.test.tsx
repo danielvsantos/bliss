@@ -17,7 +17,7 @@ const view = (over: Partial<WatchedActivity> = {}): WatchedActivity => ({
 
 const entry: ActivityInFlightEntry = {
   id: 'analytics:1', type: 'ANALYTICS_UPDATE', stage: 'updating_analytics', state: 'running', progress: 40,
-  trigger: 'user_change', affects: ['ANALYTICS_UPDATE'], enqueuedAt: null, startedAt: null, updatedAt: null,
+  trigger: 'user_change', affects: ['ANALYTICS_UPDATE'], runId: 'events:1', enqueuedAt: null, startedAt: null, updatedAt: null,
 };
 
 beforeEach(() => vi.clearAllMocks());

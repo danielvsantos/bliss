@@ -1,6 +1,7 @@
 const { Decimal } = require('@prisma/client/runtime/library');
 const prisma = require('../../../prisma/prisma.js');
 const logger = require('../../utils/logger');
+const { carryOrigin } = require('../../utils/activityTracker');
 const { generateAssetKey } = require('./asset-aggregator');
 const { enqueueEvent } = require('../../queues/eventsQueue');
 const { decrypt } = require('../../utils/encryption');
@@ -147,7 +148,7 @@ const reconcilePreviousItem = async (tenantId, itemId, replacement, { pruneEmpty
 };
 
 const processPortfolioChanges = async (job) => {
-    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta, previousPortfolioItemId, deletedTransaction, _trigger } = job.data;
+    const { tenantId, transactionId, institutionId, accountIds, dateScopes, _rebuildMeta, previousPortfolioItemId, deletedTransaction } = job.data;
 
     // Thread the BullMQ lock heartbeat attached by `portfolioWorker`
     // through to `handleFullRebuild`'s inner loops. Without this,
@@ -158,7 +159,9 @@ const processPortfolioChanges = async (job) => {
     // Processing status (#100): who started the chain, forwarded into the
     // PORTFOLIO_CHANGES_PROCESSED event, and the per-item progress reporter
     // attached by `portfolioWorker` (an own property, like `heartbeat`).
-    const origin = _trigger ? { _trigger } : {};
+    // (`_run` falls back to this job's own id when the chain started here,
+    // e.g. an admin full rebuild.)
+    const origin = carryOrigin('portfolio', job);
     const reportProgress = job.reportProgress;
 
     if (deletedTransaction) {

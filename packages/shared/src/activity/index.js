@@ -54,6 +54,8 @@ export const TRIGGERS = Object.freeze({
     NIGHTLY: 'nightly',
     MANUAL_REBUILD: 'manual_rebuild',
     AGENT: 'agent',
+    /** The on-access stale-history revaluation (a page view, not an edit). */
+    AUTO_REFRESH: 'auto_refresh',
 });
 
 export const TRIGGER_LIST = Object.freeze(Object.values(TRIGGERS));
@@ -148,6 +150,9 @@ export function isStalled(entry, now) {
     return now - updatedAt > threshold;
 }
 
+/** The chain an entry belongs to (`rn`, written by the tracker); entries without one stand alone. */
+const runOf = (e) => (typeof e.rn === 'string' && e.rn ? e.rn : e.id);
+
 function toInFlight(e, now) {
     const state = isStalled(e, now) ? ACTIVITY_STATES.STALLED : e.st;
     return {
@@ -158,6 +163,7 @@ function toInFlight(e, now) {
         progress: num(e.p),
         trigger: e.tr || TRIGGERS.USER_CHANGE,
         affects: Array.isArray(e.af) && e.af.length > 0 ? e.af.filter(isType) : [e.t],
+        runId: runOf(e),
         enqueuedAt: iso(num(e.sa)),
         startedAt: iso(num(e.ra) ?? num(e.sa)),
         updatedAt: iso(num(e.ua) ?? num(e.sa)),
@@ -174,6 +180,7 @@ function toRecent(e) {
         state: e.st,
         trigger: e.tr || TRIGGERS.USER_CHANGE,
         ...(e.st === ACTIVITY_STATES.FAILED ? { errorCode: e.ec || 'INTERNAL' } : {}),
+        runId: runOf(e),
         enqueuedAt: iso(num(e.sa)),
         startedAt: iso(started),
         finishedAt: iso(finished),
@@ -190,8 +197,50 @@ export function unavailable(now = Date.now()) {
         summary: {},
         inFlight: [],
         recent: [],
+        runs: [],
         lastCompletedAt: {},
     };
+}
+
+/**
+ * Group finished entries into runs: one row per edit / sync / import /
+ * rebuild / nightly run, with its jobs as steps (oldest first). A run that
+ * still has work in flight is left out — it is shown live, not as history.
+ */
+export function groupRuns(recent, inFlight = []) {
+    const live = new Set(inFlight.map((e) => e.runId));
+    const runs = new Map();
+    for (const step of recent) {
+        if (live.has(step.runId)) continue;
+        let run = runs.get(step.runId);
+        if (!run) {
+            run = { id: step.runId, trigger: step.trigger, types: [], steps: [] };
+            runs.set(step.runId, run);
+        }
+        run.steps.push(step);
+    }
+    const out = [];
+    for (const run of runs.values()) {
+        run.steps.sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || '') || a.id.localeCompare(b.id));
+        for (const step of run.steps) if (!run.types.includes(step.type)) run.types.push(step.type);
+        const failed = run.steps.find((s) => s.state === ACTIVITY_STATES.FAILED);
+        const starts = run.steps.map((s) => s.startedAt).filter(Boolean).sort();
+        const ends = run.steps.map((s) => s.finishedAt).filter(Boolean).sort();
+        const startedAt = starts[0] ?? null;
+        const finishedAt = ends[ends.length - 1] ?? null;
+        out.push({
+            id: run.id,
+            trigger: run.steps[0].trigger,
+            types: run.types,
+            state: failed ? ACTIVITY_STATES.FAILED : ACTIVITY_STATES.COMPLETED,
+            ...(failed ? { errorCode: failed.errorCode } : {}),
+            startedAt,
+            finishedAt,
+            durationMs: startedAt && finishedAt ? Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)) : null,
+            steps: run.steps,
+        });
+    }
+    return out.sort((a, b) => (b.finishedAt || '').localeCompare(a.finishedAt || '') || a.id.localeCompare(b.id));
 }
 
 /**
@@ -290,6 +339,7 @@ export function summarize(rawHash, lastHash, workerOnline, now = Date.now()) {
         summary,
         inFlight,
         recent,
+        runs: groupRuns(recent, inFlight),
         lastCompletedAt,
     };
 }

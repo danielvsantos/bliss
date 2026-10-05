@@ -15,7 +15,7 @@ export type ActivityType =
 
 export type ActivityInFlightState = 'queued' | 'running' | 'stalled';
 export type ActivityFinishedState = 'completed' | 'failed';
-export type ActivityTrigger = 'user_change' | 'bank_sync' | 'import' | 'nightly' | 'manual_rebuild' | 'agent';
+export type ActivityTrigger = 'user_change' | 'bank_sync' | 'import' | 'nightly' | 'manual_rebuild' | 'agent' | 'auto_refresh';
 
 export interface ActivitySummaryRow {
   state: ActivityInFlightState | 'failed';
@@ -36,6 +36,8 @@ export interface ActivityInFlightEntry {
   progress: number | null;
   trigger: ActivityTrigger;
   affects: ActivityType[];
+  /** The chain (edit / sync / import / rebuild / nightly run) this job belongs to. */
+  runId: string;
   enqueuedAt: string | null;
   startedAt: string | null;
   updatedAt: string | null;
@@ -48,10 +50,25 @@ export interface ActivityRecentEntry {
   state: ActivityFinishedState;
   trigger: ActivityTrigger;
   errorCode?: string;
+  runId: string;
   enqueuedAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   durationMs: number | null;
+}
+
+/** One finished run: every job of one edit / sync / import / rebuild / nightly run. */
+export interface ActivityRun {
+  id: string;
+  trigger: ActivityTrigger;
+  /** Activity types the run touched, in order. */
+  types: ActivityType[];
+  state: ActivityFinishedState;
+  errorCode?: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  steps: ActivityRecentEntry[];
 }
 
 export interface ActivityResponse {
@@ -61,5 +78,7 @@ export interface ActivityResponse {
   summary: Partial<Record<ActivityType, ActivitySummaryRow>>;
   inFlight: ActivityInFlightEntry[];
   recent: ActivityRecentEntry[];
+  /** `recent` grouped by run, newest first (older API: absent). */
+  runs?: ActivityRun[];
   lastCompletedAt: Partial<Record<ActivityType, string>>;
 }

@@ -2743,6 +2743,7 @@ const en = {
       nightly: "Nightly",
       manual_rebuild: "Rebuild",
       agent: "AI agent",
+      auto_refresh: "Automatic refresh",
     },
     states: {
       queued: "Queued",
@@ -2775,6 +2776,7 @@ const en = {
     },
     time: {
       justNow: "just now",
+      underSecond: "< 1 s",
       minutesAgo: "{{count}} min ago",
       hoursAgo: "{{count}} h ago",
       daysAgo: "{{count}} d ago",
@@ -2797,6 +2799,8 @@ const en = {
       took: "took {{time}}",
       finished: "finished {{time}}",
       errorCode: "Error {{code}}",
+      steps_one: "{{count}} step",
+      steps_other: "{{count}} steps",
     },
     notification: {
       failed_one: "{{count}} background update failed",

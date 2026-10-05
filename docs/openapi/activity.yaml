@@ -32,7 +32,7 @@ components:
       enum: [PORTFOLIO_UPDATE, ANALYTICS_UPDATE, BANK_SYNC, IMPORT, SECURITY_DATA, SUBSCRIPTION_SCAN, INSIGHTS]
     ActivityTrigger:
       type: string
-      enum: [user_change, bank_sync, import, nightly, manual_rebuild, agent]
+      enum: [user_change, bank_sync, import, nightly, manual_rebuild, agent, auto_refresh]
     ActivityStage:
       type: string
       description: Stage key; clients translate it.
@@ -62,6 +62,7 @@ components:
           type: array
           description: Every activity type this job's chain will still touch (page banners match on it)
           items: { $ref: '#/components/schemas/ActivityType' }
+        runId: { type: string, description: The run (chain) this job belongs to }
         enqueuedAt: { type: string, format: date-time, nullable: true }
         startedAt: { type: string, format: date-time, nullable: true }
         updatedAt: { type: string, format: date-time, nullable: true }
@@ -77,10 +78,24 @@ components:
           type: string
           description: "Failures only: a Prisma P#### code, a Node E… code, LLM_TIMEOUT, TIMEOUT or INTERNAL. The error message is never stored."
           example: P2034
+        runId: { type: string }
         enqueuedAt: { type: string, format: date-time, nullable: true }
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }
         durationMs: { type: integer, nullable: true }
+    ActivityRun:
+      type: object
+      description: Every finished job of one edit / sync / import / rebuild / nightly run.
+      properties:
+        id: { type: string, description: The run id (the root event's queue:jobId) }
+        trigger: { $ref: '#/components/schemas/ActivityTrigger' }
+        types: { type: array, items: { $ref: '#/components/schemas/ActivityType' } }
+        state: { type: string, enum: [completed, failed], description: failed if any step failed }
+        errorCode: { type: string }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        steps: { type: array, items: { $ref: '#/components/schemas/RecentEntry' } }
     ActivityResponse:
       type: object
       properties:
@@ -95,6 +110,10 @@ components:
           type: array
           description: Finished work of the last 24 hours, newest first, at most 200
           items: { $ref: '#/components/schemas/RecentEntry' }
+        runs:
+          type: array
+          description: recent grouped by run, newest first; runs still in flight are excluded
+          items: { $ref: '#/components/schemas/ActivityRun' }
         lastCompletedAt:
           type: object
           additionalProperties: { type: string, format: date-time }

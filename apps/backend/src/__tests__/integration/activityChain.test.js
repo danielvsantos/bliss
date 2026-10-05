@@ -161,15 +161,17 @@ describe('BullMQ chain (real Redis)', () => {
 
     let finished = false;
     makeWorker('events', async (job) => {
+      // Like eventSchedulerWorker: every downstream job carries the chain's origin (run id).
+      const carry = tracker.carryOrigin('events', job);
       if (job.name === 'MANUAL_TRANSACTION_MODIFIED') {
-        await portfolio.add('process-cash-holdings', { tenantId, scope: { year: 2026 } }, { delay: 50 });
+        await portfolio.add('process-cash-holdings', { tenantId, scope: { year: 2026 }, ...carry }, { delay: 50 });
       } else if (job.name === 'CASH_HOLDINGS_PROCESSED') {
-        await analytics.add('scoped-update-analytics', { tenantId, scopes: [{ year: 2026 }] }, { delay: 50 });
+        await analytics.add('scoped-update-analytics', { tenantId, scopes: [{ year: 2026 }], ...carry }, { delay: 50 });
       }
     });
-    makeWorker('portfolio', async () => {
+    makeWorker('portfolio', async (job) => {
       await new Promise((r) => setTimeout(r, 40));
-      await events.add('CASH_HOLDINGS_PROCESSED', { tenantId });
+      await events.add('CASH_HOLDINGS_PROCESSED', { tenantId, ...tracker.carryOrigin('portfolio', job) });
     });
     const analyticsWorker = makeWorker('analytics', async () => {
       await new Promise((r) => setTimeout(r, 40));
@@ -202,6 +204,10 @@ describe('BullMQ chain (real Redis)', () => {
     // Event hops leave no history; the two real jobs do.
     expect(done.recent.map((r) => r.type).sort()).toEqual(['ANALYTICS_UPDATE', 'PORTFOLIO_UPDATE']);
     expect(done.recent.every((r) => r.state === 'completed' && r.durationMs >= 0)).toBe(true);
+    // The whole chain is ONE run in the history, with both jobs as its steps.
+    expect(done.runs).toHaveLength(1);
+    expect(done.runs[0]).toMatchObject({ state: 'completed', types: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'] });
+    expect(done.runs[0].steps.map((s) => s.stage)).toEqual(['updating_cash', 'updating_analytics']);
   });
 
   it('AC2: ten debounced edits coalesce into one row with no orphaned entries', async () => {

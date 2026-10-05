@@ -305,16 +305,32 @@ describe('resolveTrigger', () => {
     ['plaid event name', 'events', { name: 'PLAID_SYNC_UPDATES', data: { tenantId: 't' } }, 'bank_sync'],
     ['smart import queue', 'smart-import', { data: { tenantId: 't' } }, 'import'],
     ['import source', 'events', { name: 'TRANSACTIONS_IMPORTED', data: { tenantId: 't', source: 'SMART_IMPORT' } }, 'import'],
+    ['stale-history revaluation (a page view)', 'events', { name: 'PORTFOLIO_STALE_REVALUATION', data: { tenantId: 't' } }, 'auto_refresh'],
     ['default', 'events', { name: 'MANUAL_TRANSACTION_MODIFIED', data: { tenantId: 't', source: 'MANUAL' } }, 'user_change'],
   ])('%s', (_label, queue, job, expected) => {
     expect(resolveTrigger(queue, job)).toBe(expected);
   });
 
-  it('carryTrigger forwards only non-default origins', () => {
-    expect(tracker.carryTrigger('events', { name: 'PLAID_SYNC_UPDATES', data: { tenantId: 't' } })).toEqual({ _trigger: 'bank_sync' });
-    expect(tracker.carryTrigger('events', { name: 'MANUAL_TRANSACTION_CREATED', data: { tenantId: 't' } })).toEqual({});
-    expect(tracker.carryTrigger('events', { name: 'MANUAL_REBUILD_REQUESTED', data: { tenantId: 't', _rebuildMeta: {} } })).toEqual({});
-    expect(tracker.carryTrigger('events', { name: 'X', data: { tenantId: 't', _trigger: 'agent' } })).toEqual({ _trigger: 'agent' });
+  it('carryOrigin forwards the run id always, the trigger only when not a plain user change', () => {
+    expect(tracker.carryOrigin('events', { id: '1', name: 'PLAID_SYNC_UPDATES', data: { tenantId: 't' } }))
+      .toEqual({ _run: 'events:1', _trigger: 'bank_sync' });
+    expect(tracker.carryOrigin('events', { id: '2', name: 'MANUAL_TRANSACTION_CREATED', data: { tenantId: 't' } }))
+      .toEqual({ _run: 'events:2' });
+    expect(tracker.carryOrigin('events', { id: '3', name: 'MANUAL_REBUILD_REQUESTED', data: { tenantId: 't', _rebuildMeta: {} } }))
+      .toEqual({ _run: 'events:3' });
+    // A propagated run id wins over the job's own: the whole chain is one run.
+    expect(tracker.carryOrigin('portfolio', { id: '4', name: 'X', data: { tenantId: 't', _trigger: 'agent', _run: 'events:1' } }))
+      .toEqual({ _run: 'events:1', _trigger: 'agent' });
+    expect(tracker.carryOrigin('events', { id: '5', name: 'PORTFOLIO_STALE_REVALUATION', data: { tenantId: 't' } }))
+      .toEqual({ _run: 'events:5', _trigger: 'auto_refresh' });
+  });
+
+  it('stamps every entry with its run id (rn)', () => {
+    const queue = Object.assign(new EventEmitter(), { name: 'portfolio' });
+    tracker.trackQueue(queue);
+    queue.emit('waiting', makeJob({ id: 'a' }));
+    queue.emit('waiting', makeJob({ id: 'b', data: { tenantId: TENANT, _run: 'events:9' } }));
+    expect(client.writes.map((w) => w.entry.rn)).toEqual(['portfolio:a', 'events:9']);
   });
 });
 

@@ -3,7 +3,7 @@
  * Live + last 24 h come from GET /api/activity; "Recent rebuilds" is the
  * history moved out of Maintenance (GET /api/admin/rebuild, unchanged).
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
@@ -11,7 +11,7 @@ import React from 'react';
 import { ProcessingTab } from './processing-tab';
 import { api } from '@/lib/api';
 import type { RebuildStatusResponse } from '@/types/api';
-import type { ActivityResponse } from '@/types/activity';
+import type { ActivityRecentEntry, ActivityResponse } from '@/types/activity';
 
 vi.mock('@/lib/api');
 
@@ -65,11 +65,11 @@ describe('ProcessingTab', () => {
       inFlight: [
         {
           id: 'portfolio:1', type: 'PORTFOLIO_UPDATE', stage: 'valuing_assets', state: 'running', progress: 40,
-          trigger: 'nightly', affects: ['PORTFOLIO_UPDATE'], enqueuedAt: ago(120_000), startedAt: ago(90_000), updatedAt: ago(1_000),
+          trigger: 'nightly', affects: ['PORTFOLIO_UPDATE'], runId: 'nightly-1', enqueuedAt: ago(120_000), startedAt: ago(90_000), updatedAt: ago(1_000),
         },
         {
           id: 'analytics:2', type: 'ANALYTICS_UPDATE', stage: 'updating_analytics', state: 'queued', progress: null,
-          trigger: 'agent', affects: ['ANALYTICS_UPDATE'], enqueuedAt: ago(5_000), startedAt: ago(5_000), updatedAt: ago(5_000),
+          trigger: 'agent', affects: ['ANALYTICS_UPDATE'], runId: 'events:2', enqueuedAt: ago(5_000), startedAt: ago(5_000), updatedAt: ago(5_000),
         },
       ],
     });
@@ -86,27 +86,65 @@ describe('ProcessingTab', () => {
     expect(rows[1]).toHaveTextContent('activity.processing.queuedFor');
   });
 
-  it('lists the last 24 hours with outcome, duration and error code (AC8)', async () => {
+  const step = (o: Partial<ActivityRecentEntry>): ActivityRecentEntry => ({
+    id: 'portfolio:1', type: 'PORTFOLIO_UPDATE', stage: 'updating_cash', state: 'completed', trigger: 'user_change',
+    runId: 'events:1', enqueuedAt: ago(80_000), startedAt: ago(79_000), finishedAt: ago(75_000), durationMs: 300, ...o,
+  });
+
+  it('shows one row per run (an edit is one row), with its jobs as expandable steps', async () => {
+    const steps = [
+      step({ id: 'portfolio:1', stage: 'recalculating_lots' }),
+      step({ id: 'portfolio:2', stage: 'updating_cash' }),
+      step({ id: 'analytics:3', type: 'ANALYTICS_UPDATE', stage: 'updating_analytics', durationMs: 4_000 }),
+      step({ id: 'portfolio:4', stage: 'valuing_assets' }),
+    ];
     vi.mocked(api.getActivity).mockResolvedValue({
       ...idle,
-      recent: [
-        {
-          id: 'analytics:9', type: 'ANALYTICS_UPDATE', stage: 'updating_analytics', state: 'failed', errorCode: 'P2034',
-          trigger: 'user_change', enqueuedAt: ago(70_000), startedAt: ago(65_000), finishedAt: ago(60_000), durationMs: 5_000,
-        },
-        {
-          id: 'portfolio:8', type: 'PORTFOLIO_UPDATE', stage: 'updating_cash', state: 'completed',
-          trigger: 'bank_sync', enqueuedAt: ago(80_000), startedAt: ago(79_000), finishedAt: ago(75_000), durationMs: 4_000,
-        },
-      ],
+      recent: steps,
+      runs: [{
+        id: 'events:1', trigger: 'user_change', types: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'], state: 'completed',
+        startedAt: ago(79_000), finishedAt: ago(75_000), durationMs: 600, steps,
+      }],
     });
     renderTab();
-    const rows = await screen.findAllByTestId('processing-recent-row');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent('activity.states.failed');
-    expect(rows[0]).toHaveTextContent('activity.processing.errorCode');
-    expect(rows[1]).toHaveTextContent('activity.states.completed');
-    expect(rows[1]).toHaveTextContent('activity.processing.took');
+    const rows = await screen.findAllByTestId('processing-run-row');
+    expect(rows).toHaveLength(1);
+    // Both types in the title; the trigger and a sub-second duration in the subline.
+    expect(rows[0]).toHaveTextContent('PORTFOLIO_UPDATE · ANALYTICS_UPDATE');
+    expect(rows[0]).toHaveTextContent('activity.triggers.user_change');
+    expect(rows[0]).toHaveTextContent('activity.processing.took');
+    expect(screen.queryByTestId('processing-run-steps')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /activity\.processing\.steps/ }));
+    const list = screen.getByTestId('processing-run-steps');
+    expect(within(list).getAllByRole('listitem')).toHaveLength(4);
+    expect(list).toHaveTextContent('recalculating_lots');
+    expect(list).toHaveTextContent('valuing_assets');
+  });
+
+  it('shows a failed run with its error code (AC8)', async () => {
+    const failed = step({ id: 'analytics:9', type: 'ANALYTICS_UPDATE', state: 'failed', errorCode: 'P2034', runId: 'events:9' });
+    vi.mocked(api.getActivity).mockResolvedValue({
+      ...idle,
+      recent: [failed],
+      runs: [{
+        id: 'events:9', trigger: 'bank_sync', types: ['ANALYTICS_UPDATE'], state: 'failed', errorCode: 'P2034',
+        startedAt: failed.startedAt, finishedAt: failed.finishedAt, durationMs: 5_000, steps: [failed],
+      }],
+    });
+    renderTab();
+    const [row] = await screen.findAllByTestId('processing-run-row');
+    expect(row).toHaveTextContent('activity.states.failed');
+    expect(row).toHaveTextContent('activity.processing.errorCode');
+    expect(row).toHaveTextContent('activity.triggers.bank_sync');
+    // A single-step run has nothing to expand.
+    expect(screen.queryByRole('button', { name: /activity\.processing\.steps/ })).not.toBeInTheDocument();
+  });
+
+  it('falls back to one row per job against an older API without runs', async () => {
+    vi.mocked(api.getActivity).mockResolvedValue({ ...idle, recent: [step({ id: 'a' }), step({ id: 'b', runId: 'b' })] });
+    renderTab();
+    expect(await screen.findAllByTestId('processing-run-row')).toHaveLength(2);
   });
 
   it('says when status is unavailable or the worker is offline', async () => {

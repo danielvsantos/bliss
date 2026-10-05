@@ -65,7 +65,7 @@ Popover: one row per activity type (AC2), with the friendly name, stage, progres
 An admin-only tab (`value: "processing"`, icon `Activity`) in the Administration section, next to Maintenance and Integrations. It is hidden for members and viewers like the other admin tabs (AC7).
 
 - **Live**: every in-flight entry with stage, progress bar, trigger and "running for / queued for X".
-- **Last 24 hours**: every finished entry with outcome, trigger, "finished X ago", duration and error code.
+- **Last 24 hours**: **one row per run** (`runs` from the API). A run is every job of one edit, sync, import, rebuild or nightly run, so a single transaction is one row, not one per job. The title lists the activity types it touched; the subline shows the trigger, "finished X ago" and total duration ("< 1 s" under a second). A failed run shows its error code. Multi-step runs expand ("4 steps") to list each job's stage and duration. Against an older API without `runs`, each job is shown as its own run.
 - **Recent rebuilds**: `RebuildHistoryList`, moved verbatim from Maintenance into `components/settings/rebuild-history-list.tsx` (labels in `lib/rebuild-labels.ts`). It still uses `GET /api/admin/rebuild` with 30-day retention (AC12).
 - Banners for "status unavailable" and "worker offline".
 

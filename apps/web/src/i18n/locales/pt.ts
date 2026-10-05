@@ -2743,6 +2743,7 @@ const pt = {
       nightly: "Noturno",
       manual_rebuild: "Reconstrução",
       agent: "Agente de IA",
+      auto_refresh: "Atualização automática",
     },
     states: {
       queued: "Na fila",
@@ -2775,6 +2776,7 @@ const pt = {
     },
     time: {
       justNow: "agora mesmo",
+      underSecond: "< 1 s",
       minutesAgo: "há {{count}} min",
       hoursAgo: "há {{count}} h",
       daysAgo: "há {{count}} d",
@@ -2797,6 +2799,8 @@ const pt = {
       took: "levou {{time}}",
       finished: "terminou {{time}}",
       errorCode: "Erro {{code}}",
+      steps_one: "{{count}} etapa",
+      steps_other: "{{count}} etapas",
     },
     notification: {
       failed_one: "{{count}} atualização em segundo plano falhou",

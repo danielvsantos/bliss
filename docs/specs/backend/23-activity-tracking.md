@@ -24,7 +24,7 @@ Every BullMQ job that works on a tenant's data leaves one small entry in a per-t
 | `activity:v1:{tenantId}:last` | HASH | activity type → ISO `lastCompletedAt` | no TTL |
 | `bliss:runtime:worker` | STRING | existing worker heartbeat (`utils/workerHeartbeat.js`) | 180 s |
 
-Entry fields (short keys): `t` type · `s` stage · `st` state (`queued`/`running`/`completed`/`failed`) · `p` progress 0–100 · `tr` trigger · `af` affects[] · `lg` long-running flag · `sa` enqueued at · `ra` running since · `ua` updated at · `fa` finished at (epoch ms) · `ec` errorCode · `at` attempts made. No descriptions, amounts, account numbers or error messages.
+Entry fields (short keys): `t` type · `s` stage · `st` state (`queued`/`running`/`completed`/`failed`) · `p` progress 0–100 · `tr` trigger · `af` affects[] · `lg` long-running flag · `sa` enqueued at · `ra` running since · `ua` updated at · `fa` finished at (epoch ms) · `ec` errorCode · `at` attempts made · `rn` run id. No descriptions, amounts, account numbers or error messages.
 
 ## 23.3. Write path
 
@@ -88,12 +88,22 @@ Out of scope (deviation D2): tenant-less fan-outs (`revalue-all-tenants`, `detec
 
 1. `data._rebuildMeta` → `manual_rebuild`
 2. `data._trigger` (propagated; must be a known trigger) → that value
+3. a `PORTFOLIO_STALE_REVALUATION` event → `auto_refresh`
 3. a `nightly-` jobId prefix, or a `*cron*` source → `nightly`
 4. the plaid queues, a `PLAID_*` event, or a Plaid source (`PLAID_*`, `INITIAL`, `SYNCED`, `MANUAL_RESYNC`, …) → `bank_sync`
 5. the smart-import queue, a `SMART_IMPORT_*` event, or a `CSV` / `SMART_IMPORT` source → `import`
 6. otherwise → `user_change`
 
 `carryTrigger(queue, job)` returns `{ _trigger }` for `nightly` / `agent` / `bank_sync` / `import`, and `{}` otherwise. `eventSchedulerWorker` spreads it into every downstream job it adds, and every debounced job name has a `_trigger: mergers.keepPresent` merger. `process-portfolio-changes`, `cash-processor` (via the enriched scope) and `analyticsWorker` forward `_trigger` into the events they emit. The nightly fan-outs stamp `_trigger: 'nightly'` on their children (`revalue-all-tenants`, `detect-all-tenants`). The API stamps `_trigger: 'agent'` on events from integration keys (`utils/eventOrigin.js`). A missed site only degrades the label to `user_change`; processing is unaffected.
+
+### Runs (`_run`)
+
+One user action is many jobs: a real-estate purchase alone runs `process-portfolio-changes` → `process-cash-holdings` → `scoped-update-analytics` → `value-portfolio-items`. Every job of one chain therefore shares a **run id**, `rn` on the entry, so the history shows one row per run instead of one row per job.
+
+- The run id is the root event's `{queue}:{jobId}` (e.g. `events:1234`). `carryOrigin(queue, job)` returns `{ _run, _trigger? }`. The event scheduler spreads it into every job it adds, including the admin-rebuild branch. `process-portfolio-changes`, the cash processor (via the enriched scope) and `analyticsWorker` forward it into the events they emit. When a job has no `_run` (e.g. the first job of an admin rebuild), it starts a run with its own id.
+- Every debounced job name has a `_run: keepPresent` merger, so edits coalesced by the debounce join the newest edit's run.
+- The nightly revaluation stamps one `_run` (`nightly-revalue-{tenant}-{date}`) on the tenant's three jobs.
+- `PORTFOLIO_STALE_REVALUATION` (the on-access fallback the Portfolio page fires when history is stale, e.g. right after a new holding) resolves to the trigger `auto_refresh`, so it isn't labelled as the user's own change.
 
 ## 23.7. Progress
 

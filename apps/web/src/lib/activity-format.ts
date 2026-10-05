@@ -26,6 +26,7 @@ export function formatAgo(t: TFunction, iso: string | null | undefined, now = Da
 /** "42 s" / "7 min" / "2 h". */
 export function formatDuration(t: TFunction, ms: number | null | undefined): string | null {
   if (ms == null || !Number.isFinite(ms)) return null;
+  if (ms < 1000) return t('activity.time.underSecond');
   const seconds = Math.max(0, Math.round(ms / 1000));
   if (seconds < 60) return t('activity.time.seconds', { count: seconds });
   if (seconds < 3600) return t('activity.time.minutes', { count: Math.round(seconds / 60) });

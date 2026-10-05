@@ -130,6 +130,7 @@ async function processCashHoldings(tenantId, scope = {}) {
             ...(scope._rebuildMeta ? { _rebuildMeta: scope._rebuildMeta } : {}),
             // Processing-status label of the chain (#100).
             ...(scope._trigger ? { _trigger: scope._trigger } : {}),
+            ...(scope._run ? { _run: scope._run } : {}),
         });
         
         return { success: true, duration };

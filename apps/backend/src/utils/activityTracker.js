@@ -196,6 +196,7 @@ function resolveTrigger(queueName, job) {
     const data = job?.data || {};
     if (data._rebuildMeta) return TRIGGERS.MANUAL_REBUILD;
     if (TRIGGER_LIST.includes(data._trigger)) return data._trigger;
+    if (job?.name === 'PORTFOLIO_STALE_REVALUATION') return TRIGGERS.AUTO_REFRESH;
 
     const jobId = String(job?.id || '');
     const source = typeof data.source === 'string' ? data.source : '';
@@ -231,6 +232,13 @@ function clampProgress(value) {
     return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+/** The chain this job belongs to: the propagated `_run`, else the job itself. */
+function runIdFor(queueName, job) {
+    const run = job?.data?._run;
+    if (typeof run === 'string' && run.length > 0 && run.length <= 200) return run;
+    return fieldFor(queueName, job);
+}
+
 function buildEntry(queueName, job, info, state, extra = {}) {
     const now = Date.now();
     const entry = {
@@ -246,6 +254,9 @@ function buildEntry(queueName, job, info, state, extra = {}) {
     if (info.long) entry.lg = 1;
     if (state !== ACTIVITY_STATES.QUEUED) entry.ra = Number.isFinite(job?.processedOn) ? job.processedOn : now;
     if (Number.isFinite(job?.attemptsMade) && job.attemptsMade > 0) entry.at = job.attemptsMade;
+    // Run id: every job of one chain (an edit, a sync, a rebuild) shares the
+    // id of the event that started it, so the history shows one row per run.
+    entry.rn = runIdFor(queueName, job);
     return Object.assign(entry, extra.fields || {});
 }
 
@@ -399,16 +410,22 @@ function startInlineActivity({ queueName, id, tenantId, jobName, trigger = TRIGG
 }
 
 /**
- * The `_trigger` to forward into downstream jobs and events, so a chain
- * started by a nightly cron, an AI agent, a bank sync or an import keeps its
- * label end to end. `{}` for user changes and admin rebuilds (`_rebuildMeta`
- * already travels on its own).
+ * What to forward into downstream jobs and events so a chain keeps its
+ * identity end to end:
+ *  - `_run`: the chain's run id (the root event's), so the history groups
+ *    every job of one edit / sync / rebuild into a single row;
+ *  - `_trigger`: who started it (nightly cron, AI agent, bank sync, import,
+ *    automatic refresh). Omitted for user changes and admin rebuilds
+ *    (`_rebuildMeta` already travels on its own).
  */
-function carryTrigger(queueName, job) {
+function carryOrigin(queueName, job) {
     try {
+        const origin = {};
+        const run = runIdFor(queueName, job);
+        if (run) origin._run = run;
         const trigger = resolveTrigger(queueName, job);
-        if (trigger === TRIGGERS.USER_CHANGE || trigger === TRIGGERS.MANUAL_REBUILD) return {};
-        return { _trigger: trigger };
+        if (trigger !== TRIGGERS.USER_CHANGE && trigger !== TRIGGERS.MANUAL_REBUILD) origin._trigger = trigger;
+        return origin;
     } catch {
         return {};
     }
@@ -439,7 +456,7 @@ module.exports = {
     createProgressReporter,
     dropEntry,
     startInlineActivity,
-    carryTrigger,
+    carryOrigin,
     resolveTrigger,
     classifyError,
     closeActivityTracker,

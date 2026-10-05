@@ -2701,6 +2701,7 @@ const fr = {
       nightly: "Nocturne",
       manual_rebuild: "Reconstruction",
       agent: "Agent IA",
+      auto_refresh: "Actualisation automatique",
     },
     states: {
       queued: "En attente",
@@ -2733,6 +2734,7 @@ const fr = {
     },
     time: {
       justNow: "à l'instant",
+      underSecond: "< 1 s",
       minutesAgo: "il y a {{count}} min",
       hoursAgo: "il y a {{count}} h",
       daysAgo: "il y a {{count}} j",
@@ -2755,6 +2757,8 @@ const fr = {
       took: "a duré {{time}}",
       finished: "terminé {{time}}",
       errorCode: "Erreur {{code}}",
+      steps_one: "{{count}} étape",
+      steps_other: "{{count}} étapes",
     },
     notification: {
       failed_one: "{{count}} mise à jour en arrière-plan a échoué",

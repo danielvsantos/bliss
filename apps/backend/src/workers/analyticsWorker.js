@@ -6,7 +6,7 @@ const { ANALYTICS_QUEUE_NAME } = require('../queues/analyticsQueue');
 const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/currencyService');
 const { enqueueEvent } = require('../queues/eventsQueue');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
-const { trackWorker, createProgressReporter } = require('../utils/activityTracker');
+const { trackWorker, createProgressReporter, carryOrigin } = require('../utils/activityTracker');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
@@ -553,8 +553,8 @@ const processAnalyticsJob = async (job, token) => {
             // (no downstream valuation cascade) from a routine full rebuild
             // that does want the cascade.
             ...(data._rebuildMeta ? { _rebuildMeta: data._rebuildMeta } : {}),
-            // Processing-status label of the chain (#100).
-            ...(data._trigger ? { _trigger: data._trigger } : {}),
+            // Processing-status run id + label of the chain (#100).
+            ...carryOrigin(ANALYTICS_QUEUE_NAME, job),
         });
 
 
