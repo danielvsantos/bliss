@@ -61,6 +61,11 @@ If none of the defaults fit, create a custom category from the Categories page:
 
 The description you write will show up as a tooltip in the category picker, helping you (and anyone else on the same tenant) pick consistently in the future. Investing 30 seconds to write a clear description pays back every time the AI or another user has to make a judgment call.
 
+Two settings change how a custom category behaves:
+
+- **Recurring charge** — Open a category and switch on **Recurring charge** to have its transactions show up on the [Subscriptions](/docs/guides/tracking-subscriptions) page, even from a single occurrence. Bliss already flags the obvious ones (software, media, insurance, internet, data plans).
+- **Investments and Debt types** — A custom category of type *Investments* creates a manually valued holding for each distinct description (so "Vintage watch" and "Art fund" are separate holdings), and one of type *Debt* creates a liability for the category. If you change a custom category's type, this follows it. Built-in categories are never altered.
+
 ## When the AI gets it wrong
 
 The 4-tier AI classifier ([details](/docs/guides/ai-classification)) learns from your corrections. When you override a category in the review step or after import, that mapping is stored immediately and applied to future identical transactions. Over time, ambiguous merchants get classified the way *you* want them.

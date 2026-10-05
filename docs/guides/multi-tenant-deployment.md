@@ -67,6 +67,8 @@ Set these per Railway service. Use `${{<service>.VAR}}` reference variables for 
 | `NEXTAUTH_URL` | API | The API's public HTTPS URL, e.g. `https://api.yoursite.com`. |
 | `FRONTEND_URL` | API | The web app's public origin, e.g. `https://app.yoursite.com`. Drives CORS -- exact match, no trailing slash. |
 | `COOKIE_DOMAIN` | API | `.yoursite.com` when web + API are siblings on one root domain (shared session). Leave unset otherwise -- never set it to a `*.up.railway.app` value (public suffix; browsers reject it). |
+| `SIGNUP_MODE` | API | Optional. `invite_only` restricts new sign-ups to invited emails; unset means open. See [Invite-only hosting](#invite-only-hosting). |
+| `ADMIN_API_KEY` | API | Optional operator credential. Required to manage invites when `SIGNUP_MODE=invite_only`. |
 | `NEXT_PUBLIC_API_URL` | Web (build arg) | Baked into the SPA bundle at build time. Rebuild the web image when it changes. |
 
 > **Port note:** Railway injects `PORT` and routes public traffic to it. The API and backend read `process.env.PORT`; the web/nginx image listens on `80` -- set the web service's target port to `80` in Railway's networking settings (or template `nginx.conf` to `listen ${PORT}`).
@@ -138,6 +140,26 @@ Each tenant gets:
 - Configurable thresholds (auto-promote, review confidence)
 
 Tenant data is fully isolated. A user in Tenant A cannot see or modify data belonging to Tenant B.
+
+Every sign-up creates its own tenant, and the first user in it is its admin. Friends on your server therefore get separate workspaces, not a view of yours.
+
+### Invite-only hosting
+
+If you host Bliss for a known group, you probably don't want sign-up open to the internet. Set `SIGNUP_MODE=invite_only` on the API and only emails you have invited can create an account, with email and password or with Google.
+
+```bash
+export ADMIN_API_KEY=...                   # same value as the API server
+export BLISS_API_URL=https://api.yoursite.com
+node apps/api/scripts/manage-invites.mjs add ana@example.com --note "Ana"
+node apps/api/scripts/manage-invites.mjs list --unused
+node apps/api/scripts/manage-invites.mjs revoke ana@example.com
+```
+
+- Invites are stored in the database, so you can add or revoke them without redeploying, and you can load them before switching the mode on.
+- An invite is single-use and matches the email exactly (case and surrounding spaces are ignored, but not dots or `+` tags). Existing users can always sign in.
+- Any value other than `open` or `invite_only` is treated as `invite_only`, so a typo locks sign-up instead of opening it.
+- Share the sign-up URL and the invited email with each person. For Claude users, also share the connector URL (your API address ending in `/api/mcp`). See [Bring Your Finances into Bliss with Claude](/docs/guides/bring-your-finances-with-claude).
+- Reference: [Configuration](/docs/configuration#invite-only-sign-up).
 
 ---
 

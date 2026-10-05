@@ -13,6 +13,7 @@ export default {
   'financial-insights': 'Financial Insights',
   'connecting-ai-agents': 'Connecting AI Agents & Other Systems',
   'using-bliss-with-claude-mcp': 'Use Bliss with Claude (MCP)',
+  'bring-your-finances-with-claude': 'Bring Your Finances into Bliss with Claude',
   'mcp-tool-reference': 'MCP Tool Reference',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
   maintenance: 'Maintenance',

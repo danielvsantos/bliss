@@ -41,6 +41,7 @@ The account detail view shows:
 - **Sync logs** with error details
 - **Token rotation** — re-authenticate if Plaid tokens expire
 - **Re-sync** — trigger a manual sync at any time
+- **Fetch older transactions** — pick a start date (up to two years back) to backfill history for that account. Connections start with a short window (`PLAID_HISTORY_DAYS`, default 1 day), so this is how you widen it after checking the first sync looks right, without reconnecting.
 
 ## Deleting an account
 

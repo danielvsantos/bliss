@@ -43,7 +43,7 @@ const FEATURE_MAP = {
   'deployment':               { title: 'Deployment Architecture',    order: 12, description: 'Docker Compose, START_MODE, scaling strategy' },
   'testing':                  { title: 'Testing & Observability',    order: 13, description: 'Vitest + Jest suites, Sentry integration, CI/CD pipeline' },
   'notifications':            { title: 'Notification Center',        order: 14, description: 'In-app notification system with read/unread tracking' },
-  'insights':                 { title: 'Insights Engine',            order: 15, description: 'AI-generated financial insights across 7 analysis lenses' },
+  'insights':                 { title: 'Insights Engine',            order: 15, description: 'AI-generated financial insights across 16 analysis lenses' },
   'dashboard-actions':        { title: 'Dashboard Actions',          order: 16, description: 'Dashboard widgets, quick actions, and onboarding checklist' },
   'tag-analytics':            { title: 'Tag Analytics',              order: 18, description: 'Multi-tag transaction analysis with dedicated cache tables' },
   'security-master':          { title: 'Security Master & Equity Analysis', order: 19, description: 'Nightly stock fundamentals refresh, equity deep-dive with earnings and dividends' },

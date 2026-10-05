@@ -15,7 +15,9 @@ only) without touching the database directly.
    your account isn't an admin — ask another admin on your tenant to
    grant the role from **Settings → Users**.
 
-The tab has five maintenance options. The history of recent rebuilds and live
+The tab has several maintenance options (analytics rebuilds, a full
+rebuild, a securities data refresh, a single-asset rebuild and a subscriptions
+full history scan). The history of the last 20 manual rebuilds and live
 progress moved to **Settings → Administration → Processing** in #100 (the
 **See progress** link at the bottom of Maintenance takes you there; see
 [Why are my numbers updating?](/docs/guides/processing-status)). All operations are **safe to run** — they rebuild caches from
@@ -163,6 +165,20 @@ Ask the admin on your tenant to run it for you. The Maintenance tab and
 its API endpoints return `403 Admin access required` for
 non-admin roles by design — rebuilds are expensive operations that
 admins should own.
+
+### "Annual or long-dormant subscriptions are missing from the Subscriptions page"
+
+The nightly detection looks back 6 months, so a yearly subscription may not
+have been charged inside that window.
+
+1. Go to **Settings → Maintenance**.
+2. Run **Subscriptions — full history scan**. It widens the lookback to 48
+   months and runs in the background.
+3. Open the **Subscriptions** page after a minute or so. Annual and older
+   subscriptions should now appear.
+
+Run it once after your first import. See
+[Tracking Subscriptions](/docs/guides/tracking-subscriptions) for how detection works.
 
 ---
 

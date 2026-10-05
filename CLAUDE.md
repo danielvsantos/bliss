@@ -16,7 +16,7 @@ Monorepo with four services behind a single `.env` file:
 
 **Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues. AI agents and other systems call the API with **integration tokens** (`Authorization: Bearer bliss_…`, see below) — directly or through the **MCP server** at `POST /api/mcp`.
 
-**Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 50+ migrations.
+**Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 65+ migrations.
 
 **⚠️ Version skew — dev/CI may be behind your deployment.** `docker-compose.yml` and both CI jobs pin `pgvector/pgvector:pg16`, so the test suite has never run against a major version above 16. Managed Postgres providers routinely provision something newer, so check what yours actually runs (`SHOW server_version`) — a `pg_dump` from a 16 client against a newer server refuses outright, which is usually how people find out. The least-covered code in the repo is exactly the code most exposed to a major-version difference: the raw-SQL `vector(768)` paths that Prisma does not model and that no migration declares. Treat a pgvector or planner-sensitive change as untested against your deployment until CI runs that major version too.
 
@@ -128,7 +128,7 @@ bliss/
       src/
         routes/           # Internal REST endpoints
         services/         # Business logic (classification, pricing, portfolio, analytics)
-        workers/          # BullMQ consumers (9 worker files)
+        workers/          # BullMQ consumers (9 workers; `commitWorker.js` is a helper called by smartImportWorker)
         queues/           # Queue definitions
         config/           # Classification thresholds, constants
         middleware/       # apiKeyAuth
@@ -145,7 +145,7 @@ bliss/
       content/            # MDX/Markdown pages, guides
       public/openapi/     # OpenAPI YAML specs
   packages/shared/        # Encryption + storage adapters
-  prisma/                 # Schema + 50+ migrations + seed
+  prisma/                 # Schema + 65+ migrations + seed
   docker/                 # Dockerfiles + nginx config
   scripts/                # setup.sh
   docs/                   # Architecture, config, specs, OpenAPI
@@ -346,10 +346,10 @@ Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
 
 | Worker | Queue | Concurrency | Purpose |
 |--------|-------|-------------|---------|
-| `eventSchedulerWorker` | event-scheduler | 1 | Routes typed events to appropriate queues |
+| `eventSchedulerWorker` | events | 1 | Routes typed events to appropriate queues |
 | `smartImportWorker` | smart-import | 1 | CSV parse, dedup, classify, stage; also dispatches `commit-smart-import` jobs to `commitWorker` |
 | `plaidSyncWorker` | plaid-sync | 1 | Incremental Plaid transaction fetch |
-| `plaidProcessorWorker` | plaid-processor | 1 | Classify and persist Plaid transactions |
+| `plaidProcessorWorker` | plaid-processing | 1 | Classify and persist Plaid transactions |
 | `portfolioWorker` | portfolio | 5 | FIFO lots, PnL, valuation, cash holdings, **nightly revaluation (4 AM UTC)** |
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
 | `insightGeneratorWorker` | insights | 1 | Tiered AI insights: 6 AM UTC scheduling heartbeat that auto-triggers monthly/quarterly/annual on their calendar windows, portfolio intel (Mon 5 AM) |
@@ -399,9 +399,9 @@ Detailed specs live in `docs/` and are organized by layer:
 - `docs/architecture.md` -- Full system design
 - `docs/configuration.md` -- Environment variable reference
 - `docs/guides/` -- How-to guides (Docker setup, imports, portfolios, etc.)
-- `docs/specs/api/` -- API endpoint specifications (15 spec files)
-- `docs/specs/backend/` -- Backend service specifications (12 spec files)
-- `docs/specs/frontend/` -- Frontend component specifications (16 spec files)
-- `docs/openapi/` -- OpenAPI/Swagger definitions (19 YAML files)
+- `docs/specs/api/` -- API endpoint specifications (21 spec files)
+- `docs/specs/backend/` -- Backend service specifications (15 spec files)
+- `docs/specs/frontend/` -- Frontend component specifications (20 spec files)
+- `docs/openapi/` -- OpenAPI/Swagger definitions (24 YAML files)
 
 When working on a specific feature, read the relevant spec file(s) for full context on data models, business rules, and edge cases.

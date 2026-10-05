@@ -4,6 +4,8 @@ The **Passive Income** page (Reports → Passive Income) shows how much your hol
 
 Everything is **gross** (before tax) and shown in your portfolio currency, converted at today's rates.
 
+![Passive Income page showing the projected 12-month outlook next to income received over the last 12 months](/images/passiveincome.png)
+
 ## What counts as passive income
 
 | Source | Where the numbers come from |
