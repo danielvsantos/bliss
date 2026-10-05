@@ -616,6 +616,8 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 | GCS_BUCKET_NAME             | --               | Google Cloud Storage bucket          |
 | REDIS_SKIP_TLS_CHECK        | false            | Skip TLS verification (dev only)    |
 | COOKIE_DOMAIN               | --               | Cookie domain for cross-subdomain   |
+| SIGNUP_MODE                 | open             | "open" or "invite_only" (only invited emails can sign up; unknown values fail closed) |
+| ADMIN_API_KEY               | --               | Operator credential (`x-admin-key`) for admin routes, including managing invites; fails closed when unset |
 
 ---
 
