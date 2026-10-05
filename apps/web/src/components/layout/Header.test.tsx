@@ -31,6 +31,7 @@ vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ signOut: vi.fn(), user: { name: 'Ada Lovelace', email: 'ada@example.com' } }),
 }));
 vi.mock('@/components/notification-center', () => ({ NotificationCenter: () => <div /> }));
+vi.mock('@/components/processing/ActivityChip', () => ({ ActivityChip: () => <div data-testid="activity-chip-slot" /> }));
 vi.mock('@/components/language-switcher', () => ({ LanguageSwitcher: () => <div /> }));
 
 import { Header } from './Header';
@@ -54,5 +55,12 @@ describe('Header page title', () => {
       unmount();
     }
     currentLang = 'en';
+  });
+});
+
+describe('Header processing status (#100)', () => {
+  it('mounts the processing-status chip next to the notification bell', () => {
+    renderAt('/');
+    expect(screen.getByTestId('activity-chip-slot')).toBeInTheDocument();
   });
 });

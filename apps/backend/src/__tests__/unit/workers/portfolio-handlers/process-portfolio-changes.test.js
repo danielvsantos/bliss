@@ -685,6 +685,8 @@ describe('process-portfolio-changes — transaction delete reconciles the item a
       newSecuritySymbols: [],
       dateScopes: [{ year: 2026, month: 8, currency: 'EUR', type: 'Investments', group: 'ETFs', country: 'PT' }],
       _rebuildMeta: { rebuildType: 'x' },
+      // Processing status (#100): the chain started here, so its run id is this job's.
+      _run: 'portfolio:job-1',
     });
     // The cash item is looked up, never created by a delete.
     expect(prisma.portfolioItem.upsert).not.toHaveBeenCalled();

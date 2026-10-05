@@ -22,6 +22,7 @@ import { AccountDetailPanel } from '@/components/accounts/account-detail-panel';
 import { AddAccountModal } from '@/components/accounts/add-account-modal';
 import { PlaidConnect } from '@/components/plaid-connect';
 import type { Account } from '@/types/api';
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 export default function AccountsPage() {
   const { t } = useTranslation();
@@ -114,6 +115,8 @@ export default function AccountsPage() {
   return (
     <>
       <div className="flex flex-col h-full">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['BANK_SYNC']} invalidate={[['account-list'], ['plaid-items'], ['accounts']]} className="mx-6 mt-4" />
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4">
           <div>

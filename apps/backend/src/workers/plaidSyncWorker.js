@@ -6,6 +6,7 @@ const { getRedisConnection } = require('../utils/redis');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const logger = require('../utils/logger');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker } = require('../utils/activityTracker');
 
 const QUEUE_NAME = 'plaid-sync';
 const PAGE_SIZE = 500;
@@ -282,7 +283,8 @@ const startPlaidSyncWorker = () => {
             // Pass source so the processor can decide whether to run the Quick Seed interview
             // (seedHeld behaviour is only appropriate for INITIAL_SYNC — the user is present)
             const processingQueue = getPlaidProcessingQueue();
-            await processingQueue.add('PLAID_SYNC_COMPLETE', { plaidItemId, source });
+            // tenantId lets the processing-status tracker attribute this job (#100).
+            await processingQueue.add('PLAID_SYNC_COMPLETE', { plaidItemId, source, tenantId: plaidItem.tenantId });
 
         } catch (error) {
             // Write sync log — FAILED
@@ -347,6 +349,9 @@ const startPlaidSyncWorker = () => {
     });
 
     logger.info(`Plaid Sync Worker started on queue: ${QUEUE_NAME}`);
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, QUEUE_NAME);
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;

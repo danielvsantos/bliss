@@ -13,6 +13,7 @@ import { IncomeBreakdown } from '@/components/passive-income/income-breakdown';
 import { IncomeStreamsCard } from '@/components/passive-income/streams-card';
 import { DetachedTermsSection } from '@/components/passive-income/detached-terms';
 import type { BreakdownView, IncomeStream, PassiveIncomeGroup, PassiveIncomeItem } from '@/types/passive-income';
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 type Horizon = 12 | 24 | 36;
 const HORIZONS: Horizon[] = [12, 24, 36];
@@ -137,6 +138,8 @@ export default function PassiveIncomePage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-6">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['PORTFOLIO_UPDATE', 'SECURITY_DATA', 'ANALYTICS_UPDATE']} invalidate={[['passive-income']]} />
         {/* ── Title + horizon ── */}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>

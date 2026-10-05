@@ -9,6 +9,7 @@ const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { isRateLimitError } = require('../services/llm');
 const { computeTransactionHash, buildDuplicateHashSet } = require('../utils/transactionHash');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker } = require('../utils/activityTracker');
 const {
     DEFAULT_AUTO_PROMOTE_THRESHOLD,
     DEFAULT_REVIEW_THRESHOLD,
@@ -561,7 +562,7 @@ const startPlaidProcessorWorker = () => {
                     `and ${counters.totalRetryScheduled} failed row(s)`
                 );
                 const retryQueue = getPlaidProcessingQueue();
-                await retryQueue.add('PLAID_SYNC_COMPLETE', { plaidItemId, source }, { delay: 60_000 });
+                await retryQueue.add('PLAID_SYNC_COMPLETE', { plaidItemId, source, tenantId }, { delay: 60_000 });
             }
 
             // ─── Fire deferred feedback calls (cache + vector embedding updates) ─
@@ -618,6 +619,9 @@ const startPlaidProcessorWorker = () => {
     });
 
     logger.info(`Plaid Processor Worker started on queue: ${QUEUE_NAME}`);
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, QUEUE_NAME);
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;

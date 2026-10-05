@@ -181,7 +181,7 @@ describe('dynamic client registration', () => {
 });
 
 describe('full flow', () => {
-  it('read-only consent → 21 tools; refresh rotates; reuse revokes the connection', async () => {
+  it('read-only consent → 22 tools; refresh rotates; reuse revokes the connection', async () => {
     const { body: client } = await register();
     const flow = await authorizeAndApprove({ clientId: client.client_id, accessLevel: 'READ_ONLY' });
     expect(flow.consent.status).toBe(200);
@@ -202,7 +202,7 @@ describe('full flow', () => {
     expect(tokens.refresh_token).toMatch(/^bliss_rt_/);
 
     const mcp = await connectMcp(server.baseUrl, tokens.access_token);
-    expect((await mcp.listTools()).tools).toHaveLength(21);
+    expect((await mcp.listTools()).tools).toHaveLength(22);
     await mcp.close();
 
     // The connection shows up in Settings → Integrations.
@@ -235,13 +235,13 @@ describe('full flow', () => {
     expect((await prisma.integration.findUnique({ where: { id: integration.id } }))!.revokedAt).not.toBeNull();
   });
 
-  it('read & write consent → 40 tools; revoking in Settings stops refresh', async () => {
+  it('read & write consent → 41 tools; revoking in Settings stops refresh', async () => {
     const { body: client } = await register();
     const flow = await authorizeAndApprove({ clientId: client.client_id, accessLevel: 'READ_WRITE' });
     const { body: tokens } = await exchange(client.client_id, flow.code!, flow.verifier);
     expect(tokens.scope).toBe('mcp:read mcp:write');
     const mcp = await connectMcp(server.baseUrl, tokens.access_token);
-    expect((await mcp.listTools()).tools).toHaveLength(40);
+    expect((await mcp.listTools()).tools).toHaveLength(41);
     await mcp.close();
 
     const integrationId = (await prisma.oAuthAuthorizationRequest.findUnique({ where: { id: flow.requestId } }))!.integrationId!;

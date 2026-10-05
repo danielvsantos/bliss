@@ -19,6 +19,7 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 | [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp) | Connect Claude Code, Claude Desktop or any MCP client and manage your finances in plain language |
 | [Bring Your Finances into Bliss with Claude](/docs/guides/bring-your-finances-with-claude) | Let Claude interview you, build an import plan and guide you through it step by step |
 | [MCP Tool Reference](/docs/guides/mcp-tool-reference) | Every MCP tool, its parameters and the REST endpoints it wraps |
+| [Why Are My Numbers Updating?](/docs/guides/processing-status) | The header status chip, page banners and the Processing tab: what is recalculating and when it's done |
 | [Multi-Tenant Deployment](/docs/guides/multi-tenant-deployment) | Recommended architecture for hosting Bliss as a multi-user service |
 | [Maintenance](/docs/guides/maintenance) | Fix stale or wrong data, rebuild caches, and verify what is deployed |
 | [Key Rotation](/docs/guides/key-rotation) | Rotating `ENCRYPTION_SECRET` and every other Bliss-owned secret safely |

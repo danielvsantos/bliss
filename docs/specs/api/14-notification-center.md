@@ -101,6 +101,7 @@ Signal types are aggregated from existing tables via 8 parallel queries (includi
 | `PLAID_CLASSIFICATION_FAILED` | `PlaidTransaction` (status `FAILED`) | Count of `FAILED` rows | Always `true` (actionable) — kept as its own signal rather than folded into `PENDING_REVIEW`'s count, since a classification failure is a data-completeness risk, not routine pending work |
 | `ONBOARDING_INCOMPLETE` | `Tenant.onboardingCompletedAt` + account/transaction counts | Number of incomplete onboarding steps | Always `false` (not urgent) |
 | `NEW_INSIGHTS` | `Insight` (not dismissed) | Count of insights created after `lastSeenAt` | `true` if any `createdAt > lastSeenAt` |
+| `PROCESSING_FAILED` (#100) | Processing-status hash in **Redis** (`readActivity()`, no Prisma — see [26-activity-api.md](26-activity-api.md)) | Background jobs that failed on their **final** attempt with `finishedAt > lastSeenAt` (last 24 h) | Always `true`. `href` is `/settings?tab=processing` for admins and `null` for other roles (label only). Redis down → signal omitted |
 
 All queries are scoped to `req.user.tenantId`. Signals with `count: 0` are omitted from the response (guarded by `if (count > 0)`).
 
@@ -125,7 +126,7 @@ Each signal in the `signals` array has the following structure:
 | `type` | string | Signal identifier (e.g., `PENDING_REVIEW`) |
 | `count` | integer | Number of items in this signal |
 | `label` | string | Dynamic human-readable description with count (e.g., "3 transactions awaiting review") |
-| `href` | string | Frontend route to navigate to (e.g., `/agents/review`) |
+| `href` | string \| null | Frontend route to navigate to (e.g., `/agents/review`). `null` = label only (`PROCESSING_FAILED` for non-admins) |
 | `severity` | string | Color hint for the frontend (`positive`, `warning`, `info`) |
 | `isNew` | boolean | Whether this signal contributes to `totalUnseen` |
 

@@ -14,7 +14,9 @@ import {
   Clock,
 } from 'lucide-react';
 
+import { Link } from 'react-router-dom';
 import { useRebuildStatus, useTriggerRebuild } from '@/hooks/use-rebuild';
+import { SCOPE_LABEL, formatRelativeTime } from '@/lib/rebuild-labels';
 import { useRefreshFundamentals } from '@/hooks/use-refresh-fundamentals';
 import { useSubscriptions, useFullHistoryScan } from '@/hooks/use-subscriptions';
 import { useToast } from '@/hooks/use-toast';
@@ -59,17 +61,6 @@ function formatTtl(seconds: number | null): string {
   return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
 }
 
-function formatRelativeTime(isoString: string | null): string {
-  if (!isoString) return '—';
-  const then = Date.parse(isoString);
-  if (Number.isNaN(then)) return '—';
-  const elapsed = Math.floor((Date.now() - then) / 1000);
-  if (elapsed < 60) return `${elapsed}s ago`;
-  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m ago`;
-  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)}h ago`;
-  return `${Math.floor(elapsed / 86400)}d ago`;
-}
-
 function findLock(locks: RebuildLockInfo[] | undefined, scope: RebuildScope) {
   return locks?.find((l) => l.scope === scope);
 }
@@ -77,37 +68,6 @@ function findLock(locks: RebuildLockInfo[] | undefined, scope: RebuildScope) {
 function findCurrent(current: RebuildJob[] | undefined, scope: RebuildScope) {
   return current?.find((j) => j.rebuildType === scope);
 }
-
-const SCOPE_LABEL: Record<RebuildScope, string> = {
-  // "Full rebuild" rather than "Full portfolio" — this scope runs the
-  // entire chain (portfolio items → cash holdings → analytics →
-  // valuation + loan processors), not just the portfolio piece.
-  // Calling it "portfolio" was misleading in practice.
-  'full-portfolio': 'Full rebuild',
-  'full-analytics': 'Full analytics',
-  'scoped-analytics': 'Scoped analytics',
-  'single-asset': 'Single asset',
-  'security-data': 'Securities data',
-};
-
-// Human-readable label per BullMQ job name. Used in the history list
-// so each subjob of a multi-step chain is distinguishable at a glance
-// (e.g., a `full-portfolio` rebuild produces 4 rows — each carrying the
-// same scope label but a different step label). Falls back to the raw
-// name if we don't have a mapping (future-proofing against new jobs).
-const STEP_LABEL: Record<string, string> = {
-  'process-portfolio-changes': 'Sync transactions → portfolio items',
-  'process-cash-holdings':     'Rebuild cash holdings',
-  'full-rebuild-analytics':    'Rebuild analytics',
-  'value-all-assets':          'Revalue all assets',
-  'scoped-update-analytics':   'Rebuild analytics (scoped)',
-  'value-portfolio-items':     'Revalue selected asset(s)',
-  'process-amortizing-loan':   'Rebuild amortizing loans',
-  'process-simple-liability':  'Rebuild simple liabilities',
-  // Passive Income #77: a step of the full rebuild (missing/stale symbols) and
-  // the whole of the `security-data` scope (all of this tenant's symbols).
-  'refresh-tenant-securities': 'Refresh securities data',
-};
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
@@ -263,77 +223,6 @@ function AssetPicker({ items, value, onChange }: AssetPickerProps) {
         </Command>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function JobStateBadge({ state }: { state: RebuildJob['state'] }) {
-  const config: Record<RebuildJob['state'], { label: string; className: string; icon: typeof CheckCircle2 }> = {
-    completed: { label: 'Completed', className: 'bg-positive/10 text-positive border-positive/20', icon: CheckCircle2 },
-    failed:    { label: 'Failed',    className: 'bg-destructive/10 text-destructive border-destructive/20', icon: XCircle },
-    active:    { label: 'Running',   className: 'bg-brand-primary/10 text-brand-primary border-brand-primary/20', icon: Loader2 },
-    waiting:   { label: 'Queued',    className: 'bg-warning/10 text-warning border-warning/20', icon: Clock },
-    delayed:   { label: 'Delayed',   className: 'bg-warning/10 text-warning border-warning/20', icon: Clock },
-    unknown:   { label: 'Unknown',   className: 'bg-muted text-muted-foreground border-border', icon: AlertTriangle },
-  };
-  const c = config[state] ?? config.unknown;
-  const Icon = c.icon;
-  return (
-    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border', c.className)}>
-      <Icon className={cn('h-3 w-3', state === 'active' && 'animate-spin')} />
-      {c.label}
-    </span>
-  );
-}
-
-function RebuildHistoryList({ recent }: { recent: RebuildJob[] }) {
-  if (recent.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground py-6 text-center">
-        No recent rebuilds. Completed rebuilds are retained for 30 days.
-      </p>
-    );
-  }
-  return (
-    <div className="divide-y">
-      {recent.map((job) => {
-        // Scope label (e.g. "Full rebuild") identifies the rebuild type;
-        // step label (e.g. "Revalue all assets") identifies WHICH subjob
-        // of that rebuild this row represents. For single-step scopes
-        // (full-analytics, scoped-analytics, single-asset) the two
-        // collapse into one, so we suppress the step suffix when it's
-        // redundant.
-        const scopeLabel = job.rebuildType ? SCOPE_LABEL[job.rebuildType] : job.name;
-        const stepLabel = STEP_LABEL[job.name] ?? job.name;
-        const showStep = job.rebuildType === 'full-portfolio' && stepLabel !== scopeLabel;
-        return (
-          <div key={String(job.id)} className="py-3 flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-sm">{scopeLabel}</span>
-                {showStep && (
-                  <span className="text-xs text-muted-foreground">· {stepLabel}</span>
-                )}
-                <JobStateBadge state={job.state} />
-              </div>
-              <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                {job.requestedBy ? `by ${job.requestedBy} · ` : ''}
-                {job.finishedAt
-                  ? `finished ${formatRelativeTime(job.finishedAt)}`
-                  : job.requestedAt
-                    ? `requested ${formatRelativeTime(job.requestedAt)}`
-                    : ''}
-                {job.attemptsMade > 1 ? ` · ${job.attemptsMade} attempts` : ''}
-              </div>
-              {job.failedReason && (
-                <p className="text-xs text-destructive mt-1 truncate" title={job.failedReason}>
-                  {job.failedReason}
-                </p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -671,22 +560,15 @@ export function MaintenanceTab() {
         </div>
       </Card>
 
-      {/* ─── History ───────────────────────────────────────────────────── */}
-      <Card className="p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <History className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-medium">Recent rebuilds</h3>
+      {/* ─── Progress & history: moved to Settings → Processing (#100) ─── */}
+      <Card className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <History className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">{t('activity.maintenance.seeProgressHint')}</p>
         </div>
-        <Separator />
-        {statusLoading ? (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-12 rounded-md bg-muted animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <RebuildHistoryList recent={status?.recent ?? []} />
-        )}
+        <Button asChild variant="outline" size="sm" className="shrink-0">
+          <Link to="/settings?tab=processing">{t('activity.maintenance.seeProgress')}</Link>
+        </Button>
       </Card>
 
     </div>

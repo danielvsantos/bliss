@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { SMART_IMPORT_QUEUE_NAME } = require('../queues/smartImportQueue');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker } = require('../utils/activityTracker');
 const { parseFile } = require('../services/adapterEngine');
 const twelveDataService = require('../services/twelveDataService');
 const cryptoService = require('../services/cryptoService');
@@ -1013,6 +1014,9 @@ const startSmartImportWorker = () => {
     });
 
     logger.info(`Smart Import Worker started on queue: ${SMART_IMPORT_QUEUE_NAME}`);
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, SMART_IMPORT_QUEUE_NAME);
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;

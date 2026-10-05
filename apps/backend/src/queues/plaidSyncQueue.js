@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
+const { trackQueue } = require('../utils/activityTracker');
 
 const PLAID_SYNC_QUEUE_NAME = 'plaid-sync';
 
@@ -16,6 +17,8 @@ const getPlaidSyncQueue = () => {
                 removeOnFail: { age: 24 * 3600 },
             },
         });
+        // Processing status (#100): a `queued` entry for every tenant job added.
+        trackQueue(plaidSyncQueueInstance);
     }
     return plaidSyncQueueInstance;
 };

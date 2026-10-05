@@ -39,6 +39,8 @@ components:
             - PLAID_ACTION_REQUIRED
             - ONBOARDING_INCOMPLETE
             - NEW_INSIGHTS
+            - PLAID_CLASSIFICATION_FAILED
+            - PROCESSING_FAILED
           example: "PENDING_REVIEW"
         count:
           type: integer
@@ -50,7 +52,10 @@ components:
           example: "transactions awaiting review"
         href:
           type: string
-          description: Frontend route to navigate to.
+          nullable: true
+          description: >
+            Frontend route to navigate to. null = label only (PROCESSING_FAILED
+            for non-admin roles).
           example: "/agents/review"
         severity:
           type: string
@@ -104,6 +109,11 @@ paths:
         - PLAID_ACTION_REQUIRED: PlaidItem (LOGIN_REQUIRED/ERROR)
         - ONBOARDING_INCOMPLETE: Tenant.onboardingProgress
         - NEW_INSIGHTS: Insight (created after lastSeenAt, not dismissed)
+        - PLAID_CLASSIFICATION_FAILED: PlaidTransaction (FAILED)
+        - PROCESSING_FAILED (#100): background jobs that failed on their final
+          attempt since lastSeenAt, read from the processing-status hash in
+          Redis (see activity.yaml). Links admins to /settings?tab=processing;
+          href is null for other roles.
 
         No dedicated notification table is used.
       responses:

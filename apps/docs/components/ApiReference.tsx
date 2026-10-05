@@ -55,6 +55,7 @@ const CATEGORIES: { name: string; specs: Spec[] }[] = [
       { id: 'tenants', label: 'Tenants', file: 'tenants.yaml' },
       { id: 'onboarding', label: 'Onboarding', file: 'onboarding.yaml' },
       { id: 'notifications', label: 'Notifications', file: 'notifications.yaml' },
+      { id: 'activity', label: 'Processing Status', file: 'activity.yaml' },
       { id: 'users', label: 'Users', file: 'users.yaml' },
     ],
   },

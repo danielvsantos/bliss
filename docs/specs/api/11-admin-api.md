@@ -1,6 +1,6 @@
 # 11. Admin API
 
-Internal administration endpoints for managing default categories, the cross-tenant classification system and the invite-only sign-up allowlist. These endpoints are **not user-facing** — they are used by Bliss operations staff for category provisioning, metadata maintenance, and embedding quality management.
+Internal administration endpoints for managing default categories, the cross-tenant classification system and the invite-only sign-up allowlist. These endpoints are **not user-facing** — they are used by Bliss operations staff for category provisioning, metadata maintenance, and embedding quality management. (Tenant-admin rebuilds live in [03-reference-data-management.md §3.4](03-reference-data-management.md#34-maintenance--rebuild-operations); since #100 their history is shown in Settings → Processing, see [26-activity-api.md](26-activity-api.md).)
 
 > **LLM provider abstraction.** Embeddings are generated via `services/llm/` (supports Gemini, OpenAI, or Anthropic). References to "Gemini" below refer to the currently-configured embedding provider. See [Backend Spec 20 — LLM Provider Abstraction](../backend/20-llm-provider-abstraction.md).
 

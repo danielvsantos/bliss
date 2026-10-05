@@ -5,6 +5,7 @@ const { getRedisConnection } = require('../utils/redis');
 const { PORTFOLIO_QUEUE_NAME, getPortfolioQueue, fullValuationDedupOpts } = require('../queues/portfolioQueue');
 const prisma = require('../../prisma/prisma');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
+const { trackWorker, createProgressReporter, carryOrigin } = require('../utils/activityTracker');
 const { createHeartbeat } = require('../utils/jobHeartbeat');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
 
@@ -30,6 +31,10 @@ const processPortfolioJob = async (job, token) => {
         lockDurationMs: 300_000,
         name: 'portfolioWorker',
     });
+    // Processing status (#100): `done / total` progress for the handlers.
+    // Attached as an own property, like `heartbeat`, so it survives the
+    // `{ ...job, data }` spread the handlers are called with.
+    job.reportProgress = createProgressReporter(job, PORTFOLIO_QUEUE_NAME);
 
     try {
         switch (name) {
@@ -48,6 +53,8 @@ const processPortfolioJob = async (job, token) => {
                     ...(originalScope !== undefined && { originalScope }),
                     ...(portfolioItemIds !== undefined && { portfolioItemIds }),
                     ...(_rebuildMeta ? { _rebuildMeta } : {}),
+                    // Processing-status run id + label, forwarded by the cash processor (#100).
+                    ...carryOrigin(PORTFOLIO_QUEUE_NAME, job),
                 };
                 return await processCashHoldings(tenantId, enrichedScope);
             }
@@ -194,12 +201,15 @@ const processPortfolioJob = async (job, token) => {
                         // forward-fill logic in the valuation engine.
                         // The shared dedup key also stops this overlapping an
                         // import-triggered full valuation already in flight.
-                        await queue.add('value-all-assets', { tenantId: tenant.id }, {
+                        // `_trigger` labels the work "Nightly" in the processing status (#100).
+                        // One run id groups the tenant's three nightly jobs into one history row.
+                        const nightly = { tenantId: tenant.id, _trigger: 'nightly', _run: dedupePrefix };
+                        await queue.add('value-all-assets', { ...nightly }, {
                             jobId: `${dedupePrefix}-valuation`,
                             ...fullValuationDedupOpts(tenant.id),
                         });
-                        await queue.add('process-simple-liability', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-liability` });
-                        await queue.add('process-amortizing-loan', { tenantId: tenant.id }, { jobId: `${dedupePrefix}-amortizing` });
+                        await queue.add('process-simple-liability', { ...nightly }, { jobId: `${dedupePrefix}-liability` });
+                        await queue.add('process-amortizing-loan', { ...nightly }, { jobId: `${dedupePrefix}-amortizing` });
 
                         enqueued++;
                         logger.info(`[NightlyRevaluation] Enqueued revaluation jobs for tenant ${tenant.id}`);
@@ -287,6 +297,9 @@ const startPortfolioWorker = () => {
         extra: { jobData: job?.data },
       });
     });
+
+    // Processing status (#100): running / progress / completed / final failure.
+    trackWorker(worker, PORTFOLIO_QUEUE_NAME);
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;

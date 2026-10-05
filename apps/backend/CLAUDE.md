@@ -127,6 +127,10 @@ const startWorker = () => {
 };
 ```
 
+### Processing status — MANDATORY wiring (#100)
+
+Every queue factory calls `trackQueue(instance)` and every worker start function calls `trackWorker(worker, QUEUE_NAME)` (from `utils/activityTracker.js`), and every tenant job name is mapped in `config/activityMap.js`. Otherwise the job never shows in the user's processing status. The tracker is fire-and-forget and never throws. Forward `_trigger` from `job.data` into any event a handler emits. See `docs/specs/backend/23-activity-tracking.md`.
+
 ### Failure reporting — MANDATORY pattern
 
 All workers **must** use `reportWorkerFailure` from `src/utils/workerFailureReporter.js`

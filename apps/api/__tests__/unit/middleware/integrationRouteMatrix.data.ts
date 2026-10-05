@@ -59,6 +59,8 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   'admin/invites.js': { auth: 'adminKey', methods: DENY_ALL(['GET', 'POST', 'DELETE']) },
 
   // ── Analytics / reference data ────────────────────────────────────────────
+  // Processing status (#100): read-only, so agents can wait for derived data to settle.
+  'activity.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'analytics.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
   'analytics/tags.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'banks.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
@@ -113,7 +115,8 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
 
   // ── Insights, notifications, onboarding, subscriptions, tags ─────────────
   'insights.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT', 'POST']) },
-  'notifications/summary.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT']) },
+  // The inline admin check only picks the PROCESSING_FAILED link (#100); it gates no method.
+  'notifications/summary.js': { auth: 'withAuth', inlineAdmin: [], methods: RW_ALL(['GET', 'PUT']) },
   'onboarding/progress.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'PUT']) },
   'subscriptions.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST']) },
   'tags.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },

@@ -32,6 +32,7 @@ import { MobileFilterDrawer } from '@/components/ui/mobile-filter-drawer';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { translateCategoryGroup, translateCategoryName } from '@/lib/category-i18n';
 import type { Transaction, Account, Category } from '@/types/api';
+import { markActivityPending } from '@/lib/activity-pending';
 
 /* ── Background color by category type ── */
 function getCategoryBg(type?: string): string {
@@ -150,6 +151,8 @@ export default function TransactionsPage() {
     setIsDeleting(true);
     try {
       await api.deleteTransaction(selectedTransaction.id);
+      // Processing status (#100): portfolio + analytics recalculate in the background.
+      markActivityPending(['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE']);
       toast({
         title: t('notifications.success.deleted'),
         description: t('notifications.success.deleted'),

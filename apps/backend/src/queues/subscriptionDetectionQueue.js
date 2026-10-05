@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
+const { trackQueue } = require('../utils/activityTracker');
 const logger = require('../utils/logger');
 
 const SUBSCRIPTION_DETECTION_QUEUE_NAME = 'subscription-detection';
@@ -25,6 +26,8 @@ const getSubscriptionDetectionQueue = () => {
                 },
             },
         });
+        // Processing status (#100): a `queued` entry for every tenant job added.
+        trackQueue(subscriptionDetectionQueueInstance);
 
         subscriptionDetectionQueueInstance.on('error', (error) => {
             logger.error('Subscription detection queue error:', { error: error.message });

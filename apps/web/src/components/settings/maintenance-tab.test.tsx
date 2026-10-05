@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 
 import { MaintenanceTab } from './maintenance-tab';
 import { api } from '@/lib/api';
@@ -26,7 +27,9 @@ function renderTab() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MaintenanceTab />
+      <MemoryRouter>
+        <MaintenanceTab />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -81,7 +84,9 @@ describe('MaintenanceTab', () => {
     expect(screen.getByRole('heading', { name: 'maintenance.globalFundamentals.title' })).toBeInTheDocument();
     expect(screen.getByText('maintenance.fullRebuildSecuritiesStep')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rebuild a single asset' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Recent rebuilds' })).toBeInTheDocument();
+    // Rebuild history moved to Settings → Processing (#100, AC12).
+    expect(screen.queryByRole('heading', { name: 'Recent rebuilds' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'activity.maintenance.seeProgress' })).toHaveAttribute('href', '/settings?tab=processing');
   });
 
   it('calls refreshStockFundamentals when the Refresh fundamentals button is clicked', async () => {
@@ -143,10 +148,10 @@ describe('MaintenanceTab', () => {
 
     // Wait for the status query to resolve — the buttons are
     // `disabled={statusLoading}` during the initial fetch, and clicks
-    // on disabled buttons are silently dropped. Use the empty-state
-    // message as the "loaded" signal.
+    // on disabled buttons are silently dropped. Use the asset picker
+    // (rendered once status has loaded) as the "loaded" signal.
     await waitFor(() => {
-      expect(screen.getByText(/No recent rebuilds\./)).toBeInTheDocument();
+      expect(screen.getByText(/Select an asset…/)).toBeInTheDocument();
     });
 
     const button = screen.getByRole('button', { name: /Rebuild analytics$/ });
@@ -173,7 +178,7 @@ describe('MaintenanceTab', () => {
     renderTab();
 
     await waitFor(() => {
-      expect(screen.getByText(/No recent rebuilds\./)).toBeInTheDocument();
+      expect(screen.getByText(/Select an asset…/)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'maintenance.securityData.button' }));
@@ -184,7 +189,7 @@ describe('MaintenanceTab', () => {
     expect(vi.mocked(api.triggerRebuild).mock.calls[0][0]).toMatchObject({ scope: 'security-data' });
   });
 
-  it('shows the security-data lock and a "Refresh securities data" history step', async () => {
+  it('shows the security-data lock', async () => {
     vi.mocked(api.getRebuildStatus).mockResolvedValue({
       ...emptyStatus,
       locks: [{ scope: 'security-data', held: true, ttlSeconds: 1800 }],
@@ -219,10 +224,8 @@ describe('MaintenanceTab', () => {
     renderTab();
 
     await waitFor(() => {
-      expect(screen.getByText('Securities data')).toBeInTheDocument();
+      expect(screen.getByText(/Next available in 30m/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Refresh securities data/)).toBeInTheDocument();
-    expect(screen.getByText(/Next available in 30m/)).toBeInTheDocument();
   });
 
   it('disables the button and shows "Running" when a rebuild of the same scope is in flight', async () => {
@@ -271,18 +274,6 @@ describe('MaintenanceTab', () => {
     });
   });
 
-  it('shows the empty-state message when there are no recent rebuilds', async () => {
-    vi.mocked(api.getRebuildStatus).mockResolvedValue(emptyStatus);
-
-    renderTab();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/No recent rebuilds\./),
-      ).toBeInTheDocument();
-    });
-  });
-
   it('renders the single-asset picker without crashing (uses status.assets, not /api/portfolio/items)', async () => {
     // Regression 1: the first Maintenance-tab deploy crashed with
     // `items.find is not a function` because the component treated
@@ -305,81 +296,5 @@ describe('MaintenanceTab', () => {
     // status query to resolve and the placeholder to swap in the real
     // picker trigger.
     expect(await screen.findByText(/Select an asset…/)).toBeInTheDocument();
-  });
-
-  it('renders a history entry for a completed rebuild', async () => {
-    vi.mocked(api.getRebuildStatus).mockResolvedValue({
-      ...emptyStatus,
-      recent: [
-        {
-          id: 42,
-          name: 'full-rebuild-analytics',
-          state: 'completed',
-          progress: 100,
-          rebuildType: 'full-analytics',
-          requestedBy: 'alice@example.com',
-          requestedAt: '2026-04-23T10:00:00.000Z',
-          startedAt: '2026-04-23T10:00:02.000Z',
-          finishedAt: new Date(Date.now() - 60_000).toISOString(),
-          failedReason: null,
-          attemptsMade: 1,
-        },
-      ],
-    });
-
-    renderTab();
-
-    await waitFor(() => {
-      expect(screen.getByText('Full analytics')).toBeInTheDocument();
-    });
-    expect(screen.getByText(/alice@example\.com/)).toBeInTheDocument();
-    expect(screen.getByText(/Completed/)).toBeInTheDocument();
-  });
-
-  it('renders distinct step labels for each subjob of a full-portfolio chain', async () => {
-    // A full-portfolio rebuild produces 4 BullMQ subjobs, each with the
-    // same `rebuildType: 'full-portfolio'` but different `name`. The UI
-    // must show all 4 as separate history rows so mid-chain failures
-    // are precisely located and so the admin can see the chain
-    // progressing. Scope label ("Full rebuild") stays constant; the
-    // step label differentiates the rows.
-    const requestedAt = '2026-04-23T10:00:00.000Z';
-    const baseJob = {
-      rebuildType: 'full-portfolio' as const,
-      requestedBy: 'admin@example.com',
-      requestedAt,
-      startedAt: requestedAt,
-      state: 'completed' as const,
-      progress: 100,
-      failedReason: null,
-      attemptsMade: 1,
-    };
-    vi.mocked(api.getRebuildStatus).mockResolvedValue({
-      ...emptyStatus,
-      recent: [
-        { ...baseJob, id: 1, name: 'process-portfolio-changes', finishedAt: '2026-04-23T10:00:30.000Z' },
-        { ...baseJob, id: 2, name: 'process-cash-holdings',     finishedAt: '2026-04-23T10:01:00.000Z' },
-        { ...baseJob, id: 3, name: 'full-rebuild-analytics',    finishedAt: '2026-04-23T10:02:00.000Z' },
-        { ...baseJob, id: 4, name: 'value-all-assets',          finishedAt: '2026-04-23T10:05:00.000Z' },
-      ],
-    });
-
-    renderTab();
-
-    // Step labels render with a "·" separator prefix to distinguish them
-    // from button labels that happen to share the same words (e.g. the
-    // full-analytics button literally says "Rebuild analytics"). Use the
-    // prefix to anchor the selector to the history row rather than the
-    // button. Four distinct step labels prove four distinct rows.
-    await waitFor(() => {
-      expect(screen.getByText(/· Sync transactions.*portfolio items/)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/· Rebuild cash holdings/)).toBeInTheDocument();
-    expect(screen.getByText(/· Rebuild analytics/)).toBeInTheDocument();
-    expect(screen.getByText(/· Revalue all assets/)).toBeInTheDocument();
-    // ("Full rebuild" scope label appears on every row too, but it also
-    // shows up as the card heading, so we can't cleanly assert on its
-    // count here — the 4 unique step labels above are the rigorous
-    // signal that each row rendered distinctly.)
   });
 });

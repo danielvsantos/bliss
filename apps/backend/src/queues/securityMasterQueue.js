@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
+const { trackQueue } = require('../utils/activityTracker');
 const logger = require('../utils/logger');
 
 const SECURITY_MASTER_QUEUE_NAME = 'security-master';
@@ -25,6 +26,8 @@ const getSecurityMasterQueue = () => {
                 },
             },
         });
+        // Processing status (#100): a `queued` entry for every tenant job added.
+        trackQueue(securityMasterQueueInstance);
 
         securityMasterQueueInstance.on('error', (error) => {
             logger.error('SecurityMaster queue error:', { error: error.message });

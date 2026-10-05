@@ -26,6 +26,7 @@ const SIGNAL_ICONS: Record<string, React.ReactNode> = {
   PLAID_CLASSIFICATION_FAILED: <AlertTriangle className="h-4 w-4" />,
   ONBOARDING_INCOMPLETE: <ListChecks className="h-4 w-4" />,
   NEW_INSIGHTS: <Sparkles className="h-4 w-4" />,
+  PROCESSING_FAILED: <AlertTriangle className="h-4 w-4" />,
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -102,11 +103,19 @@ export function NotificationCenter() {
           <div className="max-h-80 overflow-y-auto">
             {signals.map((signal: UserSignal, index: number) => {
               const colorClass = SIGNAL_COLORS[signal.severity] || SIGNAL_COLORS.info;
+              const href = signal.href;
+              // PROCESSING_FAILED (#100) is translated here; it links to
+              // Settings → Processing for admins and is a plain label otherwise.
+              const label = signal.type === 'PROCESSING_FAILED'
+                ? t('activity.notification.failed', { count: signal.count ?? 1 })
+                : signal.label;
+              const Row = href ? 'button' : 'div';
               return (
-                <button
+                <Row
                   key={`${signal.type}-${index}`}
-                  onClick={() => navigate(signal.href)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent transition-colors text-left border-b last:border-b-0"
+                  {...(href ? { type: 'button' as const, onClick: () => navigate(href) } : {})}
+                  data-testid={`signal-${signal.type}`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left border-b last:border-b-0 ${href ? 'hover:bg-accent transition-colors' : ''}`}
                 >
                   <div
                     className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${colorClass}`}
@@ -114,13 +123,13 @@ export function NotificationCenter() {
                     {SIGNAL_ICONS[signal.type] || <Bell className="h-4 w-4" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{signal.label}</p>
+                    <p className="text-sm font-medium truncate">{label}</p>
                   </div>
                   {signal.isNew && (
                     <span className="h-2 w-2 rounded-full bg-brand-primary shrink-0" />
                   )}
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                </button>
+                  {href && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                </Row>
               );
             })}
           </div>

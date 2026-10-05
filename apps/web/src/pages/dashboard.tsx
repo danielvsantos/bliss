@@ -20,6 +20,7 @@ import { QuickActionsCard } from '@/components/dashboard/quick-actions-card';
 import { RecentTransactionsCard } from '@/components/dashboard/recent-transactions-card';
 import { subMonths, format } from 'date-fns';
 import type { AggregatedPortfolioHistory } from '@/lib/api';
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 /* ── Helpers ── */
 function netWorthFromEntry(entry: AggregatedPortfolioHistory): number {
@@ -130,6 +131,8 @@ export default function Dashboard() {
 
   return (
     <div>
+      {/* Processing status (#100): recalculation in progress / updated X ago. */}
+      <DataUpdatingBanner watch={['ANALYTICS_UPDATE', 'PORTFOLIO_UPDATE']} invalidate={[['analytics'], ['dashboard-metrics'], ['portfolio-history'], ['portfolio-holdings'], ['portfolio-items']]} className="mb-4" />
       {/* ── Header ── */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">

@@ -128,7 +128,12 @@ describe('AC5 — update_transaction is identical to PUT /api/transactions', () 
     expect(rowA!.categoryId).toBe(a.dining);
     expect(rowB!.categoryId).toBe(b.dining);
 
-    expect(eventShapes()).toEqual(restEvents);
+    // Same events; the MCP ones also carry the processing-status origin (#100).
+    const withoutTrigger = (shapes: Array<{ type: string; keys: string[] }>) =>
+      shapes.map((e) => ({ ...e, keys: e.keys.filter((k) => k !== '_trigger') }));
+    expect(withoutTrigger(eventShapes())).toEqual(restEvents);
+    expect(restEvents.every((e) => !e.keys.includes('_trigger'))).toBe(true);
+    expect(vi.mocked(produceEvent).mock.calls.every(([e]: any[]) => e._trigger === 'agent')).toBe(true);
     const mcpFeedback = backendCalls.filter((c) => c.url.includes('/api/feedback')).map((c) => ({ ...c.body, tenantId: 'T' }));
     expect(mcpFeedback.map((f) => ({ ...f, categoryId: 0 }))).toEqual(restFeedback.map((f) => ({ ...f, categoryId: 0 })));
     expect(mcpFeedback).toHaveLength(1);

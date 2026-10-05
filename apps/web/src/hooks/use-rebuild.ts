@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { markActivityPending } from '@/lib/activity-pending';
+import type { ActivityType } from '@/types/activity';
 import type {
   RebuildStatusResponse,
   RebuildTriggerRequest,
@@ -7,6 +9,15 @@ import type {
 } from '@/types/api';
 
 export const REBUILD_STATUS_QUERY_KEY = ['admin', 'rebuild', 'status'] as const;
+
+/** The processing-status types each rebuild scope starts (#100). */
+const REBUILD_ACTIVITY: Record<string, ActivityType[]> = {
+  'full-portfolio': ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'],
+  'full-analytics': ['ANALYTICS_UPDATE'],
+  'scoped-analytics': ['ANALYTICS_UPDATE'],
+  'single-asset': ['PORTFOLIO_UPDATE'],
+  'security-data': ['SECURITY_DATA'],
+};
 
 /**
  * Fetches current rebuild state for the tenant: per-scope single-flight
@@ -45,8 +56,10 @@ export function useTriggerRebuild() {
   const qc = useQueryClient();
   return useMutation<RebuildTriggerResponse, Error, RebuildTriggerRequest>({
     mutationFn: (body) => api.triggerRebuild(body),
-    onSuccess: () => {
+    onSuccess: (_data, body) => {
       qc.invalidateQueries({ queryKey: REBUILD_STATUS_QUERY_KEY });
+      // Processing status (#100): show the rebuild as queued right away.
+      markActivityPending(REBUILD_ACTIVITY[body.scope] ?? ['PORTFOLIO_UPDATE']);
     },
   });
 }

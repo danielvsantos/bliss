@@ -44,6 +44,8 @@ export function usePlaidTransactions(
 export function useUpdatePlaidTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'] },
     mutationFn: (params: {
       id: string;
       data: { suggestedCategoryId?: number; promotionStatus?: 'PROMOTED' | 'SKIPPED' };
@@ -62,6 +64,8 @@ export function useUpdatePlaidTransaction() {
 export function useRetryPlaidTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['BANK_SYNC'] },
     mutationFn: (id: string) => api.retryPlaidTransaction(id),
     onSuccess: () => {
       // Row goes back to PENDING until the requeued job completes — no new
@@ -76,6 +80,8 @@ export function useRetryPlaidTransaction() {
 export function useBulkPromotePlaidTransactions() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'] },
     mutationFn: (params: {
       minConfidence?: number;
       plaidItemId?: string;

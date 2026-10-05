@@ -59,6 +59,13 @@ vi.mock('../../../prisma/prisma.js', () => ({
   default: mockPrisma,
 }));
 
+// Processing status (#100): the Redis read is mocked; the counting is real.
+const { mockReadActivity } = vi.hoisted(() => ({ mockReadActivity: vi.fn() }));
+vi.mock('../../../utils/activityStore.js', async () => {
+  const actual = await vi.importActual<any>('../../../utils/activityStore.js');
+  return { ...actual, readActivity: mockReadActivity };
+});
+
 import handler from '../../../pages/api/notifications/summary.js';
 
 // ---------------------------------------------------------------------------
@@ -89,6 +96,7 @@ function makeRes() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockReadActivity.mockResolvedValue({ available: false, recent: [] });
 });
 
 // ---------------------------------------------------------------------------
@@ -197,5 +205,61 @@ describe('GET /api/notifications/summary', () => {
     expect(res._status).toBe(200);
     expect(res._body.totalUnseen).toBe(0);
     expect(res._body.signals).toEqual([]);
+  });
+  describe('PROCESSING_FAILED (#100)', () => {
+    const emptyPrisma = () => {
+      mockPrisma.plaidTransaction.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+      mockPrisma.stagedImportRow.count.mockResolvedValueOnce(0);
+      mockPrisma.plaidItem.findMany.mockResolvedValueOnce([]);
+      mockPrisma.insight.count.mockResolvedValueOnce(0);
+      mockPrisma.tenant.findUnique.mockResolvedValueOnce({ onboardingProgress: null, onboardingCompletedAt: new Date() });
+      mockPrisma.account.count.mockResolvedValueOnce(0);
+      mockPrisma.transaction.findFirst.mockResolvedValueOnce(null);
+    };
+    const activity = {
+      available: true,
+      recent: [
+        { state: 'failed', finishedAt: '2026-10-04T10:00:00.000Z', errorCode: 'P2034' },
+        { state: 'failed', finishedAt: '2026-10-01T10:00:00.000Z', errorCode: 'INTERNAL' },
+        { state: 'completed', finishedAt: '2026-10-04T11:00:00.000Z' },
+      ],
+    };
+
+    it('counts final failures since lastNotificationSeenAt and links admins to Processing', async () => {
+      emptyPrisma();
+      mockReadActivity.mockResolvedValueOnce(activity);
+      const original = mockUser.lastNotificationSeenAt;
+      (mockUser as any).lastNotificationSeenAt = new Date('2026-10-03T00:00:00Z');
+      const res = makeRes();
+      await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+      (mockUser as any).lastNotificationSeenAt = original;
+
+      expect(mockReadActivity).toHaveBeenCalledWith('tenant-1');
+      expect(res._body.signals).toEqual([
+        expect.objectContaining({ type: 'PROCESSING_FAILED', count: 1, href: '/settings?tab=processing', severity: 'warning', isNew: true }),
+      ]);
+      expect(res._body.totalUnseen).toBe(1);
+    });
+
+    it('gives other roles the label only', async () => {
+      emptyPrisma();
+      mockReadActivity.mockResolvedValueOnce(activity);
+      const original = mockUser.role;
+      mockUser.role = 'member';
+      const res = makeRes();
+      await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+      mockUser.role = original;
+
+      const signal = res._body.signals.find((s: any) => s.type === 'PROCESSING_FAILED');
+      expect(signal).toMatchObject({ count: 2, href: null });
+    });
+
+    it('adds nothing when status is unavailable', async () => {
+      emptyPrisma();
+      mockReadActivity.mockResolvedValueOnce({ available: false, recent: [] });
+      const res = makeRes();
+      await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._body.signals).toEqual([]);
+    });
   });
 });

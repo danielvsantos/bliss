@@ -1,5 +1,6 @@
 const { getRedisConnection } = require('../utils/redis');
 const logger = require('../utils/logger');
+const { dropEntry } = require('../utils/activityTracker');
 const { v4: uuidv4 } = require('uuid');
 
 // ── Field mergers ────────────────────────────────────────────────────────────
@@ -134,6 +135,9 @@ async function scheduleDebouncedJob(queue, jobName, jobData, aggregationKey, del
             if (job) {
                 try {
                     await job.remove();
+                    // A removed job never completes: drop its processing-status
+                    // entry, or it would age into "stalled" (#100).
+                    dropEntry(tenantId, queue.name, existingJob.jobId);
                     logger.info(`[Debounce] Canceled pending job ${existingJob.jobId} for ${jobName} to extend scope.`);
                 } catch (e) {
                     logger.warn(`[Debounce] Could not remove job ${existingJob.jobId}, it may have already run.`, { error: e.message });

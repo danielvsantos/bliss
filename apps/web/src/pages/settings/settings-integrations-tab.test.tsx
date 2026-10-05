@@ -31,8 +31,9 @@ vi.mock('@/utils/tenantMetaStorage', () => ({
 }));
 vi.mock('@/components/settings/maintenance-tab', () => ({ MaintenanceTab: () => <div>maintenance</div> }));
 vi.mock('@/components/settings/integrations-tab', () => ({ IntegrationsTab: () => <div>integrations</div> }));
+vi.mock('@/components/settings/processing-tab', () => ({ ProcessingTab: () => <div>processing-tab-content</div> }));
 
-function renderAs(role: 'admin' | 'member' | 'viewer') {
+function renderAs(role: 'admin' | 'member' | 'viewer', path = '/settings') {
   vi.mocked(useAuth).mockReturnValue({
     user: { id: 'u1', email: 'u@test', role, tenant: { id: 't1', name: 'T' } },
     signOut: vi.fn(),
@@ -40,7 +41,7 @@ function renderAs(role: 'admin' | 'member' | 'viewer') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <SettingsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -91,12 +92,33 @@ describe('Settings page — Integrations tab', () => {
   it('shows every tab label (no icon-only tabs) in a vertical tablist on desktop', () => {
     renderAs('admin');
     expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'vertical');
-    expect(screen.getAllByRole('tab')).toHaveLength(6);
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
   });
 
   it('switches to a horizontal (scrollable) tablist on mobile', () => {
     vi.mocked(useIsMobile).mockReturnValue(true);
     renderAs('admin');
     expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'horizontal');
+  });
+});
+
+describe('Settings page — Processing tab (#100)', () => {
+  it('is an admin tab next to Maintenance (AC12)', () => {
+    renderAs('admin');
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.processing/ })).toBeInTheDocument();
+  });
+
+  it.each(['member', 'viewer'] as const)('is hidden from %s users (AC7)', (role) => {
+    renderAs(role, '/settings?tab=processing');
+    expect(screen.queryByRole('tab', { name: /pages\.settings\.tabs\.processing/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('processing-tab-content')).not.toBeInTheDocument();
+    // An admin-only deep link falls back to General.
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.general/ })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('opens straight to Processing from ?tab=processing (notification / "See progress" link)', () => {
+    renderAs('admin', '/settings?tab=processing');
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.processing/ })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText('processing-tab-content')).toBeInTheDocument();
   });
 });

@@ -57,8 +57,11 @@ Each signal type maps to a specific icon and severity color:
 | `PLAID_CLASSIFICATION_FAILED` | `AlertTriangle` | `warning` |
 | `ONBOARDING_INCOMPLETE` | `ListChecks` | `brand-primary` |
 | `NEW_INSIGHTS` | `Sparkles` | `positive` |
+| `PROCESSING_FAILED` | `AlertTriangle` | `warning` |
 
 `PLAID_CLASSIFICATION_FAILED` fires when one or more `PlaidTransaction` rows are `promotionStatus === 'FAILED'` (all classification tiers exhausted, including one silent worker-side retry — see `docs/specs/backend/08-plaid-integration.md`). Deliberately kept as its own signal rather than folded into `PENDING_REVIEW`'s count, since a classification failure is a data-completeness risk, not routine pending work. Links to `/agents/review?source=plaid`.
+
+`PROCESSING_FAILED` (#100) fires when background processing (portfolio, analytics, bank sync, …) failed on its final attempt since the user last opened the bell. Its label is translated client-side (`activity.notification.failed`, pluralised by `count`). For admins it links to Settings → Processing (`/settings?tab=processing`); for other roles `href` is `null` and the row renders as a non-clickable label (no chevron). See [26-processing-status.md](26-processing-status.md).
 
 All icons are from `lucide-react`. Colors follow the design system tokens defined in `src/index.css`.
 

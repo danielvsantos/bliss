@@ -7,6 +7,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { withAuth } from '../../../../../utils/withAuth.js';
 
 import { produceEvent } from '../../../../../utils/produceEvent.js';
+import { eventOrigin } from '../../../../../utils/eventOrigin.js';
 
 
 export default withAuth(async function handler(req, res) {
@@ -111,6 +112,7 @@ async function handlePost(req, res) {
 
     // Produce event after successful creation
     await produceEvent({
+      ...eventOrigin(req),
       type: 'MANUAL_PORTFOLIO_PRICE_UPDATED',
       portfolioItemId: portfolioItemId,
       tenantId: tenantId,

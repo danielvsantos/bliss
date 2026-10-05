@@ -2,7 +2,7 @@
 
 <!-- Generated from apps/api/lib/mcp/registry.js by `pnpm --filter @bliss/api mcp:reference`. Do not edit by hand. -->
 
-Bliss exposes **40 tools** over MCP at `POST /api/mcp`: **21 read** tools available to every integration key and **19 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
+Bliss exposes **41 tools** over MCP at `POST /api/mcp`: **22 read** tools available to every integration key and **19 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
 
 Conventions: dates are `YYYY-MM-DD`; amounts are `{ value, currency }`; transaction amounts are signed (positive = money in, negative = money out); lists return `hasMore` and `nextCursor` — pass `nextCursor` back as `cursor` for the next page (default 50 items, max 100).
 
@@ -299,6 +299,15 @@ Hide an insight (dismissed: true, the default) or bring it back (dismissed: fals
 **Wraps:** `GET /api/notifications/summary`
 
 What needs the user's attention: pending review items (bank sync + imports), failed classifications, bank connections needing action, new insights and onboarding steps.
+
+_No parameters._
+
+### `get_processing_status` — Get background processing status
+
+**Access:** Read (all keys)  
+**Wraps:** `GET /api/activity`
+
+Whether derived data is still being recalculated after a change. Writes (transactions, tags, manual values, imports, bank-sync approvals) refresh portfolio values and analytics in the background: poll this until `inFlight` has nothing whose `affects` includes the data you changed (`settled` = nothing in flight at all), then read the summaries. `summary` has one row per activity type (PORTFOLIO_UPDATE, ANALYTICS_UPDATE, BANK_SYNC, IMPORT, SECURITY_DATA, SUBSCRIPTION_SCAN, INSIGHTS) with state queued | running | stalled | failed, stage and progress (0-100). `lastCompletedAt` is per type; `recent` holds the latest finished jobs (last 24 h) with errorCode on failures. `available: false` means status is unknown, not idle; `workerOnline: false` means the background worker is down and queued work will not start.
 
 _No parameters._
 

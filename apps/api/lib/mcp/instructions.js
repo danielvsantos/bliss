@@ -20,4 +20,4 @@ Two review queues
 - Bank sync (Plaid): get_plaid_review_queue → review_plaid_transactions. Approving creates the transaction.
 - Imported statements: the user uploads the file in the Bliss app; then list_imports → review_import_rows → finalize_import (commit). You cannot upload files, and bank connections are managed in the app.
 
-Writes behave exactly like the app: re-categorising teaches the classifier, and analytics and portfolio values refresh in the background (allow a minute). A Read-only connection only sees read tools.`;
+Writes behave exactly like the app: re-categorising teaches the classifier, and analytics and portfolio values refresh in the background. After a write, poll get_processing_status until nothing in flight affects what you changed (each entry's affects lists the data it will change), then read the summaries. A Read-only connection only sees read tools.`;

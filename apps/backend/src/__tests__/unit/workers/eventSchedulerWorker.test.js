@@ -84,6 +84,10 @@ function makeJob(name, data = {}) {
   return { id: `test-job-${name}`, name, data };
 }
 
+// Every downstream job carries the run id of the event that started the chain
+// (processing status, #100): `<events queue>:<event job id>`.
+const run = (name) => ({ _run: `test-events:test-job-${name}` });
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('eventSchedulerWorker — processEventJob', () => {
@@ -181,7 +185,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPlaidSyncQueue.add).toHaveBeenCalledWith(
       'plaid-sync-job',
-      { plaidItemId: 'pi1', tenantId: 't1', source: 'INITIAL' }
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'INITIAL', _trigger: 'bank_sync', ...run('PLAID_INITIAL_SYNC') }
     );
   });
 
@@ -207,7 +211,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPlaidSyncQueue.add).toHaveBeenCalledWith(
       'plaid-sync-job',
-      { plaidItemId: 'pi1', tenantId: 't1', source: 'HISTORICAL_BACKFILL', fromDate: '2024-06-01' }
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'HISTORICAL_BACKFILL', fromDate: '2024-06-01', _trigger: 'bank_sync', ...run('PLAID_HISTORICAL_BACKFILL') }
     );
   });
 
@@ -245,7 +249,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPlaidProcessingQueue.add).toHaveBeenCalledWith(
       'PLAID_TRANSACTION_RETRY',
-      { plaidItemId: 'pi1', tenantId: 't1', source: 'MANUAL_RETRY' }
+      { plaidItemId: 'pi1', tenantId: 't1', source: 'MANUAL_RETRY', _trigger: 'bank_sync', ...run('PLAID_TRANSACTION_RETRY') }
     );
     // User-initiated — no delay, unlike the worker's own 60s silent-retry re-queue.
     expect(mockPlaidProcessingQueue.add.mock.calls[0][2]).toBeUndefined();
@@ -297,7 +301,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
       'process-portfolio-changes',
-      { tenantId: 't1', transactionId: 'tx1' }
+      { ...run('MANUAL_TRANSACTION_MODIFIED'), tenantId: 't1', transactionId: 'tx1' }
     );
   });
 
@@ -315,7 +319,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
       'process-portfolio-changes',
-      { tenantId: 't1', transactionId: 'tx1', previousPortfolioItemId: 10 }
+      { ...run('MANUAL_TRANSACTION_MODIFIED'), tenantId: 't1', transactionId: 'tx1', previousPortfolioItemId: 10 }
     );
   });
 
@@ -336,6 +340,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
     await processEventJob(job);
 
     expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-portfolio-changes', {
+      ...run('MANUAL_TRANSACTION_MODIFIED'),
       tenantId: 't1',
       deletedTransaction: {
         id: 'tx1',
@@ -405,7 +410,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
     const cashCalls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'process-cash-holdings');
     expect(cashCalls).toHaveLength(3);
     const [first] = cashCalls;
-    expect(Object.keys(first[5]).sort()).toEqual(['_rebuildMeta', 'originalScope', 'portfolioItemIds', 'scope']);
+    expect(Object.keys(first[5]).sort()).toEqual(['_rebuildMeta', '_run', '_trigger', 'originalScope', 'portfolioItemIds', 'scope']);
     cashCalls.forEach((c) => expect(c[5]).toBe(first[5]));
   });
 
@@ -415,7 +420,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'process-portfolio-changes');
     expect(calls).toHaveLength(2);
-    expect(Object.keys(calls[0][5]).sort()).toEqual(['accountIds', 'dateScopes']);
+    expect(Object.keys(calls[0][5]).sort()).toEqual(['_run', '_trigger', 'accountIds', 'dateScopes']);
     expect(calls[1][5]).toBe(calls[0][5]);
   });
 
@@ -427,7 +432,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
     const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'scoped-update-analytics');
     expect(calls).toHaveLength(2);
-    expect(Object.keys(calls[0][5]).sort()).toEqual(['_rebuildMeta', 'portfolioItemIds']);
+    expect(Object.keys(calls[0][5]).sort()).toEqual(['_rebuildMeta', '_run', '_trigger', 'portfolioItemIds']);
     expect(calls[1][5]).toBe(calls[0][5]);
   });
 
@@ -444,7 +449,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
     expect(scheduleDebouncedJob).toHaveBeenCalledWith(
       mockAnalyticsQueue,
       'scoped-update-analytics',
-      { tenantId: 't1', scopes: [{ year: 2026, month: 3, currency: 'USD', country: 'US' }] },
+      { ...run('TAG_ASSIGNMENT_MODIFIED'), tenantId: 't1', scopes: [{ year: 2026, month: 3, currency: 'USD', country: 'US' }] },
       'scopes',
       5, // DEBOUNCE_DELAY_SECONDS
       expect.any(Object)
@@ -461,7 +466,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
     expect(scheduleDebouncedJob).toHaveBeenCalledWith(
       mockAnalyticsQueue,
       'scoped-update-analytics',
-      { tenantId: 't1', scopes: [] },
+      { ...run('TAG_ASSIGNMENT_MODIFIED'), tenantId: 't1', scopes: [] },
       'scopes',
       5,
       expect.any(Object)
@@ -644,7 +649,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       await processEventJob(makeJob('PORTFOLIO_CHANGES_PROCESSED', {
         tenantId: 't1', isFullRebuild: true, newSecuritySymbols: ['VWCE'],
       }));
-      expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith('t1', { force: false }, {});
+      expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith('t1', { force: false, ...run('PORTFOLIO_CHANGES_PROCESSED') }, {});
       // The cash/analytics cascade still runs.
       expect(scheduleDebouncedJob).toHaveBeenCalled();
     });
@@ -663,7 +668,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       }));
       expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith(
         't1',
-        { force: false, _rebuildMeta: meta },
+        { force: false, ...run('PORTFOLIO_CHANGES_PROCESSED'), _rebuildMeta: meta },
         expect.objectContaining({ removeOnComplete: expect.any(Object) }),
       );
     });
@@ -683,7 +688,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       }));
       expect(enqueueTenantSecuritiesRefresh).toHaveBeenCalledWith(
         't1',
-        { force: true, _rebuildMeta: expect.objectContaining({ rebuildType: 'security-data', requestedBy: 'a@b.c' }) },
+        { force: true, ...run('MANUAL_REBUILD_REQUESTED'), _rebuildMeta: expect.objectContaining({ rebuildType: 'security-data', requestedBy: 'a@b.c' }) },
         expect.objectContaining({ jobId: expect.stringContaining('manual-rebuild-security-data-t1-') }),
       );
     });
@@ -806,11 +811,11 @@ describe('eventSchedulerWorker — processEventJob', () => {
 
       expect(mockPortfolioQueue.add).toHaveBeenCalledWith(
         'value-all-assets',
-        { tenantId: 't1' },
+        { ...run('ANALYTICS_RECALCULATION_COMPLETE'), tenantId: 't1' },
         { deduplication: { id: 'value-all-assets:t1' } },
       );
-      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-amortizing-loan', { tenantId: 't1' });
-      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-simple-liability', { tenantId: 't1' });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-amortizing-loan', { ...run('ANALYTICS_RECALCULATION_COMPLETE'), tenantId: 't1' });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('process-simple-liability', { ...run('ANALYTICS_RECALCULATION_COMPLETE'), tenantId: 't1' });
     });
 
     it('still cascades for full-rebuild when _rebuildMeta indicates a different scope (full-portfolio)', async () => {
@@ -826,6 +831,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
       await processEventJob(job);
 
       expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-all-assets', {
+        ...run('ANALYTICS_RECALCULATION_COMPLETE'),
         tenantId: 't1',
         _rebuildMeta: { rebuildType: 'full-portfolio' },
       }, {});
@@ -901,7 +907,7 @@ describe('eventSchedulerWorker — processEventJob', () => {
         portfolioItemIds: [1, 2],
       }));
 
-      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-portfolio-items', { tenantId: 't1', portfolioItemIds: [1, 2] });
+      expect(mockPortfolioQueue.add).toHaveBeenCalledWith('value-portfolio-items', { ...run('ANALYTICS_RECALCULATION_COMPLETE'), tenantId: 't1', portfolioItemIds: [1, 2] });
       expect(valuationCalls()).toHaveLength(0);
     });
   });

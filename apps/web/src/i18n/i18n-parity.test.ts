@@ -351,3 +351,41 @@ describe('i18n parity — task #84 integrations keys', () => {
     expect(untranslated).toEqual([]);
   });
 });
+
+// ── Processing status (#100, AC14) ───────────────────────────────────────────
+// Every `activity.*` key exists as a non-empty string in all five locales,
+// keeps its {{placeholders}}, and the Settings tab label resolves everywhere.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function leaves(obj: any, prefix = ''): Array<[string, unknown]> {
+  return Object.entries(obj ?? {}).flatMap(([k, v]) =>
+    v !== null && typeof v === 'object' ? leaves(v, `${prefix}${k}.`) : [[`${prefix}${k}`, v] as [string, unknown]]);
+}
+
+describe('i18n parity — processing status (#100)', () => {
+  const enLeaves = leaves(resolve(en, 'activity'));
+
+  it('has a meaningful number of keys', () => {
+    expect(enLeaves.length).toBeGreaterThan(60);
+  });
+
+  for (const lang of NON_EN) {
+    it(`${lang} has exactly the English activity.* keys, all non-empty, placeholders intact`, () => {
+      const other = new Map(leaves(resolve(LOCALES[lang], 'activity')));
+      expect([...other.keys()].sort()).toEqual(enLeaves.map(([k]) => k).sort());
+      for (const [key, enValue] of enLeaves) {
+        const v = other.get(key);
+        expect(typeof v, `${lang}:activity.${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:activity.${key}`).toBeGreaterThan(0);
+        const placeholders = (s: string) => (s.match(/{{\w+}}/g) ?? []).sort();
+        expect(placeholders(v as string), `${lang}:activity.${key}`).toEqual(placeholders(enValue as string));
+      }
+    });
+  }
+
+  it('the Processing settings tab label resolves in every locale', () => {
+    for (const lang of Object.keys(LOCALES)) {
+      expect(typeof resolve(LOCALES[lang], 'pages.settings.tabs.processing'), lang).toBe('string');
+    }
+  });
+});

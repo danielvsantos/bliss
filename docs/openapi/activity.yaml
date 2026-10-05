@@ -1,0 +1,144 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Processing Status
+  version: 1.0.0
+  description: >
+    Processing status (#100): what background work (portfolio, analytics, bank
+    sync, import, security data, subscription scan, insights) is queued,
+    running, stalled or failed for the caller's tenant, the last 24 hours of
+    finished work, and when each kind of work last completed. A single Redis
+    read; no database work. Also exposed to AI agents as the read-only MCP
+    tool get_processing_status. Spec: docs/specs/api/26-activity-api.md.
+
+servers:
+  - url: /
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: bliss_<prefix>_<secret>
+      description: >
+        Integration token (see integrations.yaml). Read-only tokens may call
+        this endpoint.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+  schemas:
+    ActivityType:
+      type: string
+      enum: [PORTFOLIO_UPDATE, ANALYTICS_UPDATE, BANK_SYNC, IMPORT, SECURITY_DATA, SUBSCRIPTION_SCAN, INSIGHTS]
+    ActivityTrigger:
+      type: string
+      enum: [user_change, bank_sync, import, nightly, manual_rebuild, agent, auto_refresh]
+    ActivityStage:
+      type: string
+      description: Stage key; clients translate it.
+      enum: [scheduling, recalculating_lots, updating_cash, valuing_assets, updating_debts, updating_analytics, fetching_bank, classifying, processing_file, committing, refreshing_market_data, scanning, generating_insights]
+    SummaryRow:
+      type: object
+      description: One row per activity type, coalescing every in-flight job of that type.
+      properties:
+        state: { type: string, enum: [queued, running, stalled, failed], description: "Most severe: failed > stalled > running > queued" }
+        stage: { $ref: '#/components/schemas/ActivityStage' }
+        progress: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        count: { type: integer, description: In-flight entries of this type (0 for a failure-only row) }
+        trigger: { $ref: '#/components/schemas/ActivityTrigger' }
+        startedAt: { type: string, format: date-time, nullable: true }
+        affects: { type: array, items: { $ref: '#/components/schemas/ActivityType' } }
+        errorCode: { type: string, description: Present when state is failed }
+    InFlightEntry:
+      type: object
+      properties:
+        id: { type: string, example: "portfolio:123", description: "{queue}:{jobId}" }
+        type: { $ref: '#/components/schemas/ActivityType' }
+        stage: { $ref: '#/components/schemas/ActivityStage' }
+        state: { type: string, enum: [queued, running, stalled], description: "stalled is derived on read (no update for 30 min, 60 min for long work and queued entries); display-only" }
+        progress: { type: integer, nullable: true }
+        trigger: { $ref: '#/components/schemas/ActivityTrigger' }
+        affects:
+          type: array
+          description: Every activity type this job's chain will still touch (page banners match on it)
+          items: { $ref: '#/components/schemas/ActivityType' }
+        runId: { type: string, description: The run (chain) this job belongs to }
+        enqueuedAt: { type: string, format: date-time, nullable: true }
+        startedAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+    RecentEntry:
+      type: object
+      properties:
+        id: { type: string }
+        type: { $ref: '#/components/schemas/ActivityType' }
+        stage: { $ref: '#/components/schemas/ActivityStage' }
+        state: { type: string, enum: [completed, failed] }
+        trigger: { $ref: '#/components/schemas/ActivityTrigger' }
+        errorCode:
+          type: string
+          description: "Failures only: a Prisma P#### code, a Node E… code, LLM_TIMEOUT, TIMEOUT or INTERNAL. The error message is never stored."
+          example: P2034
+        runId: { type: string }
+        enqueuedAt: { type: string, format: date-time, nullable: true }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        durationMs: { type: integer, nullable: true }
+    ActivityRun:
+      type: object
+      description: Every finished job of one edit / sync / import / rebuild / nightly run.
+      properties:
+        id: { type: string, description: The run id (the root event's queue:jobId) }
+        trigger: { $ref: '#/components/schemas/ActivityTrigger' }
+        types: { type: array, items: { $ref: '#/components/schemas/ActivityType' } }
+        state: { type: string, enum: [completed, failed], description: failed if any step failed }
+        errorCode: { type: string }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        steps: { type: array, items: { $ref: '#/components/schemas/RecentEntry' } }
+    ActivityResponse:
+      type: object
+      properties:
+        available: { type: boolean, description: "false when Redis is unavailable: status unknown (not idle); other fields empty" }
+        workerOnline: { type: boolean, nullable: true, description: Whether the backend worker heartbeat is present }
+        serverTime: { type: string, format: date-time }
+        summary:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/SummaryRow' }
+        inFlight: { type: array, items: { $ref: '#/components/schemas/InFlightEntry' } }
+        recent:
+          type: array
+          description: Finished work of the last 24 hours, newest first, at most 200
+          items: { $ref: '#/components/schemas/RecentEntry' }
+        runs:
+          type: array
+          description: recent grouped by run, newest first; runs still in flight are excluded
+          items: { $ref: '#/components/schemas/ActivityRun' }
+        lastCompletedAt:
+          type: object
+          additionalProperties: { type: string, format: date-time }
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+
+paths:
+  /api/activity:
+    get:
+      tags:
+        - Processing Status
+      summary: Get background processing status
+      description: >
+        All roles (admin, member, viewer) and integration keys, read-only
+        included. Rate limited to 600 requests / 5 min. Response is not cached
+        (Cache-Control no-store). Poll about every 5 s while something is in
+        flight and about every 60 s when idle.
+      responses:
+        '200':
+          description: Processing status for the caller's tenant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityResponse' }
+        '401': { description: Not authenticated }
+        '405': { description: Method not allowed (GET only) }
+        '429': { description: Too many requests }

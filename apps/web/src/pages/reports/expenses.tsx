@@ -53,6 +53,7 @@ import { translateCategoryType, translateCategoryGroup } from "@/lib/category-i1
 import { TREND_MOVING_AVERAGE_WINDOW, movingAverageKey, computeTrendMovingAverages } from "@/lib/trend-utils";
 import { MobileFilterDrawer } from "@/components/ui/mobile-filter-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
 
@@ -258,6 +259,8 @@ export default function ExpenseTrackingPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['ANALYTICS_UPDATE']} invalidate={[['analytics']]} />
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.expenses.title")}</h2>

@@ -96,7 +96,7 @@ curl -H "Authorization: Bearer $BLISS_TOKEN" \
 
 ### Claude Code, Claude Desktop or another MCP client
 
-**Use the MCP server.** Bliss exposes 40 agent-ready tools at
+**Use the MCP server.** Bliss exposes 41 agent-ready tools at
 `$BLISS_API_URL/api/mcp`, authenticated with this same token — the agent
 doesn't need to learn the REST API. See
 [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp):

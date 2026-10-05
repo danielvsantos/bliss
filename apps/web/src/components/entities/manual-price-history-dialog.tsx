@@ -43,6 +43,7 @@ import { parseDecimal } from '@/lib/portfolio-utils';
 import { formatCurrency } from '@/lib/utils';
 import type { AssetRef, ManualAssetValue } from '@/types/api';
 import { ManualPriceForm } from './manual-price-form';
+import { markActivityPending } from '@/lib/activity-pending';
 
 type View = 'list' | 'add' | 'edit';
 
@@ -128,6 +129,7 @@ export function ManualPriceHistoryDialog({
     setIsDeleting(true);
     try {
       await api.deleteManualAssetValue(asset.id, deleteTarget.id);
+      markActivityPending(['PORTFOLIO_UPDATE']); // revalued in the background (#100)
       await queryClient.invalidateQueries({ queryKey: [MANUAL_ASSET_VALUES_QUERY_KEY] });
       invalidatePortfolioQueries(queryClient);
       toast({ title: t('manualPriceHistory.deleted') });

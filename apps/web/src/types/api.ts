@@ -627,8 +627,10 @@ export type Insight = {
 export type UserSignal = {
   type: string;
   severity: string;
-  href: string;
+  /** null = label only (e.g. PROCESSING_FAILED for non-admins, #100). */
+  href: string | null;
   label: string;
+  count?: number;
   isNew?: boolean;
 };
 

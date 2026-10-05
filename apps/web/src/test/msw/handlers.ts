@@ -60,4 +60,12 @@ export const handlers = [
   http.get('/api/portfolio/items', () =>
     HttpResponse.json({ items: [] })
   ),
+
+  // Processing status (#100) — idle by default
+  http.get('/api/activity', () =>
+    HttpResponse.json({
+      available: true, workerOnline: true, serverTime: new Date().toISOString(),
+      summary: {}, inFlight: [], recent: [], lastCompletedAt: {},
+    })
+  ),
 ];

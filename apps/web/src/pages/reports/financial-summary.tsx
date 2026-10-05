@@ -73,6 +73,7 @@ import {
   AnalyticsData,
 } from "@/lib/financial-summary";
 import { translateCategoryGroup, translateCategoryType } from "@/lib/category-i18n";
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 export default function FinancialSummaryPage() {
   const { t } = useTranslation();
@@ -259,6 +260,8 @@ export default function FinancialSummaryPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['ANALYTICS_UPDATE']} invalidate={[['analytics']]} />
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
           <div>
             <h2 className="text-3xl font-bold tracking-tight mb-2">{t("pages.financialSummary.title")}</h2>

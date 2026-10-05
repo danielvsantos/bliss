@@ -19,11 +19,15 @@
     "./portfolio": {
       "require": "./dist/portfolio/index.cjs",
       "import": "./dist/portfolio/index.js"
+    },
+    "./activity": {
+      "require": "./dist/activity/index.cjs",
+      "import": "./dist/activity/index.js"
     }
   },
   "scripts": {
-    "build": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage",
-    "dev": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage --watch"
+    "build": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js src/activity/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage",
+    "dev": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js src/activity/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage --watch"
   },
   "peerDependencies": {
     "@google-cloud/storage": "^7.0.0"

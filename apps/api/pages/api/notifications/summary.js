@@ -4,10 +4,12 @@ import { rateLimiters } from '../../../utils/rateLimit.js';
 import { cors } from '../../../utils/cors.js';
 import * as Sentry from '@sentry/nextjs';
 import { withAuth } from '../../../utils/withAuth.js';
+import { readActivity, countFailuresSince } from '../../../utils/activityStore.js';
 
 /**
  * GET /api/notifications/summary
- * Aggregates 5 signals from existing tables. Pure read — no notification table.
+ * Aggregates signals from existing tables, plus PROCESSING_FAILED from the
+ * processing-status hash in Redis (#100). Pure read — no notification table.
  *
  * PUT /api/notifications/summary
  * Marks notifications as seen (updates User.lastNotificationSeenAt).
@@ -38,6 +40,7 @@ export default withAuth(async function handler(req, res) {
         accountCount,
         hasTransaction,
         plaidFailedCount,
+        activity,
       ] = await Promise.all([
         // 1. Plaid transactions awaiting review
         prisma.plaidTransaction.count({
@@ -88,6 +91,8 @@ export default withAuth(async function handler(req, res) {
             promotionStatus: 'FAILED',
           },
         }),
+        // 9. Background jobs that failed on their final attempt (Redis, fail-soft; #100)
+        readActivity(user.tenantId),
       ]);
 
       const totalReviewCount = plaidClassifiedCount + pendingImportCount;
@@ -125,6 +130,20 @@ export default withAuth(async function handler(req, res) {
           count: plaidFailedCount,
           label: `${plaidFailedCount} transaction${plaidFailedCount !== 1 ? 's' : ''} failed classification`,
           href: '/agents/review?source=plaid',
+          severity: 'warning',
+          isNew: true,
+        });
+      }
+
+      // Signal: background processing failed (final attempt) since last seen (#100).
+      // Admins get a link to Settings → Processing; other roles see the label only.
+      const processingFailedCount = countFailuresSince(activity, user.lastNotificationSeenAt);
+      if (processingFailedCount > 0) {
+        signals.push({
+          type: 'PROCESSING_FAILED',
+          count: processingFailedCount,
+          label: `${processingFailedCount} background update${processingFailedCount !== 1 ? 's' : ''} failed`,
+          href: user.role === 'admin' ? '/settings?tab=processing' : null,
           severity: 'warning',
           isNew: true,
         });

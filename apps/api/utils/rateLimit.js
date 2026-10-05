@@ -76,6 +76,10 @@ export const rateLimiters = {
   rebuildTrigger: createRateLimiter({ max: 20, windowMs: 5 * 60 * 1000 }),  // 20 triggers per 5 min
   rebuildStatus:  createRateLimiter({ max: 300, windowMs: 5 * 60 * 1000 }), // 300 polls per 5 min
 
+  // Processing status (#100): polled every ~5 s while work is in flight, per
+  // visible tab. 600 / 5 min covers two busy tabs (2 × 60) plus the MCP tool.
+  activity: createRateLimiter({ max: 600, windowMs: 5 * 60 * 1000 }),
+
   // Integrations & API tokens management (admin only, #84)
   integrations: createRateLimiter({ max: 30, windowMs: 5 * 60 * 1000 }),   // 30 calls per 5 min
   // OAuth for the MCP server (#89): discovery, authorize, token, consent — and client registration.

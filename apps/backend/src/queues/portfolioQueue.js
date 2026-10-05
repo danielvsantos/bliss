@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../utils/redis');
+const { trackQueue } = require('../utils/activityTracker');
 const logger = require('../utils/logger');
 
 const PORTFOLIO_QUEUE_NAME = 'portfolio';
@@ -17,6 +18,8 @@ const getPortfolioQueue = () => {
                 removeOnFail: { age: 7 * 24 * 3600 },
             },
         });
+        // Processing status (#100): a `queued` entry for every tenant job added.
+        trackQueue(portfolioQueueInstance);
 
         portfolioQueueInstance.on('error', (error) => {
             logger.error(`Portfolio queue error:`, { error: error.message });

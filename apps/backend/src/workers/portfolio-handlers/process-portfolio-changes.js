@@ -1,6 +1,7 @@
 const { Decimal } = require('@prisma/client/runtime/library');
 const prisma = require('../../../prisma/prisma.js');
 const logger = require('../../utils/logger');
+const { carryOrigin } = require('../../utils/activityTracker');
 const { generateAssetKey } = require('./asset-aggregator');
 const { enqueueEvent } = require('../../queues/eventsQueue');
 const { decrypt } = require('../../utils/encryption');
@@ -155,23 +156,30 @@ const processPortfolioChanges = async (job) => {
     // receive `job` directly) and the loops crash with
     // `ReferenceError: job is not defined`.
     const heartbeat = job.heartbeat;
+    // Processing status (#100): who started the chain, forwarded into the
+    // PORTFOLIO_CHANGES_PROCESSED event, and the per-item progress reporter
+    // attached by `portfolioWorker` (an own property, like `heartbeat`).
+    // (`_run` falls back to this job's own id when the chain started here,
+    // e.g. an admin full rebuild.)
+    const origin = carryOrigin('portfolio', job);
+    const reportProgress = job.reportProgress;
 
     if (deletedTransaction) {
         // --- Deletion of a single Investments/Debt transaction (#94) ---
-        return await handleDeletion(tenantId, deletedTransaction, _rebuildMeta);
+        return await handleDeletion(tenantId, deletedTransaction, _rebuildMeta, origin);
     } else if (transactionId) {
         // --- Scoped Update Logic (single transaction) ---
-        return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta, previousPortfolioItemId);
+        return await handleScopedUpdate(tenantId, transactionId, _rebuildMeta, previousPortfolioItemId, origin);
     } else if (accountIds && accountIds.length > 0) {
         // --- Account-scoped rebuild (e.g., after Plaid promote or import) ---
-        return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat);
+        return await handleFullRebuild(tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat, origin, reportProgress);
     } else {
         // --- Full Rebuild Logic ---
-        return await handleFullRebuild(tenantId, institutionId, undefined, undefined, _rebuildMeta, heartbeat);
+        return await handleFullRebuild(tenantId, institutionId, undefined, undefined, _rebuildMeta, heartbeat, origin, reportProgress);
     }
 };
 
-const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previousPortfolioItemId) => {
+const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previousPortfolioItemId, origin = {}) => {
     logger.info(`--- Starting Scoped Portfolio Update for tenant: ${tenantId}, transaction: ${transactionId} ---`);
     
     const transaction = await prisma.transaction.findUnique({
@@ -357,6 +365,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previou
     // through cash → analytics → valuation and the terminal worker can
     // release the single-flight lock on completion.
     if (_rebuildMeta) payload._rebuildMeta = _rebuildMeta;
+    Object.assign(payload, origin);
     await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', payload);
     logger.info(`[Scoped] Emitted PORTFOLIO_CHANGES_PROCESSED event.`, payload);
 
@@ -373,7 +382,7 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previou
  *    cash processor and scoped analytics drop its contribution, and valuation
  *    rebuilds the surviving items' history.
  */
-const handleDeletion = async (tenantId, deleted, _rebuildMeta) => {
+const handleDeletion = async (tenantId, deleted, _rebuildMeta, origin = {}) => {
     logger.info(`--- Starting Portfolio Delete Reconciliation for tenant: ${tenantId}, transaction: ${deleted.id} ---`);
     const affectedPortfolioItems = new Map();
 
@@ -407,6 +416,7 @@ const handleDeletion = async (tenantId, deleted, _rebuildMeta) => {
         }],
     };
     if (_rebuildMeta) payload._rebuildMeta = _rebuildMeta;
+    Object.assign(payload, origin);
     await enqueueEvent('PORTFOLIO_CHANGES_PROCESSED', payload);
     logger.info(`[Delete] Emitted PORTFOLIO_CHANGES_PROCESSED event.`, payload);
 
@@ -414,7 +424,7 @@ const handleDeletion = async (tenantId, deleted, _rebuildMeta) => {
 };
 
 
-const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat) => {
+const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes, _rebuildMeta, heartbeat, origin = {}, reportProgress) => {
     const isAccountScoped = accountIds && accountIds.length > 0;
     const scope = isAccountScoped
         ? `accounts: [${accountIds.join(', ')}]`
@@ -526,6 +536,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
             // so downstream cash/analytics processing still triggers
             ...(isAccountScoped && { portfolioItemIds: [], dateScopes: dateScopes || [] }),
             ...(_rebuildMeta ? { _rebuildMeta } : {}),
+            ...origin,
         });
         return { success: true, portfolioItemsCreated: 0 };
     }
@@ -612,11 +623,14 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
 
     let portfolioItemsToCreate = [];
 
+    let groupsDone = 0;
     for (const [groupKey, { symbol, accountId, transactions }] of transactionsByGroup.entries()) {
         // BullMQ lock heartbeat — see `utils/jobHeartbeat.js`. Safe
         // to call unconditionally (no-ops when not attached,
         // self rate-limits to ~60s intervals).
         await heartbeat?.();
+        // Processing status (#100): items processed / total (throttled, never throws).
+        reportProgress?.(groupsDone++, transactionsByGroup.size);
         // Sort transactions chronologically for correct FIFO lot calculation.
         transactions.sort((a, b) => a.transaction_date - b.transaction_date);
 
@@ -773,6 +787,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         ...(isAccountScoped && allAffectedItemIds.length > 0 && { portfolioItemIds: allAffectedItemIds }),
         ...(isAccountScoped && dateScopes && { dateScopes }),
         ...(_rebuildMeta ? { _rebuildMeta } : {}),
+        ...origin,
     });
     logger.info(`[Sync] Emitted PORTFOLIO_CHANGES_PROCESSED event for tenant: ${tenantId}, isFullRebuild: ${!isAccountScoped}.`);
 

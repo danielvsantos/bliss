@@ -83,6 +83,8 @@ export function useRenameSubscription() {
 export function useMergeSubscription() {
   const invalidate = useInvalidateSubscriptions();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['SUBSCRIPTION_SCAN'] },
     mutationFn: ({ sourceDescriptionHash, targetDescriptionHash }: {
       sourceDescriptionHash: string;
       targetDescriptionHash: string;
@@ -94,6 +96,8 @@ export function useMergeSubscription() {
 export function useUnmergeSubscription() {
   const invalidate = useInvalidateSubscriptions();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['SUBSCRIPTION_SCAN'] },
     mutationFn: (descriptionHash: string) => api.unmergeSubscription(descriptionHash),
     onSuccess: invalidate,
   });
@@ -102,6 +106,8 @@ export function useUnmergeSubscription() {
 export function useRefreshSubscriptions() {
   const invalidate = useInvalidateSubscriptions();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['SUBSCRIPTION_SCAN'] },
     mutationFn: () => api.refreshSubscriptions(),
     onSuccess: invalidate,
   });
@@ -110,6 +116,8 @@ export function useRefreshSubscriptions() {
 export function useFullHistoryScan() {
   const invalidate = useInvalidateSubscriptions();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['SUBSCRIPTION_SCAN'] },
     mutationFn: () => api.fullHistoryScan(),
     onSuccess: invalidate,
   });

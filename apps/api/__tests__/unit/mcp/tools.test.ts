@@ -374,6 +374,28 @@ describe('analytics tools', () => {
     const notif = await run('get_notifications_summary', {}, { 'GET /api/notifications/summary': { totalUnseen: 2, signals: [{ type: 'PENDING_REVIEW', count: 2, isNew: true, href: '/x' }] } });
     expect(notif.result).toEqual({ totalUnseen: 2, signals: [{ type: 'PENDING_REVIEW', count: 2, isNew: true }] });
   });
+
+  it('get_processing_status wraps GET /api/activity, trims recent and says when it has settled (#100)', async () => {
+    const recent = Array.from({ length: 30 }, (_, i) => ({ id: `p:${i}`, type: 'PORTFOLIO_UPDATE', state: 'completed' }));
+    const busy = await run('get_processing_status', {}, {
+      'GET /api/activity': {
+        available: true, workerOnline: true, serverTime: 't',
+        summary: { ANALYTICS_UPDATE: { state: 'running', count: 1 } },
+        inFlight: [{ id: 'analytics:1', type: 'ANALYTICS_UPDATE', affects: ['ANALYTICS_UPDATE'] }],
+        recent, lastCompletedAt: { PORTFOLIO_UPDATE: 'x' },
+      },
+    });
+    expect(busy.calls).toEqual([{ method: 'GET', path: '/api/activity', query: undefined, body: undefined }]);
+    expect(busy.result).toMatchObject({ available: true, workerOnline: true, settled: false, lastCompletedAt: { PORTFOLIO_UPDATE: 'x' } });
+    expect(busy.result.recent).toHaveLength(20);
+
+    const idle = await run('get_processing_status', {}, { 'GET /api/activity': { available: true, inFlight: [], recent: [] } });
+    expect(idle.result.settled).toBe(true);
+
+    // Unknown is not idle.
+    const down = await run('get_processing_status', {}, { 'GET /api/activity': { available: false, inFlight: [], recent: [] } });
+    expect(down.result.settled).toBe(false);
+  });
 });
 
 describe('plaid review tools', () => {

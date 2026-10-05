@@ -1,8 +1,8 @@
 /**
  * Integration tests — MCP endpoint protocol, auth and role filtering (#89).
  *
- * AC1  read-only key: initialize + tools/list → exactly the 21 read tools
- * AC2  read & write key → all 40 tools; none uploads files or touches Plaid connections
+ * AC1  read-only key: initialize + tools/list → exactly the 22 read tools
+ * AC2  read & write key → all 41 tools; none uploads files or touches Plaid connections
  * AC3  read-only key calling a write tool → tool error, nothing changes
  * AC4  no key / cookie session / user JWT / revoked / expired key → 401, no tool runs
  * AC14 stateless Streamable HTTP: no Mcp-Session-Id, GET/DELETE → 405
@@ -102,10 +102,10 @@ afterAll(async () => {
 });
 
 describe('POST /api/mcp — tools/list by role', () => {
-  it('AC1: a read-only key sees exactly the 21 read tools, all readOnlyHint', async () => {
+  it('AC1: a read-only key sees exactly the 22 read tools, all readOnlyHint', async () => {
     const client = await connect(roKey);
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(21);
+    expect(tools).toHaveLength(22);
     expect(tools.map((t) => t.name).sort()).toEqual(READ_TOOLS.map((t) => t.name).sort());
     expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
     expect(tools.map((t) => t.name)).not.toEqual(expect.arrayContaining(['create_bank']));
@@ -113,10 +113,10 @@ describe('POST /api/mcp — tools/list by role', () => {
     await client.close();
   });
 
-  it('AC2: a read & write key sees all 40 tools, create_bank / create_account included (#98)', async () => {
+  it('AC2: a read & write key sees all 41 tools, create_bank / create_account included (#98)', async () => {
     const client = await connect(rwKey);
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(40);
+    expect(tools).toHaveLength(41);
     expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['create_bank', 'create_account']));
     expect(tools.map((t) => t.name).sort()).toEqual(ALL_TOOLS.map((t) => t.name).sort());
     expect(tools.find((t) => t.name === 'delete_transaction')?.annotations?.destructiveHint).toBe(true);
@@ -223,7 +223,7 @@ describe('scripts/mcp-inspector-smoke.mjs (AC14)', () => {
       env: { ...process.env, BLISS_URL: server.baseUrl, BLISS_API_KEY: roKey },
     });
     expect(stdout).toContain('✓ stateless');
-    expect(stdout).toContain('tools/list: 21 tools (21 read, 0 write)');
+    expect(stdout).toContain('tools/list: 22 tools (22 read, 0 write)');
     expect(stdout).toContain('✓ tools/call list_accounts: 1 account(s)');
     expect(stdout).not.toContain(roKey);
   }, 30_000);

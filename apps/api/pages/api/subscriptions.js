@@ -31,6 +31,7 @@ import { cors } from '../../utils/cors.js';
 import { rateLimiters } from '../../utils/rateLimit.js';
 import { withAuth } from '../../utils/withAuth.js';
 import { produceEvent } from '../../utils/produceEvent.js';
+import { eventOrigin } from '../../utils/eventOrigin.js';
 import { batchFetchRates } from '../../utils/currencyConversion.js';
 import { hashMerchant } from '../../utils/merchantNormalize.js';
 import { getRefreshCooldownRemaining, armRefreshCooldown } from '../../utils/subscriptionCooldown.js';
@@ -633,6 +634,7 @@ async function handleMerge(req, res, tenantId) {
   // Rescan so the target row absorbs the source merchant's charges now — not on
   // the next nightly run. No cooldown: this is a targeted, cheap re-fold.
   await produceEvent({
+    ...eventOrigin(req),
     type: 'SUBSCRIPTION_DETECTION_REQUESTED',
     tenantId,
     mode: 'incremental',
@@ -657,6 +659,7 @@ async function handleUnmerge(req, res, tenantId) {
   }
 
   await produceEvent({
+    ...eventOrigin(req),
     type: 'SUBSCRIPTION_DETECTION_REQUESTED',
     tenantId,
     mode: 'incremental',
@@ -679,6 +682,7 @@ async function handleScan(req, res, tenantId, mode) {
   }
 
   await produceEvent({
+    ...eventOrigin(req),
     type: 'SUBSCRIPTION_DETECTION_REQUESTED',
     tenantId,
     mode,
