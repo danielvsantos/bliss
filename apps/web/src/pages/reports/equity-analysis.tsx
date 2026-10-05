@@ -19,6 +19,7 @@ import { useEquityAnalysis } from '@/hooks/use-equity-analysis';
 import { buildGroupColorMap, getGroupColor } from '@/lib/portfolio-utils';
 import { formatCurrency, formatPercentage } from '@/lib/utils';
 import { ASSET_CLASSES, type EquityHolding } from '@/types/equity-analysis';
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 /** Buckets the API uses for ETFs that can't be looked through, and for the look-through remainder (#79). */
 const DIVERSIFIED = 'Diversified';
@@ -200,6 +201,8 @@ export default function EquityAnalysisPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['PORTFOLIO_UPDATE', 'SECURITY_DATA']} invalidate={[['equity-analysis'], ['portfolio-holdings']]} />
       {/* ── Page Title ── */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight mb-2">{t('equityAnalysis.title')}</h2>

@@ -13,6 +13,8 @@ export const plaidItemKeys = {
 export function useResyncPlaidItem() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['BANK_SYNC'] },
     mutationFn: (plaidItemId: string) => api.resyncPlaidItem(plaidItemId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: plaidItemKeys.all });
@@ -61,6 +63,8 @@ export function useRequeuePlaidTransaction() {
 export function useFetchHistoricalTransactions() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['BANK_SYNC'] },
     mutationFn: ({ plaidItemId, fromDate }: { plaidItemId: string; fromDate: string }) =>
       api.fetchHistoricalTransactions(plaidItemId, fromDate),
     onSuccess: () => {

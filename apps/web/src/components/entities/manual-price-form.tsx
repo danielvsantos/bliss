@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { MANUAL_ASSET_VALUES_QUERY_KEY } from '@/hooks/use-manual-asset-values';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
 import { parseDecimal } from '@/lib/portfolio-utils';
+import { markActivityPending } from '@/lib/activity-pending';
 
 const priceSchema = z.object({
   date: z.date({ required_error: "A date is required." }),
@@ -68,6 +69,8 @@ export function ManualPriceForm({ asset, onClose, existingValue }: ManualPriceFo
       } else {
         await api.createManualAssetValue(asset.id, payload);
       }
+      // Processing status (#100): the asset is revalued in the background.
+      markActivityPending(['PORTFOLIO_UPDATE']);
       toast({
         title: t('manualPriceForm.success'),
         description: t('manualPriceForm.savedDetail', { name: asset.symbol }),

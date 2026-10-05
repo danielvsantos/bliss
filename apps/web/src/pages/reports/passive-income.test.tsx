@@ -7,6 +7,11 @@ import * as PortfolioHooks from '@/hooks/use-portfolio-items';
 import { mockQueryResult, mockQueryError, mockMutationResult } from '@/test/mock-helpers';
 import type { PassiveIncomeResponse, IncomeStreamsResponse, PassiveIncomeItem, PassiveIncomeGroup } from '@/types/passive-income';
 
+// Processing status (#100): the banner has its own tests; here it is a probe.
+vi.mock('@/components/processing/DataUpdatingBanner', () => ({
+  DataUpdatingBanner: ({ watch }: { watch: string[] }) => <div data-testid="data-updating-banner" data-watch={watch.join(',')} />,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, o?: Record<string, unknown>) => {

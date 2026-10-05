@@ -53,6 +53,7 @@ import type {
   RecurringCadence,
   Transaction,
 } from '@/types/api';
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 type MergeCandidate = SubscriptionsResponse['mergeCandidates'][number];
 
@@ -549,6 +550,8 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Processing status (#100): recalculation in progress / updated X ago. */}
+      <DataUpdatingBanner watch={['SUBSCRIPTION_SCAN']} invalidate={[['subscriptions']]} />
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

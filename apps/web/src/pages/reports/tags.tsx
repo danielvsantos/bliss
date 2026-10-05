@@ -25,6 +25,7 @@ import { formatCurrency } from '@/lib/utils';
 import { getTenantMeta } from '@/utils/tenantMetaStorage';
 import { translateCategoryGroup } from '@/lib/category-i18n';
 import type { Tag, Currency } from '@/types/api';
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 const CHART_COLORS = ['#3A3542', '#2E8B57', '#E5989B', '#6D657A', '#E09F12', '#9A95A4', '#3A8A8F', '#B8AEC8'];
 const RADIAN = Math.PI / 180;
@@ -239,6 +240,8 @@ export default function TagAnalyticsPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['ANALYTICS_UPDATE']} invalidate={[['tag-analytics'], ['analytics']]} />
       {/* Header */}
       <motion.div {...fadeUp}>
         <div>

@@ -49,6 +49,8 @@ export function useGenerateInsights() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['INSIGHTS'] },
     mutationFn: (options: GenerateOptions) => api.generateInsights(options),
     onSuccess: () => {
       setTimeout(() => {

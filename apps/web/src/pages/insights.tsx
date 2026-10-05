@@ -36,6 +36,7 @@ import {
   CalendarCheck,
   BarChart3,
 } from "lucide-react";
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 // ─── Tier & Category Config ─────────────────────────────────────────────────
 
@@ -318,6 +319,8 @@ export default function InsightsPage() {
 
   return (
     <div>
+      {/* Processing status (#100): recalculation in progress / updated X ago. */}
+      <DataUpdatingBanner watch={['INSIGHTS']} invalidate={[['insights']]} className="mb-4" />
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

@@ -66,6 +66,7 @@ import {
 import { translateCategoryGroup } from "@/lib/category-i18n";
 import { IncomeTermsModal } from "@/components/income/income-terms-modal";
 import { canHoldIncomeTerms } from "@/lib/passive-income";
+import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 
 // ── Symbol-level merge (cross-account deduplication) ──────────────────────
 //
@@ -694,6 +695,8 @@ export default function PortfolioHoldingsPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
+        {/* Processing status (#100): recalculation in progress / updated X ago. */}
+        <DataUpdatingBanner watch={['PORTFOLIO_UPDATE', 'SECURITY_DATA']} invalidate={[['portfolio-holdings'], ['portfolio-history'], ['portfolio-items']]} />
       {/* ── Page Header ── */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight mb-2">{t("portfolio.title")}</h2>

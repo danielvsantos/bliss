@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -50,6 +50,7 @@ import {
   Lock,
   Wrench,
   KeyRound,
+  Activity,
 } from "lucide-react";
 import { useTenantSettings, useUpdateTenantSettings } from "@/hooks/use-tenant-settings";
 
@@ -58,6 +59,7 @@ import { CardDivider } from "@/components/ui/card-divider";
 import { SettingsSelect } from "@/components/settings/settings-select";
 import { MaintenanceTab } from "@/components/settings/maintenance-tab";
 import { IntegrationsTab } from "@/components/settings/integrations-tab";
+import { ProcessingTab } from "@/components/settings/processing-tab";
 import {
   MultiSelectCombobox,
   type ComboboxOption,
@@ -108,6 +110,8 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     adminOnly: true,
     tabs: [
       { value: "maintenance", labelKey: "pages.settings.tabs.maintenance", icon: Wrench },
+      // Processing status (#100): live work, last 24 h, rebuild history.
+      { value: "processing", labelKey: "pages.settings.tabs.processing", icon: Activity },
       { value: "integrations", labelKey: "pages.settings.tabs.integrations", icon: KeyRound },
     ],
   },
@@ -143,7 +147,25 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
 
-  const [activeTab, setActiveTab] = useState("general");
+  // `?tab=<value>` deep-links a tab (e.g. the Processing tab from a
+  // notification or Maintenance's "See progress"). Admin-only tabs fall back
+  // to General for other roles.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const isAllowedTab = useCallback(
+    (value: string | null): value is string =>
+      !!value && SETTINGS_SECTIONS.some((section) =>
+        (!section.adminOnly || user?.role === "admin") && section.tabs.some((tab) => tab.value === value)),
+    [user?.role],
+  );
+  const [activeTab, setActiveTab] = useState(() => (isAllowedTab(tabParam) ? tabParam : "general"));
+  useEffect(() => {
+    if (isAllowedTab(tabParam)) setActiveTab(tabParam);
+  }, [tabParam, isAllowedTab]);
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (tabParam) setSearchParams({ tab: value }, { replace: true });
+  };
   const [settings, setSettings] = useState<TenantSettingsData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -404,7 +426,7 @@ export default function SettingsPage() {
           (server-side auth also returns 403 for them). */}
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={handleTabChange}
         orientation={isMobile ? "horizontal" : "vertical"}
         className="gap-6 md:flex-row md:items-start md:gap-8"
       >
@@ -1010,6 +1032,13 @@ export default function SettingsPage() {
           {user?.role === 'admin' && (
             <TabsContent value="maintenance" className="mt-0 space-y-5">
               <MaintenanceTab />
+            </TabsContent>
+          )}
+
+          {/* ═══════ PROCESSING TAB (admin only, #100) ═══════ */}
+          {user?.role === 'admin' && (
+            <TabsContent value="processing" className="mt-0 space-y-5">
+              <ProcessingTab />
             </TabsContent>
           )}
 

@@ -1,10 +1,20 @@
 import { ThemeProvider } from "./theme";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "../contexts/AuthContext";
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { OnboardingProvider } from "./onboarding-context";
 import { shouldPersistPortfolioQuery, markPortfolioQueriesStale } from "./query-config";
+import { markActivityPending, setActivityQueryClient } from "./activity-pending";
+import type { ActivityType } from "@/types/activity";
+
+// `meta.activity` on a mutation: the processing-status types its success
+// starts in the background, shown as "Queued" right away (#100).
+declare module "@tanstack/react-query" {
+  interface Register {
+    mutationMeta: { activity?: ActivityType[] };
+  }
+}
 
 // Create storage persister
 const storagePersister = createSyncStoragePersister({
@@ -18,7 +28,14 @@ const queryClient = new QueryClient({
       gcTime: 1000 * 60 * 60 * 24, // 24 hours
     },
   },
+  mutationCache: new MutationCache({
+    onSuccess: (_data, _variables, _context, mutation) => {
+      const types = mutation.options.meta?.activity;
+      if (types?.length) markActivityPending(types);
+    },
+  }),
 });
+setActivityQueryClient(queryClient);
 
 // Initialize persistence
 const [, persistRestorePromise] = persistQueryClient({

@@ -12,6 +12,11 @@ import * as UseAccountList from '@/hooks/use-account-list';
 import { mockQueryResult } from '@/test/mock-helpers';
 
 // Mocks
+// Processing status (#100): the banner has its own tests; here it is a probe.
+vi.mock('@/components/processing/DataUpdatingBanner', () => ({
+  DataUpdatingBanner: ({ watch }: { watch: string[] }) => <div data-testid="data-updating-banner" data-watch={watch.join(',')} />,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : k),

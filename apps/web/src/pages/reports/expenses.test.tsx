@@ -14,6 +14,11 @@ import type { AnalyticsResponse } from '@/types/api';
 // Pure-function tests for the moving-average calculation live in
 // src/lib/trend-utils.test.ts. This file covers the page-level wiring only.
 
+// Processing status (#100): the banner has its own tests; here it is a probe.
+vi.mock('@/components/processing/DataUpdatingBanner', () => ({
+  DataUpdatingBanner: ({ watch }: { watch: string[] }) => <div data-testid="data-updating-banner" data-watch={watch.join(',')} />,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : k),

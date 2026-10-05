@@ -133,6 +133,8 @@ export function useBulkConfirmImportRows(importId: string | null) {
 export function useCommitImport() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['IMPORT', 'PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'] },
     mutationFn: (params: { id: string; rowIds?: string[] }) => api.commitImport(params.id, params.rowIds),
     onSuccess: (_data, params) => {
       // Trigger a refetch so the polling picks up the COMMITTING status

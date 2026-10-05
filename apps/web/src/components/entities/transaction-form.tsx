@@ -26,6 +26,7 @@ import { CategoryCombobox } from './category-combobox';
 import { TagInput } from './tag-input';
 import { usePortfolioItems } from '@/hooks/use-normalized-portfolio-items';
 import { invalidatePortfolioQueries } from '@/lib/query-config';
+import { markActivityPending } from '@/lib/activity-pending';
 import { getMissingInvestmentFields } from '@/lib/investment-utils';
 
 // Form schema
@@ -260,6 +261,8 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
         await api.createTransaction(transactionData);
         toast({ title: t('common.success'), description: t('transactionFormPage.createdSuccess') });
       }
+      // Processing status (#100): portfolio + analytics recalculate in the background.
+      markActivityPending(['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE']);
       await queryClient.invalidateQueries({ queryKey: ['transactions'] });
       // A transaction may change portfolio composition or value (investment
       // buys/sells, cash movements). Refetch portfolio views immediately rather

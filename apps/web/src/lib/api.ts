@@ -65,6 +65,7 @@ import type {
   KeyExpiryDays,
 } from '../types/integrations';
 import type { OAuthConsentResponse, OAuthDecisionResponse } from '../types/oauth';
+import type { ActivityResponse } from '../types/activity';
 
 export interface AggregatedPortfolioHistory {
   date: string;
@@ -1034,6 +1035,12 @@ class APIClient {
 
   async getNotificationSummary(): Promise<{ totalUnseen: number; lastSeenAt: string | null; signals: UserSignal[] }> {
     const response = await this.client.get('/api/notifications/summary');
+    return response.data;
+  }
+
+  /** Processing status for the tenant (#100): what background work is in flight. */
+  async getActivity(): Promise<ActivityResponse> {
+    const response = await this.client.get('/api/activity');
     return response.data;
   }
 

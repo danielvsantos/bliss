@@ -1,6 +1,7 @@
 import React from "react";
 import { Menu, Settings, LogOut, UserCog } from "lucide-react";
 import { NotificationCenter } from "@/components/notification-center";
+import { ActivityChip } from "@/components/processing/ActivityChip";
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from "@/components/language-switcher";
 import {
@@ -139,6 +140,9 @@ export function Header({ sidebarOpen, onSidebarToggle, isMobile = false }: Heade
         flexShrink: 0,
       }}>
         {!isMobileLayout && <LanguageSwitcher />}
+
+        {/* Processing status (#100): hidden while everything is up to date. */}
+        <ActivityChip />
 
         <NotificationCenter />
 
