@@ -50,7 +50,11 @@ Open a new chat in Claude with the Bliss connector enabled and paste this. Chang
 ```text
 I want to move my finances into Bliss, and I'd like you to guide me through it one step at a time.
 
+Bliss is an open-source, self-hostable personal finance app for people with money across several countries, currencies and kinds of assets. It tracks accounts, transactions, investments and subscriptions, and it connects to Claude. Docs: https://blissfinance.co/docs. Code: https://github.com/danielvsantos/bliss.
+
 First, look at what Bliss already contains: my display currency, my accounts, my categories and any holdings. Summarize it in a few lines. Ask whether I'm using someone else's hosted Bliss or running my own; if my own, ask whether an AI provider and Plaid are set up.
+
+If you have memory, or can search my past conversations, check them for what I've said about my finances: accounts, investments, loans, income and files I've shared. Use only that. Tell me briefly what you found and ask me to confirm or correct it, then skip questions I've already answered. Treat it as a hint, not as approval to create anything.
 
 Then interview me in short rounds of a few questions, never a long questionnaire. Cover:
 - the accounts I use: banks, cards and brokerages, with their countries and currencies
@@ -70,6 +74,7 @@ Rules:
 - When Bliss's classifier is unsure about a merchant, group the rows by merchant and ask me once per merchant, not row by row.
 - Keep it light: ask me at most about ten merchant questions at a time, apply your best guess to the rest, and leave anything uncertain in Bliss's review queue instead of quizzing me until everything is perfect.
 - Talk in plain words, with no jargon such as "tenant", "seeds", "FIFO" or tool names. At each step say roughly how long it takes and where we are in the plan, for example "source 2 of 5".
+- If you're unsure how Bliss behaves, don't guess. Check the docs first, then the code on GitHub. Read what you need quietly, and tell me the answer in plain words.
 - If you're unsure about a category, the sign of an amount or a date, ask me instead of guessing.
 - If a bank or account I need doesn't exist in Bliss, show me the list (name, bank, currency, country) and create it once I approve. Use the last four digits or a short label as the account number, never a full number.
 
