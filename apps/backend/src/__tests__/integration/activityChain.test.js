@@ -73,7 +73,7 @@ async function waitFor(tenantId, predicate, timeoutMs = 10_000) {
 
 const write = (tenantId, field, entry, mode, completedAt = '') => redis.activityWrite(
   activityKey(tenantId), lastKey(tenantId), field, entry ? JSON.stringify(entry) : '', mode, entry?.t || '', completedAt,
-  '86400', String(Date.now()), String(24 * 3600 * 1000), '200', '500',
+  '86400', String(Date.now()), String(24 * 3600 * 1000), '200', '500', String(10 * 60 * 1000),
 );
 
 beforeAll(async () => {
@@ -120,12 +120,38 @@ describe('write script (real Redis)', () => {
     expect(await redis.ttl(lastKey(tenant))).toBe(-1); // no TTL by design
   });
 
-  it('a failure does not stamp :last; drop removes an entry', async () => {
+  it('a failure does not stamp :last; drop leaves a tombstone the summary ignores', async () => {
     await write(tenant, 'analytics:2', { ...entry('failed', { fa: Date.now(), ec: 'P2034' }), t: 'ANALYTICS_UPDATE' }, 'terminal', '');
     expect(await redis.hget(lastKey(tenant), 'ANALYTICS_UPDATE')).toBeNull();
     await write(tenant, 'portfolio:3', entry('queued'), 'queued');
     expect(await write(tenant, 'portfolio:3', null, 'drop')).toBe(1);
-    expect(await redis.hexists(activityKey(tenant), 'portfolio:3')).toBe(0);
+    expect(JSON.parse(await redis.hget(activityKey(tenant), 'portfolio:3'))).toMatchObject({ st: 'gone' });
+    const snap = await snapshot(tenant);
+    expect(snap.inFlight.map((e) => e.id)).not.toContain('portfolio:3');
+    expect(snap.recent.map((e) => e.id)).not.toContain('portfolio:3');
+  });
+
+  it('a queued write that lands after the drop cannot resurrect the entry (split web + worker)', async () => {
+    // Worker service: the event hop runs and is dropped in ~5 ms...
+    await write(tenant, 'events:9', entry('running', { t: 'ANALYTICS_UPDATE', s: 'scheduling' }), 'update');
+    await write(tenant, 'events:9', null, 'drop');
+    // ...before the web service's queued write for the same job reaches Redis.
+    expect(await write(tenant, 'events:9', entry('queued', { t: 'ANALYTICS_UPDATE', s: 'scheduling' }), 'queued')).toBe(0);
+    expect(await write(tenant, 'events:9', entry('running', { t: 'ANALYTICS_UPDATE' }), 'update')).toBe(0);
+    expect((await snapshot(tenant)).inFlight.map((e) => e.id)).not.toContain('events:9');
+  });
+
+  it('prunes tombstones once they are older than the tombstone age', async () => {
+    const t = `act-${RUN}-tomb`;
+    const pipe = redis.pipeline();
+    for (let i = 0; i < 250; i++) pipe.hset(activityKey(t), `events:old${i}`, JSON.stringify({ st: 'gone', ua: Date.now() - 11 * 60 * 1000 }));
+    pipe.hset(activityKey(t), 'events:fresh', JSON.stringify({ st: 'gone', ua: Date.now() }));
+    await pipe.exec();
+
+    await write(t, 'portfolio:new', entry('completed', { fa: Date.now() }), 'terminal', new Date().toISOString());
+
+    const fields = Object.keys(await redis.hgetall(activityKey(t)));
+    expect(fields.sort()).toEqual(['events:fresh', 'portfolio:new']);
   });
 
   it('prunes old entries, then the oldest finished ones, once the hash outgrows the threshold', async () => {
@@ -223,6 +249,22 @@ describe('BullMQ chain (real Redis)', () => {
     expect(Object.keys(snap.summary)).toEqual(['PORTFOLIO_UPDATE']);
     expect(snap.summary.PORTFOLIO_UPDATE).toMatchObject({ state: 'queued', count: 1, stage: 'updating_cash' });
     expect(await portfolio.getDelayedCount()).toBe(1);
+    await redis.del(`debounce:process-cash-holdings:tenant:${tenantId}`);
+  });
+
+  it('a debounced edit after the previous job already ran keeps that job\'s history row', async () => {
+    const tenantId = `act-${RUN}-ran`;
+    const portfolio = makeQueue('portfolio');
+    makeWorker('portfolio', async () => {});
+    const schedule = () => scheduleDebouncedJob(portfolio, 'process-cash-holdings',
+      { tenantId, needsCashRebuild: [true], scope: { year: 2026 } }, 'needsCashRebuild', 0);
+
+    await schedule();
+    await waitFor(tenantId, (s) => s.recent.length === 1 && s.inFlight.length === 0);
+    // Within the debounce record's lifetime (delay + 5 s), the first job is done.
+    await schedule();
+    const snap = await waitFor(tenantId, (s) => s.recent.length === 2 && s.inFlight.length === 0);
+    expect(snap.recent.every((r) => r.state === 'completed')).toBe(true);
     await redis.del(`debounce:process-cash-holdings:tenant:${tenantId}`);
   });
 

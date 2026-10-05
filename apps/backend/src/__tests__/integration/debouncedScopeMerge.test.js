@@ -23,7 +23,7 @@ function mockMakeQueue(name) {
     jobs,
     add: jest.fn(async (jobName, data) => {
       const id = `${name}-${++seq}`;
-      jobs.set(id, { id, name: jobName, data, remove: async () => { jobs.delete(id); } });
+      jobs.set(id, { id, name: jobName, data, getState: async () => 'delayed', remove: async () => { jobs.delete(id); } });
       return { id };
     }),
     getJob: jest.fn(async (id) => jobs.get(id) || null),

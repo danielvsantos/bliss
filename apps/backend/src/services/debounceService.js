@@ -3,6 +3,9 @@ const logger = require('../utils/logger');
 const { dropEntry } = require('../utils/activityTracker');
 const { v4: uuidv4 } = require('uuid');
 
+/** BullMQ states of a job that has not started yet, so can still be replaced. */
+const PENDING_STATES = new Set(['delayed', 'waiting', 'prioritized', 'waiting-children']);
+
 // ── Field mergers ────────────────────────────────────────────────────────────
 //
 // A debounced job replaces the pending one, so every field the job reads must
@@ -129,10 +132,17 @@ async function scheduleDebouncedJob(queue, jobName, jobData, aggregationKey, del
             }
         }
 
-        // If a job is already scheduled, remove it. We will replace it with a new one.
+        // If a job is still pending, remove it: we replace it with a new one
+        // carrying both scopes. The Redis record outlives the delay by a few
+        // seconds, so the job may already have run (or be running); it has then
+        // read its own scope, so we leave it alone and schedule a fresh job
+        // with only the new scope. Removing a finished job would also delete
+        // its "Completed" row from the processing history (#100). A job no
+        // longer in BullMQ keeps the old behaviour: its scope is merged.
         if (existingJob && existingJob.jobId) {
             const job = await queue.getJob(existingJob.jobId);
-            if (job) {
+            const state = job ? await job.getState() : null;
+            if (job && PENDING_STATES.has(state)) {
                 try {
                     await job.remove();
                     // A removed job never completes: drop its processing-status
@@ -140,8 +150,13 @@ async function scheduleDebouncedJob(queue, jobName, jobData, aggregationKey, del
                     dropEntry(tenantId, queue.name, existingJob.jobId);
                     logger.info(`[Debounce] Canceled pending job ${existingJob.jobId} for ${jobName} to extend scope.`);
                 } catch (e) {
+                    // It became active between the two calls; merging its scope
+                    // into the new job only adds work, so carry on.
                     logger.warn(`[Debounce] Could not remove job ${existingJob.jobId}, it may have already run.`, { error: e.message });
                 }
+            } else if (job) {
+                logger.info(`[Debounce] Job ${existingJob.jobId} for ${jobName} already ${state}; scheduling a new one.`);
+                existingJob = null;
             }
         }
 

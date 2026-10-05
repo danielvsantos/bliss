@@ -104,6 +104,19 @@ export const PRUNE_THRESHOLD = 200;
 export const MAX_ENTRIES = 500;
 
 /**
+ * A dropped entry (an event hop that finished, a debounced job that was
+ * removed) is replaced by a tombstone `{ st: 'gone', ua }` instead of being
+ * deleted. With the backend split into web + worker services, the web
+ * service's `queued` write (set-if-absent) can reach Redis after the worker
+ * already ran and dropped the job; the tombstone makes that late write a
+ * no-op instead of resurrecting a `queued` entry nobody will ever clear.
+ * Tombstones carry no type, so `summarize()` skips them; the write script
+ * prunes them once they are older than TOMBSTONE_MS.
+ */
+export const TOMBSTONE_STATE = 'gone';
+export const TOMBSTONE_MS = 10 * MINUTE;
+
+/**
  * A final failure keeps its activity type red in `summary` until the type
  * completes again, or for this long at most.
  */
