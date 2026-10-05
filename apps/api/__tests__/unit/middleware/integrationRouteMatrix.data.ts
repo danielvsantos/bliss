@@ -57,6 +57,7 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   // Invite allowlist (#99): ADMIN_API_KEY route that is also denylisted, so a
   // token is refused before the key check runs.
   'admin/invites.js': { auth: 'adminKey', methods: DENY_ALL(['GET', 'POST', 'DELETE']) },
+  'admin/plaid-webhooks.js': { auth: 'adminKey', methods: DENY_ALL(['GET', 'POST']) },
 
   // ── Analytics / reference data ────────────────────────────────────────────
   // Processing status (#100): read-only, so agents can wait for derived data to settle.

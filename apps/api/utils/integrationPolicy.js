@@ -41,6 +41,8 @@ export const INTEGRATION_DENYLIST = Object.freeze([
   { prefix: '/api/oauth', methods: 'ALL' },
   // Invite-only sign-up allowlist (#99): operator-only (ADMIN_API_KEY).
   { prefix: '/api/admin/invites', methods: 'ALL' },
+  // Plaid webhook check/repair: operator-only (ADMIN_API_KEY).
+  { prefix: '/api/admin/plaid-webhooks', methods: 'ALL' },
   // Plaid connection lifecycle. The review queue (/api/plaid/transactions/*)
   // stays available to read-write tokens.
   { prefix: '/api/plaid/create-link-token', methods: 'ALL' },

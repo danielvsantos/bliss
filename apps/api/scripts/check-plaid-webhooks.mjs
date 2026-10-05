@@ -1,128 +1,122 @@
 #!/usr/bin/env node
-
 /**
- * Compare the webhook URL Plaid has registered for each PlaidItem against
- * PLAID_WEBHOOK_URL, and show when Plaid last sent a webhook.
+ * Compare the webhook URL Plaid has registered for each PlaidItem against the
+ * API's PLAID_WEBHOOK_URL, and show when Plaid last sent a webhook.
  *
- * Plaid stores the webhook per Item at link time (create-link-token.js), so
- * changing PLAID_WEBHOOK_URL later never reaches Items linked before it.
- * Read-only by default; `--fix` calls /item/webhook/update for every Item
- * whose registered URL differs from PLAID_WEBHOOK_URL.
+ * Talks to /api/admin/plaid-webhooks with the operator key, so it runs from
+ * any machine without database or Plaid credentials (the Plaid calls need each
+ * Item's access token, which only the API can decrypt). No dependencies.
  *
  * Usage:
- *   node scripts/check-plaid-webhooks.mjs [tenantId] [--fix]
+ *   ADMIN_API_KEY=… node scripts/check-plaid-webhooks.mjs [--tenant <id>] [--fix] [--url <url>]
  *
- * Environment (same values as the running API):
- *   DATABASE_URL, ENCRYPTION_SECRET, PLAID_CLIENT_ID, PLAID_SECRET,
- *   PLAID_ENV, PLAID_WEBHOOK_URL
+ *   --fix   re-point every mismatched Item at PLAID_WEBHOOK_URL
+ *           (/item/webhook/update). Read-only without it.
+ *
+ * API base URL: --url <url>, else BLISS_API_URL, else NEXTAUTH_URL, else
+ * http://localhost:3000.
  */
 
-import { PrismaClient } from '@prisma/client';
-import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
-import { decrypt } from '@bliss/shared/encryption';
+const USAGE = `Usage:
+  check-plaid-webhooks.mjs [--tenant <id>] [--fix] [--url <url>]
 
-const prisma = new PrismaClient();
+Environment:
+  ADMIN_API_KEY   required; the same value the API server is configured with`;
 
-const PLAID_ENV = process.env.PLAID_ENV || 'sandbox';
-const EXPECTED = process.env.PLAID_WEBHOOK_URL || null;
+function parseArgs(argv) {
+  const opts = { fix: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--tenant' || arg === '--url') {
+      const value = argv[i + 1];
+      if (value === undefined) throw new Error(`${arg} needs a value`);
+      opts[arg.slice(2)] = value;
+      i += 1;
+    } else if (arg === '--fix') {
+      opts.fix = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  return opts;
+}
 
-const plaidClient = new PlaidApi(new Configuration({
-  basePath: PlaidEnvironments[PLAID_ENV],
-  baseOptions: {
-    headers: {
-      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-      'PLAID-SECRET': process.env.PLAID_SECRET,
-    },
-  },
-}));
-
-function plaidError(err) {
-  const data = err?.response?.data;
-  return data ? `${data.error_code}: ${data.error_message}` : err.message;
+function printItem(item) {
+  console.log(`── ${item.institutionName ?? '(unknown institution)'}  [${item.id}]`);
+  console.log(`   tenant: ${item.tenantId}  status: ${item.status}`);
+  console.log(`   Bliss lastSync:               ${item.lastSync ?? 'never'}`);
+  if (item.registeredWebhook !== null || !item.error) {
+    console.log(`   Plaid registered webhook:     ${item.registeredWebhook ?? '(none)'} ${item.matches ? '✓' : '✗ MISMATCH'}`);
+    console.log(`   Plaid last webhook sent:      ${item.lastWebhookSentAt ?? 'never'}` +
+      (item.lastWebhookCode ? ` (${item.lastWebhookCode})` : ''));
+    console.log(`   Plaid last successful update: ${item.lastSuccessfulUpdate ?? 'never'}`);
+    console.log(`   Plaid last failed update:     ${item.lastFailedUpdate ?? 'never'}`);
+  }
+  if (item.plaidItemError) console.log(`   Plaid item error:             ${item.plaidItemError}`);
+  if (item.updated) console.log('   → webhook updated');
+  if (item.error) console.log(`   ${item.error}`);
+  console.log('');
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const fix = args.includes('--fix');
-  const tenantId = args.find(a => !a.startsWith('--'));
+  let opts;
+  try {
+    opts = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(`${err.message}\n\n${USAGE}`);
+    process.exit(1);
+  }
 
-  console.log(`PLAID_ENV:         ${PLAID_ENV}`);
-  console.log(`PLAID_WEBHOOK_URL: ${EXPECTED ?? '(not set)'}`);
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (!adminKey) {
+    console.error(`ADMIN_API_KEY is required.\n\n${USAGE}`);
+    process.exit(1);
+  }
+
+  const base = (opts.url || process.env.BLISS_API_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000')
+    .replace(/\/+$/, '');
+  const url = new URL(`${base}/api/admin/plaid-webhooks`);
+
+  const init = { headers: { 'x-admin-key': adminKey } };
+  if (opts.fix) {
+    init.method = 'POST';
+    init.headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(opts.tenant ? { tenantId: opts.tenant } : {});
+  } else if (opts.tenant) {
+    url.searchParams.set('tenantId', opts.tenant);
+  }
+
+  const res = await fetch(url, init);
+  const text = await res.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = { error: text };
+  }
+  if (!res.ok) {
+    console.error(`${res.status} from ${url.origin}${url.pathname}: ${body.error ?? text}`);
+    process.exit(1);
+  }
+
+  console.log(`PLAID_ENV:         ${body.plaidEnv}`);
+  console.log(`PLAID_WEBHOOK_URL: ${body.expectedWebhook ?? '(not set on the API service)'}`);
   console.log('');
 
-  const items = await prisma.plaidItem.findMany({
-    where: tenantId ? { tenantId } : {},
-    select: {
-      id: true, tenantId: true, itemId: true, accessToken: true,
-      institutionName: true, status: true, lastSync: true, environment: true,
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  if (items.length === 0) {
+  if (body.items.length === 0) {
     console.log('No PlaidItems found.');
     return;
   }
+  body.items.forEach(printItem);
 
-  let mismatched = 0;
-
-  for (const item of items) {
-    console.log(`── ${item.institutionName ?? '(unknown institution)'}  [${item.id}]`);
-    console.log(`   tenant: ${item.tenantId}  status: ${item.status}  env: ${item.environment ?? '?'}`);
-    console.log(`   Bliss lastSync:              ${item.lastSync?.toISOString() ?? 'never'}`);
-
-    let plaidItem;
-    let plaidStatus;
-    try {
-      const res = await plaidClient.itemGet({ access_token: decrypt(item.accessToken) });
-      plaidItem = res.data.item;
-      plaidStatus = res.data.status;
-    } catch (err) {
-      console.log(`   /item/get failed — ${plaidError(err)}`);
-      console.log('');
-      continue;
-    }
-
-    const registered = plaidItem.webhook || null;
-    const matches = registered === EXPECTED;
-    console.log(`   Plaid registered webhook:    ${registered ?? '(none)'} ${matches ? '✓' : '✗ MISMATCH'}`);
-    console.log(`   Plaid last webhook sent:     ${plaidStatus?.last_webhook?.sent_at ?? 'never'}` +
-      (plaidStatus?.last_webhook?.code_sent ? ` (${plaidStatus.last_webhook.code_sent})` : ''));
-    console.log(`   Plaid last successful update: ${plaidStatus?.transactions?.last_successful_update ?? 'never'}`);
-    console.log(`   Plaid last failed update:     ${plaidStatus?.transactions?.last_failed_update ?? 'never'}`);
-    if (plaidItem.error) {
-      console.log(`   Plaid item error:            ${plaidItem.error.error_code}: ${plaidItem.error.error_message}`);
-    }
-
-    if (!matches) {
-      mismatched += 1;
-      if (fix && EXPECTED) {
-        try {
-          await plaidClient.itemWebhookUpdate({
-            access_token: decrypt(item.accessToken),
-            webhook: EXPECTED,
-          });
-          console.log(`   → webhook updated to ${EXPECTED}`);
-        } catch (err) {
-          console.log(`   → /item/webhook/update failed — ${plaidError(err)}`);
-        }
-      }
-    }
-    console.log('');
-  }
-
-  console.log(`${items.length} item(s), ${mismatched} with a webhook different from PLAID_WEBHOOK_URL.`);
-  if (mismatched > 0 && !fix) {
-    console.log('Re-run with --fix to call /item/webhook/update for them.');
-  }
-  if (mismatched > 0 && fix && !EXPECTED) {
-    console.log('--fix skipped: PLAID_WEBHOOK_URL is not set.');
-  }
+  const updated = body.items.filter(i => i.updated).length;
+  const mismatched = body.items.filter(i => !i.error && !i.matches && !i.updated).length;
+  console.log(`${body.items.length} item(s), ${mismatched} with a webhook different from PLAID_WEBHOOK_URL` +
+    (opts.fix ? `, ${updated} updated.` : '.'));
+  if (mismatched > 0 && !opts.fix) console.log('Re-run with --fix to re-point them.');
 }
 
-main()
-  .catch(err => {
-    console.error(err);
-    process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());
+main().catch(err => {
+  console.error(err.message);
+  process.exit(1);
+});

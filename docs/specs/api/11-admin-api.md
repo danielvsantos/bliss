@@ -156,6 +156,25 @@ Base URL: `--url`, else `BLISS_API_URL`, else `NEXTAUTH_URL`, else `http://local
 
 **Data model** — `SignupInvite` (`id` cuid, `email` unique, `note?`, `createdAt`, `usedAt?`, `usedByTenantId?` → `Tenant` `onDelete: SetNull`). It is a **global** table with no `tenantId`, by design: an invite exists before its tenant does. `email` is deterministically encrypted (searchable) like `User.email` and listed in the key-rotation coverage manifest, so a plaintext SQL insert never matches.
 
+### Plaid webhook check
+
+`/api/admin/plaid-webhooks` (`pages/api/admin/plaid-webhooks.js`) shows, for each `PlaidItem`, the webhook URL Plaid has registered (`/item/get`) next to the API's `PLAID_WEBHOOK_URL`, plus Plaid's `last_webhook` and last transaction update times. Plaid stores the webhook per Item at link time, so changing `PLAID_WEBHOOK_URL` never reaches existing Items; `POST` re-points the mismatched ones with `/item/webhook/update`. It runs server-side because the Plaid calls need each Item's access token, which only the API can decrypt; access tokens are never returned or logged.
+
+Same `x-admin-key` auth as above, and on `INTEGRATION_DENYLIST`.
+
+| Method | Request | Responses |
+|---|---|---|
+| `GET` | `?tenantId=` (optional) | `200 { plaidEnv, expectedWebhook, items: [{ id, tenantId, institutionName, status, lastSync, registeredWebhook, matches, lastWebhookSentAt, lastWebhookCode, lastSuccessfulUpdate, lastFailedUpdate, plaidItemError, updated, error }] }` |
+| `POST` | `{ tenantId? }` | `200` same report, `updated: true` on re-pointed Items; `400` when `PLAID_WEBHOOK_URL` is unset |
+
+A Plaid failure for one Item is reported in its `error` field; the request still answers `200`.
+
+**Operator script** — `apps/api/scripts/check-plaid-webhooks.mjs`, no dependencies, no database or Plaid credentials:
+
+```bash
+ADMIN_API_KEY=… node apps/api/scripts/check-plaid-webhooks.mjs --url https://<api-host> [--tenant <id>] [--fix]
+```
+
 ---
 
 ## Data Architecture
@@ -225,5 +244,7 @@ The backend service (`apps/backend`) exposes a single admin endpoint:
 | `pages/api/admin/invites.js` | `GET`/`POST`/`DELETE` the invite-only sign-up allowlist (#99) |
 | `services/signupInvite.service.js` | Invite lookup, atomic consumption, admin CRUD, privacy-safe logging |
 | `scripts/manage-invites.mjs` | Operator CLI over `/api/admin/invites` |
+| `pages/api/admin/plaid-webhooks.js` | `GET` report / `POST` repair of each PlaidItem's registered Plaid webhook |
+| `scripts/check-plaid-webhooks.mjs` | Operator CLI over `/api/admin/plaid-webhooks` |
 | `lib/defaultCategories.js` | Source of truth — must be kept in sync with DB manually after admin changes |
 | `openapi/admin.yaml` | OpenAPI 3.0 spec for all admin endpoints |
