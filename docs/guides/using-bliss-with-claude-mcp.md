@@ -4,7 +4,7 @@ Bliss includes an **MCP server**, so Claude (Cowork, claude.ai, Claude Desktop,
 Claude Code) and other
 [Model Context Protocol](https://modelcontextprotocol.io) clients can work with
 your finances in plain language. You don't need to teach the agent the REST API:
-it gets **40 tools** — set up your banks and accounts, search and re-categorise
+it gets **41 tools** — set up your banks and accounts, search and re-categorise
 transactions, work the bank-sync review queue, review an imported statement,
 answer spending and portfolio questions, clean up subscriptions — and a short
 briefing on how Bliss works.
@@ -40,7 +40,7 @@ with OAuth instead:
    (`claude.ai`), pick **Read-only** or **Read & write**, and how long the
    connection lasts (30 days, **90 days** by default, 1 year, or never). Click
    **Allow**.
-5. Claude shows the Bliss tools. Read-only connections get the 21 read tools;
+5. Claude shows the Bliss tools. Read-only connections get the 22 read tools;
    Read & write all 40.
 
 The connection appears in **Settings → Integrations** as *Connected via OAuth ·
@@ -64,9 +64,9 @@ Operators can restrict which apps may connect with `OAUTH_ALLOWED_REDIRECT_HOSTS
 Follow [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents#create-an-integration):
 **Settings → Integrations → New integration** (tenant admins only).
 
-- **Read-only** — the agent sees the **21 read tools** only. It can answer
+- **Read-only** — the agent sees the **22 read tools** only. It can answer
   questions but cannot change anything, whatever it's told.
-- **Read & write** — all **40 tools**, including creating banks and manual
+- **Read & write** — all **41 tools**, including creating banks and manual
   accounts, re-categorising, approving review items, committing imports and
   editing portfolio data.
 
@@ -184,8 +184,12 @@ agent tells you when one isn't. Asking twice never creates a duplicate.
 - *"Summarise this quarter's insights."*
 
 Writes behave exactly like the app: re-categorising teaches Bliss's classifier,
-and analytics and portfolio values refresh in the background (allow a minute
-before re-asking for totals).
+and analytics and portfolio values refresh in the background. Instead of
+guessing how long that takes, Claude calls **`get_processing_status`** after a
+write and waits until nothing in flight affects what it changed (each in-flight
+entry lists the data it `affects`) before re-asking for totals. The same status
+is what you see in the header chip of the app — see
+[Why are my numbers updating?](/docs/guides/processing-status).
 
 ---
 

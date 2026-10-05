@@ -15,8 +15,10 @@ only) without touching the database directly.
    your account isn't an admin — ask another admin on your tenant to
    grant the role from **Settings → Users**.
 
-The tab has five maintenance options and a history of the last 20 manual
-rebuilds. All operations are **safe to run** — they rebuild caches from
+The tab has five maintenance options. The history of recent rebuilds and live
+progress moved to **Settings → Administration → Processing** in #100 (the
+**See progress** link at the bottom of Maintenance takes you there; see
+[Why are my numbers updating?](/docs/guides/processing-status)). All operations are **safe to run** — they rebuild caches from
 source-of-truth data, they don't lose transactions or portfolio items.
 
 <img src="/images/maintenancesettings.png" alt="Settings → Maintenance tab showing Rebuild all analytics, Full rebuild, Rebuild analytics from a date, and Rebuild a single asset" width="480" />
@@ -81,7 +83,7 @@ bug.
 data"** → click **Refresh securities**. This refreshes every stock and ETF
 *you* hold (profile, dividends and quote; earnings for stocks only) and is
 the right first step. It shares the 1-hour single-run lock and shows up in
-**Recent rebuilds**. New holdings are fetched automatically the same day,
+**Recent rebuilds** (Settings → Processing). New holdings are fetched automatically the same day,
 and **Full rebuild** also refreshes any holdings with missing or stale
 data (a "Refresh securities data" step in the history).
 
@@ -124,7 +126,8 @@ Rebuilds are bounded by per-job BullMQ lock durations (5-30 minutes
 depending on the job type) and self-heal when they stall. But if
 something is truly stuck:
 
-1. Check the **Recent rebuilds** history on the Maintenance tab. If the
+1. Check **Settings → Processing**: the *Live* section shows each step with its
+   progress, and *Recent rebuilds* shows the rebuild's jobs. If the
    job's state is still `active`, wait — a full-portfolio rebuild on a
    15k-transaction tenant can legitimately run 15-30 minutes.
 2. Look at the backend Railway logs for your tenant's rebuild. Search
@@ -186,7 +189,9 @@ data being wrong. Check these first:
 
 ## Advanced: reading the rebuild history
 
-Each completed or failed rebuild in the history panel includes:
+The rebuild history lives in **Settings → Processing → Recent rebuilds**
+(it moved out of the Maintenance tab in #100). Each completed or failed
+rebuild in it includes:
 
 - **Scope** — which kind of rebuild.
 - **State badge** — Completed, Failed, Running, or Queued.

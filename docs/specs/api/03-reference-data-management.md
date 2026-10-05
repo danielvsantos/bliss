@@ -102,7 +102,7 @@ The Currency Rates API, located at `pages/api/currency-rates.js`, provides full 
 
 ## 3.4. Maintenance & Rebuild Operations
 
-Tenant-admin-only endpoints that let an admin manually trigger background rebuilds of analytics and portfolio valuations when caches appear stale, and observe the status and history of recent rebuild operations. Surfaced in the UI via the **Settings → Maintenance** tab.
+Tenant-admin-only endpoints that let an admin manually trigger background rebuilds of analytics and portfolio valuations when caches appear stale, and observe the status and history of recent rebuild operations. Surfaced in the UI via the **Settings → Maintenance** tab (triggers) and **Settings → Processing** (history, #100).
 
 These endpoints live under `/api/admin/rebuild` but are conceptually distinct from the ops-staff `/api/admin/default-categories/*` endpoints — they use tenant JWT auth with a `user.role === 'admin'` check (not the global `ADMIN_API_KEY`), and are scoped strictly to the caller's own tenant.
 
@@ -221,7 +221,7 @@ Polled every 5 seconds by the Maintenance tab. Returns three views of the tenant
 
 **Job filtering**: only BullMQ jobs carrying `data._rebuildMeta` are included. Nightly cron runs, transaction-driven scoped updates, and other queue activity are filtered out so the history reflects only admin-initiated operations.
 
-**Per-subjob display (not grouped)**: a `full-portfolio` rebuild is a chain of 4 BullMQ jobs (`process-portfolio-changes` → `process-cash-holdings` → `full-rebuild-analytics` → `value-all-assets`) that all share the same `_rebuildMeta.requestedAt`. The status endpoint returns **every subjob as its own history entry** — the frontend disambiguates via a human-readable step label (`STEP_LABEL` map in `components/settings/maintenance-tab.tsx`) so each row shows e.g. "Full rebuild · Revalue all assets" rather than 4 rows all labelled "Full rebuild".
+**Per-subjob display (not grouped)**: a `full-portfolio` rebuild is a chain of 4 BullMQ jobs (`process-portfolio-changes` → `process-cash-holdings` → `full-rebuild-analytics` → `value-all-assets`) that all share the same `_rebuildMeta.requestedAt`. The status endpoint returns **every subjob as its own history entry** — the frontend disambiguates via a human-readable step label (`STEP_LABEL` map in `components/settings/rebuild-history-list.tsx`) so each row shows e.g. "Full rebuild · Revalue all assets" rather than 4 rows all labelled "Full rebuild".
 
 Rationale for per-subjob over collapse-to-one: transparency beats tidiness for a maintenance surface. Admins get:
 
@@ -345,7 +345,7 @@ Button state derives from the polled status response:
 | Lock held but no active job (brief window during TTL expiry) | `Next available in X min` — disabled |
 | Trigger mutation in flight | `Starting…` — disabled |
 
-History panel below the buttons renders the last 20 completed/failed rebuilds with state badge (Completed / Failed / Running / Queued), requester email, elapsed time, and failure reason for failed jobs.
+**History moved (#100).** The last 20 completed/failed rebuilds (state badge Completed / Failed / Running / Queued, requester email, elapsed time, failure reason) are now rendered by `RebuildHistoryList` (`components/settings/rebuild-history-list.tsx`) in **Settings → Administration → Processing**. The data and its 30-day retention are unchanged (`GET /api/admin/rebuild`). The Maintenance tab keeps the buttons and their lock state, and links to it with **See progress** (`/settings?tab=processing`). Live progress of every background job (not just admin rebuilds) comes from `GET /api/activity` — see [26-activity-api.md](26-activity-api.md).
 
 ---
 

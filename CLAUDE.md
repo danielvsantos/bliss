@@ -103,10 +103,10 @@ Open http://localhost:8080. `./scripts/setup.sh` prompts for an LLM provider (Ge
 
 | Scope | Command | Framework | Notes |
 |-------|---------|-----------|-------|
-| All | `pnpm test` | -- | 4,504 tests |
-| API | `pnpm test:api` | Vitest (ESM) | 2,106 tests (unit + integration) |
-| Backend | `pnpm test:backend` | Jest (CJS) | 1,270 tests (unit + integration) |
-| Frontend | `pnpm test:web` | Vitest + RTL | 1,128 tests |
+| All | `pnpm test` | -- | 4,718 tests |
+| API | `pnpm test:api` | Vitest (ESM) | 2,143 tests (unit + integration) |
+| Backend | `pnpm test:backend` | Jest (CJS) | 1,378 tests (unit + integration) |
+| Frontend | `pnpm test:web` | Vitest + RTL | 1,197 tests |
 
 Coverage thresholds: 70% lines, 70% functions, 60% branches.
 
@@ -191,14 +191,23 @@ Key patterns:
 `POST /api/mcp` in `apps/api` is a tools-only [MCP](https://modelcontextprotocol.io) server for Claude Code, Claude Desktop (via `mcp-remote`) and other MCP clients. See [`docs/specs/api/24-mcp-server.md`](docs/specs/api/24-mcp-server.md) and the guide [`docs/guides/using-bliss-with-claude-mcp.md`](docs/guides/using-bliss-with-claude-mcp.md).
 
 - **Transport:** `@modelcontextprotocol/sdk` (pinned) Streamable HTTP, **stateless JSON mode** — a new `McpServer` + transport per request, no `Mcp-Session-Id`, so any replica answers. `GET`/`DELETE` → 405.
-- **Auth:** integration keys only (cookie sessions / user JWTs → 401). Read-only keys may POST here thanks to an **exact-path** allowance (`VIEWER_POST_ALLOWED = ['/api/mcp']` in `utils/integrationPolicy.js`). `tools/list` is role-filtered: Read-only → 21 read tools, Read & write → all 40.
+- **Auth:** integration keys only (cookie sessions / user JWTs → 401). Read-only keys may POST here thanks to an **exact-path** allowance (`VIEWER_POST_ALLOWED = ['/api/mcp']` in `utils/integrationPolicy.js`). `tools/list` is role-filtered: Read-only → 22 read tools, Read & write → all 41.
 - **Execution model:** every tool (`lib/mcp/tools/*.js`: reference, workspace setup, transactions, analytics, plaid review queue, imports review, portfolio, subscriptions) calls existing REST routes **over loopback** (`http://127.0.0.1:$PORT`, override `MCP_LOOPBACK_URL`) with the caller's own key, forwarding the client IP for the rate limiters. withAuth, the denylist, tenant scoping, decryption and events therefore apply to every tool call. REST errors map to one-line tool errors (`isError: true`).
 - **Shaping:** opaque cursors (default 50 / max 100), `{ value, currency }` money, signed transaction amounts (+ in / − out), ISO dates, hashes/raw payloads stripped; default pages < 25k chars, 50k hard cap that drops `nextCursor` when it trims.
 - **Workspace setup (#98):** `create_bank` (idempotent, `created: true|false` from the route's 201/200) and `create_account` (manual accounts; `accountNumber` required, encrypted, never echoed — `accountNumberLast4` only; owners default to the connecting admin; integration callers get `409 ACCOUNT_EXISTS` for the same bank + currency + name). They reach the routes through `INTEGRATION_WRITE_ALLOWED` — a method-scoped exact-path allowance (`POST /api/accounts`, `POST /api/banks`) checked before the denylist; `PUT`/`DELETE /api/accounts` stay denied.
 - **Out of scope by design:** file upload, Plaid connection management, account/bank edits and deletes, category/tenant/currency-rate writes, `fullScan`. `search_transactions` has no text filter (descriptions are encrypted with per-value PBKDF2 keys).
 - **OAuth for custom connectors:** Claude Cowork / claude.ai / Claude Desktop connectors can't send a header, so `apps/api` also runs an OAuth 2.1 server (PKCE S256, RFC 9728/8414 discovery via `/.well-known/*` rewrites, dynamic client registration limited by `OAUTH_ALLOWED_REDIRECT_HOSTS`, refresh rotation with reuse detection, RFC 7009 revoke). Every 401 from `/api/mcp` carries a `WWW-Authenticate … resource_metadata` challenge. **The access token is an integration key**: consent at `/oauth/consent` (web, admins only) creates an Integration with `oauthClientId` + `connectionExpiresAt` (default 90 days) whose single ApiKey is re-keyed on each refresh, so everything above applies unchanged and Settings → Integrations revokes it. `/api/oauth` is on `INTEGRATION_DENYLIST` (a key never mints a key). See [`docs/specs/api/25-oauth.md`](docs/specs/api/25-oauth.md).
 - **Observability:** `integration_request` log lines carry `mcpTool` (from the sanitised `x-bliss-mcp-tool` header); one `mcp_tool_call` line per tool call.
-- **Coverage:** 87 token-reachable REST operations, 67 wrapped, 20 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
+- **Coverage:** 88 token-reachable REST operations, 68 wrapped, 20 excluded (`lib/mcp/exclusions.js`), enforced by `__tests__/unit/mcp/coverage.test.ts`.
+
+### Processing status (#100)
+
+Per-tenant "is my data still updating?" status, so users and agents can tell when background work after a write (or a bank sync, import or nightly run) has settled. See [`docs/specs/backend/23-activity-tracking.md`](docs/specs/backend/23-activity-tracking.md), [`docs/specs/api/26-activity-api.md`](docs/specs/api/26-activity-api.md), [`docs/specs/frontend/26-processing-status.md`](docs/specs/frontend/26-processing-status.md).
+
+- **Redis only, observational only.** `apps/backend/src/utils/activityTracker.js` is the single writer of `activity:v1:{tenantId}` (one entry per job, 24 h TTL) and `activity:v1:{tenantId}:last` (`lastCompletedAt` per type, no TTL). It uses a Lua script (queued = set-if-absent; finished entries are never overwritten) over a dedicated fail-fast connection. Every hook is synchronous fire-and-forget, so a tracker failure never fails, retries or slows a job. No Prisma, no new queues, workers, crons or tables.
+- **Central hooks:** `trackQueue()` in every `queues/*Queue.js` factory (`'waiting'` → queued) and `trackWorker()` in every worker start function (active / progress / completed / **final-attempt-only** failed, via `isFinalAttempt` from `workerFailureReporter.js`). **A new queue or worker must call `trackQueue` / `trackWorker` and map its jobs in `config/activityMap.js`**, or its work is invisible. `debounceService` drops the entry of a job it removes; `job.reportProgress` (own property, like `heartbeat`) reports done / total.
+- **Shared contract:** `@bliss/shared/activity` (keys, types, stages, triggers, stall clocks, pure `summarize()`). `stalled` is derived on read and is display-only. `_trigger` (`nightly` / `agent` / `bank_sync` / `import`) is forwarded through the event chain; the API stamps `agent` on integration-key writes (`utils/eventOrigin.js`).
+- **Read path:** `GET /api/activity` (all roles + read-only keys; one Redis pipeline, `available: false` when Redis is down — unknown is not idle) and the MCP read tool `get_processing_status`. `PROCESSING_FAILED` notification signal. Web: header chip (hidden when idle; insights excluded), a banner on the 10 report pages that refreshes them when work settles, and the admin **Settings → Processing** tab (the rebuild history moved there from Maintenance).
 
 ### Invite-only sign-up (#99)
 

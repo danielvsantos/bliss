@@ -198,6 +198,6 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 ## Lib
 
-- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (40 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
+- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (41 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
 - `constants.js` -- Category types: Income, Essentials, Lifestyle, Growth, Ventures, Investments, Asset, Debt, Transfers
 - `defaultCategories.js` -- ~70 pre-seeded categories for new tenants (with type, group, icon, processingHint)

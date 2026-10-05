@@ -240,7 +240,7 @@
   {
     "slug": "mcp-server",
     "title": "MCP Server for AI Agents",
-    "description": "Stateless Streamable HTTP MCP endpoint (/api/mcp) with 38 agent-oriented tools over the REST API, role-filtered by integration key",
+    "description": "Stateless Streamable HTTP MCP endpoint (/api/mcp) with 41 agent-oriented tools over the REST API, role-filtered by integration key",
     "order": 24,
     "layers": {
       "api": "docs/specs/api/24-mcp-server.md"
@@ -253,6 +253,17 @@
     "order": 25,
     "layers": {
       "api": "docs/specs/api/25-oauth.md"
+    }
+  },
+  {
+    "slug": "processing-status",
+    "title": "Processing Status",
+    "description": "Per-tenant \"what is updating\" status in Redis: activity tracker on every queue and worker, GET /api/activity, header chip, page banners, Settings → Processing",
+    "order": 26,
+    "layers": {
+      "api": "docs/specs/api/26-activity-api.md",
+      "backend": "docs/specs/backend/23-activity-tracking.md",
+      "frontend": "docs/specs/frontend/26-processing-status.md"
     }
   }
 ]

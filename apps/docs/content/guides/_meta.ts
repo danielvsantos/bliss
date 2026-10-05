@@ -16,5 +16,6 @@ export default {
   'mcp-tool-reference': 'MCP Tool Reference',
   'multi-tenant-deployment': 'Multi-Tenant Deployment',
   maintenance: 'Maintenance',
+  'processing-status': 'Why Are My Numbers Updating?',
   'key-rotation': 'Key Rotation',
 };
