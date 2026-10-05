@@ -20,6 +20,7 @@ import {
   FAILED_VISIBLE_MS,
   ACTIVITY_TYPE_LIST,
   TRIGGER_LIST,
+  TOMBSTONE_STATE,
 } from '@bliss/shared/activity';
 
 const NOW = Date.parse('2026-10-04T12:00:00Z');
@@ -143,6 +144,16 @@ describe('summarize', () => {
     }, { PORTFOLIO_UPDATE: '2026-10-04T11:00:00.000Z', NOPE: '2026-10-04T11:00:00.000Z', ANALYTICS_UPDATE: 'garbage' }, true, NOW);
     expect(out.inFlight.map((e) => e.id)).toEqual(['ok:1']);
     expect(out.lastCompletedAt).toEqual({ PORTFOLIO_UPDATE: '2026-10-04T11:00:00.000Z' });
+  });
+
+  it('skips tombstones left by dropped entries', () => {
+    const out = summarize({
+      'events:1': JSON.stringify({ st: TOMBSTONE_STATE, ua: NOW - 1000 }),
+      'ok:1': raw({}),
+    }, {}, true, NOW);
+    expect(out.inFlight.map((e) => e.id)).toEqual(['ok:1']);
+    expect(out.recent).toEqual([]);
+    expect(out.runs).toEqual([]);
   });
 
   it('defaults affects to the entry type and filters unknown ones', () => {

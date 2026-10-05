@@ -35,6 +35,8 @@ const {
     PRUNE_THRESHOLD,
     MAX_ENTRIES,
     PROGRESS_THROTTLE_MS,
+    TOMBSTONE_STATE,
+    TOMBSTONE_MS,
     activityKey,
     lastKey,
 } = require('@bliss/shared/activity');
@@ -46,27 +48,36 @@ const logger = require('./logger');
  * One round-trip per write. KEYS: activity hash, last-completed hash.
  * ARGV: field, entry JSON, mode (queued|update|terminal|drop), type,
  * completedAt ISO ('' unless completed), ttl s, now ms, retention ms,
- * prune threshold, max entries.
+ * prune threshold, max entries, tombstone age ms.
  *
  *  - queued:   HSETNX semantics, so a deduplicated add (same job id) never
  *              resets an active entry back to queued.
  *  - update /
- *    terminal: never overwrite a finished entry (a late progress write can't
- *              resurrect a completed job).
+ *    terminal: never overwrite a finished entry or a tombstone (a late
+ *              progress write can't resurrect a completed job).
+ *  - drop:     replaces the entry with a tombstone rather than deleting it.
+ *              The web service writes `queued` when it adds a job and the
+ *              worker service drops it when done, over two connections; the
+ *              worker can win (an event hop runs in ~5 ms), and a deleted
+ *              field would let the late `queued` write recreate an entry no
+ *              one ever clears. Against a tombstone that write is a no-op.
  *  - terminal: also stamps `:last` (completed only) and prunes the hash once
  *              it outgrows PRUNE_THRESHOLD: entries older than the retention
- *              first, then the oldest finished ones down to MAX_ENTRIES.
+ *              and tombstones older than TOMBSTONE_MS first, then the oldest
+ *              finished ones (and tombstones) down to MAX_ENTRIES.
  */
 const WRITE_SCRIPT = `
 local mode = ARGV[3]
 if mode == 'drop' then
-  return redis.call('HDEL', KEYS[1], ARGV[1])
+  redis.call('HSET', KEYS[1], ARGV[1], '{"st":"${TOMBSTONE_STATE}","ua":' .. ARGV[7] .. '}')
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[6]))
+  return 1
 end
 local existing = redis.call('HGET', KEYS[1], ARGV[1])
 if existing then
   if mode == 'queued' then return 0 end
   local ok, cur = pcall(cjson.decode, existing)
-  if ok and type(cur) == 'table' and (cur.st == 'completed' or cur.st == 'failed') then return 0 end
+  if ok and type(cur) == 'table' and (cur.st == 'completed' or cur.st == 'failed' or cur.st == '${TOMBSTONE_STATE}') then return 0 end
 end
 redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
 redis.call('EXPIRE', KEYS[1], tonumber(ARGV[6]))
@@ -74,6 +85,7 @@ if mode == 'terminal' then
   if ARGV[5] ~= '' then redis.call('HSET', KEYS[2], ARGV[4], ARGV[5]) end
   if redis.call('HLEN', KEYS[1]) > tonumber(ARGV[9]) then
     local cutoff = tonumber(ARGV[7]) - tonumber(ARGV[8])
+    local tombCutoff = tonumber(ARGV[7]) - tonumber(ARGV[11])
     local all = redis.call('HGETALL', KEYS[1])
     local count = #all / 2
     local finished = {}
@@ -83,9 +95,10 @@ if mode == 'terminal' then
         redis.call('HDEL', KEYS[1], all[i]); count = count - 1
       else
         local ts = tonumber(e.fa) or tonumber(e.ua) or tonumber(e.sa) or 0
-        if ts < cutoff then
+        local gone = e.st == '${TOMBSTONE_STATE}'
+        if ts < cutoff or (gone and ts < tombCutoff) then
           redis.call('HDEL', KEYS[1], all[i]); count = count - 1
-        elseif e.st == 'completed' or e.st == 'failed' then
+        elseif gone or e.st == 'completed' or e.st == 'failed' then
           table.insert(finished, { all[i], ts })
         end
       end
@@ -132,6 +145,10 @@ function getClient() {
             maxRetriesPerRequest: 1,
             enableOfflineQueue: false,
             enableReadyCheck: false,
+            // Same TCP keepalive as the main connection (utils/redis.js): the
+            // tracker can sit idle between edits, and a silently dropped
+            // socket would hold status writes back until TCP gives up.
+            keepAlive: 10000,
             connectionName: 'bliss-activity-tracker',
             retryStrategy: (times) => Math.min(times * 500, 10_000),
         });
@@ -172,6 +189,7 @@ function send(tenantId, field, entry, mode, completedAt = '') {
             String(RETENTION_MS),
             String(PRUNE_THRESHOLD),
             String(MAX_ENTRIES),
+            String(TOMBSTONE_MS),
         );
         if (pending && typeof pending.catch === 'function') {
             pending.catch((error) => {
@@ -390,7 +408,7 @@ function createProgressReporter(job, queueName) {
     };
 }
 
-/** Remove the entry of a job that was removed before it ran (debounce replace). */
+/** Tombstone the entry of a job that was removed before it ran (debounce replace). */
 function dropEntry(tenantId, queueName, jobId) {
     if (jobId === undefined || jobId === null) return;
     send(tenantId, `${queueName}:${jobId}`, null, 'drop');

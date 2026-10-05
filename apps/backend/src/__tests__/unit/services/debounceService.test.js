@@ -15,12 +15,17 @@ jest.mock('../../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
+jest.mock('../../../utils/activityTracker', () => ({
+  dropEntry: jest.fn(),
+}));
+
 jest.mock('uuid', () => ({
   v4: jest.fn().mockReturnValue('mock-uuid'),
 }));
 
 const { getRedisConnection } = require('../../../utils/redis');
 const logger = require('../../../utils/logger');
+const { dropEntry } = require('../../../utils/activityTracker');
 const { scheduleDebouncedJob, mergers } = require('../../../services/debounceService');
 
 // ── Mock objects ─────────────────────────────────────────────────────────────
@@ -100,7 +105,7 @@ describe('debounceService — scheduleDebouncedJob()', () => {
     };
     mockRedis.get.mockResolvedValue(JSON.stringify(existingJob));
 
-    const mockOldJob = { remove: jest.fn().mockResolvedValue(undefined) };
+    const mockOldJob = { remove: jest.fn().mockResolvedValue(undefined), getState: jest.fn().mockResolvedValue('delayed') };
     mockQueue.getJob.mockResolvedValue(mockOldJob);
 
     await scheduleDebouncedJob(
@@ -123,6 +128,31 @@ describe('debounceService — scheduleDebouncedJob()', () => {
     );
   });
 
+  it.each(['completed', 'active', 'failed'])('leaves a job that is already %s alone and does not merge its scope', async (state) => {
+    mockRedis.get.mockResolvedValue(JSON.stringify({ jobId: 'old-job-id', tenantId: 'tenant-1', scopes: ['transactions'] }));
+    const ranJob = { remove: jest.fn(), getState: jest.fn().mockResolvedValue(state) };
+    mockQueue.getJob.mockResolvedValue(ranJob);
+
+    await scheduleDebouncedJob(mockQueue, 'SYNC_TRANSACTIONS', { tenantId: 'tenant-1', scopes: ['investments'] }, 'scopes', 30);
+
+    expect(ranJob.remove).not.toHaveBeenCalled();
+    expect(dropEntry).not.toHaveBeenCalled(); // its history row stays (#100)
+    expect(mockQueue.add).toHaveBeenCalledWith(
+      'SYNC_TRANSACTIONS',
+      { tenantId: 'tenant-1', scopes: ['investments'] },
+      { delay: 30000, jobId: 'mock-uuid' },
+    );
+  });
+
+  it('drops the status entry of a pending job it replaces', async () => {
+    mockRedis.get.mockResolvedValue(JSON.stringify({ jobId: 'old-job-id', tenantId: 'tenant-1', scopes: ['transactions'] }));
+    mockQueue.getJob.mockResolvedValue({ remove: jest.fn().mockResolvedValue(undefined), getState: jest.fn().mockResolvedValue('delayed') });
+
+    await scheduleDebouncedJob({ ...mockQueue, name: 'analytics' }, 'SYNC_TRANSACTIONS', { tenantId: 'tenant-1', scopes: ['x'] }, 'scopes', 30);
+
+    expect(dropEntry).toHaveBeenCalledWith('tenant-1', 'analytics', 'old-job-id');
+  });
+
   it('deduplicates aggregated items using Set logic', async () => {
     const existingJob = {
       jobId: 'old-job-id',
@@ -131,7 +161,7 @@ describe('debounceService — scheduleDebouncedJob()', () => {
     };
     mockRedis.get.mockResolvedValue(JSON.stringify(existingJob));
 
-    const mockOldJob = { remove: jest.fn().mockResolvedValue(undefined) };
+    const mockOldJob = { remove: jest.fn().mockResolvedValue(undefined), getState: jest.fn().mockResolvedValue('delayed') };
     mockQueue.getJob.mockResolvedValue(mockOldJob);
 
     await scheduleDebouncedJob(
@@ -220,7 +250,7 @@ describe('debounceService — scheduleDebouncedJob()', () => {
 
     const pending = (data) => {
       mockRedis.get.mockResolvedValue(JSON.stringify({ jobId: 'old-job-id', ...data }));
-      mockQueue.getJob.mockResolvedValue({ remove: jest.fn().mockResolvedValue(undefined) });
+      mockQueue.getJob.mockResolvedValue({ remove: jest.fn().mockResolvedValue(undefined), getState: jest.fn().mockResolvedValue('delayed') });
     };
     const scheduledData = () => mockQueue.add.mock.calls[0][1];
 
