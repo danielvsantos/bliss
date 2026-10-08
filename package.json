@@ -39,15 +39,18 @@
       "`pnpm audit` in .github/workflows/security-audit.yml. Each entry needs a",
       "verified justification and a re-check date, and is removed as soon as a fix ships.",
       "GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, stack-exhaustion DoS on deeply nested",
-      "brace patterns). Accepted 2026-10-04, re-check 2026-11-04. No patched release",
-      "exists (3.0.3 is the latest), so neither a bump nor an override can clear it;",
-      "upstream fix in review at micromatch/braces#71 / #72. Build-time only: every",
+      "brace patterns). Accepted 2026-10-04; upstream will not fix: the maintainer",
+      "rejects the CVE (micromatch/braces#70, comment 5995348316) because it needs",
+      "attacker-controlled glob patterns and maxLength already bounds it; the fix",
+      "PRs (#72 and later) were closed or left unmerged. Build-time only: every",
       "path is glob/watch tooling (chokidar under @sentry/webpack-plugin, loaded by",
       "webpack during `next build`, not by withSentryConfig at `next start`, verified",
       "via require.cache; tailwindcss; nextra and @scalar in the docs site). No",
       "runtime code imports braces, micromatch, chokidar or fast-glob, and the",
-      "patterns it parses come from build config, never from request data. To",
-      "remove: refresh the lockfile to braces >=3.0.4, then delete this entry."
+      "patterns it parses come from build config, never from request data. If a",
+      "feature ever accepts user-supplied glob patterns, cap maxLength and nesting",
+      "depth there ourselves. Re-check 2027-04-04, or sooner if any of these enters",
+      "a runtime path; remove the entry if braces >=3.0.4 is ever published."
     ],
     "auditConfig": {
       "ignoreGhsas": [
