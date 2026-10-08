@@ -175,14 +175,14 @@ describe('credentials sign-up in invite-only mode', () => {
 
   it('rejects an email without an invite and creates nothing', async () => {
     const email = uniqueEmail('stranger');
-    const before = await prisma.tenant.count();
 
     const res = await signup(email);
 
     expect(res._status).toBe(403);
     expect(res._body).toEqual(INVITE_REQUIRED);
     expect(res._headers['Set-Cookie']).toBeUndefined();
-    expect(await prisma.tenant.count()).toBe(before);
+    // Scoped to this email: a global tenant count races with other test files.
+    expect(await prisma.user.findMany({ where: { email } })).toHaveLength(0);
   });
 
   it('creates at most one tenant when two sign-ups race for the same invite', async () => {
