@@ -220,6 +220,16 @@ describe('dynamic client registration', () => {
     expect((await mcpInit(tokens.access_token)).status).toBe(200);
   });
 
+  it('Gemini on Google\'s sandbox relay registers too, and is named Gemini', async () => {
+    const callback = 'https://oauth-redirect-sandbox.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test';
+    const res = await api('/api/oauth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: [callback], token_endpoint_auth_method: 'client_secret_basic' }),
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ client_name: 'Gemini', redirect_uris: [callback], token_endpoint_auth_method: 'none' });
+  });
+
   it('allows loopback redirects for native clients', async () => {
     const { res } = await register(['http://localhost:33418/callback', 'http://127.0.0.1:5000/cb']);
     expect(res.status).toBe(201);

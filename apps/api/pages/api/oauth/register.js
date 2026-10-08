@@ -6,8 +6,8 @@ import { OAuthError, registerClient } from '../../../services/oauth.service.js';
 /**
  * Dynamic Client Registration (RFC 7591) for MCP clients (#89). Public
  * clients only; redirect URIs must use an allowlisted host
- * (OAUTH_ALLOWED_REDIRECT_HOSTS, default claude.ai, claude.com, Gemini's
- * oauth-redirect.googleusercontent.com, localhost).
+ * (OAUTH_ALLOWED_REDIRECT_HOSTS, default claude.ai, claude.com, Google's
+ * oauth-redirect[-sandbox].googleusercontent.com relays for Gemini, localhost).
  */
 export default async function handler(req, res) {
   if (publicCors(req, res)) return;

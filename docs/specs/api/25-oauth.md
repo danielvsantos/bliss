@@ -80,9 +80,9 @@ Registration accepts a redirect URI only if all of these hold:
 - it has no fragment and no credentials
 - its host is in **`OAUTH_ALLOWED_REDIRECT_HOSTS`**
 
-`oauth-redirect.googleusercontent.com` is the host of Gemini's custom MCP connector callback (`/r/user_bound_custom-mcp-…`).
+`oauth-redirect.googleusercontent.com` and `oauth-redirect-sandbox.googleusercontent.com` are Google's OAuth relay hosts (production and sandbox, both listed in Google's account-linking docs). Gemini custom MCP connectors register a callback on either one (`/r/user_bound_custom-mcp-…`), and a nameless client on them is named `Gemini`.
 
-`OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,oauth-redirect.googleusercontent.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
+`OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
 
 At `/authorize`, the `redirect_uri` must **exactly** match one of the client's registered URIs. The consent screen shows the redirect **host**.
 
