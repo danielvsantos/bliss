@@ -7,13 +7,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 import {
-  allowedRedirectHosts, issuerUrl, mcpChallenge, mcpResourceUrl, newAuthorizationCode, newRefreshToken,
+  allowedRedirectHosts, defaultClientName, issuerUrl, mcpChallenge, mcpResourceUrl, newAuthorizationCode, newRefreshToken,
   newRequestId, protectedResourceMetadataUrl, redirectUriError, requestedAccessFromScope, resourceIsValid,
   scopeForAccess, verifyPkce, withParams, frontendUrl,
 } from '../../../utils/oauth.js';
 import { redactIntegrationTokens, isDeniedForIntegration } from '../../../utils/integrationPolicy.js';
 import { scrubEvent } from '../../../utils/sentryScrub.js';
 import { OAUTH_REWRITES } from '../../../lib/oauthRewrites.js';
+import { basicClientId, formBody } from '../../../lib/oauthHttp.js';
 
 const ENV = ['OAUTH_ISSUER_URL', 'NEXTAUTH_URL', 'OAUTH_ALLOWED_REDIRECT_HOSTS', 'FRONTEND_URL'];
 let saved: Record<string, string | undefined>;
@@ -41,7 +42,7 @@ describe('configuration', () => {
     expect(frontendUrl()).toBe('http://localhost:8080');
     process.env.FRONTEND_URL = 'https://app.bliss.test/';
     expect(frontendUrl()).toBe('https://app.bliss.test');
-    expect([...allowedRedirectHosts()]).toEqual(['claude.ai', 'claude.com', 'localhost', '127.0.0.1']);
+    expect([...allowedRedirectHosts()]).toEqual(['claude.ai', 'claude.com', 'oauth-redirect.googleusercontent.com', 'localhost', '127.0.0.1']);
     process.env.OAUTH_ALLOWED_REDIRECT_HOSTS = ' Claude.ai , example.org ';
     expect([...allowedRedirectHosts()]).toEqual(['claude.ai', 'example.org']);
   });
@@ -60,11 +61,13 @@ describe('redirect-URI policy', () => {
     'https://claude.com/api/mcp/auth_callback',
     'http://localhost:33418/callback',
     'http://127.0.0.1/cb',
+    'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test',
   ])('accepts %s', (uri) => expect(redirectUriError(uri)).toBeNull());
 
   it.each([
     ['https://evil.example/cb', /not allowed/],
     ['https://claude.ai.evil.example/cb', /not allowed/],
+    ['https://evil.googleusercontent.com/cb', /not allowed/],
     ['http://claude.ai/cb', /only allowed for localhost/],
     ['https://claude.ai/cb#frag', /fragment/],
     ['https://user:pw@claude.ai/cb', /credentials/],
@@ -78,6 +81,34 @@ describe('redirect-URI policy', () => {
     process.env.OAUTH_ALLOWED_REDIRECT_HOSTS = 'claude.ai';
     expect(redirectUriError('http://localhost:1/cb')).toMatch(/not allowed/);
     expect(redirectUriError('https://claude.ai/cb')).toBeNull();
+  });
+});
+
+describe('client identity', () => {
+  it('names a nameless client Gemini only when every redirect is Gemini\'s', () => {
+    expect(defaultClientName(['https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-x'])).toBe('Gemini');
+    expect(defaultClientName(['https://OAUTH-REDIRECT.googleusercontent.com/r/a', 'https://oauth-redirect.googleusercontent.com/r/b'])).toBe('Gemini');
+    expect(defaultClientName(['https://oauth-redirect.googleusercontent.com/r/a', 'https://claude.ai/cb'])).toBe('MCP client');
+    expect(defaultClientName(['https://claude.ai/cb'])).toBe('MCP client');
+    expect(defaultClientName([])).toBe('MCP client');
+  });
+
+  it('reads client_id from HTTP Basic, ignoring the secret', () => {
+    const basic = (s: string) => `Basic ${Buffer.from(s).toString('base64')}`;
+    expect(basicClientId(basic('abc:secret'))).toBe('abc');
+    expect(basicClientId(basic('abc:'))).toBe('abc');
+    expect(basicClientId(basic('a%3Ab:x'))).toBe('a:b');
+    expect(basicClientId(basic(':secret'))).toBeNull();
+    expect(basicClientId('Bearer abc')).toBeNull();
+    expect(basicClientId(undefined)).toBeNull();
+    expect(basicClientId(basic('%E0%A4%A:x'))).toBeNull();
+  });
+
+  it('formBody: the body client_id wins over the header', () => {
+    const authorization = `Basic ${Buffer.from('from-header:').toString('base64')}`;
+    expect(formBody({ body: 'grant_type=x', headers: { authorization } } as any)).toEqual({ grant_type: 'x', client_id: 'from-header' });
+    expect(formBody({ body: { client_id: 'from-body' }, headers: { authorization } } as any)).toEqual({ client_id: 'from-body' });
+    expect(formBody({ headers: {} } as any)).toEqual({});
   });
 });
 

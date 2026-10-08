@@ -26,6 +26,7 @@ import { createIntegrationKey, createTenantUser } from '../../../helpers/integra
 import { startLoopbackServer, makeFetchStub, connectMcp, type LoopbackServer } from '../../../helpers/mcpServer.js';
 
 const CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
+const GEMINI_CALLBACK = 'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test';
 
 let server: LoopbackServer;
 const realFetch = globalThis.fetch;
@@ -58,11 +59,11 @@ async function register(redirectUris = [CALLBACK]) {
 
 /** authorize → consent → approve; returns the code, verifier and client. */
 async function authorizeAndApprove({
-  clientId, accessLevel = 'READ_ONLY', scope = 'mcp:read mcp:write', jwt = tenant.token,
-}: { clientId: string; accessLevel?: string; scope?: string; jwt?: string }) {
+  clientId, accessLevel = 'READ_ONLY', scope = 'mcp:read mcp:write', jwt = tenant.token, redirectUri = CALLBACK,
+}: { clientId: string; accessLevel?: string; scope?: string; jwt?: string; redirectUri?: string }) {
   const { verifier, challenge } = pkce();
   const qs = new URLSearchParams({
-    response_type: 'code', client_id: clientId, redirect_uri: CALLBACK, code_challenge: challenge,
+    response_type: 'code', client_id: clientId, redirect_uri: redirectUri, code_challenge: challenge,
     code_challenge_method: 'S256', state: 'xyz', scope, resource: `${server.baseUrl}/api/mcp`,
   });
   const auth = await api(`/api/oauth/authorize?${qs}`);
@@ -169,9 +170,54 @@ describe('dynamic client registration', () => {
     }
     const res = await api('/api/oauth/register', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ redirect_uris: [CALLBACK], token_endpoint_auth_method: 'client_secret_basic' }),
+      body: JSON.stringify({ redirect_uris: [CALLBACK], token_endpoint_auth_method: 'private_key_jwt' }),
     });
     expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_client_metadata');
+  });
+
+  it('registers a client asking for client_secret_basic as a public client, without a secret', async () => {
+    for (const method of ['client_secret_basic', 'client_secret_post']) {
+      const res = await api('/api/oauth/register', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ client_name: 'Claude', redirect_uris: [CALLBACK], token_endpoint_auth_method: method }),
+      });
+      expect(res.status, method).toBe(201);
+      const body = await res.json();
+      expect(body.token_endpoint_auth_method).toBe('none');
+      expect(body).not.toHaveProperty('client_secret');
+    }
+  });
+
+  it('Gemini: registers as Gemini, client_id by HTTP Basic at the token endpoint, tools work', async () => {
+    const reg = await api('/api/oauth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        redirect_uris: [GEMINI_CALLBACK], token_endpoint_auth_method: 'client_secret_basic',
+        grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], scope: 'mcp:read offline_access',
+      }),
+    });
+    expect(reg.status).toBe(201);
+    const client = await reg.json();
+    expect(client).toMatchObject({ client_name: 'Gemini', redirect_uris: [GEMINI_CALLBACK], token_endpoint_auth_method: 'none' });
+
+    const flow = await authorizeAndApprove({ clientId: client.client_id, redirectUri: GEMINI_CALLBACK });
+    expect(flow.consentBody.request).toMatchObject({ clientName: 'Gemini', redirectHost: 'oauth-redirect.googleusercontent.com' });
+    expect(flow.redirect!.origin + flow.redirect!.pathname).toBe(GEMINI_CALLBACK);
+    const integration = await prisma.integration.findFirst({ where: { oauthClientId: client.client_id } });
+    expect(integration).toMatchObject({ name: 'Gemini', oauthClientId: client.client_id, tenantId: tenant.tenantId });
+
+    const basic = `Basic ${Buffer.from(`${encodeURIComponent(client.client_id)}:`).toString('base64')}`;
+    const res = await api('/api/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: basic },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', code: flow.code!, code_verifier: flow.verifier, redirect_uri: GEMINI_CALLBACK,
+      }).toString(),
+    });
+    const tokens = await res.json();
+    expect(res.status).toBe(200);
+    expect((await mcpInit(tokens.access_token)).status).toBe(200);
   });
 
   it('allows loopback redirects for native clients', async () => {

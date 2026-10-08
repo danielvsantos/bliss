@@ -8,6 +8,7 @@ import {
   REFRESH_TOKEN_PREFIX,
   REFRESH_TOKEN_TTL_MS,
   REQUEST_TTL_MS,
+  defaultClientName,
   logOAuthEvent,
   newAuthorizationCode,
   newRefreshToken,
@@ -60,7 +61,21 @@ export class AuthorizeError extends Error {
 
 // ─── Registration (RFC 7591) ────────────────────────────────────────────────
 
+// A client asking to be confidential (Gemini sends client_secret_basic) is
+// registered as a public client instead: RFC 7591 §3.2.1 lets the server
+// replace requested metadata, and the response tells it to send no secret.
+const ACCEPTED_AUTH_METHODS = new Set(['none', 'client_secret_basic', 'client_secret_post']);
+
 export async function registerClient(body = {}) {
+  try {
+    return await createClient(body);
+  } catch (err) {
+    if (err instanceof OAuthError) logOAuthEvent('register_rejected', { error: err.error, reason: err.description });
+    throw err;
+  }
+}
+
+async function createClient(body) {
   const redirectUris = body.redirect_uris;
   if (!Array.isArray(redirectUris) || redirectUris.length === 0 || redirectUris.length > 10) {
     throw new OAuthError('invalid_redirect_uri', 'redirect_uris must be a non-empty array (max 10)');
@@ -78,11 +93,11 @@ export async function registerClient(body = {}) {
     throw new OAuthError('invalid_client_metadata', 'Only the code response type is supported');
   }
   const authMethod = body.token_endpoint_auth_method ?? 'none';
-  if (authMethod !== 'none') {
+  if (!ACCEPTED_AUTH_METHODS.has(authMethod)) {
     throw new OAuthError('invalid_client_metadata', 'Only public clients (token_endpoint_auth_method "none") are supported');
   }
   const rawName = typeof body.client_name === 'string' ? body.client_name.trim() : '';
-  const name = (rawName || 'MCP client').slice(0, CLIENT_NAME_MAX);
+  const name = (rawName || defaultClientName(redirectUris)).slice(0, CLIENT_NAME_MAX);
 
   const client = await prisma.oAuthClient.create({ data: { name, redirectUris } });
   logOAuthEvent('register', { clientId: client.id });
