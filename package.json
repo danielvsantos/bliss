@@ -56,7 +56,7 @@
     },
     "overrides": {
       "protobufjs": "^8.4.1",
-      "sharp": "^0.35.5",
+      "sharp": "^0.35.4",
       "postcss": "^8.5.28",
       "nanoid@3": "^3.3.18",
       "nanoid@5": "^5.1.16",
@@ -65,7 +65,7 @@
       "tmp": "^0.2.7",
       "lodash": "^4.18.1",
       "lodash-es": "^4.18.1",
-      "shell-quote": "^1.11.0",
+      "shell-quote": "^1.10.0",
       "fast-uri@3": "^3.1.6",
       "fast-xml-builder": "^1.1.7",
       "browserslist": "^4.28.7",
@@ -79,10 +79,7 @@
       "defu": "^6.1.5",
       "deepmerge-ts": "^8.0.0",
       "effect": "^3.20.0",
-      "unplugin@1": "^1.16.1",
-      "source-map-js": "^1.2.2",
-      "proxy-addr": "^2.0.8",
-      "vue": "^3.5.42"
+      "unplugin@1": "^1.16.1"
     }
   }
 }
