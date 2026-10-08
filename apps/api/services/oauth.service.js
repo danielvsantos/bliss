@@ -35,6 +35,9 @@ import {
 
 export const ACCESS_KEY_NAME = 'OAuth access token';
 const CLIENT_NAME_MAX = 60;
+// `state` is opaque and must come back byte-for-byte: Google's relay signs
+// its state (>500 chars) and rejects a shortened copy. Refuse, never truncate.
+export const STATE_MAX = 8192;
 
 /** Token-endpoint error (RFC 6749 §5.2). */
 export class OAuthError extends Error {
@@ -138,6 +141,10 @@ export async function createAuthorizationRequest(query, now = new Date()) {
   }
   const resource = one(query.resource);
   if (!resourceIsValid(resource)) throw new AuthorizeError('invalid_target', 'resource must be this server\'s /api/mcp');
+  const state = one(query.state);
+  if (state && String(state).length > STATE_MAX) {
+    throw new AuthorizeError('invalid_request', `state must be at most ${STATE_MAX} characters`);
+  }
 
   // Opportunistic housekeeping: expired requests older than a day.
   prisma.oAuthAuthorizationRequest
@@ -150,7 +157,7 @@ export async function createAuthorizationRequest(query, now = new Date()) {
       id,
       clientId: client.id,
       redirectUri: String(redirectUri),
-      state: one(query.state) ? String(one(query.state)).slice(0, 500) : null,
+      state: state ? String(state) : null,
       codeChallenge: String(challenge),
       requestedAccess: requestedAccessFromScope(one(query.scope)),
       resource: resource ? String(resource) : null,
