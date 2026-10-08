@@ -20,7 +20,9 @@ export const SCOPES_SUPPORTED = [SCOPE_READ, SCOPE_WRITE];
 
 export const REFRESH_TOKEN_PREFIX = 'bliss_rt_';
 
-const DEFAULT_REDIRECT_HOSTS = ['claude.ai', 'claude.com', 'localhost', '127.0.0.1'];
+// oauth-redirect.googleusercontent.com is Gemini's custom MCP connector callback.
+const GEMINI_REDIRECT_HOST = 'oauth-redirect.googleusercontent.com';
+const DEFAULT_REDIRECT_HOSTS = ['claude.ai', 'claude.com', GEMINI_REDIRECT_HOST, 'localhost', '127.0.0.1'];
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Public origin of the API: OAUTH_ISSUER_URL, else NEXTAUTH_URL's origin. */
@@ -90,7 +92,23 @@ export function redirectUriError(uri) {
   return null;
 }
 
-/** RFC 7636 S256: BASE64URL(SHA256(verifier)) === challenge. */
+/**
+ * Name for a client that registered without a client_name, so the connection
+ * is still recognisable in Settings → Integrations.
+ */
+export function defaultClientName(redirectUris = []) {
+  const hosts = redirectUris.map((uri) => {
+    try {
+      return new URL(uri).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  });
+  if (hosts.length > 0 && hosts.every((h) => h === GEMINI_REDIRECT_HOST)) return 'Gemini';
+  return 'MCP client';
+}
+
+/** RFC 7636 S256:BASE64URL(SHA256(verifier)) === challenge. */
 export function verifyPkce(verifier, challenge) {
   if (typeof verifier !== 'string' || !/^[A-Za-z0-9\-._~]{43,128}$/.test(verifier)) return false;
   if (typeof challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(challenge)) return false;

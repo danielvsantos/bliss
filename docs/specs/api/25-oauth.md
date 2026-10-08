@@ -23,7 +23,7 @@ User guide: [`docs/guides/using-bliss-with-claude-mcp.md`](../../guides/using-bl
 
 | Spec | Implemented as |
 |---|---|
-| OAuth 2.1 (authorization code + PKCE) | The only grants are `authorization_code` and `refresh_token`. Public clients only (`token_endpoint_auth_method: none`). |
+| OAuth 2.1 (authorization code + PKCE) | The only grants are `authorization_code` and `refresh_token`. Public clients only (`token_endpoint_auth_method: none`). A client asking for `client_secret_basic` or `client_secret_post` (Gemini does) is registered as `none` instead (RFC 7591 §3.2.1) and gets no secret. |
 | RFC 7636 PKCE | Required, **S256 only** |
 | RFC 9728 Protected Resource Metadata | Served for `/api/mcp`. Every 401 from `/api/mcp` carries `WWW-Authenticate: Bearer resource_metadata="…"`. |
 | RFC 8414 Authorization Server Metadata | Discovery document |
@@ -40,12 +40,12 @@ The well-known paths are served by `next.config.mjs` rewrites (`lib/oauthRewrite
 |---|---|---|---|
 | `/.well-known/oauth-protected-resource` and `…/api/mcp` → `/api/oauth/protected-resource` | GET | public, CORS `*` | Returns `{ resource, authorization_servers: [issuer], scopes_supported, bearer_methods_supported: ["header"] }` |
 | `/.well-known/oauth-authorization-server` and `…/api/mcp` → `/api/oauth/metadata` | GET | public, CORS `*` | The RFC 8414 document |
-| `/api/oauth/register` | POST (JSON) | public | Dynamic client registration. Validates `redirect_uris` (§25.5) and returns `client_id`. |
+| `/api/oauth/register` | POST (JSON) | public | Dynamic client registration. Validates `redirect_uris` (§25.5) and returns `client_id`. Without a `client_name`, the client is named `Gemini` when every redirect URI is Gemini's, else `MCP client`; the name becomes the Integration's name. |
 | `/api/oauth/authorize` | GET | public (browser) | Validates the request, stores it, and 302s to `FRONTEND_URL/oauth/consent?request=<id>`. An unknown `client_id` or `redirect_uri` gets an HTML error page and is never redirected. Other errors redirect to `redirect_uri?error=…&state=…&iss=…`. |
 | `/api/oauth/requests/[id]` | GET | withAuth (JWT) | Consent data: `{ request: { clientName, redirectHost, maxAccessLevel, expiresAt }, canApprove, expiryOptions }`. The first user to open a request is bound to it. |
 | `/api/oauth/requests/[id]/approve` | POST (JSON) | withAuth `requireRole: 'admin'` | Body `{ accessLevel, expiresInDays: 30\|90\|365\|null }`. Creates the Integration and a one-time code, and returns `{ redirectUrl }`. |
 | `/api/oauth/requests/[id]/deny` | POST | withAuth (JWT) | Returns `{ redirectUrl }` with `error=access_denied` |
-| `/api/oauth/token` | POST (form or JSON) | public client | The two grants (§25.4). Responses carry `Cache-Control: no-store`. |
+| `/api/oauth/token` | POST (form or JSON) | public client | The two grants (§25.4). `client_id` may come in the body or, for clients used to `client_secret_basic`, an HTTP Basic header (the body wins; any secret is ignored); the same holds for `/revoke`. Responses carry `Cache-Control: no-store`. |
 | `/api/oauth/revoke` | POST (form or JSON) | public client | RFC 7009: `token` is either a refresh token or an access token. Unknown tokens get `200`. |
 
 - **Issuer.** `OAUTH_ISSUER_URL`, otherwise the origin of `NEXTAUTH_URL` (the API's public URL).
@@ -71,7 +71,7 @@ The well-known paths are served by `next.config.mjs` rewrites (`lib/oauthRewrite
   - The consent screen always defaults to Read-only; the admin can only downgrade.
   - The token response's `scope` reflects what was granted.
 - **Housekeeping.** Authorization requests that expired more than a day ago are deleted during `/authorize`. A connection's refresh tokens that were used more than 30 days ago are deleted during refresh.
-- **Logs.** One `oauth_event` line per step: `register`, `authorize`, `consent_approved`, `consent_denied`, `token_issued`, `token_refreshed`, `refresh_reuse_detected`, `revoked`. These lines contain IDs only. `redactIntegrationTokens` and the Sentry scrubber also cover `bliss_rt_…`, `refresh_token`, `code_verifier` and `client_secret`.
+- **Logs.** One `oauth_event` line per step: `register`, `register_rejected` (with the `error` and `reason`, so a client that can't connect can be diagnosed), `authorize`, `consent_approved`, `consent_denied`, `token_issued`, `token_refreshed`, `refresh_reuse_detected`, `revoked`. These lines contain IDs only. `redactIntegrationTokens` and the Sentry scrubber also cover `bliss_rt_…`, `refresh_token`, `code_verifier` and `client_secret`.
 
 ## 25.5. Redirect-URI policy
 
@@ -80,7 +80,9 @@ Registration accepts a redirect URI only if all of these hold:
 - it has no fragment and no credentials
 - its host is in **`OAUTH_ALLOWED_REDIRECT_HOSTS`**
 
-`OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
+`oauth-redirect.googleusercontent.com` is the host of Gemini's custom MCP connector callback (`/r/user_bound_custom-mcp-…`).
+
+`OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,oauth-redirect.googleusercontent.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
 
 At `/authorize`, the `redirect_uri` must **exactly** match one of the client's registered URIs. The consent screen shows the redirect **host**.
 
