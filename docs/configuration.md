@@ -123,7 +123,7 @@ File upload storage is pluggable. The default is local disk; switch to Google Cl
 | `FRONTEND_URL` | Yes | `http://localhost:8080` | Public URL of the frontend app. Used by the API layer for CORS whitelisting. |
 | `MCP_LOOPBACK_URL` | No | `http://127.0.0.1:$PORT` | Base URL the MCP server's tools use to call the API's own REST routes ([Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp)). The default works on Docker Compose and Railway; set it to the public API URL only when the API can't reach itself on loopback (Vercel, a path-rewriting proxy). |
 | `OAUTH_ISSUER_URL` | No | origin of `NEXTAUTH_URL` | Public URL of the API used as the OAuth issuer for MCP custom connectors ([Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp)). Set it only when `NEXTAUTH_URL` isn't the API's public URL. |
-| `OAUTH_ALLOWED_REDIRECT_HOSTS` | No | `claude.ai,claude.com,oauth-redirect.googleusercontent.com,localhost,127.0.0.1` | Comma-separated hosts OAuth clients may register as redirect URIs (dynamic client registration). Loopback is allowed as a group when `localhost` or `127.0.0.1` is listed. |
+| `OAUTH_ALLOWED_REDIRECT_HOSTS` | No | `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,localhost,127.0.0.1` | Comma-separated hosts OAuth clients may register as redirect URIs (dynamic client registration). Loopback is allowed as a group when `localhost` or `127.0.0.1` is listed. |
 
 ## Plaid (optional)
 

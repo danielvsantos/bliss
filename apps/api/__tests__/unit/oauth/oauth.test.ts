@@ -42,7 +42,7 @@ describe('configuration', () => {
     expect(frontendUrl()).toBe('http://localhost:8080');
     process.env.FRONTEND_URL = 'https://app.bliss.test/';
     expect(frontendUrl()).toBe('https://app.bliss.test');
-    expect([...allowedRedirectHosts()]).toEqual(['claude.ai', 'claude.com', 'oauth-redirect.googleusercontent.com', 'localhost', '127.0.0.1']);
+    expect([...allowedRedirectHosts()]).toEqual(['claude.ai', 'claude.com', 'oauth-redirect.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com', 'localhost', '127.0.0.1']);
     process.env.OAUTH_ALLOWED_REDIRECT_HOSTS = ' Claude.ai , example.org ';
     expect([...allowedRedirectHosts()]).toEqual(['claude.ai', 'example.org']);
   });
@@ -62,12 +62,14 @@ describe('redirect-URI policy', () => {
     'http://localhost:33418/callback',
     'http://127.0.0.1/cb',
     'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test',
+    'https://oauth-redirect-sandbox.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test',
   ])('accepts %s', (uri) => expect(redirectUriError(uri)).toBeNull());
 
   it.each([
     ['https://evil.example/cb', /not allowed/],
     ['https://claude.ai.evil.example/cb', /not allowed/],
     ['https://evil.googleusercontent.com/cb', /not allowed/],
+    ['https://oauth-redirect-test.googleusercontent.com/cb', /not allowed/],
     ['http://claude.ai/cb', /only allowed for localhost/],
     ['https://claude.ai/cb#frag', /fragment/],
     ['https://user:pw@claude.ai/cb', /credentials/],
@@ -88,6 +90,8 @@ describe('client identity', () => {
   it('names a nameless client Gemini only when every redirect is Gemini\'s', () => {
     expect(defaultClientName(['https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-x'])).toBe('Gemini');
     expect(defaultClientName(['https://OAUTH-REDIRECT.googleusercontent.com/r/a', 'https://oauth-redirect.googleusercontent.com/r/b'])).toBe('Gemini');
+    expect(defaultClientName(['https://oauth-redirect-sandbox.googleusercontent.com/r/user_bound_custom-mcp-x'])).toBe('Gemini');
+    expect(defaultClientName(['https://oauth-redirect.googleusercontent.com/r/a', 'https://oauth-redirect-sandbox.googleusercontent.com/r/b'])).toBe('Gemini');
     expect(defaultClientName(['https://oauth-redirect.googleusercontent.com/r/a', 'https://claude.ai/cb'])).toBe('MCP client');
     expect(defaultClientName(['https://claude.ai/cb'])).toBe('MCP client');
     expect(defaultClientName([])).toBe('MCP client');

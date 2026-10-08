@@ -20,9 +20,11 @@ export const SCOPES_SUPPORTED = [SCOPE_READ, SCOPE_WRITE];
 
 export const REFRESH_TOKEN_PREFIX = 'bliss_rt_';
 
-// oauth-redirect.googleusercontent.com is Gemini's custom MCP connector callback.
-const GEMINI_REDIRECT_HOST = 'oauth-redirect.googleusercontent.com';
-const DEFAULT_REDIRECT_HOSTS = ['claude.ai', 'claude.com', GEMINI_REDIRECT_HOST, 'localhost', '127.0.0.1'];
+// Google's OAuth relay (production and sandbox), used for Gemini custom MCP
+// connector callbacks: https://<host>/r/<id>. Google's account-linking docs
+// list both hosts; Gemini has been seen registering with either.
+const GEMINI_REDIRECT_HOSTS = ['oauth-redirect.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com'];
+const DEFAULT_REDIRECT_HOSTS = ['claude.ai', 'claude.com', ...GEMINI_REDIRECT_HOSTS, 'localhost', '127.0.0.1'];
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Public origin of the API: OAUTH_ISSUER_URL, else NEXTAUTH_URL's origin. */
@@ -104,7 +106,7 @@ export function defaultClientName(redirectUris = []) {
       return '';
     }
   });
-  if (hosts.length > 0 && hosts.every((h) => h === GEMINI_REDIRECT_HOST)) return 'Gemini';
+  if (hosts.length > 0 && hosts.every((h) => GEMINI_REDIRECT_HOSTS.includes(h))) return 'Gemini';
   return 'MCP client';
 }
 

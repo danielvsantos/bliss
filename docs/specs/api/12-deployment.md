@@ -54,7 +54,7 @@ The standalone build bundles only the files required to run the server, producin
 | `SENTRY_DSN` | Sentry error tracking |
 | `MCP_LOOPBACK_URL` | Optional. Base URL the MCP tools use to call the API's own REST routes (default `http://127.0.0.1:$PORT`) |
 | `OAUTH_ISSUER_URL` | Optional. OAuth issuer for MCP custom connectors (default: origin of `NEXTAUTH_URL`) |
-| `OAUTH_ALLOWED_REDIRECT_HOSTS` | Optional. Redirect hosts OAuth clients may register (default `claude.ai,claude.com,oauth-redirect.googleusercontent.com,localhost,127.0.0.1`) |
+| `OAUTH_ALLOWED_REDIRECT_HOSTS` | Optional. Redirect hosts OAuth clients may register (default `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,localhost,127.0.0.1`) |
 
 ## 12.4. Migration on Startup
 
