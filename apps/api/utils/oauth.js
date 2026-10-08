@@ -20,10 +20,16 @@ export const SCOPES_SUPPORTED = [SCOPE_READ, SCOPE_WRITE];
 
 export const REFRESH_TOKEN_PREFIX = 'bliss_rt_';
 
-// Google's OAuth relay (production and sandbox), used for Gemini custom MCP
-// connector callbacks: https://<host>/r/<id>. Google's account-linking docs
-// list both hosts; Gemini has been seen registering with either.
-const GEMINI_REDIRECT_HOSTS = ['oauth-redirect.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com'];
+// Google's OAuth relay, used for Gemini custom MCP connector callbacks:
+// https://<host>/r/<id>. Gemini registers all three at once (production,
+// sandbox, test). Exact hosts only: the rest of googleusercontent.com serves
+// user content (Apps Script, Drive, Sites), so a wildcard would let anyone
+// register a callback they control.
+const GEMINI_REDIRECT_HOSTS = [
+  'oauth-redirect.googleusercontent.com',
+  'oauth-redirect-sandbox.googleusercontent.com',
+  'oauth-redirect-test.googleusercontent.com',
+];
 const DEFAULT_REDIRECT_HOSTS = ['claude.ai', 'claude.com', ...GEMINI_REDIRECT_HOSTS, 'localhost', '127.0.0.1'];
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 

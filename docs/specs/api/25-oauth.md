@@ -41,7 +41,7 @@ The well-known paths are served by `next.config.mjs` rewrites (`lib/oauthRewrite
 | `/.well-known/oauth-protected-resource` and `…/api/mcp` → `/api/oauth/protected-resource` | GET | public, CORS `*` | Returns `{ resource, authorization_servers: [issuer], scopes_supported, bearer_methods_supported: ["header"] }` |
 | `/.well-known/oauth-authorization-server` and `…/api/mcp` → `/api/oauth/metadata` | GET | public, CORS `*` | The RFC 8414 document |
 | `/api/oauth/register` | POST (JSON) | public | Dynamic client registration. Validates `redirect_uris` (§25.5) and returns `client_id`. Without a `client_name`, the client is named `Gemini` when every redirect URI is Gemini's, else `MCP client`; the name becomes the Integration's name. |
-| `/api/oauth/authorize` | GET | public (browser) | Validates the request, stores it, and 302s to `FRONTEND_URL/oauth/consent?request=<id>`. An unknown `client_id` or `redirect_uri` gets an HTML error page and is never redirected. Other errors redirect to `redirect_uri?error=…&state=…&iss=…`. |
+| `/api/oauth/authorize` | GET | public (browser) | Validates the request, stores it, and 302s to `FRONTEND_URL/oauth/consent?request=<id>`. An unknown `client_id` or `redirect_uri` gets an HTML error page and is never redirected. Other errors redirect to `redirect_uri?error=…&state=…&iss=…`. `state` is returned byte-for-byte (Google's relay signs it and its state is longer than 500 characters); a `state` over 8,192 characters is refused with `invalid_request`, never shortened. |
 | `/api/oauth/requests/[id]` | GET | withAuth (JWT) | Consent data: `{ request: { clientName, redirectHost, maxAccessLevel, expiresAt }, canApprove, expiryOptions }`. The first user to open a request is bound to it. |
 | `/api/oauth/requests/[id]/approve` | POST (JSON) | withAuth `requireRole: 'admin'` | Body `{ accessLevel, expiresInDays: 30\|90\|365\|null }`. Creates the Integration and a one-time code, and returns `{ redirectUrl }`. |
 | `/api/oauth/requests/[id]/deny` | POST | withAuth (JWT) | Returns `{ redirectUrl }` with `error=access_denied` |
@@ -80,9 +80,9 @@ Registration accepts a redirect URI only if all of these hold:
 - it has no fragment and no credentials
 - its host is in **`OAUTH_ALLOWED_REDIRECT_HOSTS`**
 
-`oauth-redirect.googleusercontent.com` and `oauth-redirect-sandbox.googleusercontent.com` are Google's OAuth relay hosts (production and sandbox, both listed in Google's account-linking docs). Gemini custom MCP connectors register a callback on either one (`/r/user_bound_custom-mcp-…`), and a nameless client on them is named `Gemini`.
+`oauth-redirect.googleusercontent.com`, `oauth-redirect-sandbox.googleusercontent.com` and `oauth-redirect-test.googleusercontent.com` are Google's OAuth relay hosts. Gemini custom MCP connectors register callbacks on all three at once (`/r/user_bound_custom-mcp-…`), and a nameless client on them is named `Gemini`. They are listed as exact hosts on purpose: the rest of `googleusercontent.com` serves user content (Apps Script, Drive, Sites), so a wildcard would let anyone register a callback they control.
 
-`OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
+`OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,oauth-redirect-test.googleusercontent.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
 
 At `/authorize`, the `redirect_uri` must **exactly** match one of the client's registered URIs. The consent screen shows the redirect **host**.
 

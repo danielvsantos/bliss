@@ -55,12 +55,11 @@ also revokes it, if Claude tells Bliss). When the connection expires, click
 
 **Gemini** custom connectors use the same flow: enter `https://API_URL/api/mcp`
 and leave the client ID and secret empty. The connection appears as
-*Connected via OAuth · Gemini*, and the consent page shows
-Google's relay (`oauth-redirect.googleusercontent.com`, or
-`oauth-redirect-sandbox.googleusercontent.com`) as where you'll be sent back to.
+*Connected via OAuth · Gemini*, and the consent page shows Google's relay
+(an `oauth-redirect…googleusercontent.com` host) as where you'll be sent back to.
 
 Operators can restrict which apps may connect with `OAUTH_ALLOWED_REDIRECT_HOSTS`
-(default `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,localhost,127.0.0.1`) — see
+(default `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,oauth-redirect-test.googleusercontent.com,localhost,127.0.0.1`) — see
 [Configuration](/docs/configuration).
 
 ---

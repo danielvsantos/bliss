@@ -59,12 +59,12 @@ async function register(redirectUris = [CALLBACK]) {
 
 /** authorize → consent → approve; returns the code, verifier and client. */
 async function authorizeAndApprove({
-  clientId, accessLevel = 'READ_ONLY', scope = 'mcp:read mcp:write', jwt = tenant.token, redirectUri = CALLBACK,
-}: { clientId: string; accessLevel?: string; scope?: string; jwt?: string; redirectUri?: string }) {
+  clientId, accessLevel = 'READ_ONLY', scope = 'mcp:read mcp:write', jwt = tenant.token, redirectUri = CALLBACK, state = 'xyz',
+}: { clientId: string; accessLevel?: string; scope?: string; jwt?: string; redirectUri?: string; state?: string }) {
   const { verifier, challenge } = pkce();
   const qs = new URLSearchParams({
     response_type: 'code', client_id: clientId, redirect_uri: redirectUri, code_challenge: challenge,
-    code_challenge_method: 'S256', state: 'xyz', scope, resource: `${server.baseUrl}/api/mcp`,
+    code_challenge_method: 'S256', state, scope, resource: `${server.baseUrl}/api/mcp`,
   });
   const auth = await api(`/api/oauth/authorize?${qs}`);
   expect(auth.status).toBe(302);
@@ -353,6 +353,25 @@ describe('failure paths', () => {
     // …but redeeming it twice revokes what it issued.
     expect((await exchange(client.client_id, flow.code!, flow.verifier)).body.error).toBe('invalid_grant');
     expect((await mcpInit(ok.body.access_token)).status).toBe(401);
+  });
+
+  it('returns a long state byte-for-byte (Google\'s relay signs it)', async () => {
+    const { body: client } = await register();
+    // Shaped like Gemini's: >500 base64url chars that the relay HMAC-verifies.
+    const state = `APrAeJF5${crypto.randomBytes(1500).toString('base64url')}`;
+    const flow = await authorizeAndApprove({ clientId: client.client_id, state });
+    expect(flow.redirect!.searchParams.get('state')).toBe(state);
+  });
+
+  it('refuses a state over 8,192 characters instead of shortening it', async () => {
+    const { body: client } = await register();
+    const qs = new URLSearchParams({
+      response_type: 'code', client_id: client.client_id, redirect_uri: CALLBACK, code_challenge: pkce().challenge,
+      code_challenge_method: 'S256', state: 'a'.repeat(8193),
+    });
+    const res = await api(`/api/oauth/authorize?${qs}`);
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get('location')!).searchParams.get('error')).toBe('invalid_request');
   });
 
   it('an expired code is refused', async () => {
