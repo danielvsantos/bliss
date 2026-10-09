@@ -9,6 +9,12 @@ import { withAuth } from '../../../../../utils/withAuth.js';
 import { produceEvent } from '../../../../../utils/produceEvent.js';
 import { eventOrigin } from '../../../../../utils/eventOrigin.js';
 
+// #93 D5: hints priced from market data. API_STOCK and API_CRYPTO never read
+// manual values, and API_FUND only falls back to them after the live API and
+// the 7-day price lookback both fail, so a manual value on a ticker-backed
+// item is ignored. Ticker-less funds (source MANUAL) are priced from manual
+// values and stay allowed.
+const MARKET_PRICED_HINTS = new Set(['API_STOCK', 'API_CRYPTO', 'API_FUND']);
 
 export default withAuth(async function handler(req, res) {
   // Apply rate limiting
@@ -88,9 +94,16 @@ async function handlePost(req, res) {
     // Verify the asset belongs to the tenant
     const asset = await prisma.portfolioItem.findFirst({
       where: { id: portfolioItemId, tenantId },
+      include: { category: { select: { processingHint: true } } },
     });
     if (!asset) {
       return res.status(StatusCodes.NOT_FOUND).json({ error: 'Portfolio item not found in this tenant' });
+    }
+    if (MARKET_PRICED_HINTS.has(asset.category?.processingHint) && asset.source !== 'MANUAL') {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: 'This holding is priced from market data, so a manual value would be ignored. Manual values are for manually priced assets.',
+        code: 'MARKET_PRICED_ASSET',
+      });
     }
 
     const result = await prisma.$transaction(async (prisma) => {

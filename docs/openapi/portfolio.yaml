@@ -228,7 +228,7 @@ components:
           type: string
           nullable: true
           enum: [STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER]
-          description: Passive income class; null when the item cannot hold income terms.
+          description: Income terms form (classifyIncomeAsset) — a separate vocabulary from assetClass, which is the one to use for allocation. Null when the item cannot hold income terms.
         hasLotMismatch: { type: boolean }
         hasIncomeTerms: { type: boolean }
         hasDividendOverride: { type: boolean }
@@ -453,6 +453,11 @@ paths:
                           quantity:
                             type: string
                             description: Current holding quantity (Decimal serialized as string).
+        '400':
+          description: >-
+            Missing fields, or `code: MARKET_PRICED_ASSET` when the holding is priced
+            from market data (API_STOCK / API_CRYPTO / API_FUND with a ticker), where a
+            manual value would be ignored.
         '404':
           description: Portfolio item not found.
 

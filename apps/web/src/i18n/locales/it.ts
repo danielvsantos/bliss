@@ -1563,6 +1563,7 @@ const it = {
     assetClass: "Classe di attivo",
     lookThrough: "Scomponi gli ETF",
     lookThroughHint: "Ripartisce ogni ETF tra i settori e i paesi che detiene",
+    pendingSecurityData: "In attesa dei dati del titolo per {{symbols}}. Questi fondi compariranno qui appena saranno disponibili.",
     lookThroughOther: "Altro",
     fixedIncomeBucket: "Reddito fisso",
     editAssetClass: "Modifica la classe di attivo di {{symbol}}",
