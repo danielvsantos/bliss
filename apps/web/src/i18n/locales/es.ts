@@ -1527,6 +1527,7 @@ const es = {
     assetClass: "Clase de activo",
     lookThrough: "Desglosar ETFs",
     lookThroughHint: "Reparte cada ETF entre los sectores y países que contiene",
+    pendingSecurityData: "Esperando los datos del valor de {{symbols}}. Estos fondos aparecerán aquí cuando se obtengan.",
     lookThroughOther: "Otros",
     fixedIncomeBucket: "Renta fija",
     editAssetClass: "Editar la clase de activo de {{symbol}}",

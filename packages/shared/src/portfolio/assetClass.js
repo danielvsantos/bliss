@@ -115,6 +115,7 @@ export function normalizeEtfComposition(raw) {
  *   3. real estate, crypto and cash categories
  *   4. SecurityMaster assetType REIT (US REITs and Brazilian FIIs)
  *   5. SecurityMaster assetType ETF → BOND_ETF / SECTOR_ETF / INDEX_ETF
+ *      (or INDEX_ETF for an ETF category with no SecurityMaster data yet)
  *   6. stock categories (API_STOCK) → STOCK
  *   7. fund categories (API_FUND) → FUND
  *   8. OTHER
@@ -167,6 +168,11 @@ function autoAssetClass({ processingHint, defaultCategoryCode, categoryGroup, se
     }
     const largest = composition?.sectors?.[0]?.weight ?? 0;
     if (largest >= SECTOR_ETF_THRESHOLD) return 'SECTOR_ETF';
+    return 'INDEX_ETF';
+  }
+  // 5b. ETF category with no SecurityMaster data yet (#93): new holdings and
+  //     instances without a Twelve Data key. SecurityMaster wins once known.
+  if (processingHint === 'API_FUND' && !security?.assetType && (code === 'ETFS' || categoryGroup === 'ETFs')) {
     return 'INDEX_ETF';
   }
 

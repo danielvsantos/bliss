@@ -188,6 +188,46 @@ describe('/api/portfolio/items/[assetId]/manual-values', () => {
       expect(res._body.error).toContain('Missing required fields');
     });
 
+    // #93 D5
+    it.each(['API_STOCK', 'API_CRYPTO', 'API_FUND'])('refuses a manual value on a market-priced %s holding', async (processingHint) => {
+      mockPrisma.portfolioItem.findFirst.mockResolvedValueOnce({
+        id: 42, tenantId: 'test-tenant-123', source: 'SYNCED', category: { processingHint },
+      });
+
+      const req = makeReq({
+        method: 'POST',
+        query: { assetId: '42' },
+        body: { date: '2026-04-01', value: 100, currency: 'EUR' },
+      });
+      const res = makeRes();
+
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+      expect(res._status).toBe(400);
+      expect(res._body.code).toBe('MARKET_PRICED_ASSET');
+      expect(mockPrisma.manualAssetValue.create).not.toHaveBeenCalled();
+      expect(mockProduceEvent).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a manually priced asset', { source: 'MANUAL', category: { processingHint: 'MANUAL' } }],
+      ['a ticker-less fund', { source: 'MANUAL', category: { processingHint: 'API_FUND' } }],
+    ])('accepts a manual value on %s', async (_label, fields) => {
+      mockPrisma.portfolioItem.findFirst.mockResolvedValueOnce({ id: 42, tenantId: 'test-tenant-123', ...fields });
+      mockPrisma.manualAssetValue.create.mockResolvedValueOnce({ id: 'mv-4', assetId: 42 });
+
+      const req = makeReq({
+        method: 'POST',
+        query: { assetId: '42' },
+        body: { date: '2026-04-01', value: 100, currency: 'EUR' },
+      });
+      const res = makeRes();
+
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+      expect(res._status).toBe(201);
+    });
+
     it('validates asset belongs to tenant', async () => {
       // Asset not found for this tenant
       mockPrisma.portfolioItem.findFirst.mockResolvedValueOnce(null);

@@ -173,7 +173,8 @@ const getEquityAnalysis = defineTool({
   title: 'Get equity analysis',
   description:
     'Stock and ETF holdings grouped by sector, industry, country or asset class, with weights, weighted P/E and '
-    + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false.',
+    + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false. '
+    + '`pendingSecurityData` lists fund symbols left out until their security data is fetched.',
   input: {
     groupBy: z.enum(['sector', 'industry', 'country', 'assetClass']).optional(),
     accountId: intId('Only this account.').optional(),
@@ -211,6 +212,8 @@ const getEquityAnalysis = defineTool({
       })),
       topHoldings: holdings,
       holdingsCount: (data.holdings || []).length,
+      // Funds left out until their security data is fetched (#93).
+      pendingSecurityData: data.pendingSecurityData || [],
     };
   },
 });
@@ -303,7 +306,8 @@ const getHoldingDetails = defineTool({
   title: 'Get holding details',
   description:
     'Everything about one holding: asset class (and whether it is overridden), income terms (dividends, '
-    + 'coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices).',
+    + 'coupons, rent, interest), debt terms (loans) and the most recent manual valuations (per-unit prices). '
+    + '`incomeTermsKind` (STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER) is the income terms form, not the asset class.',
   input: {
     assetId,
     manualValuesLimit: z.number().int().min(0).max(100).optional().describe('Most recent manual values (default 20).'),
@@ -332,7 +336,9 @@ const getHoldingDetails = defineTool({
       assetClassSource: assetClass.assetClassSource,
       autoAssetClass: assetClass.autoAssetClass,
       incomeTerms: income?.terms ?? null,
-      incomeAssetClass: income?.asset?.assetClass ?? null,
+      // Which income terms form applies (STOCK, ETF, FUND, BOND, REAL_ESTATE, CASH, OTHER) —
+      // not the asset class above (#93), so it is not named like one.
+      incomeTermsKind: income?.asset?.assetClass ?? null,
       autoDividends: income?.auto
         ? { annualDividend: income.auto.annualDividend, dividendYield: income.auto.dividendYield, frequency: income.auto.frequency, currency: income.auto.currency }
         : null,
@@ -391,7 +397,8 @@ const manageManualValues = defineTool({
   destructive: true,
   title: 'Add, update or delete a manual valuation',
   description:
-    'Manual valuations price holdings without market data (property, private assets, cash-like accounts). '
+    'Manual valuations price holdings without market data (property, private assets, cash-like accounts); '
+    + 'holdings priced from market data (stocks, ETFs, crypto with a ticker) refuse them. '
     + 'value is the PRICE PER UNIT, not the position total: market value = value × quantity. To enter a '
     + 'statement total, divide it by the holding quantity first (get_portfolio_holdings). '
     + 'add: date, value and currency required. update: valueId plus the fields to change. delete: valueId. '

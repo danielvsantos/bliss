@@ -458,7 +458,7 @@ async function handleConfirm(req, res, tenantId) {
     data: { state: 'CONFIRMED', detectionReason: 'USER_CONFIRMED' },
   });
   if (result.count === 0) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that descriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No subscription with that id' });
   }
   return res.status(StatusCodes.OK).json({ updated: result.count });
 }
@@ -492,7 +492,7 @@ async function handleDismiss(req, res, tenantId) {
     },
   });
   if (result.count === 0) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that descriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No subscription with that id' });
   }
   return res.status(StatusCodes.OK).json({ updated: result.count });
 }
@@ -506,7 +506,7 @@ async function handleRestore(req, res, tenantId) {
     where: { tenantId, descriptionHash, state: 'DISMISSED' },
   });
   if (result.count === 0) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No dismissed recurring charge with that descriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No dismissed subscription with that id' });
   }
   return res.status(StatusCodes.OK).json({ restored: result.count });
 }
@@ -522,7 +522,7 @@ async function handleSetCadence(req, res, tenantId) {
     where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
   });
   if (!row) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that descriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No subscription with that id' });
   }
   const updated = await prisma.recurringCharge.update({
     where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
@@ -558,7 +558,7 @@ async function handleRename(req, res, tenantId) {
     select: { id: true },
   });
   if (!row) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that descriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No subscription with that id' });
   }
   const updated = await prisma.recurringCharge.update({
     where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
@@ -598,10 +598,10 @@ async function handleMerge(req, res, tenantId) {
     }),
   ]);
   if (!source) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that sourceDescriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No subscription with that id' });
   }
   if (!target) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No recurring charge with that targetDescriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No target subscription with that id' });
   }
   if (source.mergedIntoHash) {
     return res.status(StatusCodes.BAD_REQUEST).json({ error: 'That subscription is already merged into another' });
@@ -655,7 +655,7 @@ async function handleUnmerge(req, res, tenantId) {
     data: { mergedIntoHash: null },
   });
   if (result.count === 0) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No merged recurring charge with that descriptionHash' });
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No merged subscription with that id' });
   }
 
   await produceEvent({

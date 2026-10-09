@@ -207,6 +207,11 @@ export default function EquityAnalysisPage() {
       <div>
         <h2 className="text-3xl font-bold tracking-tight mb-2">{t('equityAnalysis.title')}</h2>
         <p className="text-muted-foreground">{t('equityAnalysis.subtitle')}</p>
+        {data?.pendingSecurityData && data.pendingSecurityData.length > 0 && (
+          <p className="text-sm text-warning mt-2" data-testid="pending-security-data">
+            {t('equityAnalysis.pendingSecurityData', { symbols: data.pendingSecurityData.join(', ') })}
+          </p>
+        )}
       </div>
 
       <div className="space-y-6">
