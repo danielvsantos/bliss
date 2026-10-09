@@ -37,7 +37,7 @@ A key architectural feature of the portfolio dashboard is its reliance on **serv
 ### 6.2.2. Visualizations and Interactivity
 
 - **Performance Chart**: A "Performance" tab displays a historical area chart of the user's net worth. Users can select time ranges via `TIME_RANGES`: 1M (1 month), 6M (6 months), 1Y (1 year), and ALL (full history). These are rendered as pill-shaped toggle buttons.
-- **Filtering and Sorting**: Users can filter the list of assets by their symbol and sort the holdings table by various columns.
+- **Filtering and Sorting**: The chart and the holdings table can be narrowed by account (and the table by country); the holdings table can be sorted by various columns. The table has no symbol search — finding one holding is the chart's holding picker (§6.2.5).
 - **Equity Analysis**: Detailed stock equity analysis (P/E ratios, dividend yields, sector breakdowns) is documented in a separate spec (`19-security-master.md`).
 
 ### 6.2.3. Symbol-Level Aggregation ("All Accounts" view)
@@ -53,11 +53,28 @@ When the user selects **"All accounts"** from the account filter, the same ticke
 
 When a specific account is selected, no merging occurs — raw per-account rows are displayed as-is.
 
+### 6.2.5. Holding Filter (#131)
+
+The performance chart can be scoped to **one holding** with a searchable picker (`src/components/portfolio/holding-picker.tsx`) next to the account filter. Pure logic lives in `src/lib/portfolio-holding.ts`.
+
+- **Identity** (`holdingKey`): priced items (stocks, ETFs, crypto, funds, cash) are keyed by **symbol** — the table merge's key, so one symbol across accounts, currencies or exchanges is one entry and cash is one entry per currency (`Cash <CCY>`). Manual items (`source === 'MANUAL'`) are keyed by **item id** (`item:<id>`), so two manual items sharing a placeholder symbol are two entries.
+- **Options** (`buildHoldingOptions`) are built client-side from the `usePortfolioItems` data already on the page (no extra request): under "All accounts" one entry per key; with an account selected only that account's items. Debt appears only with **Show debt** on. Ordering: open before closed, then groups by total value (cash, then debt last), then value descending. Each row shows the symbol, the category name and the current value in the portfolio currency.
+- **Search** (`filterHoldingOptions`): case-insensitive substring on the symbol, the category name and the translated group. cmdk runs with `shouldFilter={false}` (our filter, our order) and still provides ↑/↓/Enter/Esc and listbox semantics.
+- **Closed positions** are hidden behind a **Show closed positions** switch inside the picker — off on every mount, not persisted — and listed last under their own heading with a "Closed" label. A closed selection (deep link) is still shown in the trigger while the switch is off.
+- **Layout**: a popover at ≥ 640 px; below that the picker opens as a full-width bottom `Sheet`.
+- **URL**: the selection lives only in `?holding=` (`AAPL` or `item:<id>`). It resolves against the loaded items; an unknown value never reaches the API and is stripped with `replace`. The history query is gated (`enabled`) until the items have loaded.
+- **Scoped request**: `usePortfolioHistory` gets `{ symbol }` or `{ itemId }` (`toHistoryScope`) next to the account and date filters.
+- **Holding mode**: the selection **replaces** the stacked chart with one `<Area>` (`buildHoldingSeries`: the sum of the category-type blocks per date, debt negated; no ramp-up zero before the first valuation; a closed position steps to zero after its last valuation up to today) in its category group's colour (debt family for debt). The headline shows the holding's **table** value (merged across accounts, like the default headline's `netWorth`, so it can differ intraday from the last chart point — the same gap as today) and the % badge is `(last − first) / first` of the series. Time-range pills are unchanged. With no history in range, the empty state names the holding.
+- **Account switch**: the holding is kept when the new account holds it; otherwise the filter clears and a toast says "{symbol} isn't held in {account}". Turning **Show debt** off clears a debt selection.
+- **Show in chart**: every holdings row (open, closed and cash) and liability row has a chart icon that selects the holding and scrolls the chart into view (a liability turns **Show debt** on). It is hidden on a merged row of several manual items, which have no single picker entry.
+- **Clear**: the × next to the trigger removes `?holding` and restores the unfiltered request exactly.
+- **Not applied**: the country filter still scopes only the table and the picker, not the chart (pre-existing).
+
 ### 6.2.4. Data Fetching
 
 The dashboard uses the following hooks:
 - `usePortfolioItems`: Fetches the current state of all portfolio items from `/api/portfolio/items`. Accepts optional filters: `assetType`, `source`, `accountId`, `countryId`. The API response contains a structured payload with pre-calculated financial summaries in both the asset's native currency and in USD, eliminating the need for any client-side conversion. Each item includes `accountId`, `account` (resolved name), and `hasLotMismatch` (data-quality flag).
-- `usePortfolioHistory`: Fetches historical data for the performance chart from `/api/portfolio/history`. Accepts optional `accountId` to scope history to a single brokerage account.
+- `usePortfolioHistory`: Fetches historical data for the performance chart from `/api/portfolio/history`. Accepts optional `accountId` to scope history to a single brokerage account, and `symbol` / `itemId` to scope it to one holding (#131). A second argument `{ enabled }` defers the fetch.
 - `usePortfolioHoldings`: Fetches historical daily `PortfolioHolding` records from `/api/portfolio/holdings`. Accepts optional filters: `account`, `countryId`, `category`, `categoryGroup`, `ticker`.
 - `usePortfolioLots`: Fetches FIFO lot data for an individual asset. Accepts an `assetId` parameter and is only enabled when an asset is selected.
 - `useEquityAnalysis`: Fetches equity risk metrics from `/api/portfolio/equity-analysis`, grouped by sector server-side and re-grouped client-side.

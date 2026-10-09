@@ -626,8 +626,13 @@ class APIClient {
       group?: string;
       /** Filter history to a specific brokerage account */
       accountId?: number;
+      /** Only this holding: every item with this symbol (#131). Exclusive with itemId. */
+      symbol?: string;
+      /** Only this portfolio item — manual / symbol-less assets (#131). */
+      itemId?: number;
+      resolution?: 'daily' | 'weekly' | 'monthly';
     } = {}
-  ): Promise<{ portfolioCurrency: string; history: AggregatedPortfolioHistory[] }> {
+  ): Promise<{ portfolioCurrency: string; resolution: 'daily' | 'weekly' | 'monthly'; history: AggregatedPortfolioHistory[] }> {
     const response = await this.client.get('/api/portfolio/history', { params: filters });
     return response.data;
   }

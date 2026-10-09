@@ -549,6 +549,15 @@ describe('portfolio tools', () => {
     expect(eq.result.topHoldings[0]).toMatchObject({ weight: 70, dividendYieldPct: 0.5 });
   });
 
+  it('get_portfolio_history forwards the holding scope (#131)', async () => {
+    const routes = { 'GET /api/portfolio/history': { portfolioCurrency: 'USD', resolution: 'daily', history: [] } };
+    const bySymbol = await run('get_portfolio_history', { symbol: 'AAPL', accountId: 3 }, routes);
+    expect(bySymbol.calls[0].query).toMatchObject({ symbol: 'AAPL', accountId: 3, itemId: undefined });
+    const byItem = await run('get_portfolio_history', { itemId: 42 }, routes);
+    expect(byItem.calls[0].query).toMatchObject({ itemId: 42, symbol: undefined });
+    await expect(run('get_portfolio_history', { symbol: 'AAPL', itemId: 42 }, routes)).rejects.toThrow(/either symbol or itemId/);
+  });
+
   it('get_passive_income bundles projection, streams and detached terms', async () => {
     const { result, calls } = await run('get_passive_income', { horizon: 24 }, {
       'GET /api/portfolio/passive-income': { displayCurrency: 'EUR', horizon: 24, kpis: { next12mIncome: 1 }, groups: [], items: [{ big: true }] },

@@ -654,7 +654,40 @@ paths:
           description: Filter history to a single brokerage account.
           schema:
             type: integer
+        - name: symbol
+          in: query
+          description: >
+            Only one holding (#131): every portfolio item with this symbol, summed
+            across accounts unless accountId is also passed. Mutually exclusive with itemId.
+          schema:
+            type: string
+            maxLength: 50
+        - name: itemId
+          in: query
+          description: >
+            Only one portfolio item (#131), e.g. a manual asset such as real estate.
+            Scoped to the caller's tenant. Mutually exclusive with symbol.
+          schema:
+            type: integer
+            minimum: 1
+        - name: resolution
+          in: query
+          description: 'Override the auto-selected resolution (daily ≤ 90 days, weekly ≤ 365 days, monthly beyond).'
+          schema:
+            type: string
+            enum: [daily, weekly, monthly]
       responses:
+        '400':
+          description: >
+            Invalid date, both symbol and itemId passed, an itemId that is not a
+            positive integer, or a symbol longer than 50 characters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
         '200':
           description: A time-series of aggregated daily portfolio values with currency metadata.
           content:

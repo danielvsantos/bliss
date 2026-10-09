@@ -94,6 +94,34 @@ function buildSampleDates(fromDate, toDate, resolution) {
   return dates;
 }
 
+/**
+ * Parses the optional holding scope (#131) from the query string.
+ * Returns `{ filter }` (a PortfolioItem where fragment, empty when absent)
+ * or `{ error }` for a 400.
+ */
+function parseHoldingScope(query) {
+  const rawSymbol = typeof query.symbol === 'string' ? query.symbol.trim() : undefined;
+  const rawItemId = typeof query.itemId === 'string' ? query.itemId.trim() : undefined;
+  const hasSymbol = rawSymbol !== undefined && rawSymbol !== '';
+  const hasItemId = rawItemId !== undefined && rawItemId !== '';
+
+  if (hasSymbol && hasItemId) {
+    return { error: 'Pass either "symbol" or "itemId", not both.' };
+  }
+  if (hasSymbol) {
+    if (rawSymbol.length > 50) return { error: '"symbol" must be at most 50 characters.' };
+    return { filter: { symbol: rawSymbol } };
+  }
+  if (hasItemId) {
+    const id = Number(rawItemId);
+    if (!/^\d+$/.test(rawItemId) || !Number.isSafeInteger(id) || id <= 0) {
+      return { error: '"itemId" must be a positive integer.' };
+    }
+    return { filter: { id } };
+  }
+  return { filter: {} };
+}
+
 async function handleGet(req, res) {
   const { from, to, type, group, resolution: resolutionParam, accountId } = req.query;
   const user = req.user;
@@ -102,6 +130,16 @@ async function handleGet(req, res) {
   // belonging to that account. Absent = tenant-wide aggregated view.
   const accountFilter = accountId ? { accountId: parseInt(accountId, 10) } : {};
 
+  // Optional holding scope (#131): `symbol` sums every item with that symbol
+  // (across accounts unless `accountId` narrows it); `itemId` is a single item
+  // (manual / symbol-less assets). Mutually exclusive. Both stay under tenantId.
+  const holding = parseHoldingScope(req.query);
+  if (holding.error) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: holding.error });
+    return;
+  }
+  const assetScope = { tenantId, ...accountFilter, ...holding.filter };
+
   // --- Staleness check: trigger background revaluation if history is outdated ---
   // This ensures portfolio history stays current even for self-hosters without
   // reliable nightly cron infrastructure. The response returns existing data
@@ -109,7 +147,7 @@ async function handleGet(req, res) {
   try {
     const todayStr = new Date().toISOString().split('T')[0];
     const latestRecord = await prisma.portfolioValueHistory.findFirst({
-      where: { asset: { tenantId, ...accountFilter } },
+      where: { asset: assetScope },
       orderBy: { date: 'desc' },
       select: { date: true },
     });
@@ -154,7 +192,7 @@ async function handleGet(req, res) {
     fromDate = new Date(from);
   } else {
     const earliest = await prisma.portfolioValueHistory.findFirst({
-      where: { asset: { tenantId, ...accountFilter } },
+      where: { asset: assetScope },
       orderBy: { date: 'asc' },
       select: { date: true },
     });
@@ -195,8 +233,7 @@ async function handleGet(req, res) {
       by: ['date', 'assetId'],
       where: {
         asset: {
-          tenantId,
-          ...accountFilter,
+          ...assetScope,
           ...(categoryFilter && { category: categoryFilter }),
         },
         date: dateFilter,

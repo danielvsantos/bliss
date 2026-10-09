@@ -156,7 +156,19 @@ This check is non-blocking: errors are caught silently and never delay the GET r
 | `type`       | `string` | Comma-separated category types to filter by (e.g., `Investments,Asset`).    |                        |
 | `group`      | `string` | Comma-separated category groups to filter by.                               |                        |
 | `accountId`  | `number` | Restricts history to a single brokerage account.                            |                        |
+| `symbol`     | `string` | Restricts history to one holding: every item with this symbol (≤ 50 chars, trimmed). Combines with `accountId`. (#131) | |
+| `itemId`     | `number` | Restricts history to one portfolio item (manual / symbol-less assets), still under the caller's tenant. (#131) | |
 | `resolution` | `string` | Data resolution: `daily`, `weekly`, or `monthly`. Overrides auto-detection. |                        |
+
+#### Holding scope (#131)
+
+`symbol` and `itemId` are optional and **mutually exclusive** — passing both, a non-positive-integer `itemId` or a `symbol` over 50 characters returns `400`. Empty values are ignored. The scope is one more filter on the `asset` relation (`asset.symbol` / `asset.id`, next to `tenantId` and `accountId`) and applies to all three queries: the staleness probe, the earliest-record lookup and the `groupBy`.
+
+- **Cross-account sum**: `symbol` without `accountId` sums that symbol's value across every account (and across currencies / exchanges, via `valueInUSD`, then converted once per date) — the same merge the holdings table does under "All accounts". With `accountId`, only that account's item is returned.
+- **Late start**: without `from`, the default start is the holding's own first valuation, so a position opened partway through "ALL" has no leading zeros.
+- **After close**: valuation stops writing history at the close date of a fully-closed position, so the response simply ends there (the web chart pads the zero step client-side).
+- An unknown symbol or another tenant's `itemId` returns `200` with `history: []`. The response shape is unchanged — only the holding's category-type block / group is populated.
+- The route and method are unchanged, so integration keys keep their existing `GET` access; the MCP `get_portfolio_history` tool accepts the same `symbol` / `itemId`.
 
 ### 6.4.3. Auto-Resolution System
 

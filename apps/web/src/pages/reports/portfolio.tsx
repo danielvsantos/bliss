@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -16,6 +16,7 @@ import {
   EditIcon,
   Coins,
   Loader2,
+  LineChart as LineChartIcon,
 } from "lucide-react";
 import {
   Table,
@@ -67,6 +68,16 @@ import { translateCategoryGroup } from "@/lib/category-i18n";
 import { IncomeTermsModal } from "@/components/income/income-terms-modal";
 import { canHoldIncomeTerms } from "@/lib/passive-income";
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
+import { HoldingPicker } from "@/components/portfolio/holding-picker";
+import { useToast } from "@/hooks/use-toast";
+import {
+  buildHoldingOptions,
+  buildHoldingSeries,
+  holdingKey,
+  parseHoldingParam,
+  seriesChangePercent,
+  toHistoryScope,
+} from "@/lib/portfolio-holding";
 
 // ── Symbol-level merge (cross-account deduplication) ──────────────────────
 //
@@ -85,7 +96,11 @@ import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 //  - hasLotMismatch    → OR (any account's mismatch surfaces on the merged row)
 //  - accountId         → null  (merged, not tied to one account)
 //  - id                → first item's id (for React keys; doesn't drive any query)
+//  - mergedItemIds     → every merged item's id (the "Show in chart" action, #131)
 //  - Everything else   → first item (category, currency, symbol are identical)
+
+/** A table row: a PortfolioItem, or several merged ones (`mergedItemIds`). */
+type PortfolioRowItem = PortfolioItem & { mergedItemIds?: number[] };
 
 function mergeFinancialSummary(
   items: PortfolioItem[],
@@ -111,7 +126,7 @@ function mergeFinancialSummary(
   return summed;
 }
 
-function mergePortfolioItems(items: PortfolioItem[]): PortfolioItem {
+function mergePortfolioItems(items: PortfolioItem[]): PortfolioRowItem {
   if (items.length === 1) return items[0];
   const base = items[0];
   const quantity = items.reduce((s, i) => s + parseDecimal(i.quantity), 0);
@@ -120,6 +135,7 @@ function mergePortfolioItems(items: PortfolioItem[]): PortfolioItem {
   return {
     ...base,
     accountId: null,
+    mergedItemIds: items.map((i) => i.id),
     quantity,
     hasLotMismatch,
     native: mergeFinancialSummary(items, (i) => i.native),
@@ -182,7 +198,29 @@ function IncomeTermsButton({ item, onOpen }: { item: PortfolioItem; onOpen?: (it
   );
 }
 
-function AssetRow({ item, currency, onIncomeTerms }: { item: PortfolioItem; currency: string; onIncomeTerms?: (item: PortfolioItem) => void }) {
+// Holding filter (#131): scopes the performance chart to this row's holding.
+// Hidden on a merged row of several manual items — the picker lists those
+// separately (id-keyed), so no single chart entry matches the row.
+function ShowInChartButton({ item, onShow }: { item: PortfolioRowItem; onShow?: (item: PortfolioItem) => void }) {
+  const { t } = useTranslation();
+  if (!onShow) return null;
+  if (item.source === "MANUAL" && (item.mergedItemIds?.length ?? 1) > 1) return null;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-6 w-6 p-0 ml-1 align-middle text-muted-foreground hover:text-brand-deep"
+      aria-label={t("portfolio.showInChart")}
+      title={t("portfolio.showInChart")}
+      onClick={() => onShow(item)}
+      data-testid={`show-in-chart-${item.id}`}
+    >
+      <LineChartIcon className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
+
+function AssetRow({ item, currency, onIncomeTerms, onShowInChart }: { item: PortfolioRowItem; currency: string; onIncomeTerms?: (item: PortfolioItem) => void; onShowInChart?: (item: PortfolioItem) => void }) {
   const { t } = useTranslation();
   const data = getDisplayData(item, currency);
   const marketValue = parseDecimal(data.marketValue);
@@ -193,6 +231,7 @@ function AssetRow({ item, currency, onIncomeTerms }: { item: PortfolioItem; curr
         <TableCell className="font-medium">
           {item.symbol}
           <IncomeTermsButton item={item} onOpen={onIncomeTerms} />
+          <ShowInChartButton item={item} onShow={onShowInChart} />
         </TableCell>
         <TableCell className="hidden md:table-cell" />
         <TableCell className="hidden md:table-cell" />
@@ -221,6 +260,7 @@ function AssetRow({ item, currency, onIncomeTerms }: { item: PortfolioItem; curr
         <div className="flex items-center">
           <span>{item.symbol}</span>
           <IncomeTermsButton item={item} onOpen={isClosed ? undefined : onIncomeTerms} />
+          <ShowInChartButton item={item} onShow={onShowInChart} />
         </div>
         <p className="text-xs text-muted-foreground sm:hidden">
           {unrealizedPnL !== 0 && (
@@ -270,7 +310,7 @@ function AssetRow({ item, currency, onIncomeTerms }: { item: PortfolioItem; curr
 
 // ── Liability Row ──────────────────────────────────────────────────────────
 
-function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: string }) {
+function LiabilityRow({ item, currency, onShowInChart }: { item: PortfolioRowItem; currency: string; onShowInChart?: (item: PortfolioItem) => void }) {
   const { t } = useTranslation();
   const data = getDisplayData(item, currency);
   const marketValue = Math.abs(parseDecimal(data.marketValue));
@@ -278,7 +318,12 @@ function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: strin
 
   return (
     <TableRow className="hover:bg-accent/30">
-      <TableCell className="font-medium">{item.symbol}</TableCell>
+      <TableCell className="font-medium">
+        <div className="flex items-center">
+          <span>{item.symbol}</span>
+          <ShowInChartButton item={item} onShow={onShowInChart} />
+        </div>
+      </TableCell>
       <TableCell className="hidden sm:table-cell tabular-nums">
         {item.debtTerms?.interestRate != null ? `${item.debtTerms.interestRate}%` : <span className="text-muted-foreground">—</span>}
       </TableCell>
@@ -308,6 +353,9 @@ function LiabilityRow({ item, currency }: { item: PortfolioItem; currency: strin
 export default function PortfolioHoldingsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chartCardRef = useRef<HTMLDivElement>(null);
   const userLocale = i18n.language || window.navigator.language || "en-US";
 
   // ── State ──
@@ -356,12 +404,73 @@ export default function PortfolioHoldingsPage() {
     }
   }, [timeRange]);
 
-  const { data: historyResponse, isLoading: historyLoading, error: historyError } = usePortfolioHistory({
+  // ── Holding filter (#131) ──
+  // The URL (`?holding=AAPL` or `?holding=item:<id>`) is the only source of
+  // truth for the selection. It resolves against the loaded items, so an
+  // unknown value never reaches the API.
+  const holdingParam = parseHoldingParam(searchParams.get("holding"));
+
+  const holdingOptions = useMemo(
+    () => buildHoldingOptions(portfolioItems, { portfolioCurrency, showDebt }),
+    [portfolioItems, portfolioCurrency, showDebt],
+  );
+
+  const selectedHolding = useMemo(
+    () => (holdingParam && !itemsLoading ? holdingOptions.find((o) => o.key === holdingParam) ?? null : null),
+    [holdingParam, itemsLoading, holdingOptions],
+  );
+
+  const setHoldingParam = useCallback((key: string | null, replace = false) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (key) next.set("holding", key);
+      else next.delete("holding");
+      return next;
+    }, { replace });
+  }, [setSearchParams]);
+
+  // Set when the account changes with a holding selected, so the strip below
+  // can tell the user why the selection went away.
+  const pendingAccountSwitch = useRef<{ key: string; symbol: string; accountName: string } | null>(null);
+
+  const handleAccountChange = (value: string) => {
+    if (selectedHolding) {
+      const account = accounts.find((a) => String(a.id) === value);
+      pendingAccountSwitch.current = {
+        key: selectedHolding.key,
+        symbol: selectedHolding.symbol,
+        accountName: account?.accountName ?? t("portfolio.allAccounts"),
+      };
+    }
+    setSelectedAccountId(value);
+  };
+
+  // Drop a selection that doesn't resolve once the items have settled: an
+  // unknown deep link (silently), a holding the newly selected account doesn't
+  // hold (with a notice), or a debt holding after "Show debt" is turned off.
+  useEffect(() => {
+    if (itemsLoading || itemsFetching) return;
+    const pending = pendingAccountSwitch.current;
+    pendingAccountSwitch.current = null;
+    if (!holdingParam || selectedHolding) return;
+    setHoldingParam(null, true);
+    if (pending && pending.key === holdingParam) {
+      toast({
+        description: t("portfolio.holdingNotInAccount", { symbol: pending.symbol, account: pending.accountName }),
+      });
+    }
+  }, [holdingParam, selectedHolding, itemsLoading, itemsFetching, setHoldingParam, toast, t]);
+
+  const historyEnabled = !holdingParam || selectedHolding !== null;
+  const { data: historyResponse, isLoading: historyQueryLoading, error: historyError } = usePortfolioHistory({
     ...historyDateFilter,
     type: showDebt ? "Investments,Debt,Asset" : "Investments,Asset",
     // Scope the holdings graph to the selected account, matching the table filter.
     ...(selectedAccountId !== "all" && { accountId: parseInt(selectedAccountId, 10) }),
-  });
+    ...(selectedHolding && toHistoryScope(selectedHolding.key)),
+  }, { enabled: historyEnabled });
+  // A deep link waits for the items before the (scoped) history is requested.
+  const historyLoading = historyQueryLoading || !historyEnabled;
   const historyData = useMemo(() => historyResponse?.history ?? [], [historyResponse?.history]);
   const categories = metadata?.categories ?? EMPTY_ARRAY;
 
@@ -536,7 +645,15 @@ export default function PortfolioHoldingsPage() {
     return { chartData: chartEntries, allGroups: allGroupNames, debtGroups: debtGroupNames };
   }, [historyData, showDebt]);
 
+  // Holding mode (#131): one series replaces the stacked chart. No ramp-up zero
+  // before the first valuation; a closed position steps to zero after it closed.
+  const holdingSeries = useMemo(
+    () => (selectedHolding ? buildHoldingSeries(historyData, { isClosed: selectedHolding.isClosed }) : []),
+    [historyData, selectedHolding],
+  );
+
   const { performanceSinceStartPercent } = useMemo(() => {
+    if (selectedHolding) return { performanceSinceStartPercent: seriesChangePercent(holdingSeries) };
     if (!chartData || chartData.length === 0) return { performanceSinceStartPercent: 0 };
     const firstValue = chartData[0]["Net Worth"] as number;
     const lastValue = chartData[chartData.length - 1]["Net Worth"] as number;
@@ -544,7 +661,13 @@ export default function PortfolioHoldingsPage() {
     return {
       performanceSinceStartPercent: firstValue === 0 ? 0 : (performance / firstValue) * 100,
     };
-  }, [chartData]);
+  }, [chartData, selectedHolding, holdingSeries]);
+
+  // The headline is the selected holding's table value (merged across accounts
+  // like the table row), mirroring how the default headline uses netWorth.
+  const headlineValue = selectedHolding
+    ? (selectedHolding.isDebt ? -selectedHolding.value : selectedHolding.value)
+    : netWorth;
 
   // ── Dynamic color map ──
 
@@ -554,6 +677,22 @@ export default function PortfolioHoldingsPage() {
   );
 
   const getColor = (group: string) => groupColorMap[group] || "#9A95A4";
+
+  // The holding series takes its category group's colour (debt family for debt),
+  // assigned over every group the user holds so it doesn't depend on the scope.
+  const holdingColor = useMemo(() => {
+    if (!selectedHolding) return undefined;
+    const assetGroups = new Set<string>();
+    const debtGroupSet = new Set<string>();
+    for (const o of holdingOptions) (o.isDebt ? debtGroupSet : assetGroups).add(o.group);
+    return buildGroupColorMap([...assetGroups], debtGroupSet)[selectedHolding.group];
+  }, [selectedHolding, holdingOptions]);
+
+  const handleShowInChart = (item: PortfolioItem) => {
+    if (item.category.type === "Debt") setShowDebt(true);
+    setHoldingParam(holdingKey(item));
+    chartCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // ── Handlers ──
 
@@ -584,6 +723,22 @@ export default function PortfolioHoldingsPage() {
     label?: string;
   }) => {
     if (!active || !payload?.length) return null;
+
+    if (selectedHolding) {
+      const point = payload[0];
+      return (
+        <div className="p-3 bg-background/95 backdrop-blur-sm border rounded-xl shadow-lg min-w-[180px]">
+          <p className="font-semibold text-sm mb-2">{label ? formatDate(new Date(label), "PPP") : ""}</p>
+          <div className="flex justify-between items-center gap-6 text-sm">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: point.color }} />
+              {selectedHolding.symbol}
+            </span>
+            <span className="tabular-nums">{formatCurrency(point.value, portfolioCurrency)}</span>
+          </div>
+        </div>
+      );
+    }
 
     const netWorthLabel = t("portfolio.netWorth");
     const netWorthItem = payload.find((item) => item.name === netWorthLabel || item.name === "Net Worth");
@@ -704,13 +859,14 @@ export default function PortfolioHoldingsPage() {
       </div>
 
       {/* ── Performance Chart Card ── */}
+      <div ref={chartCardRef} className="scroll-mt-4">
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             {/* KPI Row */}
             <div className="flex items-baseline gap-3">
               <span className="flex items-center gap-2 text-3xl font-bold tabular-nums tracking-tight">
-                {formatCurrency(netWorth, portfolioCurrency)}
+                <span data-testid="portfolio-headline">{formatCurrency(headlineValue, portfolioCurrency)}</span>
                 {isRefreshing && (
                   <Loader2
                     className="h-4 w-4 animate-spin text-muted-foreground"
@@ -751,7 +907,7 @@ export default function PortfolioHoldingsPage() {
 
               {/* Account Filter */}
               {accounts.length > 1 && (
-                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                <Select value={selectedAccountId} onValueChange={handleAccountChange}>
                   <SelectTrigger className="h-7 w-40 text-xs">
                     <SelectValue placeholder={t("portfolio.allAccounts")} />
                   </SelectTrigger>
@@ -765,6 +921,15 @@ export default function PortfolioHoldingsPage() {
                   </SelectContent>
                 </Select>
               )}
+
+              {/* Holding Filter (#131) */}
+              <HoldingPicker
+                options={holdingOptions}
+                selected={selectedHolding}
+                currency={portfolioCurrency}
+                onSelect={(key) => setHoldingParam(key)}
+                onClear={() => setHoldingParam(null)}
+              />
 
               {/* Country Filter */}
               {distinctCountries.length > 1 && (
@@ -796,6 +961,49 @@ export default function PortfolioHoldingsPage() {
         <CardContent className="pt-0">
           {historyLoading ? (
             <Skeleton className="h-80 w-full rounded-lg" />
+          ) : selectedHolding ? (
+            holdingSeries.length === 0 ? (
+              <div className="h-80 flex flex-col items-center justify-center gap-1 text-muted-foreground text-sm">
+                <span>{t("portfolio.noHistoricalData")}</span>
+                <span>{t("portfolio.noHistoryForHolding", { name: selectedHolding.symbol })}</span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={380}>
+                <AreaChart data={holdingSeries}>
+                  <defs>
+                    <linearGradient id="color-holding" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={holdingColor ?? getColor(selectedHolding.group)} stopOpacity={0.75} />
+                      <stop offset="95%" stopColor={holdingColor ?? getColor(selectedHolding.group)} stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(str) => formatDate(new Date(str), "MMM d")}
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(var(--muted-fg))"
+                  />
+                  <YAxis
+                    domain={["auto", "auto"]}
+                    tickFormatter={(val) => formatCurrency(val, portfolioCurrency, userLocale, { notation: "compact" })}
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(var(--muted-fg))"
+                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <ReferenceLine y={0} stroke="hsl(var(--muted-fg))" strokeWidth={1} />
+                  <RechartsTooltip content={<PerformanceChartTooltip />} />
+                  <RechartsLegend />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={holdingColor ?? getColor(selectedHolding.group)}
+                    strokeWidth={1.5}
+                    fillOpacity={1}
+                    fill="url(#color-holding)"
+                    name={selectedHolding.symbol}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )
           ) : chartData.length === 0 ? (
             <div className="h-80 flex items-center justify-center text-muted-foreground text-sm">
               {t("portfolio.noHistoricalData")}
@@ -878,6 +1086,7 @@ export default function PortfolioHoldingsPage() {
           )}
         </CardContent>
       </Card>
+      </div>
 
       {/* ── Assets Card ── */}
       {totalAssetPositions > 0 && (
@@ -943,11 +1152,11 @@ export default function PortfolioHoldingsPage() {
                           </TableHeader>
                           <TableBody>
                             {openPositions.map((item) => (
-                              <AssetRow key={item.id} item={item} currency={portfolioCurrency} onIncomeTerms={setIncomeTermsItem} />
+                              <AssetRow key={item.id} item={item} currency={portfolioCurrency} onIncomeTerms={setIncomeTermsItem} onShowInChart={handleShowInChart} />
                             ))}
                             {closedSectionsVisible[group] &&
                               closedPositions.map((item) => (
-                                <AssetRow key={item.id} item={item} currency={portfolioCurrency} onIncomeTerms={setIncomeTermsItem} />
+                                <AssetRow key={item.id} item={item} currency={portfolioCurrency} onIncomeTerms={setIncomeTermsItem} onShowInChart={handleShowInChart} />
                               ))}
                           </TableBody>
                         </Table>
@@ -1003,7 +1212,7 @@ export default function PortfolioHoldingsPage() {
                 </TableHeader>
                 <TableBody>
                   {sortedLiabilities.map((item) => (
-                    <LiabilityRow key={item.id} item={item} currency={portfolioCurrency} />
+                    <LiabilityRow key={item.id} item={item} currency={portfolioCurrency} onShowInChart={handleShowInChart} />
                   ))}
                 </TableBody>
                 {sortedLiabilities.length > 1 && (

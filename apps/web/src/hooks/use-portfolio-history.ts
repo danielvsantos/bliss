@@ -27,13 +27,21 @@ type PortfolioHistoryFilters = {
   resolution?: 'daily' | 'weekly' | 'monthly';
   /** Filter history to a specific brokerage account. Absent = tenant-wide aggregated view. */
   accountId?: number;
+  /** Only this holding: every item with this symbol, summed across accounts unless accountId is set (#131). */
+  symbol?: string;
+  /** Only this portfolio item — manual / symbol-less assets (#131). Exclusive with symbol. */
+  itemId?: number;
 };
 
-export function usePortfolioHistory(filters: PortfolioHistoryFilters = {}) {
+export function usePortfolioHistory(
+  filters: PortfolioHistoryFilters = {},
+  { enabled = true }: { enabled?: boolean } = {},
+) {
   const query = useQuery<PortfolioHistoryResponse, Error>({
     queryKey: [HISTORY_QUERY_KEY, filters],
     queryFn: () => api.getPortfolioHistory(filters),
     staleTime: PORTFOLIO_STALE_TIME_MS,
+    enabled,
   });
 
   return query;
