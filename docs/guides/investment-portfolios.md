@@ -42,6 +42,8 @@ The portfolio page shows total value, asset allocation, and holdings grouped by 
 
 ![Portfolio holdings page](/images/portfolio.png)
 
+**See one holding over time.** Next to the account filter, the **All holdings** picker lets you search your holdings by symbol and chart just one of them. The chart then shows that holding's value alone, and the headline and % change follow it. Under **All accounts**, a symbol you hold with several brokers is shown as their sum. Pick an account to see only that account's position. Closed positions are hidden until you turn on **Show closed positions** in the picker. You can also click the chart icon on any row of the holdings table. Clear the selection with **×**. The selection is kept in the page link (`?holding=AAPL`), so you can bookmark or share a holding's chart.
+
 **Supported asset types:** Stocks, ETFs, Crypto, Bonds, Real Estate, Private Equity, Pension Plans, and more.
 
 ## Enabling live prices

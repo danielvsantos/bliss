@@ -129,7 +129,9 @@ const getPortfolioHistory = defineTool({
   title: 'Get portfolio value history',
   description:
     'Total portfolio value over time (net worth of investments, assets and debts) in the display currency, with '
-    + 'the split per category type. Prefer resolution "monthly" or "weekly" for long ranges.',
+    + 'the split per category type. Prefer resolution "monthly" or "weekly" for long ranges. Pass symbol for one '
+    + 'holding\'s value over time (summed across accounts unless accountId is set), or itemId for a single item '
+    + '(manual assets such as real estate); not both.',
   input: {
     from: dateString('Start date').optional(),
     to: dateString('End date').optional(),
@@ -137,11 +139,16 @@ const getPortfolioHistory = defineTool({
     types: z.array(z.enum(['Investments', 'Asset', 'Debt'])).max(3).optional(),
     groups: z.array(z.string().max(100)).max(20).optional().describe('Only these category groups.'),
     accountId: intId('Only this account.').optional(),
+    symbol: z.string().min(1).max(50).optional().describe('Only this holding (all items with this symbol).'),
+    itemId: intId('Only this portfolio item (asset ID from get_portfolio_holdings).').optional(),
     limit: limitField(100),
     cursor: cursorField,
   },
   wraps: [{ method: 'GET', route: '/api/portfolio/history' }],
   async handler(args, { api }) {
+    if (args.symbol !== undefined && args.itemId !== undefined) {
+      throw new ToolInputError('Pass either symbol or itemId (not both).');
+    }
     const data = await api.get('/api/portfolio/history', {
       from: args.from,
       to: args.to,
@@ -149,6 +156,8 @@ const getPortfolioHistory = defineTool({
       type: args.types?.join(','),
       group: args.groups?.join(','),
       accountId: args.accountId,
+      symbol: args.symbol,
+      itemId: args.itemId,
     });
     const useDisplay = data.portfolioCurrency && data.portfolioCurrency !== 'USD';
     const points = (data.history || []).map((h) => {

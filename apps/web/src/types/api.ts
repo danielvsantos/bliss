@@ -183,6 +183,8 @@ export type PortfolioItem = {
   usd: FinancialSummary;
   portfolio?: FinancialSummary;
   debtTerms?: DebtTerms;
+  /** SYNCED (priced) or MANUAL (manually valued). */
+  source?: string;
   /** Passive Income (#77): present when the holding has income terms. */
   incomeTerms?: { id: number; incomeType: string; isDistributing: boolean } | null;
   manualValues?: ManualAssetValue[];

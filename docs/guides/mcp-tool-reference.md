@@ -472,7 +472,7 @@ view "positions" (default): current investments, assets and debts with quantity,
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/portfolio/history`
 
-Total portfolio value over time (net worth of investments, assets and debts) in the display currency, with the split per category type. Prefer resolution "monthly" or "weekly" for long ranges.
+Total portfolio value over time (net worth of investments, assets and debts) in the display currency, with the split per category type. Prefer resolution "monthly" or "weekly" for long ranges. Pass symbol for one holding's value over time (summed across accounts unless accountId is set), or itemId for a single item (manual assets such as real estate); not both.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -482,6 +482,8 @@ Total portfolio value over time (net worth of investments, assets and debts) in 
 | `types` | array of `Investments` \| `Asset` \| `Debt` | no |  |
 | `groups` | array of string | no | Only these category groups. |
 | `accountId` | integer | no | Only this account. |
+| `symbol` | string | no | Only this holding (all items with this symbol). |
+| `itemId` | integer | no | Only this portfolio item (asset ID from get_portfolio_holdings). |
 | `limit` | integer | no | Items per page (1-100, default 100). |
 | `cursor` | string | no | Opaque cursor from a previous result's nextCursor. Omit for the first page. |
 
