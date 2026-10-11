@@ -68,6 +68,15 @@ async function handlePost(req, res, user) {
         return;
     }
 
+    // Enable Banking connections share PlaidItem (#132); they map accounts through /api/enablebanking.
+    if (item.provider === 'ENABLE_BANKING') {
+        res.status(StatusCodes.BAD_REQUEST).json({
+            error: 'This is an Enable Banking connection. Use the Enable Banking actions instead.',
+            code: 'WRONG_PROVIDER',
+        });
+        return;
+    }
+
     // Verify accounts with Plaid again to get latest metadata
     const plaidRes = await plaidClient.accountsGet({
         access_token: item.accessToken,

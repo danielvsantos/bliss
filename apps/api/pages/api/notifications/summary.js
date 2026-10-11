@@ -6,6 +6,11 @@ import * as Sentry from '@sentry/nextjs';
 import { withAuth } from '../../../utils/withAuth.js';
 import { readActivity, countFailuresSince } from '../../../utils/activityStore.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Enable Banking consent reminders (#132): 14 days ahead, then urgent at 3 days.
+const CONSENT_WARNING_DAYS = 14;
+const CONSENT_URGENT_DAYS = 3;
+
 /**
  * GET /api/notifications/summary
  * Aggregates signals from existing tables, plus PROCESSING_FAILED from the
@@ -14,6 +19,7 @@ import { readActivity, countFailuresSince } from '../../../utils/activityStore.j
  * PUT /api/notifications/summary
  * Marks notifications as seen (updates User.lastNotificationSeenAt).
  */
+
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
     rateLimiters.accounts(req, res, (result) => {
@@ -41,6 +47,7 @@ export default withAuth(async function handler(req, res) {
         hasTransaction,
         plaidFailedCount,
         activity,
+        expiringConsents,
       ] = await Promise.all([
         // 1. Plaid transactions awaiting review
         prisma.plaidTransaction.count({
@@ -56,13 +63,15 @@ export default withAuth(async function handler(req, res) {
             status: 'PENDING',
           },
         }),
-        // 3. Plaid items needing re-auth or erroring
+        // 3. Bank connections needing re-auth or erroring. Enable Banking consents
+        //    are personal (#132): only the user who authorised one is prompted.
         prisma.plaidItem.findMany({
           where: {
             tenantId: user.tenantId,
             status: { in: ['LOGIN_REQUIRED', 'ERROR'] },
+            OR: [{ provider: { not: 'ENABLE_BANKING' } }, { userId: user.id }],
           },
-          select: { id: true, institutionName: true, status: true },
+          select: { id: true, institutionName: true, status: true, provider: true },
         }),
         // 4. New insights since last seen
         prisma.insight.count({
@@ -93,6 +102,17 @@ export default withAuth(async function handler(req, res) {
         }),
         // 9. Background jobs that failed on their final attempt (Redis, fail-soft; #100)
         readActivity(user.tenantId),
+        // 10. This user's Enable Banking consents expiring within 14 days (#132)
+        prisma.plaidItem.findMany({
+          where: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            provider: 'ENABLE_BANKING',
+            status: 'ACTIVE',
+            consentExpiration: { gt: new Date(), lte: new Date(Date.now() + CONSENT_WARNING_DAYS * DAY_MS) },
+          },
+          select: { id: true, institutionName: true, consentExpiration: true },
+        }),
       ]);
 
       const totalReviewCount = plaidClassifiedCount + pendingImportCount;
@@ -115,10 +135,33 @@ export default withAuth(async function handler(req, res) {
         signals.push({
           type: 'PLAID_ACTION_REQUIRED',
           count: 1,
-          label: `${item.institutionName || 'Bank'} requires ${item.status === 'LOGIN_REQUIRED' ? 're-authentication' : 'attention'}`,
+          label: item.provider === 'ENABLE_BANKING'
+            ? `${item.institutionName || 'Bank'} needs to be re-connected`
+            : `${item.institutionName || 'Bank'} requires ${item.status === 'LOGIN_REQUIRED' ? 're-authentication' : 'attention'}`,
           href: '/accounts',
           severity: 'warning',
           isNew: true,
+        });
+      }
+
+      // Signal 2b: Enable Banking consent expiring (#132). Derived on read, no
+      // table: "new" when the 14-day or 3-day threshold was crossed after the
+      // user last opened the notification center. Expiry itself surfaces as
+      // PLAID_ACTION_REQUIRED once the sync marks the connection LOGIN_REQUIRED.
+      for (const item of expiringConsents) {
+        const expiresAt = new Date(item.consentExpiration);
+        const msLeft = expiresAt.getTime() - Date.now();
+        const urgent = msLeft <= CONSENT_URGENT_DAYS * DAY_MS;
+        const thresholdCrossedAt = new Date(expiresAt.getTime() - (urgent ? CONSENT_URGENT_DAYS : CONSENT_WARNING_DAYS) * DAY_MS);
+        const daysLeft = Math.max(1, Math.ceil(msLeft / DAY_MS));
+        signals.push({
+          type: 'BANK_CONSENT_EXPIRING',
+          count: 1,
+          label: `${item.institutionName || 'Bank'} access expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} — reconnect to keep syncing`,
+          href: '/accounts',
+          severity: urgent ? 'warning' : 'info',
+          isNew: thresholdCrossedAt > lastSeenAt,
+          expiresAt: expiresAt.toISOString(),
         });
       }
 

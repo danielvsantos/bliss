@@ -54,6 +54,7 @@ export const rateLimiters = {
     tenants: createRateLimiter({ max: 10, windowMs: 5 * 60 * 1000 }),     // 10 tenants per 5 min
     transactions: createRateLimiter({ max: 300, windowMs: 5 * 60 * 1000 }), // 300 transactions fetches
     users: createRateLimiter({ max: 20, windowMs: 5 * 60 * 1000 }),     // 20 user per 5 min
+    enableBanking: createRateLimiter({ max: 60, windowMs: 5 * 60 * 1000 }), // 60 Enable Banking calls per 5 min (#132)
 
 
   openai: createRateLimiter({ max: 20, windowMs: 5 * 60 * 1000 }),     // 20 chats jobs per 5 min

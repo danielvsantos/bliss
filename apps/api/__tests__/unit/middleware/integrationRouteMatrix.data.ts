@@ -140,6 +140,14 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   'portfolio/items/[assetId]/manual-values/[valueId].js': { auth: 'withAuth', methods: RW_ALL(['PUT', 'DELETE']) },
 
   // ── Plaid: review queue + reads allowed; connection lifecycle denied ─────
+  // Enable Banking (#132): the whole connection lifecycle is denylisted.
+  'enablebanking/status.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
+  'enablebanking/aspsps.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
+  'enablebanking/connect.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
+  'enablebanking/callback.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
+  'enablebanking/connections/[id].js': { auth: 'withAuth', inlineAdmin: ['DELETE'], methods: DENY_ALL(['GET', 'DELETE']) },
+  'enablebanking/connections/[id]/map.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
+  'enablebanking/connections/[id]/sync.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
   'plaid/accounts.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'plaid/sync-logs.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'plaid/items.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'PATCH']) },

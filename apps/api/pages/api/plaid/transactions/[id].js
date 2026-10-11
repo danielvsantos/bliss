@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
 import { eventOrigin } from '../../../../utils/eventOrigin.js';
 import { withAuth } from '../../../../utils/withAuth.js';
+import { bankTxLabel } from '@bliss/shared/bank-tx-label';
 import { resolveTagsByName } from '../../../../utils/tagUtils.js';
 import { requiresTicker, isValidTicker } from '@bliss/shared/portfolio';
 // Hash-based dedup removed from single-promote — plaidProcessorWorker already
@@ -54,7 +55,7 @@ export default withAuth(async function handler(req, res) {
     const plaidTx = await prisma.plaidTransaction.findUnique({
       where: { id },
       include: {
-        plaidItem: { select: { tenantId: true } },
+        plaidItem: { select: { tenantId: true, provider: true } },
       },
     });
 
@@ -112,7 +113,7 @@ export default withAuth(async function handler(req, res) {
       });
 
       // Fire-and-forget feedback to improve future classifications
-      const descriptionForFeedback = plaidTx.merchantName || plaidTx.name;
+      const descriptionForFeedback = bankTxLabel(plaidTx, plaidTx.plaidItem.provider);
       fetch(`${BACKEND_URL}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
@@ -233,7 +234,7 @@ export default withAuth(async function handler(req, res) {
             month,
             day,
             categoryId: finalCategoryId,
-            description: plaidTx.merchantName || plaidTx.name,
+            description: bankTxLabel(plaidTx, plaidTx.plaidItem.provider),
             details: details || plaidTx.name,
             debit: isDebit ? absAmount : null,
             credit: isDebit ? null : absAmount,
@@ -288,7 +289,7 @@ export default withAuth(async function handler(req, res) {
       }
 
       // Fire-and-forget feedback with transactionId so the embedding is linked
-      const descForFeedback = plaidTx.merchantName || plaidTx.name;
+      const descForFeedback = bankTxLabel(plaidTx, plaidTx.plaidItem.provider);
       fetch(`${BACKEND_URL}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': BACKEND_API_KEY },
