@@ -23,11 +23,19 @@
     "./activity": {
       "require": "./dist/activity/index.cjs",
       "import": "./dist/activity/index.js"
+    },
+    "./enablebanking": {
+      "require": "./dist/enablebanking/index.cjs",
+      "import": "./dist/enablebanking/index.js"
+    },
+    "./bank-tx-label": {
+      "require": "./dist/bankTxLabel.cjs",
+      "import": "./dist/bankTxLabel.js"
     }
   },
   "scripts": {
-    "build": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js src/activity/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage",
-    "dev": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js src/activity/index.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage --watch"
+    "build": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js src/activity/index.js src/enablebanking/index.js src/bankTxLabel.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage",
+    "dev": "tsup src/encryption.js src/storage/index.js src/sentryScrub.js src/portfolio/index.js src/activity/index.js src/enablebanking/index.js src/bankTxLabel.js --format esm,cjs --out-dir dist --no-splitting --external @google-cloud/storage --watch"
   },
   "peerDependencies": {
     "@google-cloud/storage": "^7.0.0"

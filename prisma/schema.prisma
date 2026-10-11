@@ -73,6 +73,7 @@ model Tenant {
   integrations        Integration[]
   apiKeys             ApiKey[]
   signupInvites       SignupInvite[]
+  enableBankingAccounts EnableBankingAccount[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -128,6 +129,7 @@ model User {
 
   accountOwnerships AccountOwner[]
   plaidItems        PlaidItem[]
+  enableBankingAccounts EnableBankingAccount[]
 
   // Notification center
   lastNotificationSeenAt DateTime?  // When user last opened notification center
@@ -159,6 +161,7 @@ model Account {
   subtype        String?   // checking, savings, cd
 
   plaidItem      PlaidItem? @relation(fields: [plaidItemId], references: [id])
+  enableBankingAccounts EnableBankingAccount[]
 
   bank           Bank           @relation(fields: [bankId], references: [id])
   country        Country        @relation(fields: [countryId], references: [id])
@@ -191,6 +194,11 @@ model PlaidItem {
   earliestTransactionDate   DateTime?
   seedReady                 Boolean    @default(false)  // true when Phase 1 seed classification is done
   environment       String?   // sandbox, development, production
+  // Bank-feed provider (#132): 'PLAID' | 'ENABLE_BANKING'. Enable Banking
+  // connections reuse this table: itemId = 'eb_<cuid>', accessToken = the
+  // encrypted session_id, consentExpiration = access.valid_until.
+  provider          String    @default("PLAID")
+  aspspCountry      String?   // Enable Banking only: ISO country of the bank
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -200,8 +208,47 @@ model PlaidItem {
   accounts Account[]
   transactions PlaidTransaction[]
   syncLogs PlaidSyncLog[]
+  enableBankingAccounts EnableBankingAccount[]
 
   @@index([tenantId])
+  @@index([provider, status])
+}
+
+/// Enable Banking (#132): one bank account returned by POST /sessions.
+///
+/// `uid` is session-scoped (refreshed on reconnect); `identificationHash` is
+/// stable and drives every synthetic key (Account.plaidAccountId = 'eb:<hash>').
+/// `accountId` stays set after a disconnect so a reconnect re-attaches.
+///
+/// The R6 joint-account guard — one mapping per (tenantId, identificationHash)
+/// while accountId IS NOT NULL — is the partial unique index
+/// "EnableBankingAccount_mapped_hash_uniq", SQL-only (see the migration).
+model EnableBankingAccount {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  plaidItemId         String
+  authorizedByUserId  String
+  uid                 String
+  identificationHash  String
+  iban                String?   // [ENCRYPTED]
+  ibanLast4           String?
+  currency            String?
+  name                String?
+  accountId           Int?
+  lastBalance         Decimal?  @db.Decimal(18, 8)
+  lastBalanceCurrency String?
+  lastBalanceAt       DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plaidItem    PlaidItem @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  authorizedBy User      @relation(fields: [authorizedByUserId], references: [id], onDelete: Cascade)
+  account      Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@unique([plaidItemId, identificationHash])
+  @@index([tenantId])
+  @@index([accountId])
 }
 
 model PlaidSyncLog {

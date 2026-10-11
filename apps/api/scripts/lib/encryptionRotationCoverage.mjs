@@ -71,6 +71,14 @@ export const ROTATION_COVERAGE = [
     fields: [{ name: 'merchantLabel', searchable: false, sanity: nonEmptyString }],
   },
   {
+    label: 'EnableBankingAccount.iban',
+    model: 'EnableBankingAccount',
+    prismaModel: 'enableBankingAccount',
+    idField: 'id',
+    orderBy: { id: 'asc' },
+    fields: [{ name: 'iban', searchable: false, sanity: nonEmptyString }],
+  },
+  {
     label: 'SignupInvite.email',
     model: 'SignupInvite',
     prismaModel: 'signupInvite',

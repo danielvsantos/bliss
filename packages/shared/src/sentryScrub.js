@@ -64,6 +64,14 @@ const DENYLISTED_KEYS = new Set([
   'refreshtoken',
   'code_verifier',
   'client_secret',
+  // Enable Banking (#132): the session id is the bearer credential for
+  // account data, the IBAN is PII, and the RSA key signs every request.
+  'session_id',
+  'sessionid',
+  'iban',
+  'privatekey',
+  'private_key',
+  'privatekeypem',
 ]);
 
 /**
@@ -136,8 +144,12 @@ const INTEGRATION_TOKEN_PATTERN = /bliss_(?:[A-Za-z0-9]{8}|rt)_[A-Za-z0-9]{8,}/g
  * @param {string} value
  * @returns {string}
  */
+const PEM_BLOCK_PATTERN = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g;
+
 function redactTokens(value) {
-  return value.replace(INTEGRATION_TOKEN_PATTERN, `bliss_${REDACTED}`);
+  return value
+    .replace(INTEGRATION_TOKEN_PATTERN, `bliss_${REDACTED}`)
+    .replace(PEM_BLOCK_PATTERN, REDACTED);
 }
 
 /**
