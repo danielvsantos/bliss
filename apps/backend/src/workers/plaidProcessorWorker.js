@@ -10,6 +10,7 @@ const { isRateLimitError } = require('../services/llm');
 const { computeTransactionHash, buildDuplicateHashSet } = require('../utils/transactionHash');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker } = require('../utils/activityTracker');
+const { bankTxLabel } = require('@bliss/shared/bank-tx-label');
 const {
     DEFAULT_AUTO_PROMOTE_THRESHOLD,
     DEFAULT_REVIEW_THRESHOLD,
@@ -58,7 +59,7 @@ function buildFrequencyMap(rows) {
  * so duplicates are caught regardless of confidence level or category type.
  */
 async function checkHashDuplicate(plaidTx, result, ctx) {
-    const { accountByPlaidAccountId, existingByExternalId, hashSetByAccountId, counters } = ctx;
+    const { accountByPlaidAccountId, existingByExternalId, hashSetByAccountId, counters, provider } = ctx;
 
     const localAccount = accountByPlaidAccountId.get(plaidTx.plaidAccountId) ?? null;
     if (!localAccount) return false;
@@ -72,9 +73,11 @@ async function checkHashDuplicate(plaidTx, result, ctx) {
 
     const txDate = new Date(plaidTx.date);
     const absAmount = Math.abs(Number(plaidTx.amount));
+    // Provider-aware label (#132, D3): Enable Banking rows hash on the joined
+    // remittance text, Plaid rows on merchantName || name (unchanged).
     const hash = computeTransactionHash(
         txDate,
-        plaidTx.merchantName || plaidTx.name,
+        bankTxLabel(plaidTx, provider),
         absAmount,
         localAccount.id
     );
@@ -93,6 +96,7 @@ async function checkHashDuplicate(plaidTx, result, ctx) {
         },
     });
     counters.totalClassified++;
+    counters.totalDuplicates++;
     logger.info(`Plaid tx ${plaidTx.id} hash-dedup: matches existing manual transaction`);
     return true;
 }
@@ -106,7 +110,7 @@ async function processRowWithResult(plaidTx, result, ctx) {
     const {
         tenantId, autoPromoteThreshold, categoryById,
         accountByPlaidAccountId, existingByExternalId,
-        counters, feedbackCalls,
+        counters, feedbackCalls, provider,
     } = ctx;
 
     const suggestedCategory = categoryById.get(result.categoryId);
@@ -144,7 +148,7 @@ async function processRowWithResult(plaidTx, result, ctx) {
                             transaction_date: txDate,
                             year, quarter, month, day,
                             categoryId: result.categoryId,
-                            description: plaidTx.merchantName || plaidTx.name,
+                            description: bankTxLabel(plaidTx, provider),
                             details: plaidTx.name,
                             debit: isDebit ? absAmount : null,
                             credit: isDebit ? null : absAmount,
@@ -174,7 +178,7 @@ async function processRowWithResult(plaidTx, result, ctx) {
 
                 // Queue feedback — fired after full classification to avoid racing
                 feedbackCalls.push([
-                    plaidTx.merchantName || plaidTx.name,
+                    bankTxLabel(plaidTx, provider),
                     result.categoryId,
                     tenantId,
                     newTxId,
@@ -298,6 +302,36 @@ async function classifyAndStageRow(plaidTx, ctx) {
     }
 }
 
+/**
+ * Merge this run's outcome into the sync log that triggered it (Enable Banking
+ * passes `syncLogId`), so the log reports how many rows were hash-duplicates
+ * (#132). Best effort: the classification itself already succeeded.
+ */
+async function recordOutcomeOnSyncLog(syncLogId, plaidItemId, counters) {
+    if (!syncLogId) return;
+    try {
+        const log = await prisma.plaidSyncLog.findFirst({
+            where: { id: syncLogId, plaidItemId },
+            select: { id: true, details: true },
+        });
+        if (!log) return;
+        const details = (log.details && typeof log.details === 'object') ? log.details : {};
+        await prisma.plaidSyncLog.update({
+            where: { id: log.id },
+            data: {
+                details: {
+                    ...details,
+                    duplicates: (details.duplicates || 0) + counters.totalDuplicates,
+                    autoPromoted: (details.autoPromoted || 0) + counters.totalAutoPromoted,
+                    classified: (details.classified || 0) + counters.totalClassified,
+                },
+            },
+        });
+    } catch (err) {
+        logger.warn(`Failed to record classification outcome on sync log ${syncLogId}: ${err.message}`);
+    }
+}
+
 // ─── Worker ───────────────────────────────────────────────────────────────────
 
 const startPlaidProcessorWorker = () => {
@@ -305,7 +339,7 @@ const startPlaidProcessorWorker = () => {
 
     worker = new Worker(QUEUE_NAME, async (job) => {
         logger.info(`Starting classification job ${job.name} for Plaid Item: ${job.data.plaidItemId}`);
-        const { plaidItemId, source } = job.data;
+        const { plaidItemId, source, syncLogId } = job.data;
         // Quick Seed interview only makes sense for INITIAL_SYNC — the user is present in the modal.
         // For historical backfills and manual resyncs the user may be offline; holding transactions
         // in seedHeld would just silently pile them up. Skip the interview for those sources.
@@ -318,7 +352,7 @@ const startPlaidProcessorWorker = () => {
             // ─── Setup ────────────────────────────────────────────────────────
             const plaidItem = await prisma.plaidItem.findUnique({
                 where: { id: plaidItemId },
-                select: { tenantId: true },
+                select: { tenantId: true, provider: true },
             });
 
             if (!plaidItem) {
@@ -327,6 +361,7 @@ const startPlaidProcessorWorker = () => {
             }
 
             const { tenantId } = plaidItem;
+            const provider = plaidItem.provider || 'PLAID';
 
             // Thresholds are business rules for the whole tenant
             const tenant = await prisma.tenant.findUnique({
@@ -359,6 +394,7 @@ const startPlaidProcessorWorker = () => {
                 totalFailed: 0,
                 totalRateLimited: 0, // rows skipped due to 429 — left as processed=false for retry
                 totalRetryScheduled: 0, // rows given their one silent auto-retry — left as processed=false
+                totalDuplicates: 0, // rows marked DUPLICATE by hash dedup
                 autoPromotedAccountIds: new Set(),
                 autoPromotedMinYear: null,
                 autoPromotedMinMonth: null,
@@ -379,6 +415,7 @@ const startPlaidProcessorWorker = () => {
             if (allPending.length === 0) {
                 logger.info(`No pending transactions for PlaidItem ${plaidItemId} — setting seedReady`);
                 await prisma.plaidItem.update({ where: { id: plaidItemId }, data: { seedReady: true } });
+                await recordOutcomeOnSyncLog(syncLogId, plaidItemId, counters);
                 return;
             }
 
@@ -411,7 +448,7 @@ const startPlaidProcessorWorker = () => {
             const ctx = {
                 tenantId, autoPromoteThreshold, reviewThreshold,
                 categoryById, accountByPlaidAccountId, existingByExternalId,
-                hashSetByAccountId, counters, feedbackCalls,
+                hashSetByAccountId, counters, feedbackCalls, provider,
             };
 
             // ─── PHASE 1: Frequency-First Seed Classification ─────────────────
@@ -565,6 +602,9 @@ const startPlaidProcessorWorker = () => {
                 await retryQueue.add('PLAID_SYNC_COMPLETE', { plaidItemId, source, tenantId }, { delay: 60_000 });
             }
 
+            // ─── Report the outcome on the originating sync log (#132) ─────────
+            await recordOutcomeOnSyncLog(syncLogId, plaidItemId, counters);
+
             // ─── Fire deferred feedback calls (cache + vector embedding updates) ─
             for (const args of feedbackCalls) {
                 categorizationService.recordFeedback(...args);
@@ -627,4 +667,12 @@ const startPlaidProcessorWorker = () => {
     return worker;
 };
 
-module.exports = { startPlaidProcessorWorker, normalizeDescription, buildFrequencyMap, handleClassificationFailure };
+module.exports = {
+    startPlaidProcessorWorker,
+    normalizeDescription,
+    buildFrequencyMap,
+    handleClassificationFailure,
+    checkHashDuplicate,
+    processRowWithResult,
+    recordOutcomeOnSyncLog,
+};

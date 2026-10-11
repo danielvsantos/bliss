@@ -57,7 +57,11 @@ const mockPlaidTransactionFindUnique = jest.fn();
 const mockPlaidTransactionUpdate = jest.fn();
 const mockPlaidTransactionCreate = jest.fn();
 const mockPlaidSyncLogCreate = jest.fn();
+const mockAccountFindMany = jest.fn();
 jest.mock('../../../../prisma/prisma', () => ({
+  account: {
+    findMany: (...args) => mockAccountFindMany(...args),
+  },
   plaidItem: {
     findUnique: (...args) => mockPlaidItemFindUnique(...args),
     update: (...args) => mockPlaidItemUpdate(...args),
@@ -71,6 +75,13 @@ jest.mock('../../../../prisma/prisma', () => ({
   plaidSyncLog: {
     create: (...args) => mockPlaidSyncLogCreate(...args),
   },
+}));
+
+const mockEnableBankingDispatch = jest.fn();
+const mockSyncConnection = jest.fn();
+jest.mock('../../../workers/handlers/enableBankingSync', () => ({
+  enableBankingDispatch: (...args) => mockEnableBankingDispatch(...args),
+  syncConnection: (...args) => mockSyncConnection(...args),
 }));
 
 // ─── Import ─────────────────────────────────────────────────────────────────
@@ -134,6 +145,7 @@ describe('plaidSyncWorker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPlaidItemFindUnique.mockResolvedValue({ ...PLAID_ITEM });
+    mockAccountFindMany.mockResolvedValue([{ plaidAccountId: 'acc-1' }]);
     mockPlaidItemUpdate.mockResolvedValue({});
     mockPlaidTransactionCreateMany.mockResolvedValue({ count: 0 });
     mockPlaidSyncLogCreate.mockResolvedValue({});
@@ -233,6 +245,39 @@ describe('plaidSyncWorker', () => {
           data: expect.objectContaining({ status: 'LOGIN_REQUIRED', errorCode: 'ITEM_LOGIN_REQUIRED' }),
         })
       );
+    });
+  });
+
+  describe('Enable Banking (#132)', () => {
+    it('dispatches ENABLE_BANKING_* jobs to the Enable Banking handler without touching Plaid', async () => {
+      mockEnableBankingDispatch.mockResolvedValue({ status: 'SUCCESS' });
+      const job = makeJob('ENABLE_BANKING_SYNC', { plaidItemId: 'eb-1' });
+      await expect(workerCallback(job)).resolves.toEqual({ status: 'SUCCESS' });
+      expect(mockEnableBankingDispatch).toHaveBeenCalledWith(job);
+      expect(mockTransactionsSync).not.toHaveBeenCalled();
+      expect(mockPlaidItemFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('routes a generic Plaid sync of an Enable Banking item to the Enable Banking sync', async () => {
+      mockPlaidItemFindUnique.mockResolvedValue({ ...PLAID_ITEM, provider: 'ENABLE_BANKING' });
+      mockSyncConnection.mockResolvedValue({ status: 'SUCCESS' });
+      const job = makeJob('plaid-sync-job', { plaidItemId: 'pi-1', source: 'MANUAL_RESYNC' });
+      await workerCallback(job);
+      expect(mockSyncConnection).toHaveBeenCalledWith(job);
+      expect(mockTransactionsSync).not.toHaveBeenCalled();
+    });
+
+    it('drops added transactions for accounts no longer linked to the item (provider switch)', async () => {
+      mockAccountFindMany.mockResolvedValue([{ plaidAccountId: 'acc-1' }]);
+      mockTransactionsSync.mockResolvedValueOnce(makeSyncResponse({
+        added: [
+          makePlaidTxn({ transaction_id: 'keep', account_id: 'acc-1' }),
+          makePlaidTxn({ transaction_id: 'drop', account_id: 'acc-switched' }),
+        ],
+      }));
+      await workerCallback(makeJob('PLAID_SYNC_UPDATES', { plaidItemId: 'pi-1' }));
+      const inserted = mockPlaidTransactionCreateMany.mock.calls[0][0].data;
+      expect(inserted.map(r => r.plaidTransactionId)).toEqual(['keep']);
     });
   });
 

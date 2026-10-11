@@ -65,6 +65,7 @@ function resolveEvent(name, data) {
         case 'PLAID_SYNC_UPDATES':
         case 'PLAID_HISTORICAL_BACKFILL':
         case 'PLAID_TRANSACTION_RETRY':
+        case 'ENABLE_BANKING_SYNC':
             return event(T.BANK_SYNC, [T.BANK_SYNC, P, A]);
         case 'SMART_IMPORT_REQUESTED':
             return event(T.IMPORT, [T.IMPORT]);
@@ -133,6 +134,8 @@ function resolveActivity(queueName, job) {
         case QUEUES.ANALYTICS:
             return resolveAnalytics(name, data);
         case QUEUES.PLAID_SYNC:
+            // Plaid jobs and ENABLE_BANKING_SYNC (#132). ENABLE_BANKING_SYNC_ALL is
+            // a non-tenant fan-out (no tenantId) and is dropped above.
             return entry(T.BANK_SYNC, S.FETCHING_BANK, [T.BANK_SYNC, P, A]);
         case QUEUES.PLAID_PROCESSING:
             return entry(T.BANK_SYNC, S.CLASSIFYING, [T.BANK_SYNC, P, A]);

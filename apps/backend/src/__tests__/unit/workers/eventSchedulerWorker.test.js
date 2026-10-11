@@ -16,6 +16,7 @@ jest.mock('../../../queues/analyticsQueue', () => ({
 
 jest.mock('../../../queues/plaidSyncQueue', () => ({
   getPlaidSyncQueue: jest.fn(),
+  enableBankingSyncOpts: jest.requireActual('../../../queues/plaidSyncQueue').enableBankingSyncOpts,
 }));
 
 jest.mock('../../../queues/plaidProcessingQueue', () => ({
@@ -234,6 +235,26 @@ describe('eventSchedulerWorker — processEventJob', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       'PLAID_HISTORICAL_BACKFILL event is missing required data.'
     );
+    expect(mockPlaidSyncQueue.add).not.toHaveBeenCalled();
+  });
+
+  // ─── ENABLE_BANKING_SYNC (#132) ──────────────────────────────────────────
+
+  it('enqueues a deduplicated, retried ENABLE_BANKING_SYNC on the plaid-sync queue', async () => {
+    const job = makeJob('ENABLE_BANKING_SYNC', { plaidItemId: 'eb1', tenantId: 't1', source: 'MANUAL' });
+
+    await processEventJob(job);
+
+    expect(mockPlaidSyncQueue.add).toHaveBeenCalledWith(
+      'ENABLE_BANKING_SYNC',
+      { plaidItemId: 'eb1', tenantId: 't1', source: 'MANUAL', _trigger: 'bank_sync', ...run('ENABLE_BANKING_SYNC') },
+      expect.objectContaining({ deduplication: { id: 'eb-sync:eb1' }, attempts: 3 }),
+    );
+  });
+
+  it('warns for ENABLE_BANKING_SYNC without plaidItemId', async () => {
+    await processEventJob(makeJob('ENABLE_BANKING_SYNC', { tenantId: 't1' }));
+    expect(logger.warn).toHaveBeenCalledWith('ENABLE_BANKING_SYNC event is missing plaidItemId.');
     expect(mockPlaidSyncQueue.add).not.toHaveBeenCalled();
   });
 

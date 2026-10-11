@@ -224,3 +224,91 @@ export const EB_ITEM_PREFIX = 'eb_';
 export const ebAccountKey = (identificationHash) => `eb:${identificationHash}`;
 export const ebTransactionKey = (identificationHash, entryReference) => `eb:${identificationHash}:${entryReference}`;
 export const ebFingerprintKey = (identificationHash, fingerprint) => `eb:${identificationHash}:fp:${fingerprint}`;
+
+// ── Date window (R8) ───────────────────────────────────────────────────────
+// Same formula plaidSyncWorker applies to Plaid items, shared so the API can
+// show the user the exact start date the worker will use.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const SYNC_OVERLAP_DAYS = 7;
+
+function utcMidnight(date) {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+/** UTC midnight of `createdAt` minus `historyDays` (negative / NaN treated as 0). */
+export function syncCutoffDate(createdAt, historyDays) {
+  const days = Number.isFinite(Number(historyDays)) && Number(historyDays) > 0 ? Math.floor(Number(historyDays)) : 0;
+  const cutoff = utcMidnight(createdAt);
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  return cutoff;
+}
+
+/**
+ * The `date_from` of a sync: the cutoff on the first sync, then
+ * max(cutoff, UTC midnight of lastSync − 7 days) to catch late-booked items.
+ */
+export function syncDateFrom({ createdAt, historyDays, lastSync }) {
+  const cutoff = syncCutoffDate(createdAt, historyDays);
+  if (!lastSync) return cutoff;
+  const overlap = new Date(utcMidnight(lastSync).getTime() - SYNC_OVERLAP_DAYS * DAY_MS);
+  return overlap > cutoff ? overlap : cutoff;
+}
+
+export const isoDate = (date) => new Date(date).toISOString().slice(0, 10);
+
+// ── Unattended-access budget (R12, decision D5) ────────────────────────────
+// One Redis counter per bank account per Europe/Madrid day. One sync run of
+// one account counts as one access, whatever the number of pages. The worker's
+// INCR is the authority; the API only reads it before enqueueing.
+
+export const BUDGET_TIMEZONE = 'Europe/Madrid';
+export const DEFAULT_DAILY_BUDGET = 4;
+export const BUDGET_KEY_TTL_SECONDS = 36 * 60 * 60;
+
+function zonedParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute'), second: get('second') };
+}
+
+/** `YYYY-MM-DD` of `date` in Europe/Madrid. */
+export function budgetDay(date = new Date()) {
+  const p = zonedParts(date, BUDGET_TIMEZONE);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+/** The instant the current Madrid day ends (when a spent budget resets). */
+export function budgetResetsAt(now = new Date()) {
+  const p = zonedParts(now, BUDGET_TIMEZONE);
+  // Offset of Madrid from UTC at `now`, in ms (CET +1h / CEST +2h).
+  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  const offset = asUtc - Math.floor(now.getTime() / 1000) * 1000;
+  let reset = new Date(Date.UTC(p.year, p.month - 1, p.day + 1) - offset);
+  // A DST switch at the boundary shifts the offset by an hour; re-anchor once.
+  const check = zonedParts(reset, BUDGET_TIMEZONE);
+  if (check.hour !== 0) reset = new Date(reset.getTime() - (check.hour > 12 ? check.hour - 24 : check.hour) * 3600_000);
+  return reset;
+}
+
+export const budgetKey = (ebAccountId, day) => `ebbudget:v1:${ebAccountId}:${day}`;
+
+export function getDailyBudget(env = process.env) {
+  const n = parseInt(env.ENABLE_BANKING_DAILY_BUDGET ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_DAILY_BUDGET;
+}
+
+/** Scheduled sync slots (Madrid HH:MM). Default 3/day so a manual "Sync now" fits the budget of 4. */
+export const DEFAULT_SYNC_TIMES = ['06:15', '13:15', '20:15'];
+
+export function getSyncTimes(env = process.env) {
+  const raw = (env.ENABLE_BANKING_SYNC_TIMES || '').trim();
+  if (!raw) return DEFAULT_SYNC_TIMES;
+  const times = raw.split(',').map((t) => t.trim()).filter((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t));
+  return times.length > 0 ? [...new Set(times)] : DEFAULT_SYNC_TIMES;
+}
