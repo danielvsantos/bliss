@@ -54,6 +54,7 @@ Each signal type maps to a specific icon and severity color:
 |-------------|------|---------------------|
 | `PENDING_REVIEW` | `ClipboardCheck` | `warning` |
 | `PLAID_ACTION_REQUIRED` | `AlertTriangle` | `warning` |
+| `BANK_CONSENT_EXPIRING` (#132) | `CalendarClock` | `info` (≤ 14 days) / `warning` (≤ 3 days) |
 | `PLAID_CLASSIFICATION_FAILED` | `AlertTriangle` | `warning` |
 | `ONBOARDING_INCOMPLETE` | `ListChecks` | `brand-primary` |
 | `NEW_INSIGHTS` | `Sparkles` | `positive` |

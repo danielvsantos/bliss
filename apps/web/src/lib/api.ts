@@ -44,6 +44,12 @@ import type {
   SubscriptionsResponse,
   SubscriptionsView,
   RecurringCadence,
+  EnableBankingAspspsResponse,
+  EnableBankingConnectRequest,
+  EnableBankingConnectResponse,
+  EnableBankingConnectionResponse,
+  EnableBankingMapRequest,
+  EnableBankingMapResponse,
 } from '../types/api';
 import type {
   AssetIncomeTermsResponse,
@@ -172,6 +178,19 @@ interface PlaidAccountsResponse {
 }
 
 type OnboardingProgress = Record<string, boolean>;
+
+/**
+ * Plain JSON parsing without the numeric-string coercion of the default
+ * transform. Enable Banking responses carry IBAN last-4 digits ("0123") and
+ * decimal balances as strings that must stay strings.
+ */
+const rawJsonResponse = [(data: unknown) => {
+  try {
+    return typeof data === 'string' && data.length > 0 ? JSON.parse(data) : data;
+  } catch {
+    return data;
+  }
+}];
 
 // Module-level flag to fire session-expired event only once per page load
 let sessionExpiredFired = false;
@@ -748,6 +767,49 @@ class APIClient {
   async updatePlaidItem(id: string, data: { status?: string }): Promise<PlaidItem> {
     const response = await this.client.patch('/api/plaid/items', data, { params: { id } });
     return response.data;
+  }
+
+  // --- Enable Banking (#132) ---
+
+  /** Whether Enable Banking credentials are configured. When false, no Enable Banking UI renders. */
+  async getEnableBankingStatus(): Promise<{ enabled: boolean }> {
+    const response = await this.client.get('/api/enablebanking/status');
+    return { enabled: response.data?.enabled === true };
+  }
+
+  async getEnableBankingAspsps(): Promise<EnableBankingAspspsResponse> {
+    const response = await this.client.get('/api/enablebanking/aspsps', { transformResponse: rawJsonResponse });
+    return response.data;
+  }
+
+  async connectEnableBanking(data: EnableBankingConnectRequest): Promise<EnableBankingConnectResponse> {
+    const response = await this.client.post('/api/enablebanking/connect', data, { transformResponse: rawJsonResponse });
+    return response.data;
+  }
+
+  async getEnableBankingConnection(id: string): Promise<EnableBankingConnectionResponse> {
+    const response = await this.client.get(`/api/enablebanking/connections/${encodeURIComponent(id)}`, {
+      transformResponse: rawJsonResponse,
+    });
+    return response.data;
+  }
+
+  async mapEnableBankingConnection(id: string, data: EnableBankingMapRequest): Promise<EnableBankingMapResponse> {
+    const response = await this.client.post(`/api/enablebanking/connections/${encodeURIComponent(id)}/map`, data, {
+      transformResponse: rawJsonResponse,
+    });
+    return response.data;
+  }
+
+  async syncEnableBankingConnection(id: string): Promise<{ message: string }> {
+    const response = await this.client.post(`/api/enablebanking/connections/${encodeURIComponent(id)}/sync`, null, {
+      transformResponse: rawJsonResponse,
+    });
+    return response.data;
+  }
+
+  async disconnectEnableBankingConnection(id: string): Promise<void> {
+    await this.client.delete(`/api/enablebanking/connections/${encodeURIComponent(id)}`);
   }
 
   // --- Smart Import ---

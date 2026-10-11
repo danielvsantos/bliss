@@ -389,3 +389,31 @@ describe('i18n parity — processing status (#100)', () => {
     }
   });
 });
+
+// Enable Banking (#132): every key under `enableBanking` exists as a non-empty
+// string in every locale (provider names like "Enable Banking" stay untranslated).
+describe('i18n parity — Enable Banking (#132)', () => {
+  const keys = leafKeys(resolve(en, 'enableBanking'), 'enableBanking');
+
+  it('has keys', () => {
+    expect(keys.length).toBeGreaterThan(50);
+  });
+
+  it('every enableBanking key is a non-empty string in every locale', () => {
+    for (const key of keys) {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('the connect, mapping and card copy is translated in es/fr/pt/it', () => {
+    for (const key of ['enableBanking.connect.button', 'enableBanking.connect.startDate', 'enableBanking.mapping.conflict', 'enableBanking.card.budgetDesc', 'enableBanking.settings.historyDaysHint']) {
+      for (const lang of NON_EN) {
+        expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(resolve(en, key));
+      }
+    }
+  });
+});

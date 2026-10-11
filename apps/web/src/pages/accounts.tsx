@@ -10,7 +10,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { PlusIcon, Landmark, ChevronLeft } from 'lucide-react';
+import { PlusIcon, Landmark, ChevronLeft, Globe } from 'lucide-react';
 import { AxiosError } from 'axios';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,12 +23,20 @@ import { AddAccountModal } from '@/components/accounts/add-account-modal';
 import { PlaidConnect } from '@/components/plaid-connect';
 import type { Account } from '@/types/api';
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
+import { EnableBankingConnect } from '@/components/enable-banking/connect-dialog';
+import { EnableBankingMappingDialog } from '@/components/enable-banking/mapping-dialog';
+import { PendingEnableBankingConnections } from '@/components/enable-banking/pending-connections';
+import { useEnableBankingEnabled } from '@/hooks/use-enable-banking';
+import { useEnableBankingCallback } from '@/hooks/use-enable-banking-callback';
 
 export default function AccountsPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { accounts, isLoading, refetch } = useAccountList();
+  const { accounts, plaidItems, isLoading, refetch } = useAccountList();
+  // Enable Banking (#132): hidden entirely unless the API reports it configured.
+  const enableBankingEnabled = useEnableBankingEnabled();
+  const { mappingConnectionId, openMapping, closeMapping } = useEnableBankingCallback();
 
   // Selection & modal state
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
@@ -131,12 +139,20 @@ export default function AccountsPage() {
               <Landmark className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">{t('accountsPage.connectBank')}</span>
             </PlaidConnect>
+            <EnableBankingConnect variant="outline">
+              <Globe className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{t('enableBanking.connect.button')}</span>
+            </EnableBankingConnect>
             <Button onClick={handleAddManual}>
               <PlusIcon className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">{t('accountsPage.addManual')}</span>
             </Button>
           </div>
         </div>
+
+        {enableBankingEnabled && (
+          <PendingEnableBankingConnections plaidItems={plaidItems} onOpenMapping={openMapping} className="px-6 pb-4" />
+        )}
 
         <Separator />
 
@@ -167,6 +183,7 @@ export default function AccountsPage() {
                   account={selectedAccount}
                   onEdit={handleEdit}
                   onRefetch={refetch}
+                  onOpenMapping={enableBankingEnabled ? openMapping : undefined}
                   onDelete={() => {
                     setDeleteError(null);
                     setShowDeleteConfirm(true);
@@ -195,6 +212,11 @@ export default function AccountsPage() {
         account={editAccount}
         onClose={handleFormClose}
       />
+
+      {/* Enable Banking account mapping (#132) — opened from the bank callback or a connection */}
+      {enableBankingEnabled && (
+        <EnableBankingMappingDialog connectionId={mappingConnectionId} onClose={closeMapping} />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog

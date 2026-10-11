@@ -49,7 +49,7 @@ Never commit the private key. Bliss never logs it, never sends it to the browser
 2. Bliss shows the date the first import starts from: today minus your **history days** setting (Settings → AI Classification). Check it before you continue.
 3. You are sent to the bank. Approve access and select the accounts to share.
 4. Back in Bliss, the mapping dialog lists each shared account:
-   - Bliss pre-selects the **existing** account whose number ends in the same four digits (and has the same currency).
+   - Bliss pre-selects the **existing** account whose number ends in the same four digits (and has the same currency). A bank account with no match starts as **Don't sync**.
    - Choose **Create new account** only if you really want a new one. Bliss never creates an account unless you ask it to.
    - Choose **Don't sync** to leave a bank account out.
 5. Confirm. The first sync starts right away, and new transactions appear in **Transaction Review**.
@@ -110,9 +110,11 @@ For the first two weeks, compare Bliss with your bank:
 
 | You see | What it means |
 |---|---|
-| "The link to your bank expired or was already used" | The approval took longer than 15 minutes, or the page was reloaded. Start again from **Connect EU bank**. |
-| "You cancelled at the bank" | The bank reported that access was not granted. |
-| "Already synced through another connection" | That bank account is already mapped through someone else's consent. See [Joint accounts](#joint-accounts). |
+| "The connection link expired or was already used" | The approval took longer than 15 minutes, or the page was reloaded. Start again from **Connect EU bank**. |
+| "Access was not granted at your bank" | You cancelled, or the bank refused access. Nothing was connected. |
+| "Your bank didn't confirm the connection" | The bank's confirmation failed. Try again in a few minutes. |
+| "Already synced through another person's connection" | That bank account is already mapped through someone else's consent. See [Joint accounts](#joint-accounts). |
+| A "Map accounts" banner on Accounts | A connection was approved but none of its accounts are mapped yet. Open it and choose where each account syncs. |
 | The bank list is empty | Add the bank's country to your workspace (Settings), and check that the app id and key are set on the API. |
 | Needs to be re-connected | Access expired or was revoked at the bank. Use **Reconnect**. |
 

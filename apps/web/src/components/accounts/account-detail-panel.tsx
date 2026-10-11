@@ -32,6 +32,7 @@ import {
 import { PlaidConnect } from '@/components/plaid-connect';
 import { ConnectionHealth } from './connection-health';
 import { SyncLogsTable } from './sync-logs-table';
+import { BankConnectionCard } from './bank-connection-card';
 import type { EnrichedAccount } from '@/hooks/use-account-list';
 
 interface AccountDetailPanelProps {
@@ -39,9 +40,11 @@ interface AccountDetailPanelProps {
   onEdit: () => void;
   onRefetch: () => void;
   onDelete: () => void;
+  /** Opens the Enable Banking account mapping dialog for a connection (#132). */
+  onOpenMapping?: (connectionId: string) => void;
 }
 
-export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: AccountDetailPanelProps) {
+export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete, onOpenMapping }: AccountDetailPanelProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
@@ -50,14 +53,17 @@ export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: Acc
   const rotateToken = useRotatePlaidToken();
   const disconnect = useDisconnectPlaidItem();
 
-  const isPlaid = account.plaidItem !== null;
+  const isConnected = account.plaidItem !== null;
+  // Enable Banking connections (#132) reuse PlaidItem; every Plaid-only action is hidden for them.
+  const isEnableBanking = account.plaidItem?.provider === 'ENABLE_BANKING';
+  const isPlaid = isConnected && !isEnableBanking;
   const isDisconnected = account.status === 'disconnected';
   const plaidItemId = account.plaidItem?.id ?? null;
 
   // A Plaid-linked account can only be deleted once its bank connection has been
   // disconnected (REVOKED) — otherwise the next sync recreates it. Manual
   // accounts can always be deleted.
-  const canDelete = !isPlaid || isDisconnected;
+  const canDelete = !isConnected || isDisconnected;
 
   const handleResync = () => {
     if (!plaidItemId) return;
@@ -110,6 +116,11 @@ export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: Acc
                 <Landmark className="h-3 w-3 mr-1" /> {t('accountDetail.plaidConnected')}
               </Badge>
             )}
+            {isEnableBanking && (
+              <Badge variant="default" className="text-xs bg-brand-primary/10 text-brand-primary border-brand-primary/20 hover:bg-brand-primary/10">
+                <Landmark className="h-3 w-3 mr-1" /> {t('enableBanking.detail.badge')}
+              </Badge>
+            )}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={onEdit}>
@@ -136,8 +147,13 @@ export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: Acc
 
       <Separator />
 
-      {/* Connection Health */}
-      <ConnectionHealth account={account} onRefetch={onRefetch} />
+      {/* Enable Banking connection: status, balances and its own actions only */}
+      {isEnableBanking && account.plaidItem && (
+        <BankConnectionCard item={account.plaidItem} onOpenMapping={onOpenMapping} onChanged={onRefetch} />
+      )}
+
+      {/* Connection Health (Plaid and manual accounts) */}
+      {!isEnableBanking && <ConnectionHealth account={account} onRefetch={onRefetch} />}
 
       {/* Consent Expiration Alert */}
       {isPlaid && account.plaidItem?.consentExpiration && (() => {
@@ -275,7 +291,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: Acc
       </Card>
 
       {/* Sync Logs — hidden when disconnected */}
-      {isPlaid && !isDisconnected && <SyncLogsTable plaidItemId={plaidItemId} />}
+      {isConnected && !isDisconnected && <SyncLogsTable plaidItemId={plaidItemId} />}
 
       {/* Danger zone — permanent account deletion */}
       <Card className="border-destructive/30">
@@ -295,7 +311,7 @@ export function AccountDetailPanel({ account, onEdit, onRefetch, onDelete }: Acc
           </Button>
           {!canDelete && (
             <p className="text-xs text-muted-foreground">
-              {t('accountsPage.deleteBlockedPlaidHint')}
+              {isEnableBanking ? t('enableBanking.detail.deleteBlockedHint') : t('accountsPage.deleteBlockedPlaidHint')}
             </p>
           )}
         </CardContent>

@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
 import { useCompleteOnboardingStep } from "@/hooks/use-onboarding-progress";
 import { PlaidConnect } from "@/components/plaid-connect";
+import { EnableBankingConnect } from "@/components/enable-banking/connect-dialog";
 import { OnboardingAccountSetup } from "@/components/onboarding/onboarding-account-setup";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -313,6 +314,8 @@ export default function OnboardingPage() {
                           >
                             {t("Connect Bank Account")}
                           </PlaidConnect>
+                          {/* Enable Banking (#132): EU banks; renders nothing when not configured. */}
+                          <EnableBankingConnect variant="outline" className="w-full rounded-lg mt-2" />
                         </div>
                       </div>
                     </div>

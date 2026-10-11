@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { EnrichedAccount } from '@/hooks/use-account-list';
 import AccountsPage from './accounts';
 
@@ -90,17 +91,43 @@ vi.mock('@/components/plaid-connect', () => ({
   PlaidConnect: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
 }));
 
-const createWrapper = () => {
+// Enable Banking (#132): configured or not per test; the UI pieces are stubbed.
+const ebEnabled = vi.fn(() => false);
+vi.mock('@/hooks/use-enable-banking', () => ({
+  useEnableBankingEnabled: () => ebEnabled(),
+}));
+vi.mock('@/components/enable-banking/connect-dialog', () => ({
+  EnableBankingConnect: () => <button data-testid="eb-connect">eb</button>,
+}));
+vi.mock('@/components/enable-banking/pending-connections', () => ({
+  PendingEnableBankingConnections: () => null,
+}));
+vi.mock('@/components/enable-banking/mapping-dialog', () => ({
+  EnableBankingMappingDialog: ({ connectionId }: { connectionId: string | null }) =>
+    connectionId ? <div data-testid="eb-mapping-dialog">{connectionId}</div> : null,
+}));
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+const createWrapper = (initialEntry: string) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        {children}
+        <LocationProbe />
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 };
 
-function renderPage() {
-  const Wrapper = createWrapper();
+function renderPage(initialEntry = '/accounts') {
+  const Wrapper = createWrapper(initialEntry);
   return render(<AccountsPage />, { wrapper: Wrapper });
 }
 
@@ -113,6 +140,7 @@ async function openDeleteDialog() {
 describe('AccountsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ebEnabled.mockReturnValue(false);
   });
 
   it('renders accounts page heading', () => {
@@ -185,5 +213,57 @@ describe('AccountsPage', () => {
 
     expect(await screen.findByText('accountsPage.deleteBlockedPlaid')).toBeInTheDocument();
     expect(screen.getByText('accountsPage.deleteTitle')).toBeInTheDocument();
+  });
+
+  describe('Enable Banking callback (#132)', () => {
+    it('opens the mapping dialog for ?eb=map&connection=<id> and strips the params', async () => {
+      ebEnabled.mockReturnValue(true);
+      renderPage('/accounts?eb=map&connection=item-1');
+
+      expect(await screen.findByTestId('eb-mapping-dialog')).toHaveTextContent('item-1');
+      await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounts$/));
+    });
+
+    it('shows the reconnected toast for ?eb=reconnected', async () => {
+      ebEnabled.mockReturnValue(true);
+      renderPage('/accounts?eb=reconnected&connection=item-1');
+
+      await waitFor(() =>
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'enableBanking.callback.reconnectedTitle' })),
+      );
+      expect(screen.queryByTestId('eb-mapping-dialog')).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounts$/));
+    });
+
+    it.each(['invalid_state', 'denied', 'exchange_failed', 'not_enabled'])(
+      'shows a specific error toast for ?eb_error=%s',
+      async (code) => {
+        renderPage(`/accounts?eb_error=${code}`);
+        await waitFor(() =>
+          expect(toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: 'enableBanking.callback.errorTitle',
+              description: `enableBanking.callback.${code}`,
+              variant: 'destructive',
+            }),
+          ),
+        );
+        expect(toast).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounts$/));
+      },
+    );
+
+    it('falls back to a generic message for an unknown error code', async () => {
+      renderPage('/accounts?eb_error=weird');
+      await waitFor(() =>
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ description: 'enableBanking.callback.unknown' })),
+      );
+    });
+
+    it('never renders the mapping dialog when Enable Banking is not configured', async () => {
+      renderPage('/accounts?eb=map&connection=item-1');
+      await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounts$/));
+      expect(screen.queryByTestId('eb-mapping-dialog')).not.toBeInTheDocument();
+    });
   });
 });
