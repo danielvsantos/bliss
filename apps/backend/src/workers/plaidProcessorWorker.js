@@ -332,6 +332,37 @@ async function recordOutcomeOnSyncLog(syncLogId, plaidItemId, counters) {
     }
 }
 
+/**
+ * Whether Phase 1 may hold rows back for the Quick Seed interview.
+ * Only for a Plaid INITIAL_SYNC: the user is present in the Plaid connect
+ * modal, which is where the interview runs. Historical backfills and manual
+ * resyncs may run while the user is offline, and Enable Banking (#132) has no
+ * interview step at all — held rows would silently pile up as PENDING,
+ * invisible in Transaction Review.
+ */
+function seedHoldAllowed(source, provider) {
+    if (provider === 'ENABLE_BANKING') return false;
+    return !source || source === 'INITIAL_SYNC';
+}
+
+/**
+ * Enable Banking rows held back for a seed interview by an earlier run stay
+ * PENDING and never appear in Transaction Review (the interview only exists in
+ * the Plaid connect modal). Release them so the current run classifies them.
+ * @returns {Promise<number>} rows released
+ */
+async function releaseSeedHolds(plaidItemId, provider) {
+    if (provider !== 'ENABLE_BANKING') return 0;
+    const released = await prisma.plaidTransaction.updateMany({
+        where: { plaidItemId, seedHeld: true, processed: false },
+        data: { seedHeld: false },
+    });
+    if (released.count > 0) {
+        logger.info(`Released ${released.count} seed-held Enable Banking row(s) for PlaidItem ${plaidItemId}`);
+    }
+    return released.count;
+}
+
 // ─── Worker ───────────────────────────────────────────────────────────────────
 
 const startPlaidProcessorWorker = () => {
@@ -340,10 +371,6 @@ const startPlaidProcessorWorker = () => {
     worker = new Worker(QUEUE_NAME, async (job) => {
         logger.info(`Starting classification job ${job.name} for Plaid Item: ${job.data.plaidItemId}`);
         const { plaidItemId, source, syncLogId } = job.data;
-        // Quick Seed interview only makes sense for INITIAL_SYNC — the user is present in the modal.
-        // For historical backfills and manual resyncs the user may be offline; holding transactions
-        // in seedHeld would just silently pile them up. Skip the interview for those sources.
-        const allowSeedHeld = !source || source === 'INITIAL_SYNC';
 
         // p-limit is ESM-only; dynamic import works inside async CJS functions
         const { default: pLimit } = await import('p-limit');
@@ -362,6 +389,7 @@ const startPlaidProcessorWorker = () => {
 
             const { tenantId } = plaidItem;
             const provider = plaidItem.provider || 'PLAID';
+            const allowSeedHeld = seedHoldAllowed(source, provider);
 
             // Thresholds are business rules for the whole tenant
             const tenant = await prisma.tenant.findUnique({
@@ -400,6 +428,9 @@ const startPlaidProcessorWorker = () => {
                 autoPromotedMinMonth: null,
             };
             const feedbackCalls = [];
+
+            // ─── Enable Banking: release rows held by an earlier run (#132) ───
+            await releaseSeedHolds(plaidItemId, provider);
 
             // ─── Fetch all pending rows upfront ───────────────────────────────
             const allPending = await prisma.plaidTransaction.findMany({
@@ -675,4 +706,6 @@ module.exports = {
     checkHashDuplicate,
     processRowWithResult,
     recordOutcomeOnSyncLog,
+    seedHoldAllowed,
+    releaseSeedHolds,
 };

@@ -232,7 +232,13 @@ async function syncConnection(job) {
     if (budgetSkips === 0 && mapped.length > 0) {
         await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSync: now, errorCode: null } });
     }
-    if (totals.added > 0) await enqueueProcessing(job, item, syncType, log.id);
+    // Classify new rows, and pick up any left unprocessed by an earlier run
+    // (e.g. rows held for a seed interview before #132's fix) so nothing stays
+    // invisible to Transaction Review.
+    const leftover = totals.added > 0 ? 0 : await prisma.plaidTransaction.count({
+        where: { plaidItemId: item.id, processed: false, promotionStatus: 'PENDING' },
+    });
+    if (totals.added > 0 || leftover > 0) await enqueueProcessing(job, item, syncType, log.id);
 
     logger.info(
         `[enableBankingSync] ${syncType} for ${item.id}: fetched ${totals.fetched}, added ${totals.added}, ` +

@@ -36,7 +36,7 @@ jest.mock('../../../utils/transactionHash', () => ({
 }));
 
 const { computeTransactionHash } = require('../../../utils/transactionHash');
-const { checkHashDuplicate, processRowWithResult, recordOutcomeOnSyncLog } = require('../../../workers/plaidProcessorWorker');
+const { checkHashDuplicate, processRowWithResult, recordOutcomeOnSyncLog, seedHoldAllowed, releaseSeedHolds } = require('../../../workers/plaidProcessorWorker');
 
 const JOINT = 3603;
 const DANIEL = 3604;
@@ -184,4 +184,27 @@ it('recordOutcomeOnSyncLog is a no-op without a syncLogId and never throws', asy
   expect(mockPrisma.plaidSyncLog.findFirst).not.toHaveBeenCalled();
   mockPrisma.plaidSyncLog.findFirst.mockRejectedValueOnce(new Error('db'));
   await expect(recordOutcomeOnSyncLog('log-1', 'x', makeCtx().counters)).resolves.toBeUndefined();
+});
+
+it('never holds Enable Banking rows for a seed interview (there is no interview in its flow)', () => {
+  expect(seedHoldAllowed('INITIAL_SYNC', 'ENABLE_BANKING')).toBe(false);
+  expect(seedHoldAllowed(undefined, 'ENABLE_BANKING')).toBe(false);
+  // Plaid behaviour is unchanged.
+  expect(seedHoldAllowed('INITIAL_SYNC', 'PLAID')).toBe(true);
+  expect(seedHoldAllowed(undefined, 'PLAID')).toBe(true);
+  expect(seedHoldAllowed('MANUAL_RESYNC', 'PLAID')).toBe(false);
+  expect(seedHoldAllowed('HISTORICAL_BACKFILL', 'PLAID')).toBe(false);
+});
+
+it('releases Enable Banking rows already stuck in a seed hold, and never touches Plaid items', async () => {
+  mockPrisma.plaidTransaction.updateMany.mockResolvedValue({ count: 4 });
+  await expect(releaseSeedHolds('eb-item', 'ENABLE_BANKING')).resolves.toBe(4);
+  expect(mockPrisma.plaidTransaction.updateMany).toHaveBeenCalledWith({
+    where: { plaidItemId: 'eb-item', seedHeld: true, processed: false },
+    data: { seedHeld: false },
+  });
+
+  mockPrisma.plaidTransaction.updateMany.mockClear();
+  await expect(releaseSeedHolds('plaid-item', 'PLAID')).resolves.toBe(0);
+  expect(mockPrisma.plaidTransaction.updateMany).not.toHaveBeenCalled();
 });
