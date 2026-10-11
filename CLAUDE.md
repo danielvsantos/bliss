@@ -241,6 +241,15 @@ Two-worker system: `plaidSyncWorker` (IO-bound fetch) -> `plaidProcessorWorker` 
 - Raw payloads encrypted with AES-256-GCM in `PlaidTransaction.rawJson`
 - Plaid category hints are passed to the LLM provider as additional context
 
+### Enable Banking (EU PSD2 bank sync, #132)
+
+Second bank-feed provider for EU banks (Revolut ES first), feeding the **same** Plaid review pipeline. See [`docs/specs/backend/24-enable-banking.md`](docs/specs/backend/24-enable-banking.md), [`docs/specs/api/27-enable-banking-api.md`](docs/specs/api/27-enable-banking-api.md), the guide [`docs/guides/enable-banking.md`](docs/guides/enable-banking.md).
+
+- **Reuses the Plaid tables:** `PlaidItem.provider` (`'PLAID'` default | `'ENABLE_BANKING'`) + the `EnableBankingAccount` side table. Synthetic keys from the stable `identification_hash`: `Account.plaidAccountId` / `PlaidTransaction.plaidAccountId` = `eb:<hash>`, `plaidTransactionId` = `eb:<hash>:<entry_reference>`, so reconnects never re-key history and `createMany skipDuplicates` is the dedupe. Booked transactions only.
+- **Label rule:** hash and promote with `bankTxLabel(tx, provider)` from `@bliss/shared/bank-tx-label` (Enable Banking = remittance text), never a hard-coded `merchantName || name`. Plaid-SDK routes answer `400 WRONG_PROVIDER` for Enable Banking items.
+- **Sync** runs on the `plaid-sync` queue (`ENABLE_BANKING_SYNC`, `ENABLE_BANKING_SYNC_ALL` job schedulers at `ENABLE_BANKING_SYNC_TIMES`, Madrid), within a Redis per-account daily budget (`ENABLE_BANKING_DAILY_BUDGET`), one `PlaidSyncLog` row per run. `/api/enablebanking` is on `INTEGRATION_DENYLIST`; the callback is authenticated by a signed single-use `state`.
+- The migration is hand-written (partial unique index for the joint-account guard): **`migrate deploy` only.**
+
 ### Analytics pipeline
 
 Event-driven aggregation into `AnalyticsCacheMonthly` and `TagAnalyticsCacheMonthly`:
@@ -370,6 +379,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — enables Google Sign-In; email/password auth works without it
 - Sign-up: `SIGNUP_MODE` (`open` default | `invite_only`; unknown values fail closed to `invite_only`). Invites are managed with `ADMIN_API_KEY` (see "Invite-only sign-up")
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, `PLAID_WEBHOOK_URL`, `PLAID_HISTORY_DAYS`
+- Enable Banking (#132): `ENABLE_BANKING_APP_ID`, `ENABLE_BANKING_PRIVATE_KEY` (or `ENABLE_BANKING_PRIVATE_KEY_PATH`), optional `ENABLE_BANKING_REDIRECT_URL`, `ENABLE_BANKING_SYNC_TIMES`, `ENABLE_BANKING_DAILY_BUDGET` — on both API and backend
 - AI (required): `LLM_PROVIDER` (gemini|openai|anthropic), `EMBEDDING_PROVIDER` (required when `LLM_PROVIDER=anthropic`), `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (matching your provider), optional overrides `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL`
 - Market data: `TWELVE_DATA_API_KEY` (also the default FX-rate source — see below)
 - Currency / FX rates: `CURRENCY_PROVIDER` (`TWELVE_DATA` default | `CURRENCYLAYER`). Twelve Data reuses `TWELVE_DATA_API_KEY`; `CURRENCYLAYER_API_KEY` is optional/legacy, only needed when `CURRENCY_PROVIDER=CURRENCYLAYER`

@@ -107,6 +107,16 @@ export default withAuth(async function handler(req, res) {
           throw new MapError(StatusCodes.BAD_REQUEST, { error: 'Unknown bank account for this connection' });
         }
       }
+      // A Bliss account already fed by another bank account of this connection
+      // (one not re-mapped in this request) cannot take a second feed.
+      const requested = new Set(mappings.map((m) => m.ebAccountId));
+      for (const m of mappings) {
+        if (m.accountId == null) continue;
+        const holder = ebAccounts.find((a) => a.accountId === Number(m.accountId) && a.id !== m.ebAccountId && !requested.has(a.id));
+        if (holder) {
+          throw new MapError(StatusCodes.BAD_REQUEST, { error: 'Two bank accounts cannot feed the same Bliss account', code: 'DUPLICATE_TARGET' });
+        }
+      }
 
       // ── R6: the same bank account mapped through another connection ───────
       const linking = mappings.filter((m) => !m.skip);

@@ -25,7 +25,7 @@ const { getEnableBankingClient } = require('../../services/enableBanking/client'
 const { mapEnableBankingTransaction, transactionKey } = require('../../services/enableBanking/mapper');
 const { syncCutoffDate, syncDateFrom, isoDate } = require('../../services/enableBanking/dateWindow');
 const { consumeAccess } = require('../../services/enableBanking/budget');
-const { pickBalance, EnableBankingError } = require('@bliss/shared/enablebanking');
+const { pickBalance, EnableBankingError, ebAccountKey } = require('@bliss/shared/enablebanking');
 
 const QUEUE_NAME = 'plaid-sync';
 const PROVIDER = 'ENABLE_BANKING';
@@ -120,7 +120,7 @@ async function syncConnection(job) {
             tenant: { select: { plaidHistoryDays: true } },
             enableBankingAccounts: {
                 where: { accountId: { not: null } },
-                include: { account: { select: { id: true, plaidItemId: true } } },
+                include: { account: { select: { id: true, plaidItemId: true, plaidAccountId: true } } },
             },
         },
     });
@@ -154,7 +154,8 @@ async function syncConnection(job) {
 
     // Only accounts still linked to this connection are synced (a disconnect
     // or a provider switch away keeps accountId but unlinks the Account row).
-    const mapped = item.enableBankingAccounts.filter((a) => a.account?.plaidItemId === item.id);
+    const mapped = item.enableBankingAccounts.filter((a) => a.account?.plaidItemId === item.id
+        && a.account?.plaidAccountId === ebAccountKey(a.identificationHash));
     const cutoff = syncCutoffDate(item.createdAt, item.tenant?.plaidHistoryDays ?? 1);
     const dateFrom = syncDateFrom({ createdAt: item.createdAt, historyDays: item.tenant?.plaidHistoryDays ?? 1, lastSync: item.lastSync });
     const window = { cutoff, dateFromIso: isoDate(dateFrom) };
@@ -226,7 +227,9 @@ async function syncConnection(job) {
     };
     const log = await writeLog(item.id, syncType, allBudgetSkipped ? 'FAILED' : 'SUCCESS', details);
 
-    if (budgetSkips === 0) {
+    // lastSync anchors the next window, so it only moves when every mapped
+    // account was actually fetched (never for a connection with none mapped).
+    if (budgetSkips === 0 && mapped.length > 0) {
         await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSync: now, errorCode: null } });
     }
     if (totals.added > 0) await enqueueProcessing(job, item, syncType, log.id);

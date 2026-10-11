@@ -393,6 +393,25 @@ describe('callback + mapping (Daniel)', () => {
   });
 });
 
+describe('mapping guards', () => {
+  it('refuses to point a second bank account at a Bliss account already fed by this connection', async () => {
+    const conn = (await call(connectionHandler, makeReq(danielToken, { query: { id: ebItemId } })))._body;
+    const daniel = conn.accounts.find((a: any) => a.ibanLast4 === '2693');
+    const res = await call(mapHandler, makeReq(danielToken, {
+      method: 'POST', query: { id: ebItemId }, body: { mappings: [{ ebAccountId: daniel.id, accountId: accJoint.id }] },
+    }));
+    expect(res._status).toBe(400);
+    expect(res._body.code).toBe('DUPLICATE_TARGET');
+  });
+
+  it('validates the body shape', async () => {
+    const bad = await call(mapHandler, makeReq(danielToken, { method: 'POST', query: { id: ebItemId }, body: { mappings: [{ ebAccountId: 'x', accountId: 1, skip: true }] } }));
+    expect(bad._status).toBe(400);
+    const empty = await call(mapHandler, makeReq(danielToken, { method: 'POST', query: { id: ebItemId }, body: { mappings: [] } }));
+    expect(empty._status).toBe(400);
+  });
+});
+
 describe('joint-account guard (R6) and Patricia', () => {
   it('flags and refuses a second mapping of the joint account through another consent', async () => {
     const { state } = await startFlow(patriciaToken);

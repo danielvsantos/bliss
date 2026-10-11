@@ -11,6 +11,7 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 | [Investment Portfolios](/docs/guides/investment-portfolios) | Track stocks, ETFs, and real estate with FIFO lot calculation |
 | [Passive Income](/docs/guides/passive-income) | Project dividends, coupons, rent, interest and benefits for the next 12–36 months |
 | [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) | Connect bank accounts for automatic transaction sync |
+| [EU Bank Sync with Enable Banking](/docs/guides/enable-banking) | Sync EU bank accounts (e.g. Revolut ES) over PSD2, and move accounts off Plaid |
 | [AI Classification](/docs/guides/ai-classification) | How the 4-tier pipeline works and how to train it |
 | [Choosing the Right Category](/docs/guides/choosing-categories) | Resolve the ambiguous cases and write custom categories the AI can use |
 | [Tracking Subscriptions](/docs/guides/tracking-subscriptions) | How recurring charges are detected, and confirming or dismissing them |

@@ -8,6 +8,12 @@ info:
     soft disconnect (Pause Sync), reconnect, webhook handling, transaction review,
     sync logs, and admin hard delete.
 
+    Enable Banking connections (#132) are PlaidItem rows with
+    provider ENABLE_BANKING and share the review queue and sync logs. The
+    Plaid-only lifecycle routes (resync, rotate-token, fetch-historical,
+    sync-accounts, disconnect, PATCH /api/plaid/items) answer
+    400 { code: WRONG_PROVIDER } for them; see enablebanking.yaml.
+
 components:
   securitySchemes:
     bearerAuth:
@@ -53,6 +59,17 @@ components:
         errorCode:
           type: string
           nullable: true
+        provider:
+          type: string
+          enum: [PLAID, ENABLE_BANKING]
+          description: Bank-feed provider (#132). Enable Banking items are managed through enablebanking.yaml.
+        aspspCountry:
+          type: string
+          nullable: true
+          description: Enable Banking only — ISO-2 country of the bank.
+        userId:
+          type: string
+          description: The user who connected the item (for Enable Banking, the consent holder).
         lastSync:
           type: string
           format: date-time

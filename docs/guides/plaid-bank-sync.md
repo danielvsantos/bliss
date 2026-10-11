@@ -62,3 +62,4 @@ Plaid provides its own category hints, which Bliss passes to the AI pipeline as 
 
 - [AI classification](/docs/guides/ai-classification) — understand how the pipeline classifies transactions
 - [Importing transactions](/docs/guides/importing-transactions) — supplement Plaid with CSV imports
+- [EU Bank Sync with Enable Banking](/docs/guides/enable-banking) — EU banks Plaid does not serve affordably (e.g. Revolut ES)

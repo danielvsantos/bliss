@@ -7,6 +7,7 @@ export default {
   'investment-portfolios': 'Investment Portfolios',
   'passive-income': 'Passive Income',
   'plaid-bank-sync': 'Bank Sync with Plaid',
+  'enable-banking': 'EU Bank Sync with Enable Banking',
   'ai-classification': 'AI Classification',
   'choosing-categories': 'Choosing the Right Category',
   'tracking-subscriptions': 'Tracking Subscriptions',

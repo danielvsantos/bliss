@@ -92,12 +92,13 @@ Marks all notifications as seen by updating `User.lastNotificationSeenAt` to the
 
 ## 14.3. Signal Types
 
-Signal types are aggregated from existing tables via 8 parallel queries (including `accountCount`, `hasTransaction`, and `tenant.onboardingCompletedAt` lookups). No dedicated notification storage is needed.
+Signal types are aggregated from existing tables via 10 parallel queries (including `accountCount`, `hasTransaction`, and `tenant.onboardingCompletedAt` lookups). No dedicated notification storage is needed.
 
 | Signal Type | Source Table(s) | Count Logic | `isNew` Logic |
 |-------------|----------------|-------------|---------------|
 | `PENDING_REVIEW` | `PlaidTransaction` (status `CLASSIFIED`) + `StagedImportRow` (status `PENDING`) | Sum of both counts | Always `true` (actionable) |
-| `PLAID_ACTION_REQUIRED` | `PlaidItem` (status `LOGIN_REQUIRED` or `ERROR`) | One signal PER PlaidItem (each with `count: 1` and institution-specific label, e.g., "Chase needs attention") | Always `true` (actionable) |
+| `PLAID_ACTION_REQUIRED` | `PlaidItem` (status `LOGIN_REQUIRED` or `ERROR`) | One signal PER PlaidItem (each with `count: 1` and institution-specific label, e.g., "Chase needs attention") | Always `true` (actionable). Enable Banking items (#132) only for the user who authorised the consent, labelled "… needs to be re-connected" |
+| `BANK_CONSENT_EXPIRING` (#132) | `PlaidItem` (`provider = 'ENABLE_BANKING'`, `ACTIVE`, `userId` = the caller, `consentExpiration` within 14 days) | One signal per connection, `count: 1`, `href: '/accounts'`, `expiresAt`; `severity` `info` (≤ 14 d) or `warning` (≤ 3 d) | `true` when the 14-day (or, once inside it, the 3-day) threshold was crossed after `lastSeenAt` — the "14 days, 3 days" cadence without a table. Expiry itself surfaces as `PLAID_ACTION_REQUIRED` once the sync marks the connection `LOGIN_REQUIRED` |
 | `PLAID_CLASSIFICATION_FAILED` | `PlaidTransaction` (status `FAILED`) | Count of `FAILED` rows | Always `true` (actionable) — kept as its own signal rather than folded into `PENDING_REVIEW`'s count, since a classification failure is a data-completeness risk, not routine pending work |
 | `ONBOARDING_INCOMPLETE` | `Tenant.onboardingCompletedAt` + account/transaction counts | Number of incomplete onboarding steps | Always `false` (not urgent) |
 | `NEW_INSIGHTS` | `Insight` (not dismissed) | Count of insights created after `lastSeenAt` | `true` if any `createdAt > lastSeenAt` |

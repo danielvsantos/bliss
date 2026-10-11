@@ -45,7 +45,7 @@ const { syncConnection, syncAll, enableBankingDispatch } = require('../../../../
 
 const ITEM_ID = 'item-eb';
 function account(id, hash) {
-    return { id, uid: `uid-${id}`, identificationHash: hash, accountId: 1, account: { id: 1, plaidItemId: ITEM_ID } };
+    return { id, uid: `uid-${id}`, identificationHash: hash, accountId: 1, account: { id: 1, plaidItemId: ITEM_ID, plaidAccountId: `eb:${hash}` } };
 }
 function item(overrides = {}) {
     return {
@@ -169,7 +169,7 @@ describe('syncConnection — window and mapping', () => {
 
     it('skips accounts no longer linked to this connection', async () => {
         mockPrisma.plaidItem.findUnique.mockResolvedValue(item({
-            enableBankingAccounts: [{ ...account('eba1', 'h1'), account: { id: 1, plaidItemId: null } }],
+            enableBankingAccounts: [{ ...account('eba1', 'h1'), account: { id: 1, plaidItemId: null, plaidAccountId: null } }],
         }));
         await syncConnection(job());
         expect(mockClient.getTransactions).not.toHaveBeenCalled();

@@ -149,6 +149,7 @@ match `/api/usersettings`). A token request whose path is unknown is refused
 | `/api/oauth` | all | A key must never mint or approve another token (#89 OAuth, [25-oauth.md](./25-oauth.md)) |
 | `/api/plaid/create-link-token`, `exchange-public-token`, `disconnect`, `rotate-token`, `items/hard-delete`, `resync`, `sync-accounts`, `fetch-historical` | all | Plaid connection lifecycle |
 | `/api/plaid/items` | non-GET | `PATCH` resets connection status after re-auth (lifecycle) |
+| `/api/enablebanking` | all | Enable Banking connection lifecycle (#132): connect, callback, mapping, sync, disconnect act on a person's own PSD2 consent ([27-enable-banking-api.md](./27-enable-banking-api.md)) |
 | `/api/accounts` | non-GET (except `POST`, see below) | No account updates or deletes for tokens |
 | `/api/categories` | non-GET | No category writes for tokens |
 | `/api/tenants` | non-GET | No tenant writes for tokens |

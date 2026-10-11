@@ -250,6 +250,18 @@ Controls two things simultaneously:
 
 **UI**: Exposed as a number input in the **AI Classification** tab of the Settings page, alongside the AI confidence thresholds.
 
+**Enable Banking (#132)** reuses the same setting and formula for its first sync (`date_from = UTC midnight(connection createdAt) − plaidHistoryDays`). The column keeps its name.
+
+---
+
+## Enable Banking connections (#132)
+
+EU bank connections made through Enable Banking are stored as `PlaidItem` rows with `provider = 'ENABLE_BANKING'` and feed this review queue unchanged. Their lifecycle lives under `/api/enablebanking` — see [27-enable-banking-api.md](./27-enable-banking-api.md). On the Plaid routes:
+
+- `GET /api/plaid/items` returns `provider` (`'PLAID'` | `'ENABLE_BANKING'`), `aspspCountry` and `userId` for every item.
+- `resync`, `rotate-token`, `fetch-historical`, `sync-accounts`, `disconnect` and `PATCH /api/plaid/items` answer `400 { code: 'WRONG_PROVIDER' }` for an Enable Banking item.
+- Promotion (`transactions/[id]`, `bulk-promote`, `confirm-seeds`) describes an Enable Banking row by its remittance text (`bankTxLabel`), the same label its duplicate hash uses.
+
 ---
 
 ## Data Models
