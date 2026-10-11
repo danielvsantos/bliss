@@ -115,7 +115,18 @@ it('first sync pages, ingests booked rows only and stores the balance', async ()
   expect(mockProcessingAdd).toHaveBeenCalledTimes(1);
 });
 
+it('re-queues classification when a sync adds nothing but rows are still unprocessed', async () => {
+  // The classifier is mocked here, so the first sync's rows are still PENDING —
+  // exactly the state of rows left behind by an earlier run (e.g. seed holds).
+  mockProcessingAdd.mockClear();
+  const result = await syncConnection(job());
+  expect(result).toMatchObject({ added: 0, skipped: 2 });
+  expect(mockProcessingAdd).toHaveBeenCalledTimes(1);
+});
+
 it('running the same sync again adds zero rows and enqueues no classification', async () => {
+  // As after a real classifier run.
+  await prisma.plaidTransaction.updateMany({ where: { plaidItemId: item.id }, data: { processed: true, promotionStatus: 'CLASSIFIED' } });
   mockProcessingAdd.mockClear();
   const result = await syncConnection(job());
   expect(result).toMatchObject({ added: 0, skipped: 2 });
