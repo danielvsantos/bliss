@@ -444,6 +444,15 @@ describe('joint-account guard (R6) and Patricia', () => {
     expect((await prisma.account.findUnique({ where: { id: accJoint.id } }))!.plaidItemId).toBe(ebItemId);
   });
 
+  it('the database itself refuses a second active mapping of the same bank account (partial unique index)', async () => {
+    const jointOnDaniel = await prisma.enableBankingAccount.findFirst({ where: { plaidItemId: ebItemId, identificationHash: H_JOINT } });
+    const jointOnPatricia = await prisma.enableBankingAccount.findFirst({ where: { plaidItemId: patriciaItemId, identificationHash: H_JOINT } });
+    expect(jointOnDaniel!.accountId).toBe(accJoint.id);
+    await expect(prisma.enableBankingAccount.update({
+      where: { id: jointOnPatricia!.id }, data: { accountId: accJoint.id },
+    })).rejects.toMatchObject({ code: 'P2002' });
+  });
+
   it('only creates an Account when asked to', async () => {
     const conn = (await call(connectionHandler, makeReq(patriciaToken, { query: { id: patriciaItemId } })))._body;
     const before = await prisma.account.count({ where: { tenantId } });

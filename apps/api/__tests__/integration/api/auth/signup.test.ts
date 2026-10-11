@@ -125,18 +125,22 @@ describe('POST /api/auth/signup', () => {
   // for any address an attacker cared to try.
   it('does not confirm account existence for an already-registered email', async () => {
     const email = uniqueEmail();
+    // A name only this test uses: integration files run in parallel, so a
+    // global tenant count races with other suites' setup and teardown.
+    const tenantName = `Existence Oracle ${email}`;
 
     // First signup
-    const req1 = makeReq({ body: validBody({ email }) });
+    const req1 = makeReq({ body: validBody({ email, tenantName }) });
     const res1 = makeRes();
     await handler(req1 as NextApiRequest, res1 as unknown as NextApiResponse);
     const body1 = res1._body as { user?: { tenantId?: string } };
     if (body1.user?.tenantId) createdTenantIds.push(body1.user.tenantId);
 
-    const tenantsBefore = await prisma.tenant.count();
+    const tenantsBefore = await prisma.tenant.count({ where: { name: tenantName } });
+    expect(tenantsBefore).toBe(1);
 
     // Second signup with same email
-    const req2 = makeReq({ body: validBody({ email }) });
+    const req2 = makeReq({ body: validBody({ email, tenantName }) });
     const res2 = makeRes();
     await handler(req2 as NextApiRequest, res2 as unknown as NextApiResponse);
 
@@ -151,31 +155,33 @@ describe('POST /api/auth/signup', () => {
     expect(JSON.stringify(res2._body)).not.toMatch(/already exists|registered|taken|conflict/i);
 
     // And nothing was created.
-    expect(await prisma.tenant.count()).toBe(tenantsBefore);
+    expect(await prisma.tenant.count({ where: { name: tenantName } })).toBe(tenantsBefore);
   });
 
   it('normalizes the stored email so case variants cannot create a second account', async () => {
     const email = uniqueEmail();
     const upper = email.toUpperCase();
+    const tenantName = `Case Variant ${email}`; // scoped count, see above
 
-    const req1 = makeReq({ body: validBody({ email }) });
+    const req1 = makeReq({ body: validBody({ email, tenantName }) });
     const res1 = makeRes();
     await handler(req1 as NextApiRequest, res1 as unknown as NextApiResponse);
     const body1 = res1._body as { user?: { tenantId?: string } };
     if (body1.user?.tenantId) createdTenantIds.push(body1.user.tenantId);
 
-    const tenantsBefore = await prisma.tenant.count();
+    const tenantsBefore = await prisma.tenant.count({ where: { name: tenantName } });
+    expect(tenantsBefore).toBe(1);
 
     // Same address, different case. User.email is deterministically encrypted,
     // so without normalization this would produce a different ciphertext,
     // miss the uniqueness check, and create a duplicate account.
-    const req2 = makeReq({ body: validBody({ email: upper }) });
+    const req2 = makeReq({ body: validBody({ email: upper, tenantName }) });
     const res2 = makeRes();
     await handler(req2 as NextApiRequest, res2 as unknown as NextApiResponse);
 
     expect(res2._status).toBe(201);
     expect(res2._headers['Set-Cookie']).toBeUndefined();
-    expect(await prisma.tenant.count()).toBe(tenantsBefore);
+    expect(await prisma.tenant.count({ where: { name: tenantName } })).toBe(tenantsBefore);
   });
 
   it('returns 400 when tenantName is missing', async () => {

@@ -3,7 +3,6 @@
  *
  * - Running the same sync twice inserts nothing the second time (R10).
  * - A reconnect (new session, new uids, same identification_hash) inserts nothing.
- * - The R6 partial unique index refuses a second mapping of the same bank account.
  *
  * The Enable Banking client, the budget counter and the processing queue are
  * mocked; Postgres is real. Requires: bliss_test with migrations applied.
@@ -133,21 +132,6 @@ it('a reconnect (new session id, new uid, same identification_hash) adds zero ro
   expect(await prisma.plaidTransaction.count({ where: { plaidItemId: item.id } })).toBe(2);
 });
 
-it('the database refuses a second mapping of the same bank account (R6)', async () => {
-  const other = await prisma.plaidItem.create({
-    data: {
-      tenantId, userId: ebAccount.authorizedByUserId, itemId: `eb_other_${Date.now()}`,
-      accessToken: 'session-x', provider: 'ENABLE_BANKING',
-    },
-  });
-  await expect(prisma.enableBankingAccount.create({
-    data: {
-      tenantId, plaidItemId: other.id, authorizedByUserId: ebAccount.authorizedByUserId,
-      uid: 'uid-x', identificationHash: HASH, accountId: ebAccount.accountId,
-    },
-  })).rejects.toMatchObject({ code: 'P2002' });
-  // Unmapped (accountId null) duplicates are allowed — they are refused at map time instead.
-  await expect(prisma.enableBankingAccount.create({
-    data: { tenantId, plaidItemId: other.id, authorizedByUserId: ebAccount.authorizedByUserId, uid: 'uid-y', identificationHash: HASH },
-  })).resolves.toBeTruthy();
-});
+// The R6 partial unique index is SQL-only (migration). Backend CI builds its
+// database with `prisma db push`, which never creates it, so the DB-level check
+// lives in the API flow suite (apps/api, migrate deploy).
