@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const { getEnableBankingConfig } = require('@bliss/shared/enablebanking');
 
 const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 
@@ -202,6 +203,13 @@ function validateEnv() {
   }
   if (!process.env.SENTRY_DSN) {
     warnings.push('SENTRY_DSN not set — error tracking will be disabled');
+  }
+  // Enable Banking (#132) is optional; only a half-configured pair is worth a warning.
+  if (getEnableBankingConfig().partial) {
+    warnings.push(
+      'Enable Banking is half-configured — set both ENABLE_BANKING_APP_ID and ' +
+        'ENABLE_BANKING_PRIVATE_KEY (or ENABLE_BANKING_PRIVATE_KEY_PATH). The feature stays disabled.'
+    );
   }
 
   // ─── Report ──────────────────────────────────────────────────────────────

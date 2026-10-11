@@ -27,6 +27,9 @@ vi.mock('./connection-health', () => ({
 vi.mock('./sync-logs-table', () => ({
   SyncLogsTable: () => <div data-testid="sync-logs-table" />,
 }));
+vi.mock('./bank-connection-card', () => ({
+  BankConnectionCard: ({ item }: { item: { id: string } }) => <div data-testid="bank-connection-card">{item.id}</div>,
+}));
 
 import { AccountDetailPanel } from './account-detail-panel';
 import type { EnrichedAccount } from '@/hooks/use-account-list';
@@ -113,5 +116,74 @@ describe('AccountDetailPanel — delete control', () => {
     expect(screen.getByText('accountsPage.deleteBlockedPlaidHint')).toBeInTheDocument();
     fireEvent.click(deleteBtn);
     expect(onDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountDetailPanel — provider branch (#132)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const PLAID_ONLY_ACTIONS = [
+    'accountDetail.resyncNow',
+    'accountDetail.rotateToken',
+    'accountDetail.relinkPlaid',
+    'accountDetail.pauseSync',
+    'accountDetail.reconnectBank',
+  ];
+
+  function renderWith(plaidItem: Record<string, unknown>, status: EnrichedAccount['status'] = 'synced') {
+    render(
+      <AccountDetailPanel
+        account={makeAccount({ status, plaidItem: plaidItem as unknown as EnrichedAccount['plaidItem'] })}
+        onEdit={vi.fn()}
+        onRefetch={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+  }
+
+  it('renders the bank connection card and hides every Plaid-only action for Enable Banking', () => {
+    renderWith({ id: 'eb-item', status: 'ACTIVE', provider: 'ENABLE_BANKING', consentExpiration: new Date(Date.now() + 3 * 86400000).toISOString() });
+
+    expect(screen.getByTestId('bank-connection-card')).toHaveTextContent('eb-item');
+    expect(screen.getByText('enableBanking.detail.badge')).toBeInTheDocument();
+    for (const key of PLAID_ONLY_ACTIONS) {
+      expect(screen.queryByText(key)).not.toBeInTheDocument();
+    }
+    // Plaid consent banner, Plaid badge and the Plaid connection health (with its backfill) are not shown.
+    expect(screen.queryByText('accountDetail.consentExpiringSoon')).not.toBeInTheDocument();
+    expect(screen.queryByText('accountDetail.plaidConnected')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('connection-health')).not.toBeInTheDocument();
+    expect(screen.queryByText(/accountDetail\.securityPlaid/)).not.toBeInTheDocument();
+    // Sync logs are shared with Plaid.
+    expect(screen.getByTestId('sync-logs-table')).toBeInTheDocument();
+    // Still connected → delete blocked until disconnected.
+    expect(screen.getByRole('button', { name: 'accountsPage.deleteAction' })).toBeDisabled();
+    expect(screen.getByText('enableBanking.detail.deleteBlockedHint')).toBeInTheDocument();
+    expect(screen.queryByText('accountsPage.deleteBlockedPlaidHint')).not.toBeInTheDocument();
+  });
+
+  it('a disconnected Enable Banking account offers no Plaid reconnect and can be deleted', () => {
+    renderWith({ id: 'eb-item', status: 'REVOKED', provider: 'ENABLE_BANKING' }, 'disconnected');
+
+    expect(screen.getByTestId('bank-connection-card')).toBeInTheDocument();
+    expect(screen.queryByText('accountDetail.reconnectBank')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'accountsPage.deleteAction' })).toBeEnabled();
+  });
+
+  it('keeps the Plaid branch unchanged (actions present, no Enable Banking card)', () => {
+    renderWith({ id: 'p1', status: 'ACTIVE', provider: 'PLAID' });
+
+    expect(screen.queryByTestId('bank-connection-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('connection-health')).toBeInTheDocument();
+    for (const key of ['accountDetail.resyncNow', 'accountDetail.rotateToken', 'accountDetail.relinkPlaid', 'accountDetail.pauseSync']) {
+      expect(screen.getByText(key)).toBeInTheDocument();
+    }
+    expect(screen.getByText('accountDetail.plaidConnected')).toBeInTheDocument();
+  });
+
+  it('treats an item without a provider (older API) as Plaid', () => {
+    renderWith({ id: 'p1', status: 'ACTIVE' });
+    expect(screen.queryByTestId('bank-connection-card')).not.toBeInTheDocument();
+    expect(screen.getByText('accountDetail.resyncNow')).toBeInTheDocument();
   });
 });

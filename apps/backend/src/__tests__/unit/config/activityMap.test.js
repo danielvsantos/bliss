@@ -60,6 +60,7 @@ describe('resolveActivity', () => {
 
   it.each([
     ['plaid-sync', 'plaid-sync-job', 'BANK_SYNC', 'fetching_bank'],
+    ['plaid-sync', 'ENABLE_BANKING_SYNC', 'BANK_SYNC', 'fetching_bank'],
     ['plaid-processing', 'PLAID_SYNC_COMPLETE', 'BANK_SYNC', 'classifying'],
     ['smart-import', 'process-smart-import', 'IMPORT', 'processing_file'],
     ['smart-import', 'commit-smart-import', 'IMPORT', 'committing'],
@@ -72,6 +73,11 @@ describe('resolveActivity', () => {
     ['portfolio', 'recalculate-portfolio-items', 'PORTFOLIO_UPDATE', 'valuing_assets'],
   ])('%s / %s → %s (%s)', (queue, name, type, stage) => {
     expect(resolveActivity(queue, job(name))).toMatchObject({ type, stage });
+  });
+
+  it('Enable Banking (#132): the sync event is bank sync; the scheduled fan-out is never tracked', () => {
+    expect(resolveActivity('events', job('ENABLE_BANKING_SYNC'))).toMatchObject({ type: 'BANK_SYNC', ephemeral: true });
+    expect(resolveActivity('plaid-sync', { name: 'ENABLE_BANKING_SYNC_ALL', data: {} })).toBeNull();
   });
 
   it('maps admin rebuild scopes', () => {

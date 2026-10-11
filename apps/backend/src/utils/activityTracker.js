@@ -221,7 +221,8 @@ function resolveTrigger(queueName, job) {
     if (jobId.startsWith('nightly-') || /cron/i.test(source)) return TRIGGERS.NIGHTLY;
 
     if (queueName === QUEUES.PLAID_SYNC || queueName === QUEUES.PLAID_PROCESSING
-        || /plaid/i.test(source) || PLAID_SOURCES.has(source) || (job?.name || '').startsWith('PLAID_')) {
+        || /plaid/i.test(source) || PLAID_SOURCES.has(source) || (job?.name || '').startsWith('PLAID_')
+        || (job?.name || '').startsWith('ENABLE_BANKING_')) {
         return TRIGGERS.BANK_SYNC;
     }
     if (queueName === QUEUES.SMART_IMPORT || (job?.name || '').startsWith('SMART_IMPORT_') || IMPORT_SOURCES.has(source)) {

@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../../utils/produceEvent.js';
 import { eventOrigin } from '../../../../utils/eventOrigin.js';
 import { withAuth } from '../../../../utils/withAuth.js';
+import { bankTxLabel } from '@bliss/shared/bank-tx-label';
 import { computeTransactionHash, buildDuplicateHashSet } from '../../../../utils/transactionHash.js';
 import { fetchWithTimeout } from '../../../../utils/fetchWithTimeout.js';
 import { resolveTagsByName } from '../../../../utils/tagUtils.js';
@@ -83,7 +84,7 @@ export default withAuth(async function handler(req, res) {
         : Promise.resolve(true), // no validation needed
       prisma.plaidItem.findMany({
         where: { tenantId: user.tenantId },
-        select: { id: true },
+        select: { id: true, provider: true },
       }),
       prisma.account.findMany({
         where: { tenantId: user.tenantId, plaidAccountId: { not: null } },
@@ -97,6 +98,9 @@ export default withAuth(async function handler(req, res) {
     }
 
     const tenantPlaidItemIds = tenantPlaidItems.map((pi) => pi.id);
+    // Provider-aware label for the hash and the description (#132, D3).
+    const providerByItemId = new Map(tenantPlaidItems.map((pi) => [pi.id, pi.provider]));
+    const labelOf = (plaidTx) => bankTxLabel(plaidTx, providerByItemId.get(plaidTx.plaidItemId));
 
     if (tenantPlaidItemIds.length === 0) {
       return res.status(StatusCodes.OK).json({ promoted: 0, skipped: 0, errors: 0 });
@@ -186,7 +190,7 @@ export default withAuth(async function handler(req, res) {
       if (hashSet) {
         const hash = computeTransactionHash(
           txDate,
-          plaidTx.merchantName || plaidTx.name,
+          labelOf(plaidTx),
           absAmountForHash,
           localAccountId,
         );
@@ -213,7 +217,7 @@ export default withAuth(async function handler(req, res) {
           month,
           day,
           categoryId: effectiveCategoryId,
-          description: plaidTx.merchantName || plaidTx.name,
+          description: labelOf(plaidTx),
           details: plaidTx.name,
           debit: isDebit ? absAmount : null,
           credit: isDebit ? null : absAmount,
@@ -356,7 +360,7 @@ export default withAuth(async function handler(req, res) {
     if (toCreate.length > 0) {
       const feedbackEntries = toCreate
         .map(({ plaidTx }) => ({
-          description: plaidTx.merchantName || plaidTx.name,
+          description: labelOf(plaidTx),
           categoryId: overrideCategoryId ?? plaidTx.suggestedCategoryId,
         }))
         .filter((e) => e.description && e.categoryId);

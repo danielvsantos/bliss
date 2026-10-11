@@ -1,0 +1,266 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - Enable Banking (EU PSD2)
+  version: 1.0.0
+  description: |
+    Connect EU bank accounts through Enable Banking (PSD2 account information,
+    #132), map them to Bliss accounts and trigger syncs. Synced transactions
+    land in the existing Plaid review queue (see plaid.yaml).
+
+    Every route is refused for integration tokens (403
+    NOT_AVAILABLE_TO_INTEGRATIONS). When ENABLE_BANKING_APP_ID or the private
+    key is not configured, every route except /status answers 404 NOT_ENABLED.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly session cookie set by the API at sign-in/sign-up.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+
+    Aspsp:
+      type: object
+      properties:
+        name: { type: string, example: Revolut }
+        country: { type: string, example: ES, description: ISO 3166-1 alpha-2 }
+        logo: { type: string, nullable: true }
+        maximumConsentValiditySec: { type: integer, nullable: true, example: 15552000 }
+
+    Connection:
+      type: object
+      properties:
+        id: { type: string, description: PlaidItem id }
+        institutionName: { type: string, nullable: true }
+        aspspCountry: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [PENDING_SELECTION, ACTIVE, LOGIN_REQUIRED, ERROR, REVOKED]
+        consentExpiration: { type: string, format: date-time, nullable: true }
+        lastSync: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        authorizedByMe: { type: boolean }
+
+    BankAccount:
+      type: object
+      properties:
+        id: { type: string, description: EnableBankingAccount id }
+        name: { type: string, nullable: true }
+        ibanLast4: { type: string, nullable: true }
+        currency: { type: string, nullable: true }
+        accountId: { type: integer, nullable: true, description: Mapped Bliss account }
+        suggestedAccountId: { type: integer, nullable: true, description: Mapped account, else the unique Bliss account with the same last 4 and currency }
+        conflict: { type: boolean, description: Already mapped through another active connection (R6) }
+        lastBalance: { type: string, nullable: true }
+        lastBalanceCurrency: { type: string, nullable: true }
+        lastBalanceAt: { type: string, format: date-time, nullable: true }
+
+    BlissAccount:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        currencyCode: { type: string }
+        last4: { type: string, nullable: true }
+        linkedProvider: { type: string, nullable: true, enum: [PLAID, ENABLE_BANKING, null] }
+        linkedToThisConnection: { type: boolean }
+
+    Mapping:
+      type: object
+      required: [ebAccountId]
+      description: Exactly one of accountId, create or skip.
+      properties:
+        ebAccountId: { type: string }
+        accountId: { type: integer }
+        create:
+          type: object
+          required: [name, bankId, countryId, currencyCode]
+          properties:
+            name: { type: string, maxLength: 100 }
+            bankId: { type: integer }
+            countryId: { type: string, example: ESP }
+            currencyCode: { type: string, example: EUR }
+        skip: { type: boolean, enum: [true] }
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/enablebanking/status:
+    get:
+      summary: Whether Enable Banking is configured
+      tags: [Enable Banking]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+
+  /api/enablebanking/aspsps:
+    get:
+      summary: Banks available in the tenant's countries
+      tags: [Enable Banking]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aspsps:
+                    type: array
+                    items: { $ref: '#/components/schemas/Aspsp' }
+                  startDate: { type: string, format: date, description: First-sync date_from for a connection made today }
+        '403': { description: Viewer }
+        '404': { description: NOT_ENABLED }
+        '502': { description: Enable Banking unavailable }
+
+  /api/enablebanking/connect:
+    post:
+      summary: Start a PSD2 consent (POST /auth) and return the bank URL
+      tags: [Enable Banking]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [aspspName, aspspCountry]
+                  properties:
+                    aspspName: { type: string }
+                    aspspCountry: { type: string, pattern: '^[A-Z]{2}$' }
+                - type: object
+                  required: [reconnectItemId]
+                  properties:
+                    reconnectItemId: { type: string, description: Re-attach a new consent to this connection (authorising user only) }
+      responses:
+        '200':
+          description: Navigate the browser to url
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
+                  startDate: { type: string, format: date }
+        '400': { description: 'COUNTRY_NOT_ENABLED, UNKNOWN_ASPSP or invalid body', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: 'NOT_AUTHORISING_USER (reconnect) or viewer' }
+        '404': { description: NOT_ENABLED, or reconnect connection not found }
+        '503': { description: Redis unavailable — the state cannot be made single use }
+
+  /api/enablebanking/callback:
+    get:
+      summary: Redirect URL registered on the Enable Banking app
+      description: |
+        Authenticated by the signed, single-use `state` (15 minutes; HMAC under
+        a key derived from NEXTAUTH_SECRET; nonce consumed with GETDEL). A
+        session cookie, when present, must belong to the same user. Exchanges
+        `code` via POST /sessions and persists the connection and its accounts
+        in one transaction. Always redirects into the web app.
+      tags: [Enable Banking]
+      security: []
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        '302':
+          description: |
+            `<FRONTEND_URL>/accounts?eb=map&connection=<id>` (accounts to map),
+            `?eb=reconnected&connection=<id>` (reconnect, all re-linked; sync enqueued), or
+            `?eb_error=invalid_state|denied|exchange_failed|not_enabled`.
+
+  /api/enablebanking/connections/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Connection and accounts for the mapping step
+      tags: [Enable Banking]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection: { $ref: '#/components/schemas/Connection' }
+                  startDate: { type: string, format: date }
+                  accounts: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+                  blissAccounts: { type: array, items: { $ref: '#/components/schemas/BlissAccount' } }
+        '404': { description: Not found or NOT_ENABLED }
+    delete:
+      summary: Disconnect (DELETE /sessions, status REVOKED; data and mappings kept)
+      tags: [Enable Banking]
+      responses:
+        '204': { description: Disconnected }
+        '403': { description: Not an admin nor the authorising user }
+        '409': { description: Already disconnected }
+
+  /api/enablebanking/connections/{id}/map:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Map bank accounts to Bliss accounts and start the first sync
+      tags: [Enable Banking]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mappings]
+              properties:
+                mappings: { type: array, items: { $ref: '#/components/schemas/Mapping' } }
+                confirmProviderSwitch: { type: boolean }
+      responses:
+        '200':
+          description: Mapped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mapped: { type: integer }
+                  created: { type: integer }
+                  skipped: { type: integer }
+                  switched: { type: integer }
+                  active: { type: boolean }
+        '400': { description: 'Invalid body, unknown account, DUPLICATE_TARGET' }
+        '409':
+          description: |
+            ACCOUNT_ALREADY_CONNECTED (R6), PROVIDER_SWITCH_REQUIRED (R5a, with
+            `accounts: [{ id, name, provider, institutionName }]`) or CONNECTION_REVOKED.
+
+  /api/enablebanking/connections/{id}/sync:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Sync now (counts against the daily per-account budget)
+      tags: [Enable Banking]
+      responses:
+        '202': { description: Sync enqueued }
+        '400': { description: CONNECTION_NOT_ACTIVE or NO_MAPPED_ACCOUNTS }
+        '429':
+          description: SYNC_BUDGET_EXHAUSTED
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string, enum: [SYNC_BUDGET_EXHAUSTED] }
+                  resetsAt: { type: string, format: date-time }

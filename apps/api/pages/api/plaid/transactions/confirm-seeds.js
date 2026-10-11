@@ -4,6 +4,7 @@ import { cors } from '../../../../utils/cors.js';
 import { rateLimiters } from '../../../../utils/rateLimit.js';
 import * as Sentry from '@sentry/nextjs';
 import { withAuth } from '../../../../utils/withAuth.js';
+import { bankTxLabel } from '@bliss/shared/bank-tx-label';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -82,9 +83,11 @@ export default withAuth(async function handler(req, res) {
         // Get all PlaidItem IDs for this tenant (scope for updateMany)
         const tenantPlaidItems = await prisma.plaidItem.findMany({
             where: { tenantId: user.tenantId },
-            select: { id: true },
+            select: { id: true, provider: true },
         });
         const tenantPlaidItemIds = tenantPlaidItems.map(pi => pi.id);
+        // Provider-aware promotion label (#132, D3).
+        const providerByItemId = new Map(tenantPlaidItems.map(pi => [pi.id, pi.provider]));
 
         // Pre-fetch all tenant accounts with plaidAccountId (needed for promotion)
         const tenantAccounts = await prisma.account.findMany({
@@ -168,7 +171,7 @@ export default withAuth(async function handler(req, res) {
                         transaction_date: txDate,
                         year, quarter, month, day,
                         categoryId: confirmedCategoryId,
-                        description: plaidTx.merchantName || plaidTx.name,
+                        description: bankTxLabel(plaidTx, providerByItemId.get(plaidTx.plaidItemId)),
                         details: plaidTx.name,
                         debit: isDebit ? absAmount : null,
                         credit: isDebit ? null : absAmount,
@@ -252,7 +255,7 @@ export default withAuth(async function handler(req, res) {
                     promotionStatus: 'CLASSIFIED',
                 },
                 select: {
-                    id: true, plaidTransactionId: true, plaidAccountId: true,
+                    id: true, plaidTransactionId: true, plaidAccountId: true, plaidItemId: true,
                     name: true, merchantName: true, amount: true, date: true,
                     isoCurrencyCode: true,
                 },
@@ -271,7 +274,7 @@ export default withAuth(async function handler(req, res) {
                     seedHeld: true,
                 },
                 select: {
-                    id: true, plaidTransactionId: true, plaidAccountId: true,
+                    id: true, plaidTransactionId: true, plaidAccountId: true, plaidItemId: true,
                     name: true, merchantName: true, amount: true, date: true,
                     isoCurrencyCode: true,
                 },

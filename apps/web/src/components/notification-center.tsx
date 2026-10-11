@@ -18,6 +18,7 @@ import {
   Sparkles,
   Check,
   ChevronRight,
+  CalendarClock,
 } from "lucide-react";
 
 const SIGNAL_ICONS: Record<string, React.ReactNode> = {
@@ -27,12 +28,15 @@ const SIGNAL_ICONS: Record<string, React.ReactNode> = {
   ONBOARDING_INCOMPLETE: <ListChecks className="h-4 w-4" />,
   NEW_INSIGHTS: <Sparkles className="h-4 w-4" />,
   PROCESSING_FAILED: <AlertTriangle className="h-4 w-4" />,
+  // Enable Banking (#132): bank access (PSD2 consent) ending soon.
+  BANK_CONSENT_EXPIRING: <CalendarClock className="h-4 w-4" />,
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
   positive: "text-positive bg-positive/10",
   warning: "text-warning bg-warning/10",
   info: "text-brand-primary bg-brand-primary/10",
+  destructive: "text-destructive bg-destructive/10",
 };
 
 export function NotificationCenter() {

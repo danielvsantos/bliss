@@ -145,6 +145,11 @@ export const encryptedFields = {
     // searchable.
     merchantLabel: { searchable: false },
   },
+  EnableBankingAccount: {
+    // Enable Banking (#132): the account IBAN returned at session creation.
+    // Matching uses the plaintext ibanLast4 column, so never searchable.
+    iban: { searchable: false },
+  },
   SignupInvite: {
     // Invite-only sign-up allowlist (#99). Searchable (deterministic) like
     // User.email so the gate can look an invite up by normalized address.

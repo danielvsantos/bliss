@@ -68,6 +68,9 @@ async function handleGet(req, res, user) {
             bankId: true,
             consentExpiration: true,
             environment: true,
+            provider: true,
+            aspspCountry: true,
+            userId: true,
             createdAt: true,
             accounts: {
                 select: {
@@ -107,6 +110,15 @@ async function handlePatch(req, res, user) {
 
     if (item.tenantId !== user.tenantId) {
         return res.status(StatusCodes.FORBIDDEN).json({ error: 'Access denied' });
+    }
+
+    // Enable Banking status follows its consent (#132): it becomes ACTIVE again
+    // only through a reconnect, never through this Plaid re-auth reset.
+    if (item.provider === 'ENABLE_BANKING') {
+        return res.status(StatusCodes.BAD_REQUEST).json({
+            error: 'This is an Enable Banking connection. Reconnect it instead.',
+            code: 'WRONG_PROVIDER',
+        });
     }
 
     const { status } = req.body;

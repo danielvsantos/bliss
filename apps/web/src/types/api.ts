@@ -520,6 +520,8 @@ export type PlaidTransactionsResponse = {
   };
 };
 
+export type BankProvider = 'PLAID' | 'ENABLE_BANKING';
+
 export type PlaidItem = {
   id: string;
   itemId: string;
@@ -534,6 +536,12 @@ export type PlaidItem = {
   bankId?: number | null;
   consentExpiration?: string | null;
   environment?: string | null;
+  /** Which aggregator syncs this connection (#132). Absent on older API responses = PLAID. */
+  provider?: BankProvider;
+  /** ISO 3166-1 alpha-2 country of the Enable Banking bank (null for Plaid). */
+  aspspCountry?: string | null;
+  /** The user who authorised the connection (only they can reconnect an Enable Banking one). */
+  userId?: string | null;
   createdAt: string;
   accounts?: {
     id: number;
@@ -634,6 +642,113 @@ export type UserSignal = {
   label: string;
   count?: number;
   isNew?: boolean;
+  /** BANK_CONSENT_EXPIRING (#132): when the bank access expires (ISO). */
+  expiresAt?: string;
+};
+
+// ─── Enable Banking (#132) ─────────────────────────────────────────────────────
+
+export type EnableBankingAspsp = {
+  name: string;
+  /** ISO 3166-1 alpha-2 */
+  country: string;
+  logo: string | null;
+  maximumConsentValiditySec: number | null;
+};
+
+export type EnableBankingAspspsResponse = {
+  aspsps: EnableBankingAspsp[];
+  /** First day a new connection's initial sync would import (YYYY-MM-DD). */
+  startDate: string;
+};
+
+export type EnableBankingConnectRequest =
+  | { aspspName: string; aspspCountry: string }
+  | { reconnectItemId: string };
+
+export type EnableBankingConnectResponse = { url: string; startDate: string };
+
+export type EnableBankingConnection = {
+  id: string;
+  institutionName: string | null;
+  aspspCountry: string | null;
+  status: string;
+  consentExpiration: string | null;
+  lastSync: string | null;
+  createdAt: string;
+  authorizedByMe: boolean;
+};
+
+export type EnableBankingBankAccount = {
+  id: string;
+  name: string | null;
+  ibanLast4: string | null;
+  currency: string | null;
+  accountId: number | null;
+  suggestedAccountId: number | null;
+  /** Already synced through another person's active connection (R6). */
+  conflict: boolean;
+  /** Decimal as a string — never parsed by the numeric response parser. */
+  lastBalance: string | null;
+  lastBalanceCurrency: string | null;
+  lastBalanceAt: string | null;
+};
+
+export type EnableBankingBlissAccount = {
+  id: number;
+  name: string;
+  currencyCode: string;
+  last4: string | null;
+  linkedProvider: BankProvider | null;
+  linkedToThisConnection: boolean;
+};
+
+export type EnableBankingConnectionResponse = {
+  connection: EnableBankingConnection;
+  startDate: string;
+  accounts: EnableBankingBankAccount[];
+  blissAccounts: EnableBankingBlissAccount[];
+};
+
+export type EnableBankingCreateAccount = {
+  name: string;
+  bankId: number;
+  countryId: string;
+  currencyCode: string;
+};
+
+export type EnableBankingMapping =
+  | { ebAccountId: string; accountId: number }
+  | { ebAccountId: string; create: EnableBankingCreateAccount }
+  | { ebAccountId: string; skip: true };
+
+export type EnableBankingMapRequest = {
+  mappings: EnableBankingMapping[];
+  confirmProviderSwitch?: boolean;
+};
+
+export type EnableBankingMapResponse = {
+  mapped: number;
+  created: number;
+  skipped: number;
+  switched: number;
+  active: boolean;
+};
+
+/** An account that would stop syncing from its current provider (409 PROVIDER_SWITCH_REQUIRED). */
+export type EnableBankingSwitchAccount = {
+  id: number;
+  name: string;
+  provider: BankProvider;
+  institutionName: string | null;
+};
+
+/** Error body shared by the Enable Banking routes. */
+export type EnableBankingErrorBody = {
+  error?: string;
+  code?: string;
+  resetsAt?: string;
+  accounts?: EnableBankingSwitchAccount[];
 };
 
 // ─── Merchant History Types ────────────────────────────────────────────────────

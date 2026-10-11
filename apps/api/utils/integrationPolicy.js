@@ -53,6 +53,10 @@ export const INTEGRATION_DENYLIST = Object.freeze([
   { prefix: '/api/plaid/fetch-historical', methods: 'ALL' },
   // PATCH resets connection status after re-auth — lifecycle, not data.
   { prefix: '/api/plaid/items', methods: 'NON_GET' },
+  // Enable Banking connection lifecycle (#132): connect, callback, mapping,
+  // sync and disconnect act on a person's own PSD2 consent. A prefix is fine
+  // on the denylist (the no-prefix rule is for INTEGRATION_WRITE_ALLOWED).
+  { prefix: '/api/enablebanking', methods: 'ALL' },
   // No account/category/tenant writes for tokens (account create excepted,
   // see INTEGRATION_WRITE_ALLOWED).
   { prefix: '/api/accounts', methods: 'NON_GET' },

@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useEnableBankingEnabled } from "@/hooks/use-enable-banking";
 import {
   getTenantMeta,
   setTenantMeta,
@@ -146,6 +147,8 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  // Enable Banking (#132) shares the history window; mention it only when configured.
+  const enableBankingEnabled = useEnableBankingEnabled();
 
   // `?tab=<value>` deep-links a tab (e.g. the Processing tab from a
   // notification or Maintenance's "See progress"). Admin-only tabs fall back
@@ -960,6 +963,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">
                         Number of days of transaction history fetched when connecting a new bank
                         and enforced as a date cutoff on every subsequent resync.
+                        {enableBankingEnabled && ` ${t('enableBanking.settings.historyDaysHint')}`}
                       </p>
                     </div>
 

@@ -4,7 +4,7 @@ const { getRedisConnection } = require('../utils/redis');
 const { EVENTS_QUEUE_NAME, enqueueEvent } = require('../queues/eventsQueue');
 const { getPortfolioQueue, fullValuationDedupOpts } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
-const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
+const { getPlaidSyncQueue, enableBankingSyncOpts } = require('../queues/plaidSyncQueue');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
 const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetectionQueue');
@@ -166,6 +166,23 @@ const processEventJob = async (job) => {
                 }
                 logger.info(`[Event] Scheduling Plaid historical backfill for Item ${plaidItemId}, fromDate=${fromDate}`);
                 await getPlaidSyncQueue().add('plaid-sync-job', { plaidItemId, tenantId, source: 'HISTORICAL_BACKFILL', fromDate, ...carry });
+                break;
+            }
+
+            case 'ENABLE_BANKING_SYNC': {
+                // Enable Banking (#132): initial sync after mapping, reconnect, or "Sync now".
+                // Deduplicated per connection; retried on 5xx / network errors.
+                const { plaidItemId, tenantId, source } = data;
+                if (!plaidItemId) {
+                    logger.warn('ENABLE_BANKING_SYNC event is missing plaidItemId.');
+                    return;
+                }
+                logger.info(`[Event] Scheduling Enable Banking sync for Item ${plaidItemId} (Source: ${source || 'N/A'})`);
+                await getPlaidSyncQueue().add(
+                    'ENABLE_BANKING_SYNC',
+                    { plaidItemId, tenantId, source, ...carry },
+                    enableBankingSyncOpts(plaidItemId),
+                );
                 break;
             }
 

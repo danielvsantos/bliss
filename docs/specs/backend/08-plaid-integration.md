@@ -20,15 +20,22 @@ Controls two things simultaneously:
 
 2. **Resync date cutoff** (`plaidSyncWorker.js`) — when processing `transactionsSync` results, any `added` transaction whose `date` is earlier than `(PlaidItem.createdAt – plaidHistoryDays)` is silently dropped before DB insert. This prevents subsequent resyncs from pulling Plaid's backfilled history beyond the original window.
 
-The cutoff is computed as:
+The cutoff is computed by the shared helper (also used by Enable Banking, #132, so both providers and the start date shown in the UI agree):
 ```js
-const historyDays = plaidItem.tenant?.plaidHistoryDays ?? 1;
-const syncCutoffDate = new Date(plaidItem.createdAt); // midnight UTC
-syncCutoffDate.setUTCHours(0, 0, 0, 0);
-syncCutoffDate.setUTCDate(syncCutoffDate.getUTCDate() - historyDays);
+const { syncCutoffDate } = require('../services/enableBanking/dateWindow'); // @bliss/shared/enablebanking
+const cutoffDate = syncCutoffDate(plaidItem.createdAt, plaidItem.tenant?.plaidHistoryDays ?? 1);
+// = UTC midnight of createdAt − historyDays
 ```
 
+**Linked accounts only (#132).** The incremental path drops `added` rows whose `account_id` no longer maps to an `Account` linked to the item. An account switched to Enable Banking (provider switch, R5a) can leave the Plaid item alive for its siblings; this keeps it from feeding duplicates.
+
 The constant `DEFAULT_PLAID_HISTORY_DAYS` in `src/config/classificationConfig.js` reads from `process.env.PLAID_HISTORY_DAYS` and documents the system-wide default. The env var is consumed only at tenant creation time; from then on, `Tenant.plaidHistoryDays` is the source of truth.
+
+---
+
+## Enable Banking on the same pipeline (#132)
+
+`PlaidItem.provider = 'ENABLE_BANKING'` items share this pipeline. `plaidSyncWorker` dispatches `ENABLE_BANKING_SYNC` / `ENABLE_BANKING_SYNC_ALL` jobs (same `plaid-sync` queue) to `workers/handlers/enableBankingSync.js`, and routes a generic Plaid sync of an Enable Banking item there too, so its session id never reaches Plaid. `plaidProcessorWorker` loads the item's `provider` and hashes/promotes with `bankTxLabel` (Enable Banking rows use the remittance text); when the job carries `syncLogId` it merges `{ duplicates, autoPromoted, classified }` into that sync log. Full design: [24-enable-banking.md](./24-enable-banking.md).
 
 ---
 

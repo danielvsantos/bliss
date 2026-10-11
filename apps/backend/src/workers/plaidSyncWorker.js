@@ -7,6 +7,11 @@ const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const logger = require('../utils/logger');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker } = require('../utils/activityTracker');
+const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
+const { enableBankingDispatch, syncConnection } = require('./handlers/enableBankingSync');
+const { isEnableBankingEnabled } = require('../services/enableBanking/client');
+const { syncCutoffDate } = require('../services/enableBanking/dateWindow');
+const { getSyncTimes, BUDGET_TIMEZONE } = require('@bliss/shared/enablebanking');
 
 const QUEUE_NAME = 'plaid-sync';
 const PAGE_SIZE = 500;
@@ -53,6 +58,34 @@ function trackEarliestDate(transactions, currentEarliest) {
     return currentEarliest;
 }
 
+/**
+ * Registers one repeatable ENABLE_BANKING_SYNC_ALL job scheduler per
+ * ENABLE_BANKING_SYNC_TIMES slot (Europe/Madrid), and removes schedulers for
+ * slots no longer configured. No-op when Enable Banking is not configured.
+ */
+async function registerEnableBankingSchedule() {
+    const queue = getPlaidSyncQueue();
+    const times = getSyncTimes();
+    const wanted = new Set(times.map(t => `eb-sync-all-${t.replace(':', '')}`));
+    const existing = await queue.getJobSchedulers();
+    for (const s of existing) {
+        if (s.key?.startsWith('eb-sync-all-') && !wanted.has(s.key)) {
+            await queue.removeJobScheduler(s.key);
+        }
+    }
+    if (!isEnableBankingEnabled()) return [];
+    for (const time of times) {
+        const [hh, mm] = time.split(':').map(Number);
+        await queue.upsertJobScheduler(
+            `eb-sync-all-${time.replace(':', '')}`,
+            { pattern: `${mm} ${hh} * * *`, tz: BUDGET_TIMEZONE },
+            { name: 'ENABLE_BANKING_SYNC_ALL', data: {} },
+        );
+    }
+    logger.info(`[plaidSyncWorker] Enable Banking sync scheduled at ${times.join(', ')} (${BUDGET_TIMEZONE})`);
+    return times;
+}
+
 let worker;
 
 const startPlaidSyncWorker = () => {
@@ -61,6 +94,11 @@ const startPlaidSyncWorker = () => {
     const connection = getRedisConnection();
 
     worker = new Worker(QUEUE_NAME, async (job) => {
+        // Enable Banking jobs share this queue (#132, decision D4).
+        if (job.name?.startsWith('ENABLE_BANKING_')) {
+            return enableBankingDispatch(job);
+        }
+
         logger.info(`Starting job ${job.name} for Plaid Item: ${job.data.plaidItemId}`);
 
         const { plaidItemId, source } = job.data;
@@ -91,6 +129,12 @@ const startPlaidSyncWorker = () => {
             if (plaidItem.status !== 'ACTIVE') {
                 logger.info(`[plaidSyncWorker] Skipping sync for item ${plaidItemId}: status is ${plaidItem.status}`);
                 return;
+            }
+
+            // A generic Plaid event (resync / post-reconnect PATCH) for an Enable
+            // Banking connection must never send its session id to Plaid (#132).
+            if (plaidItem.provider === 'ENABLE_BANKING') {
+                return syncConnection(job);
             }
 
             // accessToken is auto-decrypted by Prisma middleware (PlaidItem.accessToken in encryptedFields)
@@ -142,10 +186,16 @@ const startPlaidSyncWorker = () => {
                 // This matches the days_requested passed to create-link-token and prevents
                 // resyncs from pulling history that Plaid has backfilled beyond that window.
                 const historyDays = plaidItem.tenant?.plaidHistoryDays ?? 1;
-                const createdAtMidnight = new Date(plaidItem.createdAt);
-                createdAtMidnight.setUTCHours(0, 0, 0, 0);
-                const syncCutoffDate = new Date(createdAtMidnight);
-                syncCutoffDate.setUTCDate(syncCutoffDate.getUTCDate() - historyDays);
+                const cutoffDate = syncCutoffDate(plaidItem.createdAt, historyDays);
+
+                // Only accounts still linked to a Bliss account are ingested: an
+                // account switched to Enable Banking (R5a) keeps the Plaid item
+                // alive for its siblings, but must not keep feeding duplicates.
+                const linkedAccounts = await prisma.account.findMany({
+                    where: { tenantId: plaidItem.tenantId, plaidItemId, plaidAccountId: { not: null } },
+                    select: { plaidAccountId: true },
+                });
+                const linkedPlaidAccountIds = new Set(linkedAccounts.map(a => a.plaidAccountId));
 
                 let cursor = plaidItem.nextCursor;
                 let hasMore = true;
@@ -163,19 +213,26 @@ const startPlaidSyncWorker = () => {
                     // 1. Handle Added — filter to cutoff window, then bulk insert.
                     // plaidTransactionId has @unique — skipDuplicates makes retries safe.
                     if (added.length > 0) {
-                        const withinWindow = added.filter(txn => {
+                        const linked = added.filter(txn => linkedPlaidAccountIds.has(txn.account_id));
+                        if (linked.length < added.length) {
+                            logger.info(
+                                `[plaidSyncWorker] Dropped ${added.length - linked.length} transaction(s) for ` +
+                                `account(s) no longer linked to item ${plaidItemId}`
+                            );
+                        }
+                        const withinWindow = linked.filter(txn => {
                             const txnDate = txn.date ? new Date(txn.date) : null;
-                            return txnDate && txnDate >= syncCutoffDate;
+                            return txnDate && txnDate >= cutoffDate;
                         });
                         if (withinWindow.length > 0) {
                             const addedData = withinWindow.map(txn => mapPlaidTransaction(plaidItemId, txn));
                             await prisma.plaidTransaction.createMany({ data: addedData, skipDuplicates: true });
                             overallEarliestDate = trackEarliestDate(withinWindow, overallEarliestDate);
                         }
-                        if (withinWindow.length < added.length) {
+                        if (withinWindow.length < linked.length) {
                             logger.info(
-                                `[plaidSyncWorker] Filtered ${added.length - withinWindow.length} transaction(s) ` +
-                                `before cutoff ${syncCutoffDate.toISOString().slice(0, 10)} for item ${plaidItemId}`
+                                `[plaidSyncWorker] Filtered ${linked.length - withinWindow.length} transaction(s) ` +
+                                `before cutoff ${cutoffDate.toISOString().slice(0, 10)} for item ${plaidItemId}`
                             );
                         }
                     }
@@ -353,8 +410,14 @@ const startPlaidSyncWorker = () => {
     // Processing status (#100): running / progress / completed / final failure.
     trackWorker(worker, QUEUE_NAME);
 
+    // Enable Banking scheduled polling (#132). Fire-and-forget: a scheduling
+    // failure is logged but never stops the Plaid worker from starting.
+    registerEnableBankingSchedule().catch(err =>
+        logger.error(`[plaidSyncWorker] Failed to register Enable Banking schedule: ${err.message}`)
+    );
+
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;
 };
 
-module.exports = { startPlaidSyncWorker };
+module.exports = { startPlaidSyncWorker, registerEnableBankingSchedule };

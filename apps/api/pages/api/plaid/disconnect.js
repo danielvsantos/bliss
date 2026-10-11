@@ -53,7 +53,7 @@ export default withAuth(async function handler(req, res) {
     // Fetch the item — accessToken decrypted by Prisma middleware
     const item = await prisma.plaidItem.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, status: true },
+      select: { id: true, tenantId: true, status: true, provider: true },
     });
 
     if (!item) {
@@ -62,6 +62,14 @@ export default withAuth(async function handler(req, res) {
 
     if (item.tenantId !== user.tenantId) {
       return res.status(StatusCodes.FORBIDDEN).json({ error: 'Access denied' });
+    }
+
+    // Enable Banking connections share PlaidItem (#132); never send their session to Plaid.
+    if (item.provider === 'ENABLE_BANKING') {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: 'This is an Enable Banking connection. Use the Enable Banking actions instead.',
+        code: 'WRONG_PROVIDER',
+      });
     }
 
     if (item.status === 'REVOKED') {

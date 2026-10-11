@@ -97,6 +97,8 @@ function makeRes() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockReadActivity.mockResolvedValue({ available: false, recent: [] });
+  // Second findMany call: Enable Banking consents expiring (#132) — none by default.
+  mockPrisma.plaidItem.findMany.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------
@@ -261,5 +263,88 @@ describe('GET /api/notifications/summary', () => {
       await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
       expect(res._body.signals).toEqual([]);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Enable Banking (#132)
+// ---------------------------------------------------------------------------
+
+describe('GET /api/notifications/summary — Enable Banking', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  function primeCounts() {
+    mockPrisma.plaidTransaction.count.mockResolvedValue(0);
+    mockPrisma.stagedImportRow.count.mockResolvedValue(0);
+    mockPrisma.insight.count.mockResolvedValue(0);
+    mockPrisma.tenant.findUnique.mockResolvedValue({ onboardingProgress: null, onboardingCompletedAt: new Date() });
+    mockPrisma.account.count.mockResolvedValue(1);
+    mockPrisma.transaction.findFirst.mockResolvedValue({ id: 1 });
+  }
+
+  function itemsBy(where: any, expiring: any[], needingAction: any[] = []) {
+    return where?.consentExpiration ? expiring : needingAction;
+  }
+
+  it('scopes re-connect prompts for Enable Banking items to the authorising user', async () => {
+    primeCounts();
+    mockPrisma.plaidItem.findMany.mockImplementation(async ({ where }: any) => itemsBy(where, [], [
+      { id: 'eb-1', institutionName: 'Revolut', status: 'LOGIN_REQUIRED', provider: 'ENABLE_BANKING' },
+    ]));
+    const res = makeRes();
+    await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+
+    const actionQuery = mockPrisma.plaidItem.findMany.mock.calls.find(([a]: any) => a.where.status?.in)[0];
+    expect(actionQuery.where.OR).toEqual([{ provider: { not: 'ENABLE_BANKING' } }, { userId: mockUser.id }]);
+    const signal = res._body.signals.find((s: any) => s.type === 'PLAID_ACTION_REQUIRED');
+    expect(signal.label).toBe('Revolut needs to be re-connected');
+  });
+
+  it('asks only for this user\'s active Enable Banking consents expiring within 14 days', async () => {
+    primeCounts();
+    await handler(makeReq() as NextApiRequest, makeRes() as unknown as NextApiResponse);
+    const expiringQuery = mockPrisma.plaidItem.findMany.mock.calls.find(([a]: any) => a.where.consentExpiration)[0];
+    expect(expiringQuery.where).toMatchObject({
+      tenantId: 'tenant-1', userId: mockUser.id, provider: 'ENABLE_BANKING', status: 'ACTIVE',
+    });
+    const { gt, lte } = expiringQuery.where.consentExpiration;
+    expect(lte.getTime() - gt.getTime()).toBeGreaterThan(13.9 * DAY);
+    expect(lte.getTime() - gt.getTime()).toBeLessThanOrEqual(14 * DAY + 1000);
+  });
+
+  it('signals BANK_CONSENT_EXPIRING as info at 14 days and warning at 3 days', async () => {
+    primeCounts();
+    mockPrisma.plaidItem.findMany.mockImplementation(async ({ where }: any) => itemsBy(where, [
+      { id: 'eb-1', institutionName: 'Revolut', consentExpiration: new Date(Date.now() + 10 * DAY) },
+      { id: 'eb-2', institutionName: 'Revolut', consentExpiration: new Date(Date.now() + 2 * DAY) },
+    ]));
+    const res = makeRes();
+    await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+
+    const expiring = res._body.signals.filter((s: any) => s.type === 'BANK_CONSENT_EXPIRING');
+    expect(expiring).toHaveLength(2);
+    expect(expiring[0]).toMatchObject({ severity: 'info', href: '/accounts', isNew: true, count: 1 });
+    expect(expiring[0].label).toMatch(/expires in 10 days/);
+    expect(expiring[1]).toMatchObject({ severity: 'warning', isNew: true });
+    expect(expiring[1].label).toMatch(/expires in 2 days/);
+  });
+
+  it('is new only when the 14-day or 3-day threshold was crossed after the last visit', async () => {
+    primeCounts();
+    (mockUser as any).lastNotificationSeenAt = new Date(Date.now() - 1 * DAY);
+    try {
+      mockPrisma.plaidItem.findMany.mockImplementation(async ({ where }: any) => itemsBy(where, [
+        // 14-day threshold crossed 3 days ago (before the visit) → not new
+        { id: 'a', institutionName: 'A', consentExpiration: new Date(Date.now() + 11 * DAY) },
+        // 3-day threshold crossed 12 hours ago (after the visit) → new again
+        { id: 'b', institutionName: 'B', consentExpiration: new Date(Date.now() + 2.5 * DAY) },
+      ]));
+      const res = makeRes();
+      await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+      const expiring = res._body.signals.filter((s: any) => s.type === 'BANK_CONSENT_EXPIRING');
+      expect(expiring.map((s: any) => s.isNew)).toEqual([false, true]);
+    } finally {
+      mockUser.lastNotificationSeenAt = null;
+    }
   });
 });

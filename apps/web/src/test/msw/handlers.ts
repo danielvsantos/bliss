@@ -68,4 +68,9 @@ export const handlers = [
       summary: {}, inFlight: [], recent: [], lastCompletedAt: {},
     })
   ),
+
+  // Enable Banking (#132) — not configured by default, so no Enable Banking UI renders
+  http.get('/api/enablebanking/status', () =>
+    HttpResponse.json({ enabled: false })
+  ),
 ];

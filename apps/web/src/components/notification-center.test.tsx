@@ -84,4 +84,52 @@ describe('NotificationCenter', () => {
       expect(row).toHaveTextContent('activity.notification.failed');
     });
   });
+
+  describe('BANK_CONSENT_EXPIRING (#132)', () => {
+    const consentSignal = (severity: 'info' | 'warning') => ({
+      type: 'BANK_CONSENT_EXPIRING',
+      count: 1,
+      severity,
+      label: 'Banco Uno access expires in 5 days — reconnect to keep syncing',
+      href: '/accounts',
+      isNew: true,
+      expiresAt: '2026-10-16T00:00:00.000Z',
+    });
+
+    it('renders the signal with its label and links to /accounts', () => {
+      mockUseNotificationSummary.mockReturnValue(
+        mockQueryResult({ totalUnseen: 1, lastSeenAt: null, signals: [consentSignal('warning')] }),
+      );
+      renderCenter();
+      fireEvent.click(screen.getAllByRole('button')[0]);
+      const row = screen.getByTestId('signal-BANK_CONSENT_EXPIRING');
+      expect(row.tagName).toBe('BUTTON');
+      expect(row).toHaveTextContent('Banco Uno access expires in 5 days');
+      // Warning severity styling + a dedicated (non-fallback) icon.
+      expect(row.querySelector('.text-warning')).toBeInTheDocument();
+      expect(row.querySelector('svg.lucide-calendar-clock')).toBeInTheDocument();
+    });
+
+    it('uses the info styling for the early (info) reminder', () => {
+      mockUseNotificationSummary.mockReturnValue(
+        mockQueryResult({ totalUnseen: 1, lastSeenAt: null, signals: [consentSignal('info')] }),
+      );
+      renderCenter();
+      fireEvent.click(screen.getAllByRole('button')[0]);
+      expect(screen.getByTestId('signal-BANK_CONSENT_EXPIRING').querySelector('.text-brand-primary')).toBeInTheDocument();
+    });
+
+    it('does not crash on an unknown signal type or severity', () => {
+      mockUseNotificationSummary.mockReturnValue(
+        mockQueryResult({
+          totalUnseen: 1,
+          lastSeenAt: null,
+          signals: [{ type: 'SOMETHING_NEW', severity: 'mystery', label: 'Future signal', href: null }],
+        }),
+      );
+      renderCenter();
+      fireEvent.click(screen.getAllByRole('button')[0]);
+      expect(screen.getByTestId('signal-SOMETHING_NEW')).toHaveTextContent('Future signal');
+    });
+  });
 });
