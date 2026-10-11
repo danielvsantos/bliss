@@ -61,6 +61,8 @@ It is used by `checkHashDuplicate` and auto-promotion in `plaidProcessorWorker`,
 
 The processor also writes `{ duplicates, autoPromoted, classified }` back into the originating sync log when the job carries `syncLogId`.
 
+**No Quick Seed hold.** The seed interview only exists in the Plaid connect modal, so Enable Banking rows are never held back for it (`seedHoldAllowed(source, provider)`): every row is classified straight into Transaction Review or auto-promoted. Rows held by a run before this rule existed are released at the start of the next processor run (`releaseSeedHolds`), and a sync that adds nothing still re-queues classification when the connection has unprocessed `PENDING` rows.
+
 ## 24.5 Date window (R8)
 
 `@bliss/shared/enablebanking` (`syncCutoffDate`, `syncDateFrom`), shared with the API so the start date shown to the user is the one the worker uses:

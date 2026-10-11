@@ -33,7 +33,7 @@ jest.mock('../../../../services/enableBanking/budget', () => ({
 
 const mockPrisma = {
     plaidItem: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
-    plaidTransaction: { createMany: jest.fn() },
+    plaidTransaction: { createMany: jest.fn(), count: jest.fn() },
     plaidSyncLog: { create: jest.fn() },
     enableBankingAccount: { update: jest.fn() },
 };
@@ -83,6 +83,7 @@ beforeEach(() => {
     mockPrisma.plaidItem.update.mockResolvedValue({});
     mockPrisma.plaidSyncLog.create.mockResolvedValue({ id: 'log-1' });
     mockPrisma.plaidTransaction.createMany.mockImplementation(async ({ data }) => ({ count: data.length }));
+    mockPrisma.plaidTransaction.count.mockResolvedValue(0);
     mockPrisma.enableBankingAccount.update.mockResolvedValue({});
     mockConsumeAccess.mockResolvedValue({ allowed: true, used: 1, limit: 4 });
     mockClient.getTransactions.mockResolvedValue({ transactions: [ebTx('r1')] });
@@ -147,6 +148,16 @@ describe('syncConnection — window and mapping', () => {
         expect(result).toMatchObject({ added: 0, skipped: 1 });
         expect(mockProcessingAdd).not.toHaveBeenCalled();
         expect(logs()[0].details).toMatchObject({ added: 0, skipped: 1 });
+    });
+
+    it('re-queues classification when nothing is new but rows are still unprocessed (stuck seed holds)', async () => {
+        mockPrisma.plaidTransaction.createMany.mockResolvedValue({ count: 0 });
+        mockPrisma.plaidTransaction.count.mockResolvedValue(5);
+        await syncConnection(job());
+        expect(mockPrisma.plaidTransaction.count).toHaveBeenCalledWith({
+            where: { plaidItemId: ITEM_ID, processed: false, promotionStatus: 'PENDING' },
+        });
+        expect(mockProcessingAdd).toHaveBeenCalledWith('PLAID_SYNC_COMPLETE', expect.objectContaining({ plaidItemId: ITEM_ID, syncLogId: 'log-1' }));
     });
 
     it('hands new rows to the classifier with the sync log id and bank_sync trigger', async () => {
