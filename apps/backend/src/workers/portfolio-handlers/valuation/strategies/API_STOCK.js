@@ -32,7 +32,10 @@ const getPrice = async (portfolioItem, targetDate, priceCaches) => {
         return null;
     }
 
-    const priceData = await getHistoricalStockPrice(portfolioItem.symbol, targetDate, { exchange: portfolioItem.exchange });
+    const priceData = await getHistoricalStockPrice(portfolioItem.symbol, targetDate, {
+        exchange: portfolioItem.exchange,
+        currency: portfolioItem.assetCurrency || portfolioItem.currency,
+    });
     if (priceData) {
         // Save the newly fetched price to the DB for future use
         const upsertWhere = {

@@ -33,7 +33,10 @@ const getPrice = async (portfolioItem, targetDate, priceCaches) => {
         || (priceCaches._consecutiveApiFailures || 0) >= MAX_CONSECUTIVE_API_FAILURES;
 
     if (!apiSkipped) {
-        const priceData = await getHistoricalStockPrice(portfolioItem.symbol, targetDate, { exchange: portfolioItem.exchange });
+        const priceData = await getHistoricalStockPrice(portfolioItem.symbol, targetDate, {
+            exchange: portfolioItem.exchange,
+            currency: portfolioItem.assetCurrency || portfolioItem.currency,
+        });
         if (priceData) {
             const upsertWhere = {
                 symbol_assetType_day_currency_exchange: {

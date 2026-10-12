@@ -57,7 +57,7 @@ describe('stockService', () => {
       const date = new Date('2026-03-02');
       const result = await stockService.getHistoricalStockPrice('AAPL', date);
 
-      expect(twelveDataService.getHistoricalPrice).toHaveBeenCalledWith('AAPL', date, { micCode: undefined });
+      expect(twelveDataService.getHistoricalPrice).toHaveBeenCalledWith('AAPL', date, { micCode: undefined, expectedCurrency: undefined });
       expect(result).toBe(mockResult);
     });
 

@@ -179,6 +179,8 @@ Record a manual transaction. Same effect as adding it in the app: analytics and 
 | `ticker` | string | no |  |
 | `assetQuantity` | number | no |  |
 | `assetPrice` | number | no |  |
+| `exchange` | string | no | ISO-10383 MIC of the listing (mic_code from search_ticker), e.g. "XETR". Pass it when the ticker trades on several exchanges. |
+| `isin` | string | no | ISIN of the security, e.g. "US67066G1040". |
 
 ### `update_transaction` — Update transaction
 
@@ -201,6 +203,8 @@ Change fields of a transaction (only the ones you pass). Re-categorising here is
 | `ticker` | string | no |  |
 | `assetQuantity` | number | no |  |
 | `assetPrice` | number | no |  |
+| `exchange` | string | no | ISO-10383 MIC of the listing (mic_code from search_ticker), e.g. "XETR". Pass it when the ticker trades on several exchanges. |
+| `isin` | string | no | ISIN of the security, e.g. "US67066G1040". |
 
 ### `delete_transaction` — Delete transaction
 

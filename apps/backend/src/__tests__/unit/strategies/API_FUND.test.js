@@ -97,7 +97,7 @@ describe('API_FUND strategy — getPrice()', () => {
 
       const result = await getPrice(item, targetDate, caches);
 
-      expect(getHistoricalStockPrice).toHaveBeenCalledWith('VWCE.DEX', targetDate, { exchange: undefined });
+      expect(getHistoricalStockPrice).toHaveBeenCalledWith('VWCE.DEX', targetDate, { exchange: undefined, currency: 'EUR' });
       expect(prisma.assetPrice.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
@@ -136,7 +136,7 @@ describe('API_FUND strategy — getPrice()', () => {
 
       await getPrice(item, new Date('2026-03-02'), caches);
 
-      expect(getHistoricalStockPrice).toHaveBeenCalledWith('VWCE.DEX', expect.any(Date), { exchange: undefined });
+      expect(getHistoricalStockPrice).toHaveBeenCalledWith('VWCE.DEX', expect.any(Date), { exchange: undefined, currency: 'EUR' });
     });
   });
 

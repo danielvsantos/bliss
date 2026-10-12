@@ -71,9 +71,11 @@ async function acquireFundamentalsSlot() {
  * @param {Date} date The target date.
  * @param {Object} [options] Optional parameters.
  * @param {string} [options.micCode] ISO-10383 MIC code for exchange disambiguation (e.g. 'XPAR', 'XETR').
+ * @param {string} [options.expectedCurrency] Currency the listing trades in. When a mic_code
+ *   call fails, the retry without it is only trusted if Twelve Data reports this currency.
  * @returns {Promise<{price: Decimal, source: string}|null>}
  */
-async function getHistoricalPrice(symbol, date, { micCode } = {}) {
+async function getHistoricalPrice(symbol, date, { micCode, expectedCurrency } = {}) {
     if (!TWELVE_DATA_API_KEY) {
         logger.warn('[TwelveData] TWELVE_DATA_API_KEY is not set. Skipping API call.');
         return null;
@@ -100,6 +102,9 @@ async function getHistoricalPrice(symbol, date, { micCode } = {}) {
             // If the call failed WITH a mic_code, retry WITHOUT it. The mic_code
             // might not match TwelveData's internal exchange mapping for ETFs/funds
             // (e.g., mic_code "XNAS" for a fund that TwelveData indexes differently).
+            // The bare symbol resolves to Twelve Data's default listing, which can be
+            // a different instrument (NVD on Xetra is Nvidia, on Nasdaq a 2x short
+            // ETF, #134), so its price is only used when its currency matches.
             if (micCode) {
                 logger.info(`[TwelveData] Retrying ${symbol} without mic_code (was: ${micCode})`);
                 await acquireValuationSlot();
@@ -116,6 +121,13 @@ async function getHistoricalPrice(symbol, date, { micCode } = {}) {
                 const retryValues = retryResponse.data.values;
                 if (!retryValues || retryValues.length === 0) {
                     logger.warn(`[TwelveData] No time series data for ${symbol} around ${endDate} (retry without mic_code).`);
+                    return null;
+                }
+
+                const retryCurrency = retryResponse.data.meta?.currency;
+                if (!expectedCurrency || !retryCurrency
+                    || retryCurrency.toUpperCase() !== expectedCurrency.toUpperCase()) {
+                    logger.warn(`[TwelveData] Rejecting ${symbol} price resolved without mic_code: listing currency ${retryCurrency || 'unknown'} does not match expected ${expectedCurrency || 'unknown'} (mic_code ${micCode}).`);
                     return null;
                 }
 

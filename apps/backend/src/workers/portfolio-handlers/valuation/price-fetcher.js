@@ -30,7 +30,10 @@ const createPriceFinder = async (portfolioItem) => {
         prisma.assetPrice.findMany({
             where: {
                 symbol: portfolioItem.symbol,
-                ...(portfolioItem.exchange ? { exchange: portfolioItem.exchange } : {}),
+                // Prices are stored per listing ('' = no MIC). A holding without an
+                // exchange must not pick up another listing's rows, and one with an
+                // exchange must not reuse bare-symbol rows (#134).
+                exchange: portfolioItem.exchange || '',
             }
         }),
         prisma.manualAssetValue.findMany({ where: { assetId: portfolioItem.id }, orderBy: { date: 'asc' } })

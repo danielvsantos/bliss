@@ -14,6 +14,20 @@ import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
 
+// Listing identity a ticker-keyed holding takes from its transaction (#134).
+// One ticker can exist on several exchanges (NVD is Nvidia on Xetra and a 2x
+// short ETF on Nasdaq), so the MIC must reach the PortfolioItem: without it
+// every price lookup goes out with the bare symbol and Twelve Data picks its
+// default listing. Only supplied values are returned, so an edit that omits
+// them never clears what the holding already has.
+function listingFields({ isin, exchange, assetCurrency }) {
+  return {
+    ...(isin && { isin }),
+    ...(exchange && { exchange }),
+    ...(assetCurrency && { assetCurrency }),
+  };
+}
+
 /**
  * Loads the category and account referenced by a write, scoped to the caller's
  * tenant (#90). The foreign keys only prove the rows exist, so an unscoped
@@ -404,9 +418,10 @@ async function handlePost(req, res) {
         // We can proceed to create the transaction without linking it.
       } else {
         const postAccountId = account?.id ?? null;
+        const listing = symbol === ticker ? listingFields(transactionData) : {};
         portfolioItem = await prisma.portfolioItem.upsert({
           where: { tenantId_symbol_accountId: { tenantId, symbol, accountId: postAccountId } },
-          update: {}, // No fields to update on existing item here
+          update: listing,
           create: {
             tenantId,
             categoryId: category.id,
@@ -414,6 +429,7 @@ async function handlePost(req, res) {
             symbol,
             currency,
             source: ticker ? 'SYNCED' : 'MANUAL',
+            ...listing,
           },
         });
 
@@ -667,9 +683,10 @@ async function handlePut(req, res) {
         // If no symbol could be generated, the updated transaction will not be linked to a portfolio item.
       } else {
         const putAccountId = accountId ? parseInt(accountId, 10) : null;
+        const listing = symbol === ticker ? listingFields({ isin, exchange, assetCurrency }) : {};
         portfolioItem = await prisma.portfolioItem.upsert({
           where: { tenantId_symbol_accountId: { tenantId, symbol, accountId: putAccountId } },
-          update: {},
+          update: listing,
           create: {
             tenantId,
             categoryId: newCategory.id,
@@ -677,6 +694,7 @@ async function handlePut(req, res) {
             symbol,
             currency,
             source: ticker ? 'SYNCED' : 'MANUAL',
+            ...listing,
           },
         });
 

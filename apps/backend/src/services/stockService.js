@@ -16,11 +16,12 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @param {Date} date The date for which to fetch the price.
  * @param {Object} [options] Optional parameters.
  * @param {string} [options.exchange] ISO-10383 MIC code for exchange disambiguation (e.g. 'XPAR').
+ * @param {string} [options.currency] Currency the listing trades in (guards the no-MIC retry).
  * @returns {Promise<{price: Decimal, source: string}|null>}
  */
-async function getHistoricalStockPrice(symbol, date, { exchange } = {}) {
+async function getHistoricalStockPrice(symbol, date, { exchange, currency } = {}) {
     if (STOCK_PROVIDER === 'TWELVE_DATA') {
-        return twelveDataService.getHistoricalPrice(symbol, date, { micCode: exchange });
+        return twelveDataService.getHistoricalPrice(symbol, date, { micCode: exchange, expectedCurrency: currency });
     }
 
     // --- Alpha Vantage (legacy) ---

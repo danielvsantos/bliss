@@ -118,6 +118,14 @@ function amountBody(amount) {
   return amount > 0 ? { credit: amount, debit: null } : { credit: null, debit: Math.abs(amount) };
 }
 
+// Listing identity of a ticker (#134). One ticker can trade on several
+// exchanges (NVD is Nvidia on Xetra and a 2x short ETF on Nasdaq); the MIC is
+// what makes the holding price the right one.
+const exchangeField = z.string().regex(/^[A-Za-z0-9]{2,10}$/).optional()
+  .describe('ISO-10383 MIC of the listing (mic_code from search_ticker), e.g. "XETR". Pass it when the ticker trades on several exchanges.');
+const isinField = z.string().regex(/^[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]$/).optional()
+  .describe('ISIN of the security, e.g. "US67066G1040".');
+
 const createTransaction = defineTool({
   name: 'create_transaction',
   access: 'write',
@@ -140,6 +148,8 @@ const createTransaction = defineTool({
     ticker: z.string().max(30).optional(),
     assetQuantity: z.number().optional(),
     assetPrice: z.number().optional(),
+    exchange: exchangeField,
+    isin: isinField,
   },
   wraps: [{ method: 'POST', route: '/api/transactions' }],
   notFoundHint: `${HINTS.ACCOUNT_HINT} ${HINTS.CATEGORY_HINT}`,
@@ -157,6 +167,8 @@ const createTransaction = defineTool({
       ...(args.ticker && { ticker: args.ticker }),
       ...(args.assetQuantity !== undefined && { assetQuantity: args.assetQuantity }),
       ...(args.assetPrice !== undefined && { assetPrice: args.assetPrice }),
+      ...(args.exchange && { exchange: args.exchange.toUpperCase() }),
+      ...(args.isin && { isin: args.isin.toUpperCase() }),
     };
     const created = await api.post('/api/transactions', body);
     const rows = Array.isArray(created) ? created : [created];
@@ -186,6 +198,8 @@ const updateTransaction = defineTool({
     ticker: z.string().max(30).optional(),
     assetQuantity: z.number().optional(),
     assetPrice: z.number().optional(),
+    exchange: exchangeField,
+    isin: isinField,
   },
   wraps: [
     { method: 'GET', route: '/api/transactions' },
@@ -214,8 +228,8 @@ const updateTransaction = defineTool({
       ticker: args.ticker ?? existing.ticker,
       assetQuantity: args.assetQuantity ?? num(existing.assetQuantity),
       assetPrice: args.assetPrice ?? num(existing.assetPrice),
-      isin: existing.isin,
-      exchange: existing.exchange,
+      isin: args.isin ? args.isin.toUpperCase() : existing.isin,
+      exchange: args.exchange ? args.exchange.toUpperCase() : existing.exchange,
       assetCurrency: existing.assetCurrency,
       ...(args.tags && { tags: args.tags }),
     };

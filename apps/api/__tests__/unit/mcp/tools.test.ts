@@ -308,6 +308,33 @@ describe('transaction tools', () => {
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /api/transactions', 'GET /api/categories', 'PUT /api/transactions']);
   });
 
+  // #134: the MIC is what makes a multi-exchange ticker (NVD) price the right listing.
+  it('create_transaction forwards the listing exchange (MIC) and ISIN', async () => {
+    const { calls } = await run('create_transaction', {
+      date: '2026-09-01', accountId: 1, categoryId: 5, description: 'Buy Nvidia', amount: -5564.45, currency: 'EUR',
+      ticker: 'NVD', assetQuantity: 44, assetPrice: 126.46, exchange: 'xetr', isin: 'us67066g1040',
+    }, {
+      'GET /api/accounts': { id: 1 }, 'GET /api/categories': { id: 5 },
+      'POST /api/transactions': ({ body }: any) => ({ id: 12, transaction_date: body.transaction_date, credit: null, debit: body.debit, currency: 'EUR', categoryId: 5 }),
+    });
+    expect(calls.find((c) => c.method === 'POST')!.body).toMatchObject({ ticker: 'NVD', exchange: 'XETR', isin: 'US67066G1040' });
+  });
+
+  it('create_transaction rejects a malformed exchange or ISIN', () => {
+    const input = z.object(getTool('create_transaction')!.input);
+    const base = { date: '2026-09-01', accountId: 1, categoryId: 5, description: 'x', amount: -1, currency: 'EUR' };
+    expect(() => input.parse({ ...base, exchange: 'Xetra Frankfurt' })).toThrow();
+    expect(() => input.parse({ ...base, isin: 'NVDA' })).toThrow();
+  });
+
+  it('update_transaction replaces the exchange and ISIN when passed', async () => {
+    const existing = { ...restTx, ticker: 'NVD', assetQuantity: '44', assetPrice: '126.46', isin: null, exchange: null, assetCurrency: 'EUR' };
+    const { calls } = await run('update_transaction', { transactionId: 9, exchange: 'XETR', isin: 'US67066G1040' }, {
+      'GET /api/transactions': existing, 'PUT /api/transactions': existing,
+    });
+    expect(calls[1].body).toMatchObject({ ticker: 'NVD', exchange: 'XETR', isin: 'US67066G1040', assetCurrency: 'EUR' });
+  });
+
   it('update_transaction amount and tags', async () => {
     const { calls } = await run('update_transaction', { transactionId: 9, amount: 12, tags: ['A'] }, {
       'GET /api/transactions': restTx, 'PUT /api/transactions': restTx,
