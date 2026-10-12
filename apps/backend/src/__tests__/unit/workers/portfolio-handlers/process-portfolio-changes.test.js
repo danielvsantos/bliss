@@ -721,3 +721,69 @@ describe('process-portfolio-changes — transaction delete reconciles the item a
     expect(emitted().dateScopes).toHaveLength(1);
   });
 });
+
+// #134: NVD is Nvidia on Xetra and a 2x short ETF on Nasdaq. A holding created
+// before its exchange was known must pick it up, or valuation keeps pricing the
+// bare symbol (Twelve Data's default listing).
+describe('process-portfolio-changes — holding listing (exchange) sync', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    installEmptyTenantMocks();
+  });
+
+  const nvdTx = (overrides = {}) => ({
+    id: 70, tenantId: 'tenant-1', categoryId: 10, accountId: 5, currency: 'EUR',
+    transaction_date: new Date('2026-09-01'), year: 2026, month: 9,
+    credit: 0, debit: 5564.45, ticker: 'NVD',
+    isin: 'US67066G1040', exchange: 'XETR', assetCurrency: 'EUR',
+    assetQuantity: 44, assetPrice: 126.46, portfolioItemId: 7,
+    category: { id: 10, type: 'Investments', group: 'Stocks', processingHint: 'API_STOCK' },
+    account: { countryId: 'DE' },
+    ...overrides,
+  });
+
+  it('scoped update sets the exchange on an existing holding that has none', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(nvdTx());
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce({ id: 7, symbol: 'NVD', accountId: 5, exchange: null, source: 'SYNCED' })
+      .mockResolvedValueOnce({ id: 7, transactions: [] });
+    prisma.portfolioItem.update.mockResolvedValue({ id: 7, symbol: 'NVD', exchange: 'XETR', source: 'SYNCED' });
+
+    await processPortfolioChanges(makeJob({ transactionId: 70 }));
+
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: { exchange: 'XETR', isin: 'US67066G1040', assetCurrency: 'EUR' },
+    });
+  });
+
+  it('scoped update leaves the holding alone when the exchange already matches', async () => {
+    prisma.transaction.findUnique.mockResolvedValue(nvdTx());
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce({ id: 7, symbol: 'NVD', accountId: 5, exchange: 'XETR', source: 'SYNCED' })
+      .mockResolvedValueOnce({ id: 7, transactions: [] });
+
+    await processPortfolioChanges(makeJob({ transactionId: 70 }));
+
+    expect(prisma.portfolioItem.update).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ exchange: expect.anything() }),
+    }));
+  });
+
+  it('full rebuild backfills the exchange of an existing holding from its newest transaction', async () => {
+    prisma.transaction.findMany.mockResolvedValue([
+      nvdTx({ id: 71, exchange: null, isin: null, assetCurrency: null, transaction_date: new Date('2026-08-01') }),
+      nvdTx(),
+    ]);
+    prisma.portfolioItem.findMany.mockResolvedValue([
+      { id: 7, symbol: 'NVD', accountId: 5, categoryId: 10, exchange: null },
+    ]);
+
+    await processPortfolioChanges(makeJob());
+
+    expect(prisma.portfolioItem.update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: { exchange: 'XETR', isin: 'US67066G1040', assetCurrency: 'EUR' },
+    });
+  });
+});

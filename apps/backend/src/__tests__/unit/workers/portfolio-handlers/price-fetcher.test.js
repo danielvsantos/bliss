@@ -117,15 +117,16 @@ describe('price-fetcher — createPriceFinder', () => {
     });
   });
 
-  it('queries assetPrice without exchange when not present', async () => {
+  it('queries only bare-symbol prices when the holding has no exchange (#134)', async () => {
     prisma.assetPrice.findMany.mockResolvedValue([]);
     prisma.manualAssetValue.findMany.mockResolvedValue([]);
 
     const item = makePortfolioItem({ exchange: null });
     await createPriceFinder(item);
 
+    // Never another listing's rows: those are a different instrument.
     expect(prisma.assetPrice.findMany).toHaveBeenCalledWith({
-      where: { symbol: 'AAPL' },
+      where: { symbol: 'AAPL', exchange: '' },
     });
   });
 });

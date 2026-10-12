@@ -112,7 +112,7 @@ The `PortfolioItem` and `Transaction` models carry additional fields for multi-m
 
 **`AssetPrice.noData` flag**: When `getHistoricalPrice()` returns `null` for a date (holiday, market closure, data gap), the strategy files (`API_STOCK.js`, `API_CRYPTO.js`) upsert an `AssetPrice` record with `noData: true`. On subsequent valuation runs, Stage 1 of the pricing strategy detects this sentinel and returns `null` immediately without making an API call. The 7-day lookback (Stage 3) also skips `noData` records to avoid using them as forward-fill sources. This eliminates repeated failed API calls for the same known-bad dates across daily runs.
 
-`process-portfolio-changes.js` propagates `isin`, `exchange`, and `assetCurrency` from the first transaction when creating new PortfolioItem records.
+`process-portfolio-changes.js` propagates `isin`, `exchange`, and `assetCurrency` from the first transaction when creating new PortfolioItem records. An existing ticker-keyed holding also picks them up (scoped update: the edited transaction; full rebuild: the newest transaction carrying an exchange) when its `exchange` is missing or different, and `POST`/`PUT /api/transactions` write them on the holding upsert (#134). A ticker can exist on several exchanges (NVD is Nvidia on Xetra and a 2x short ETF on Nasdaq), so a holding without its MIC was priced with Twelve Data's default listing. Migration `20261012130000_backfill_portfolio_item_exchange` backfilled existing holdings and removed bare-symbol stock/fund prices no holding uses any more.
 
 ## 6.3. Stage 1: Portfolio Initialization (`process-portfolio-changes.js`)
 
@@ -164,7 +164,9 @@ This worker handles all `Investment` and `Asset` types via the `value-all-assets
 
 The `price-fetcher.js` uses a dynamic **Strategy Pattern** to determine how to price an asset based on the `processingHint` on its category. Strategy files live in `valuation/strategies/` and are auto-discovered by the dynamic loader.
 
-**Exchange-aware pre-fetch**: `createPriceFinder()` pre-fetches `AssetPrice` records into an in-memory map. When a `PortfolioItem` has an `exchange` set (e.g., `XPAR`), the query filters by that exchange, preventing price mixing for multi-listed symbols. When `exchange` is null, all prices for the symbol are loaded (backward compatible).
+**Exchange-aware pre-fetch**: `createPriceFinder()` pre-fetches `AssetPrice` records into an in-memory map. When a `PortfolioItem` has an `exchange` set (e.g., `XPAR`), the query filters by that exchange, preventing price mixing for multi-listed symbols. When `exchange` is null, only bare-symbol rows (`exchange = ''`) are loaded, never another listing's (#134).
+
+**No silent listing switch**: when a `time_series` call with `mic_code` fails, `twelveDataService.getHistoricalPrice` retries without it (some ETF MICs don't match Twelve Data's mapping) but only accepts that price when the listing currency Twelve Data reports matches the holding's `assetCurrency || currency`. Otherwise it returns `null` (no price, then forward-fill / cost basis) instead of a different instrument's price.
 
 -   **`API_STOCK`**: Uses Twelve Data for real-time and historical stock pricing, with caching and 7-day look-back. Passes `portfolioItem.exchange` to the stock service for exchange disambiguation. Saves `AssetPrice` records with the exchange MIC code.
 -   **`API_FUND`**: Follows the same 3-stage pricing as `API_STOCK`, plus a **Stage 4 manual fallback** — checks `manualValueMap` when API/DB lookups fail. Also passes exchange for disambiguation and saves it on `AssetPrice` records.

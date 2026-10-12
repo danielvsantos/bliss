@@ -78,6 +78,20 @@ describe('API_STOCK strategy — getPrice()', () => {
   // ─── Stage 2: Live API call + DB save ────────────────────────────────────
 
   describe('Stage 2: Live API call', () => {
+    it('prices a listed holding on its own exchange and trading currency (#134)', async () => {
+      getHistoricalStockPrice.mockResolvedValue({ price: new Decimal(202.35), source: 'API:TwelveData' });
+      prisma.assetPrice.upsert.mockResolvedValue({ price: new Decimal(202.35) });
+      const item = makePortfolioItem({ symbol: 'NVD', currency: 'EUR', exchange: 'XETR', assetCurrency: 'EUR' });
+      const targetDate = new Date('2026-10-09');
+
+      await getPrice(item, targetDate, makePriceCaches());
+
+      expect(getHistoricalStockPrice).toHaveBeenCalledWith('NVD', targetDate, { exchange: 'XETR', currency: 'EUR' });
+      expect(prisma.assetPrice.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({ symbol: 'NVD', exchange: 'XETR' }),
+      }));
+    });
+
     it('calls getHistoricalStockPrice, saves to Prisma, and returns { price, source }', async () => {
       const apiResult = { price: new Decimal(176.00), source: 'API:TwelveData' };
       getHistoricalStockPrice.mockResolvedValue(apiResult);
@@ -97,7 +111,7 @@ describe('API_STOCK strategy — getPrice()', () => {
 
       const result = await getPrice(item, targetDate, caches);
 
-      expect(getHistoricalStockPrice).toHaveBeenCalledWith('AAPL', targetDate, { exchange: undefined });
+      expect(getHistoricalStockPrice).toHaveBeenCalledWith('AAPL', targetDate, { exchange: undefined, currency: 'USD' });
       expect(prisma.assetPrice.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({

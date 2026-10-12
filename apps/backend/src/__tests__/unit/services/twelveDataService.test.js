@@ -119,6 +119,66 @@ describe('twelveDataService', () => {
 
       expect(result).toBeNull();
     });
+
+    // #134: NVD is Nvidia on Xetra (EUR) and a 2x short NVDA ETF on Nasdaq (USD).
+    describe('mic_code fallback', () => {
+      const micError = { data: { status: 'error', message: 'symbol not found for mic_code' } };
+      const bareListing = (currency) => ({
+        data: {
+          meta: { symbol: 'NVD', currency, mic_code: 'XNGS' },
+          values: [{ datetime: '2026-10-09', close: '3.67' }],
+        },
+      });
+
+      it('sends mic_code when given', async () => {
+        const axios = require('axios');
+        axios.get.mockResolvedValue({ data: { values: [{ datetime: '2026-10-09', close: '202.35' }] } });
+
+        const result = await twelveDataService.getHistoricalPrice('NVD', new Date('2026-10-09'), { micCode: 'XETR', expectedCurrency: 'EUR' });
+
+        expect(result.price.toNumber()).toBe(202.35);
+        expect(axios.get.mock.calls[0][1].params).toEqual(expect.objectContaining({ symbol: 'NVD', mic_code: 'XETR' }));
+      });
+
+      it('rejects a retry without mic_code that resolves to a listing in another currency', async () => {
+        const axios = require('axios');
+        axios.get.mockResolvedValueOnce(micError).mockResolvedValueOnce(bareListing('USD'));
+
+        const result = await twelveDataService.getHistoricalPrice('NVD', new Date('2026-10-09'), { micCode: 'XETR', expectedCurrency: 'EUR' });
+
+        expect(result).toBeNull();
+        expect(axios.get).toHaveBeenCalledTimes(2);
+        expect(axios.get.mock.calls[1][1].params).not.toHaveProperty('mic_code');
+      });
+
+      it('rejects the retry when no expected currency is known', async () => {
+        const axios = require('axios');
+        axios.get.mockResolvedValueOnce(micError).mockResolvedValueOnce(bareListing('USD'));
+
+        const result = await twelveDataService.getHistoricalPrice('NVD', new Date('2026-10-09'), { micCode: 'XETR' });
+
+        expect(result).toBeNull();
+      });
+
+      it('rejects the retry when Twelve Data reports no currency', async () => {
+        const axios = require('axios');
+        axios.get.mockResolvedValueOnce(micError).mockResolvedValueOnce({ data: { values: [{ datetime: '2026-10-09', close: '3.67' }] } });
+
+        const result = await twelveDataService.getHistoricalPrice('NVD', new Date('2026-10-09'), { micCode: 'XETR', expectedCurrency: 'EUR' });
+
+        expect(result).toBeNull();
+      });
+
+      it('accepts the retry when its listing currency matches (MIC mapping mismatch)', async () => {
+        const axios = require('axios');
+        axios.get.mockResolvedValueOnce(micError).mockResolvedValueOnce(bareListing('usd'));
+
+        const result = await twelveDataService.getHistoricalPrice('QQQM', new Date('2026-10-09'), { micCode: 'XNAS', expectedCurrency: 'USD' });
+
+        expect(result.price.toNumber()).toBe(3.67);
+        expect(result.source).toBe('API:TwelveData');
+      });
+    });
   });
 
   // ─── getLatestPrice ──────────────────────────────────────────────────────

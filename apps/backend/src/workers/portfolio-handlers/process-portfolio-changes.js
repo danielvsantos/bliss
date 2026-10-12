@@ -73,6 +73,26 @@ const EMPTY_ITEM_STATE = {
 };
 
 /**
+ * Listing fields an existing holding must take from its transactions (#134).
+ * A ticker can exist on several exchanges (NVD is Nvidia on Xetra and a 2x
+ * short ETF on Nasdaq), and valuation prices the holding by its own exchange,
+ * so a holding created before its MIC was known must pick it up later. The
+ * newest ticker-keyed transaction carrying an exchange wins. Returns null when
+ * nothing changes.
+ */
+const listingUpdateFor = (item, transactions) => {
+    const source = [...transactions]
+        .reverse()
+        .find(tx => tx.exchange && tx.ticker === item.symbol);
+    if (!source || source.exchange === item.exchange) return null;
+    return {
+        exchange: source.exchange,
+        ...(source.isin && { isin: source.isin }),
+        ...(source.assetCurrency && { assetCurrency: source.assetCurrency }),
+    };
+};
+
+/**
  * A replacement is "clear" when the edit only re-keyed the same holding: same
  * category and either the same account (new description / ticker) or the same
  * symbol (moved to another account). Anything else (e.g. the transaction was
@@ -258,6 +278,15 @@ const handleScopedUpdate = async (tenantId, transactionId, _rebuildMeta, previou
 
     // If we have an item (either found or created), proceed with state update.
     if (portfolioItem) {
+        // An edit can add or change the listing of an existing holding (#134).
+        const listingUpdate = listingUpdateFor(portfolioItem, [transaction]);
+        if (listingUpdate) {
+            portfolioItem = await prisma.portfolioItem.update({
+                where: { id: portfolioItem.id },
+                data: listingUpdate,
+            });
+        }
+
         // Link the transaction first to ensure it's included in the state calculation.
         await prisma.transaction.update({
             where: { id: transactionId },
@@ -446,7 +475,7 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
     logger.info(`[Sync] Fetching existing portfolio items in scope...`);
     const existingItems = await prisma.portfolioItem.findMany({
         where: portfolioItemWhereScope,
-        select: { id: true, symbol: true, accountId: true, categoryId: true },
+        select: { id: true, symbol: true, accountId: true, categoryId: true, exchange: true },
     });
     // Key is `symbol::accountId` to separate same-symbol positions in different accounts.
     const existingItemsMap = new Map(
@@ -637,8 +666,14 @@ const handleFullRebuild = async (tenantId, institutionId, accountIds, dateScopes
         activeKeys.add(groupKey); // Mark this (symbol, accountId) pair as active for this run.
 
         // If the item already exists in our scope, we don't need to do anything with it here.
-        // The transaction linking will handle it.
+        // The transaction linking will handle it — except a listing the item
+        // never picked up (#134), which valuation needs to price the right exchange.
         if (existingItemsMap.has(groupKey)) {
+            const existingItem = existingItemsMap.get(groupKey);
+            const listingUpdate = listingUpdateFor(existingItem, transactions);
+            if (listingUpdate) {
+                await prisma.portfolioItem.update({ where: { id: existingItem.id }, data: listingUpdate });
+            }
             continue;
         }
         
