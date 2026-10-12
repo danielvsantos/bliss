@@ -430,6 +430,8 @@ describe('POST /api/subscriptions actions', () => {
     const res = makeRes();
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
     expect(res._status).toBe(404);
+    // #93 B11: name the subscription id, not an internal column.
+    expect(res._body.error).toBe('No subscription with that id');
   });
 
   it('restore deletes the DISMISSED tombstone', async () => {
@@ -618,6 +620,8 @@ describe('POST /api/subscriptions actions', () => {
     const res = makeRes();
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
     expect(res._status).toBe(404);
+    expect(res._body.error).toBe('No target subscription with that id');
+    expect(res._body.error).not.toMatch(/hash/i);
   });
 
   it('unmerge clears mergedIntoHash and rescans', async () => {

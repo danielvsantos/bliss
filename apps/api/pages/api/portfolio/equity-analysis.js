@@ -169,6 +169,19 @@ export default withAuth(async function handler(req, res) {
       (item) => item.category?.processingHint === 'API_STOCK' || isEtf(smMap[item.symbol]),
     );
 
+    // #93 B5: an API_FUND with a ticker but no SecurityMaster asset type yet
+    // (bought before refresh-tenant-securities ran, or no Twelve Data key)
+    // can't be told apart from a mutual fund, so it is left out above. Report
+    // it so the page and agents can explain the gap. Ticker-less MANUAL funds
+    // never get SecurityMaster data and aren't pending.
+    const pendingSecurityData = [...new Set(
+      candidateItems
+        .filter((item) => item.category?.processingHint === 'API_FUND'
+          && item.source !== 'MANUAL'
+          && !smMap[item.symbol]?.assetType)
+        .map((item) => item.symbol),
+    )];
+
     // 3. Enrich holdings with live prices and SecurityMaster data
     const enrichedHoldings = await Promise.all(
       stockItems.map(async (item) => {
@@ -347,7 +360,10 @@ export default withAuth(async function handler(req, res) {
         holdingsCount: mergedHoldings.length,
         weightedPeRatio,
         weightedDividendYield,
+        pendingSecurityDataCount: pendingSecurityData.length,
       },
+      // Fund symbols left out until their SecurityMaster data arrives.
+      pendingSecurityData,
       groups: groupings[groupBy],
       groupings,
       holdings,

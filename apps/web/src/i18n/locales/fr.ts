@@ -1533,6 +1533,7 @@ const fr = {
     assetClass: "Classe d'actifs",
     lookThrough: "Transparence des ETF",
     lookThroughHint: "Répartit chaque ETF entre les secteurs et pays qu'il détient",
+    pendingSecurityData: "En attente des données de titre pour {{symbols}}. Ces fonds apparaîtront ici une fois récupérées.",
     lookThroughOther: "Autres",
     fixedIncomeBucket: "Obligataire",
     editAssetClass: "Modifier la classe d'actifs de {{symbol}}",

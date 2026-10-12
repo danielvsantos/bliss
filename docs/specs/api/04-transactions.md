@@ -83,7 +83,7 @@ The Tags API, located at `pages/api/tags.js`, provides full, tenant-scoped CRUD 
 
 - **Uniqueness**: It enforces that tag names must be unique within a tenant (enforced by both pre-check and Prisma `P2002` constraint).
 - **Deletion Protection**: It includes a critical safeguard that prevents the deletion of a tag if it is currently associated with any transactions. This maintains the integrity of the transaction ledger.
-- **Tag Fields**: Each tag has `id`, `name`, and optional `color`, `emoji`, `budget` (Float), `startDate` (DateTime), and `endDate` (DateTime) fields.
+- **Tag Fields**: Each tag has `id`, `name`, and optional `color`, `emoji`, `budget` (Float), `startDate` (DateTime), and `endDate` (DateTime) fields. `color` is `#RRGGBB` or `null`; `POST`/`PUT /api/tags` refuse anything else with `400` (#93).
 - **Pagination**: `GET /api/tags` supports optional `limit` and `offset` query parameters. When `limit` is provided, the response shape is `{ tags: Tag[], total: number }`. Without `limit`, it returns a flat `Tag[]` array for backward compatibility.
 - **Response Shape**: The `GET /api/transactions` endpoint returns tags as flat `Tag[]` objects (via `t.tags.map(tt => tt.tag)`), not the raw join-table shape. Each tag object contains `id`, `name`, and optional `color`/`emoji` fields.
 

@@ -198,6 +198,10 @@ components:
           nullable: true
           description: Holdings-weighted average dividend yield (decimal).
           example: 0.018
+        pendingSecurityDataCount:
+          type: integer
+          description: Number of `pendingSecurityData` symbols.
+          example: 0
 
     EquityAnalysisResponse:
       type: object
@@ -216,6 +220,14 @@ components:
             True when at least one ETF holding has composition data. When false
             (e.g. the Twelve Data plan doesn't include /etfs/world/composition),
             look-through has no effect and the web hides its switch.
+        pendingSecurityData:
+          type: array
+          items:
+            type: string
+          description: >
+            Ticker-backed fund symbols left out because SecurityMaster has no
+            asset type for them yet (bought before refresh-tenant-securities
+            ran, or no Twelve Data key). They appear once it is known to be an ETF.
         groups:
           type: array
           description: Groups for the requested `groupBy`.

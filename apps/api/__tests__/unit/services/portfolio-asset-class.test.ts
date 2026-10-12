@@ -161,6 +161,16 @@ describe('classifyAssetClass', () => {
     expect(cls({ ...fund, security: { assetType: 'etf', name: 'X', sector: 'Technology' } })).toBe('INDEX_ETF');
   });
 
+  // #93 D7: VWCE bought before its SecurityMaster row exists.
+  it('classifies an ETF-category fund with no security data as INDEX_ETF', () => {
+    expect(cls({ ...fund })).toBe('INDEX_ETF');
+    expect(cls({ ...fund, security: null })).toBe('INDEX_ETF');
+    expect(cls({ processingHint: 'API_FUND', categoryGroup: 'ETFs' })).toBe('INDEX_ETF');
+    // SecurityMaster wins once known, and other fund categories stay FUND.
+    expect(cls({ ...fund, security: { assetType: 'Mutual Fund' } })).toBe('FUND');
+    expect(cls({ processingHint: 'API_FUND', defaultCategoryCode: 'INVESTMENT_FUNDS', categoryGroup: 'Funds' })).toBe('FUND');
+  });
+
   it('falls back to OTHER', () => {
     expect(cls({ processingHint: 'MANUAL', defaultCategoryCode: 'COLLECTIBLE' })).toBe('OTHER');
     expect(cls({})).toBe('OTHER');

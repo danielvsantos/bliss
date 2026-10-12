@@ -1563,6 +1563,7 @@ const en = {
     assetClass: "Asset class",
     lookThrough: "Look through ETFs",
     lookThroughHint: "Split each ETF across the sectors and countries it holds",
+    pendingSecurityData: "Waiting for security data for {{symbols}}. These funds appear here once it has been fetched.",
     lookThroughOther: "Other",
     fixedIncomeBucket: "Fixed Income",
     editAssetClass: "Edit asset class for {{symbol}}",

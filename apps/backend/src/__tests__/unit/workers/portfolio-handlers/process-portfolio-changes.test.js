@@ -416,6 +416,28 @@ describe('process-portfolio-changes — income terms & new security symbols', ()
     }));
   });
 
+  // #93 B5: a manual ETF buy (API_FUND with a ticker) must fetch its
+  // SecurityMaster row the same day, or Equity Analysis can't place it.
+  it('emits newSecuritySymbols on a scoped update that creates an ETF item', async () => {
+    prisma.transaction.findUnique.mockResolvedValue({
+      id: 43, tenantId: 'tenant-1', categoryId: 2, accountId: 5, currency: 'EUR',
+      transaction_date: new Date('2026-03-01'), year: 2026, month: 3,
+      credit: 0, debit: 100, ticker: 'VWCE',
+      category: { id: 2, type: 'Investments', group: 'Funds', processingHint: 'API_FUND' },
+      account: { countryId: 'DE' },
+    });
+    prisma.portfolioItem.create.mockResolvedValue({ id: 6, symbol: 'VWCE', source: 'SYNCED' });
+    prisma.portfolioItem.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 6, transactions: [] });
+
+    await processPortfolioChanges(makeJob({ transactionId: 43 }));
+
+    expect(enqueueEvent).toHaveBeenCalledWith('PORTFOLIO_CHANGES_PROCESSED', expect.objectContaining({
+      newSecuritySymbols: ['VWCE'],
+    }));
+  });
+
   // A ticker-less fund is keyed "<category>:<description>" (TICKER fallback) and
   // priced from manual values — its key must never reach the Twelve Data refresh.
   describe('ticker-less funds', () => {

@@ -5,6 +5,11 @@ import { cors } from '../../utils/cors.js';
 import { rateLimiters } from '../../utils/rateLimit.js';
 import { withAuth } from '../../utils/withAuth.js';
 
+// #93 B7: a tag color is `#RRGGBB` or null (cleared).
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const isValidColor = (color) => color === undefined || color === null || (typeof color === 'string' && HEX_COLOR.test(color));
+const INVALID_COLOR_ERROR = 'Invalid color. Use a hex color like "#6D657A", or null.';
+
 export default withAuth(async function handler(req, res) {
 
   // Apply rate limiting
@@ -123,6 +128,11 @@ async function handlePost(req, res) {
     return;
   }
 
+  if (!isValidColor(color)) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: INVALID_COLOR_ERROR });
+    return;
+  }
+
   try {
     // Check if tag name already exists for this tenant
     const existingTag = await prisma.tag.findUnique({
@@ -175,6 +185,11 @@ async function handlePut(req, res) {
   const tagId = parseInt(id, 10);
   if (isNaN(tagId)) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid tag ID' });
+    return;
+  }
+
+  if (!isValidColor(color)) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: INVALID_COLOR_ERROR });
     return;
   }
 

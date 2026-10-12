@@ -68,6 +68,8 @@ export interface EquityAnalysisSummary {
   holdingsCount: number;
   weightedPeRatio: number | null;
   weightedDividendYield: number | null;
+  /** Funds left out until their security data is fetched (#93). */
+  pendingSecurityDataCount?: number;
 }
 
 export interface EquityAnalysisResponse {
@@ -82,6 +84,8 @@ export interface EquityAnalysisResponse {
   groupings?: Partial<Record<EquityGroupBy, EquityGroup[]>>;
   /** Every holding once (#79) — render rows from this, not from the groups. */
   holdings?: EquityHolding[];
+  /** Fund symbols left out until their SecurityMaster data arrives (#93). */
+  pendingSecurityData?: string[];
 }
 
 export interface SetAssetClassResponse {

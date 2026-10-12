@@ -344,6 +344,31 @@ describe('GET /api/portfolio/equity-analysis', () => {
     expect(etf.sector).toBe('Diversified');
     // Weighted P/E comes from the stock only.
     expect(res._body.summary.weightedPeRatio).toBe(30);
+    // A known mutual fund is excluded, not pending.
+    expect(res._body.pendingSecurityData).toEqual([]);
+    expect(res._body.summary.pendingSecurityDataCount).toBe(0);
+  });
+
+  // #93 B5
+  it('reports funds with no SecurityMaster asset type yet as pendingSecurityData', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    const etfCategory = { name: 'ETFs', group: 'ETFs', processingHint: 'API_FUND' };
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      item(),
+      item({ id: 2, symbol: 'VWCE', category: etfCategory }),
+      item({ id: 3, symbol: 'VWCE', category: etfCategory }),
+      // Ticker-less fund priced from manual values — never gets security data.
+      item({ id: 4, symbol: 'Funds:Private fund', source: 'MANUAL', category: etfCategory }),
+    ]);
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([sm()]);
+
+    const res = makeRes();
+    await handler(makeReq({}) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.summary.holdingsCount).toBe(1);
+    expect(res._body.pendingSecurityData).toEqual(['VWCE']);
+    expect(res._body.summary.pendingSecurityDataCount).toBe(1);
   });
 
   it('uses the dividend override for yield and merges same-symbol holdings', async () => {
