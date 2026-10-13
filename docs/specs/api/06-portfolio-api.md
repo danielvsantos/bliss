@@ -175,8 +175,14 @@ This check is non-blocking: errors are caught silently and never delay the GET r
 When `resolution` is not explicitly provided, it is auto-detected based on the date range:
 
 - **Daily** for ranges <= 90 days (all dates returned).
-- **Weekly** for ranges <= 365 days (Saturdays sampled, ~52 data points).
-- **Monthly** for ranges > 365 days (last calendar day of each month).
+- **Weekly** for ranges up to ~5 years (5 × 366 days; Saturdays sampled, ≤ ~262 data points). "All" (no `from`) on a typical portfolio is therefore weekly.
+- **Monthly** beyond that (last calendar day of each month).
+
+Weekly and monthly responses always also sample (#137):
+
+- the first and last day of the range;
+- each holding's first and last valuation date in the range (a buy on day D is a step at D, never back-dated to the previous sample);
+- the trade days (`Transaction.transaction_date`) of stock / crypto / fund holdings (`processingHint` `API_STOCK`, `API_CRYPTO`, `API_FUND`) in scope, so a sell-off and a rebuy land on their own days. Cash items are excluded. Above 400 distinct trade days in the range, trade days are dropped and only the per-holding first/last dates are added.
 
 This keeps Prisma query row counts bounded regardless of portfolio size.
 

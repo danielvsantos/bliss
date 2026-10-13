@@ -154,3 +154,85 @@ export function getDisplayData(
     ? item.portfolio
     : item.usd;
 }
+
+// ── buildPortfolioChartSeries ──────────────────────────────────────────────
+
+import type { AggregatedPortfolioHistory } from "@/lib/api";
+
+export interface PortfolioChartSeries {
+  chartData: Array<Record<string, string | number>>;
+  allGroups: string[];
+  debtGroups: Set<string>;
+}
+
+/**
+ * Turns the /api/portfolio/history rows into one chart row per sample date:
+ * a value per group (Cash excluded, debt negated when `showDebt`) plus
+ * "Net Worth".
+ *
+ * A group missing from a row is filled with 0: the API returns every holding
+ * valued on each sample date, so absence means the position was not held.
+ * Nothing is back-dated — a holding first appears on the row of its own first
+ * valuation (#137), and a sold-then-rebought position is zero only between
+ * those rows.
+ */
+export function buildPortfolioChartSeries(
+  data: AggregatedPortfolioHistory[] | undefined,
+  { showDebt }: { showDebt: boolean },
+): PortfolioChartSeries {
+  if (!data || data.length === 0) return { chartData: [], allGroups: [], debtGroups: new Set<string>() };
+
+  const groups = new Set<string>();
+  const debtGroups = new Set<string>();
+
+  data.forEach((item) => {
+    if (item.Investments?.groups) {
+      Object.keys(item.Investments.groups).forEach((g) => groups.add(g));
+    }
+    if (item.Asset?.groups) {
+      Object.keys(item.Asset.groups)
+        .filter((g) => g !== "Cash")
+        .forEach((g) => groups.add(g));
+    }
+    if (showDebt && item.Debt?.groups) {
+      Object.keys(item.Debt.groups).forEach((g) => {
+        groups.add(g);
+        debtGroups.add(g);
+      });
+    }
+  });
+
+  const allGroups = Array.from(groups);
+
+  const chartData = data.map((row) => {
+    const entry: Record<string, string | number> = { date: row.date };
+    // Exclude Cash from the chart — subtract it from Asset total
+    const cashValue = row.Asset?.groups?.["Cash"] || 0;
+    const assetsValue = (row.Investments?.total || 0) + (row.Asset?.total || 0) - cashValue;
+    const liabilitiesValue = row.Debt?.total || 0;
+    entry["Net Worth"] = assetsValue - liabilitiesValue;
+
+    for (const group of allGroups) entry[group] = 0;
+
+    if (row.Investments?.groups) {
+      for (const [group, value] of Object.entries(row.Investments.groups)) {
+        entry[group] = (entry[group] as number) + value;
+      }
+    }
+    if (row.Asset?.groups) {
+      for (const [group, value] of Object.entries(row.Asset.groups)) {
+        if (group === "Cash") continue;
+        entry[group] = (entry[group] as number) + value;
+      }
+    }
+    if (showDebt && row.Debt?.groups) {
+      for (const [group, value] of Object.entries(row.Debt.groups)) {
+        entry[group] = -Math.abs(value);
+      }
+    }
+
+    return entry;
+  });
+
+  return { chartData, allGroups, debtGroups };
+}

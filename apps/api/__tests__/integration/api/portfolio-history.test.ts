@@ -161,3 +161,92 @@ describe('GET /api/portfolio/history — holding scope (integration)', () => {
     expect(latest(res)).toBe(10000);
   });
 });
+
+/**
+ * #137 — weekly sampling against the real Prisma query shapes: a mid-week buy
+ * and a sell-off / rebuy are sampled on their own days, not back-dated to the
+ * previous sample.
+ */
+describe('GET /api/portfolio/history — event-day sampling (integration, #137)', () => {
+  let tenantId: string;
+  let token: string;
+  const BUY = '2026-01-20'; // Tuesday
+  const SELL = '2025-07-09'; // Wednesday
+  const REBUY = '2025-08-29'; // Friday
+
+  beforeAll(async () => {
+    ({ tenantId, token } = await createIsolatedTenant('history-events'));
+    await prisma.tenant.update({ where: { id: tenantId }, data: { portfolioCurrency: 'USD' } });
+
+    const { countryId, currencyCode, bankId } = await ensureReferenceData();
+    const account = await prisma.account.create({
+      data: { tenantId, name: 'Broker', accountNumber: `HE-${SUFFIX}`, bankId, currencyCode, countryId },
+    });
+    const crypto = await prisma.category.create({
+      data: { tenantId, name: 'Crypto', group: 'Crypto', type: 'Investments', processingHint: 'API_CRYPTO' },
+    });
+    const copy = await prisma.category.create({
+      data: { tenantId, name: 'Copy', group: 'Copy Trading', type: 'Investments', processingHint: 'MANUAL' },
+    });
+    const btc = await prisma.portfolioItem.create({
+      data: { tenantId, categoryId: crypto.id, symbol: `BTC-${SUFFIX}`, currency: 'USD', source: 'SYNCED', quantity: 1, accountId: account.id },
+    });
+    const copyItem = await prisma.portfolioItem.create({
+      data: { tenantId, categoryId: copy.id, symbol: `Copy ${SUFFIX}`, currency: 'USD', source: 'MANUAL', quantity: 1 },
+    });
+
+    // Daily rows like the valuation worker writes: BTC held 2025-06-01 → sell
+    // day (0 on it), nothing in the gap, back from the rebuy day; the copy
+    // trade from its buy day only.
+    const rows: Array<{ assetId: number; date: Date; nativeValue: number; nativeCurrency: string; valueInUSD: number; source: string }> = [];
+    const push = (assetId: number, from: string, to: string, value: (d: string) => number) => {
+      for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+        const v = value(d.toISOString().split('T')[0]);
+        rows.push({ assetId, date: new Date(d), nativeValue: v, nativeCurrency: 'USD', valueInUSD: v, source: 'TEST' });
+      }
+    };
+    push(btc.id, '2025-06-01', SELL, (d) => (d === SELL ? 0 : 1000));
+    push(btc.id, REBUY, '2026-03-01', () => 800);
+    push(copyItem.id, BUY, '2026-03-01', () => 500);
+    await prisma.portfolioValueHistory.createMany({ data: rows });
+
+    const tx = (date: string, debit: number | null, credit: number | null) => {
+      const d = new Date(`${date}T00:00:00Z`);
+      return {
+        tenantId, accountId: account.id, categoryId: crypto.id, portfolioItemId: btc.id,
+        transaction_date: d, year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
+        quarter: `Q${Math.floor(d.getUTCMonth() / 3) + 1}`, description: 'BTC trade', currency: 'USD', debit, credit,
+      };
+    };
+    await prisma.transaction.create({ data: tx('2025-06-01', 1000, null) });
+    await prisma.transaction.create({ data: tx(SELL, null, 1000) });
+    await prisma.transaction.create({ data: tx(REBUY, 800, null) });
+  });
+
+  afterAll(async () => {
+    await teardownTenant(tenantId);
+  });
+
+  it('samples ALL weekly and includes buy / sell / rebuy days', async () => {
+    const res = await get(bearer(token), { to: '2026-03-01' });
+
+    expect(res._status).toBe(200);
+    expect(res._body.resolution).toBe('weekly');
+    const byDate = new Map<string, any>(res._body.history.map((h: any) => [h.date, h]));
+    const group = (d: string, g: string) => byDate.get(d)?.Investments?.groups?.[g];
+
+    // Weekly, not daily: ~39 weeks plus a handful of event days.
+    expect(res._body.history.length).toBeLessThan(50);
+
+    // The copy trade appears on its buy day, and on no sample before it.
+    expect(group(BUY, 'Copy Trading')).toBe(500);
+    const before = res._body.history.filter((h: any) => h.date < BUY);
+    expect(before.every((h: any) => h.Investments?.groups?.['Copy Trading'] === undefined)).toBe(true);
+
+    // BTC drops to zero on the sell day and is back on the rebuy day.
+    expect(group(SELL, 'Crypto')).toBe(0);
+    expect(group(REBUY, 'Crypto')).toBe(800);
+    // Starts on the first valuation, not a sample before it.
+    expect(res._body.history[0].date).toBe('2025-06-01');
+  });
+});

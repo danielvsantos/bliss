@@ -51,7 +51,8 @@ vi.mock('@/components/income/income-terms-modal', () => ({
 vi.mock('@/hooks/use-portfolio-history');
 vi.mock('@/hooks/use-metadata');
 vi.mock('@/hooks/use-account-list');
-vi.mock('@/lib/portfolio-utils', () => ({
+vi.mock('@/lib/portfolio-utils', async () => ({
+  buildPortfolioChartSeries: (await vi.importActual<typeof import('@/lib/portfolio-utils')>('@/lib/portfolio-utils')).buildPortfolioChartSeries,
   getDisplayData: (item: { currentPrice: string }) => ({
     marketValue: item.currentPrice,
     costBasis: '1000',

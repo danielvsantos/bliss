@@ -5,6 +5,7 @@ import {
   getGroupIcon,
   parseDecimal,
   getDisplayData,
+  buildPortfolioChartSeries,
 } from './portfolio-utils';
 import {
   TrendingUp,
@@ -149,5 +150,62 @@ describe('getDisplayData', () => {
   it('returns usd block when currency != USD but no portfolio block', () => {
     const item = makeItem(false);
     expect(getDisplayData(item, 'EUR')).toBe(usdBlock);
+  });
+});
+
+// ── buildPortfolioChartSeries (#137) ────────────────────────────────────────
+
+describe('buildPortfolioChartSeries', () => {
+  const row = (date: string, groups: Record<string, number>, debt?: Record<string, number>) => {
+    const total = Object.values(groups).reduce((a, b) => a + b, 0);
+    return {
+      date,
+      totalUSD: total,
+      Investments: { total, groups },
+      ...(debt && { Debt: { total: Object.values(debt).reduce((a, b) => a + b, 0), groups: debt } }),
+    };
+  };
+
+  it('returns empty series for no data', () => {
+    expect(buildPortfolioChartSeries([], { showDebt: false }).chartData).toEqual([]);
+    expect(buildPortfolioChartSeries(undefined, { showDebt: false }).allGroups).toEqual([]);
+  });
+
+  it('does not back-date a new holding to the previous sample', () => {
+    const { chartData } = buildPortfolioChartSeries([
+      row('2025-12-31', { Stocks: 100 }),
+      row('2026-01-17', { Stocks: 100 }),
+      row('2026-01-20', { Stocks: 100, 'Copy Trading': 500 }),
+    ], { showDebt: false });
+
+    // Zero up to the buy day, the value from the buy day — never a ramp before it.
+    expect(chartData.map((e) => e['Copy Trading'])).toEqual([0, 0, 500]);
+    expect(chartData[2]['Net Worth']).toBe(600);
+  });
+
+  it('shows a sold-and-rebought holding as zero only between sell and rebuy', () => {
+    const { chartData } = buildPortfolioChartSeries([
+      row('2025-07-05', { Crypto: 200, Stocks: 10 }),
+      row('2025-07-11', { Crypto: 0, Stocks: 10 }),
+      row('2025-08-02', { Stocks: 10 }),
+      row('2025-08-29', { Crypto: 150, Stocks: 10 }),
+    ], { showDebt: false });
+
+    expect(chartData.map((e) => e.Crypto)).toEqual([200, 0, 0, 150]);
+  });
+
+  it('excludes Cash and negates debt when showDebt', () => {
+    const { chartData, allGroups, debtGroups } = buildPortfolioChartSeries([
+      {
+        date: '2026-01-01',
+        totalUSD: 0,
+        Asset: { total: 1500, groups: { Cash: 500, 'Real Estate': 1000 } },
+        Debt: { total: 300, groups: { Mortgage: 300 } },
+      },
+    ], { showDebt: true });
+
+    expect(allGroups).toEqual(['Real Estate', 'Mortgage']);
+    expect(debtGroups.has('Mortgage')).toBe(true);
+    expect(chartData[0]).toEqual({ date: '2026-01-01', 'Net Worth': 700, 'Real Estate': 1000, Mortgage: -300 });
   });
 });
