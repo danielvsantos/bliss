@@ -24,7 +24,8 @@ export function useDashboardMetrics(year: string, currency?: string) {
   });
 
   const metrics = useMemo(() => {
-    // Net Worth Calculation — use currency-aware display data
+    // Net Worth Calculation — use currency-aware display data. Cash counts as
+    // an asset (#144); it must match netWorthFromEntry for the history.
     let totalAssets = 0;
     let totalLiabilities = 0;
 
@@ -33,7 +34,7 @@ export function useDashboardMetrics(year: string, currency?: string) {
       const marketValue = parseDecimal(data.marketValue);
       if (item.category?.type === 'Debt') {
         totalLiabilities += Math.abs(marketValue);
-      } else if (item.category?.group !== 'Cash') {
+      } else {
         totalAssets += marketValue;
       }
     });

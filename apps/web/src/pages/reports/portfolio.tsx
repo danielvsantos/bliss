@@ -48,6 +48,7 @@ import { useAccountList } from "@/hooks/use-account-list";
 import type { PortfolioItem } from "@/types/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { AggregatedPortfolioHistory } from "@/lib/api";
+import { netWorthFromEntry } from "@/lib/net-worth";
 import {
   Tooltip,
   TooltipContent,
@@ -509,9 +510,9 @@ export default function PortfolioHoldingsPage() {
     };
   }, [portfolioItems, selectedAccountId]);
 
+  // Cash is part of net worth (#144); only P&L below leaves it out.
   const totalAssetsValue = useMemo(
     () => assetList
-      .filter((item) => item.category.group !== "Cash")
       .reduce((sum, item) => sum + parseDecimal(getDisplayData(item, portfolioCurrency).marketValue), 0),
     [assetList, portfolioCurrency]
   );
@@ -587,9 +588,7 @@ export default function PortfolioHoldingsPage() {
         Object.keys(item.Investments.groups).forEach((g) => groups.add(g));
       }
       if (item.Asset?.groups) {
-        Object.keys(item.Asset.groups)
-          .filter((g) => g !== "Cash")
-          .forEach((g) => groups.add(g));
+        Object.keys(item.Asset.groups).forEach((g) => groups.add(g));
       }
       if (showDebt && item.Debt?.groups) {
         Object.keys(item.Debt.groups).forEach((g) => {
@@ -601,11 +600,7 @@ export default function PortfolioHoldingsPage() {
 
     const chartEntries = data.map((dailyData) => {
       const entry: { [key: string]: string | number } = { date: dailyData.date };
-      // Exclude Cash from the chart — subtract it from Asset total
-      const cashValue = (dailyData.Asset?.groups as Record<string, number> | undefined)?.["Cash"] || 0;
-      const assetsValue = (dailyData.Investments?.total || 0) + (dailyData.Asset?.total || 0) - cashValue;
-      const liabilitiesValue = dailyData.Debt?.total || 0;
-      entry["Net Worth"] = assetsValue - liabilitiesValue;
+      entry["Net Worth"] = netWorthFromEntry(dailyData);
 
       if (dailyData.Investments?.groups) {
         for (const [group, value] of Object.entries(dailyData.Investments.groups)) {
@@ -614,7 +609,6 @@ export default function PortfolioHoldingsPage() {
       }
       if (dailyData.Asset?.groups) {
         for (const [group, value] of Object.entries(dailyData.Asset.groups)) {
-          if (group === "Cash") continue;
           entry[group] = ((entry[group] as number) || 0) + (value as number);
         }
       }
