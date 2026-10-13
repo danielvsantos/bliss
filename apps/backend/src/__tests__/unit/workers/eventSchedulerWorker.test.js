@@ -870,6 +870,51 @@ describe('eventSchedulerWorker — processEventJob', () => {
     });
   });
 
+  // ─── CATEGORY_CLASSIFICATION_CHANGED (#145) ──────────────────────────────
+  //
+  // Analytics caches are keyed by category type and group; editing either on a
+  // used category must rebuild them.
+
+  describe('CATEGORY_CLASSIFICATION_CHANGED', () => {
+    it('schedules an analytics-only full rebuild (debounced, shared mergers)', async () => {
+      await processEventJob(makeJob('CATEGORY_CLASSIFICATION_CHANGED', { tenantId: 't1', categoryId: 7, portfolioImpact: false }));
+      await processEventJob(makeJob('CASH_HOLDINGS_PROCESSED', { tenantId: 't1', isFullRebuild: true }));
+
+      const calls = scheduleDebouncedJob.mock.calls.filter((c) => c[1] === 'full-rebuild-analytics');
+      expect(calls).toHaveLength(2);
+      expect(calls[0][0]).toBe(mockAnalyticsQueue);
+      expect(calls[0][2]).toEqual({
+        tenantId: 't1', needsRecalc: [true], analyticsOnly: true, ...run('CATEGORY_CLASSIFICATION_CHANGED'),
+      });
+      expect(calls[0][3]).toBe('needsRecalc');
+      expect(calls[0][5].analyticsOnly).toBe(require('../../../services/debounceService').mergers.bothTrue);
+      expect(calls[1][5]).toBe(calls[0][5]);
+      expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('into/out of Investments/Debt schedules the full portfolio chain', async () => {
+      await processEventJob(makeJob('CATEGORY_CLASSIFICATION_CHANGED', { tenantId: 't1', categoryId: 7, portfolioImpact: true }));
+
+      expect(scheduleDebouncedJob).toHaveBeenCalledTimes(1);
+      const [queue, jobName, data] = scheduleDebouncedJob.mock.calls[0];
+      expect(queue).toBe(mockPortfolioQueue);
+      expect(jobName).toBe('process-portfolio-changes');
+      // No accountIds = full rebuild → cash → full analytics → valuation.
+      expect(data).toEqual({ tenantId: 't1', needsSync: [true], ...run('CATEGORY_CLASSIFICATION_CHANGED') });
+    });
+
+    it('ignores an event without tenantId', async () => {
+      await processEventJob(makeJob('CATEGORY_CLASSIFICATION_CHANGED', { categoryId: 7 }));
+      expect(scheduleDebouncedJob).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringMatching(/missing tenantId/));
+    });
+
+    it('an analytics-only rebuild does not cascade into valuation', async () => {
+      await processEventJob(makeJob('ANALYTICS_RECALCULATION_COMPLETE', { tenantId: 't1', isFullRebuild: true, analyticsOnly: true }));
+      expect(mockPortfolioQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── ANALYTICS_RECALCULATION_COMPLETE — value-all-assets deduplication ──
   //
   // Back-to-back imports each finish their own full cascade. Without a

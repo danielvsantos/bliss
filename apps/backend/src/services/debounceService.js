@@ -96,7 +96,16 @@ function analyticsScope(existing, incoming) {
     return merged;
 }
 
-const mergers = { union, unionOrAll, keepPresent, cashScope, analyticsScope };
+/**
+ * A flag that narrows a job (e.g. `analyticsOnly`, which skips the downstream
+ * valuation): kept only when both sides set it, so merging with a job that
+ * wants the full work never loses that work.
+ */
+function bothTrue(existing, incoming) {
+    return existing === true && incoming === true ? true : undefined;
+}
+
+const mergers = { union, unionOrAll, keepPresent, cashScope, analyticsScope, bothTrue };
 
 /**
  * Schedules a debounced job using Redis to aggregate data from high-frequency events.

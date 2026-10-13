@@ -56,7 +56,11 @@ function resolveEvent(name, data) {
             return event(P, [P, A]);
         case 'ANALYTICS_RECALCULATION_COMPLETE':
             // Chains into valuation unless it was an analytics-only rebuild.
-            return data?._rebuildMeta?.rebuildType === 'full-analytics' ? event(A, [A]) : event(P, [P, A]);
+            return data?._rebuildMeta?.rebuildType === 'full-analytics' || data?.analyticsOnly
+                ? event(A, [A]) : event(P, [P, A]);
+        case 'CATEGORY_CLASSIFICATION_CHANGED':
+            // Into/out of Investments/Debt runs the full portfolio chain.
+            return data?.portfolioImpact ? event(P, [P, A]) : event(A, [A]);
         case 'CASH_HOLDINGS_PROCESSED':
             return event(A, [A, P]);
         case 'TAG_ASSIGNMENT_MODIFIED':
@@ -112,6 +116,7 @@ function resolveAnalytics(name, data) {
     // it is an analytics-only manual rebuild or a scoped update with no items.
     const analyticsOnly = data?._rebuildMeta?.rebuildType === 'full-analytics'
         || data?._rebuildMeta?.rebuildType === 'scoped-analytics'
+        || data?.analyticsOnly === true
         || (!full && !(data?.portfolioItemIds?.length > 0));
     return entry(A, S.UPDATING_ANALYTICS, analyticsOnly ? [A] : [A, P], { long: full });
 }

@@ -52,6 +52,16 @@ describe('resolveActivity', () => {
     expect(resolveActivity('events', job('ANALYTICS_RECALCULATION_COMPLETE', { _rebuildMeta: { rebuildType: 'full-analytics' } })).type)
       .toBe('ANALYTICS_UPDATE');
     expect(resolveActivity('events', job('ANALYTICS_RECALCULATION_COMPLETE')).type).toBe('PORTFOLIO_UPDATE');
+    expect(resolveActivity('analytics', job('full-rebuild-analytics', { analyticsOnly: true })).affects).toEqual(['ANALYTICS_UPDATE']);
+    expect(resolveActivity('events', job('ANALYTICS_RECALCULATION_COMPLETE', { isFullRebuild: true, analyticsOnly: true })).affects)
+      .toEqual(['ANALYTICS_UPDATE']);
+  });
+
+  it('category type/group edit (#145): analytics only, or the portfolio chain into/out of Investments/Debt', () => {
+    expect(resolveActivity('events', job('CATEGORY_CLASSIFICATION_CHANGED', { portfolioImpact: false })))
+      .toMatchObject({ type: 'ANALYTICS_UPDATE', affects: ['ANALYTICS_UPDATE'] });
+    expect(resolveActivity('events', job('CATEGORY_CLASSIFICATION_CHANGED', { portfolioImpact: true })))
+      .toMatchObject({ type: 'PORTFOLIO_UPDATE', affects: ['PORTFOLIO_UPDATE', 'ANALYTICS_UPDATE'] });
   });
 
   it('tag analytics is regular analytics (D1)', () => {

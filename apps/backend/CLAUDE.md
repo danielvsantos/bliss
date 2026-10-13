@@ -68,6 +68,7 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 | `TAG_ASSIGNMENT_MODIFIED` | analytics | analyticsWorker |
 | `PORTFOLIO_STALE_REVALUATION` | portfolio | portfolioWorker (debounced 30min) |
 | `TENANT_CURRENCY_SETTINGS_UPDATED` | portfolio | portfolioWorker |
+| `CATEGORY_CLASSIFICATION_CHANGED` | analytics (`full-rebuild-analytics`, `analyticsOnly`) or portfolio (full `process-portfolio-changes` when `portfolioImpact`) | analyticsWorker / portfolioWorker |
 
 **Critical:** `originalScope` and `portfolioItemIds` must be threaded through the entire pipeline from event source to final worker. Dropping these breaks scoped (incremental) updates.
 

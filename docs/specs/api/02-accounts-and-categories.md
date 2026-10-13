@@ -58,7 +58,7 @@ The Categories API, at `pages/api/categories.js`, provides full CRUD functionali
 
 - **`GET /api/categories`**: Retrieves a list of categories for the tenant. Supports filtering by `name`, `type`, `group`; pagination; and sorting. The response includes `_count.transactions` (number of transactions tagged to each category) and the full category object including `defaultCategoryCode` and `icon`.
 - **`POST /api/categories`**: Creates a new custom category.
-- **`PUT /api/categories?id={categoryId}`**: Updates an existing category.
+- **`PUT /api/categories?id={categoryId}`**: Updates an existing category. When `type` or `group` actually changes on a category that has transactions, it emits `CATEGORY_CLASSIFICATION_CHANGED` (`{ tenantId, categoryId, portfolioImpact, source: 'CATEGORY_UPDATE' }`, plus `_trigger: 'agent'` for integration keys) so the analytics caches, keyed by type and group, are rebuilt (#145). `portfolioImpact` is `true` when the type moves into or out of `Investments`/`Debt`, which runs the full portfolio rebuild (holdings are created or dropped). Name/icon/description/`isRecurring` edits, and edits to unused categories, emit nothing.
 - **`DELETE /api/categories?id={categoryId}`**: Deletes a category, with safeguards.
 
 ### Data Model (`Category`)

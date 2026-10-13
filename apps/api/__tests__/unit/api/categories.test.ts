@@ -332,6 +332,101 @@ describe('PUT /api/categories', () => {
     });
   });
 
+  // #145: analytics caches are keyed by type and group.
+  describe('type/group change emits CATEGORY_CLASSIFICATION_CHANGED', () => {
+    const base = {
+      id: 3, tenantId: 'tenant-abc', name: 'Gym', type: 'Lifestyle', group: 'Health',
+      icon: 'dumbbell', defaultCategoryCode: null, processingHint: null, portfolioItemKeyStrategy: 'IGNORE',
+    };
+    async function put(body: any, { existing = base, transactionCount = 12, req: reqOverrides = {} }: any = {}) {
+      mockPrisma.category.findUnique.mockResolvedValue(existing);
+      mockPrisma.transaction.count.mockResolvedValue(transactionCount);
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+        mockPrisma.category.update.mockResolvedValue({ ...existing, ...body });
+        return fn(mockPrisma);
+      });
+      const res = makeRes();
+      await handler(makeReq({ method: 'PUT', query: { id: '3' }, body, ...reqOverrides }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      return res;
+    }
+
+    it('group change on a used category triggers an analytics-only rebuild', async () => {
+      await put({ name: 'Gym', group: 'Wellness', type: 'Lifestyle', icon: 'dumbbell' });
+      expect(mockPrisma.transaction.count).toHaveBeenCalledWith({ where: { categoryId: 3, tenantId: 'tenant-abc' } });
+      expect(mockProduceEvent).toHaveBeenCalledTimes(1);
+      expect(mockProduceEvent).toHaveBeenCalledWith({
+        type: 'CATEGORY_CLASSIFICATION_CHANGED',
+        tenantId: 'tenant-abc',
+        categoryId: 3,
+        portfolioImpact: false,
+        source: 'CATEGORY_UPDATE',
+      });
+    });
+
+    it('type change between non-portfolio types has no portfolio impact', async () => {
+      await put({ type: 'Essentials' });
+      expect(mockProduceEvent).toHaveBeenCalledWith(expect.objectContaining({ portfolioImpact: false }));
+    });
+
+    it('type change into Investments runs the portfolio chain', async () => {
+      await put({ type: 'Investments' });
+      expect(mockProduceEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'CATEGORY_CLASSIFICATION_CHANGED', portfolioImpact: true }));
+    });
+
+    it('type change out of Debt runs the portfolio chain', async () => {
+      await put({ type: 'Lifestyle' }, { existing: { ...base, type: 'Debt', processingHint: 'SIMPLE_LIABILITY', portfolioItemKeyStrategy: 'CATEGORY_NAME' } });
+      expect(mockProduceEvent).toHaveBeenCalledWith(expect.objectContaining({ portfolioImpact: true }));
+    });
+
+    it('a group-only change on an Investments category does not rebuild the portfolio', async () => {
+      await put({ group: 'Funds' }, { existing: { ...base, type: 'Investments' } });
+      expect(mockProduceEvent).toHaveBeenCalledWith(expect.objectContaining({ portfolioImpact: false }));
+    });
+
+    it('stamps the agent origin for integration-key writes', async () => {
+      mockProduceEvent.mockClear();
+      // withAuth is mocked: give the request an integration user.
+      const req: any = makeReq({ method: 'PUT', query: { id: '3' }, body: { group: 'Wellness' } });
+      mockPrisma.category.findUnique.mockResolvedValue(base);
+      mockPrisma.transaction.count.mockResolvedValue(1);
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+      mockPrisma.category.update.mockResolvedValue(base);
+      const res = makeRes();
+      const original = mockUser as any;
+      original.authType = 'integration';
+      try {
+        await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      } finally {
+        delete original.authType;
+      }
+      expect(mockProduceEvent).toHaveBeenCalledWith(expect.objectContaining({ _trigger: 'agent' }));
+    });
+
+    it('name/icon-only edits trigger nothing (unchanged type/group echoed back)', async () => {
+      await put({ name: 'Fitness', icon: 'bike', type: 'Lifestyle', group: 'Health' });
+      expect(mockPrisma.transaction.count).not.toHaveBeenCalled();
+      expect(mockProduceEvent).not.toHaveBeenCalled();
+    });
+
+    it('a type/group change on an unused category triggers nothing', async () => {
+      await put({ group: 'Wellness' }, { transactionCount: 0 });
+      expect(mockProduceEvent).not.toHaveBeenCalled();
+    });
+
+    it('a failed update emits nothing', async () => {
+      mockPrisma.category.findUnique.mockResolvedValue(base);
+      mockPrisma.transaction.count.mockResolvedValue(5);
+      const err: any = new Error('Unique');
+      err.code = 'P2002';
+      mockPrisma.$transaction.mockRejectedValue(err);
+      const res = makeRes();
+      await handler(makeReq({ method: 'PUT', query: { id: '3' }, body: { group: 'Wellness' } }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(409);
+      expect(mockProduceEvent).not.toHaveBeenCalled();
+    });
+  });
+
   it('returns 400 for invalid id', async () => {
     const req = makeReq({ method: 'PUT', query: { id: 'abc' }, body: {} });
     const res = makeRes();
