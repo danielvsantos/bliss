@@ -280,7 +280,9 @@ A pricing strategy for funds and ETFs. Mirrors `API_STOCK.js` with two additiona
 
 **In-process TTL cache**: `priceService.js` maintains a module-level `Map` (`_priceCache`) with a **60-second TTL**. Cache key: `${symbol}::${assetType}::${currency||''}::${exchange||''}`. On a cache hit the function returns immediately without calling TwelveData. Entries older than 2× TTL are lazily evicted on each write to keep memory bounded. This cache is intentionally in-process (not Redis) — prices are volatile and should never outlive a process restart on deploy.
 
-`clearPriceCache()` is exported for test isolation. Call it in `beforeEach` to prevent cross-test pollution from the module-level Map persisting between Jest tests.
+**Live-miss (negative) cache**: when the live provider returns no price for an `API_STOCK` / `API_FUND` / `API_CRYPTO` key, the miss is remembered in `_liveMissCache` (same key) for **5 minutes**. During that window the provider is skipped and the lookup goes straight to the `AssetPrice` DB fallback, so an unpriceable symbol does not spend a TwelveData credit on every page load. A stored DB price is still returned when one exists.
+
+`clearPriceCache()` (clears both caches) is exported for test isolation. Call it in `beforeEach` to prevent cross-test pollution from the module-level Map persisting between Jest tests.
 
 ### 6.4.5. Transaction Normalization (`transactionNormalizer.js`)
 
