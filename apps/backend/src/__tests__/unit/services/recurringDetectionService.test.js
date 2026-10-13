@@ -20,6 +20,7 @@ const {
   sha256Hex,
   runKeyFor,
   clusterByAmount,
+  splitBySeries,
   clusterKey,
   inferCadence,
   isAmountStable,
@@ -67,6 +68,7 @@ function existingRow(o) {
     userCadenceLocked: o.userCadenceLocked ?? false,
     userLabelLocked: o.userLabelLocked ?? false,
     mergedIntoHash: o.mergedIntoHash ?? null,
+    splitByAmount: o.splitByAmount ?? false,
     merchantLabel: o.merchantLabel ?? null,
     categoryId: o.categoryId ?? null,
     currency: o.currency ?? null,
@@ -125,6 +127,21 @@ describe('normalizeMerchant / hashMerchant', () => {
     // the aggregator-prefix strip is an allow-list — a merchant's own short name
     // (e.g. "ADOBE *…") must not be treated as a processor code
     expect(normalizeMerchant('ADOBE *CREATIVE CLD')).toBe('adobe creative cld');
+  });
+
+  it('folds PayPal descriptors with and without the "*" into the merchant (#138)', () => {
+    const variants = [
+      'Paypal *spotify 123',
+      'PAYPAL *SPOTIFY',
+      'PayPal Spotify',
+      'PAYPAL SPOTIFY 4029357733',
+      'PayPal - Spotify',
+      'PAYPAL: SPOTIFY',
+      'Spotify',
+    ];
+    expect(new Set(variants.map(normalizeMerchant))).toEqual(new Set(['spotify']));
+    // a bare PayPal charge keeps its own key
+    expect(normalizeMerchant('PAYPAL')).toBe('paypal');
   });
 
   it('never returns an empty key for a URL-only descriptor', () => {
@@ -338,6 +355,49 @@ describe('clusterByAmount', () => {
     expect(clusterKey(9.99)).toBe('10');
     expect(clusterKey(2.49)).toBe('2');
     expect(clusterKey(0.4)).toBe('1'); // floor of 1
+    expect(clusterKey(22.4, { precise: true })).toBe('22.40');
+  });
+});
+
+describe('splitBySeries / interleaved series (#138)', () => {
+  // `monthsBack` months ago, mid-month, so each charge lands in its own month.
+  const at = (debit, monthsBack, day = 10) => {
+    const d = new Date();
+    d.setUTCDate(day);
+    d.setUTCMonth(d.getUTCMonth() - monthsBack);
+    return { debit, transaction_date: d, currency: 'EUR' };
+  };
+
+  it('splits two close amounts charged in parallel in the same months', () => {
+    const input = [at(22, 1, 3), at(22.99, 1, 12), at(22, 2, 3), at(22.99, 2, 12), at(22, 3, 3), at(22.99, 3, 12)];
+    const bands = clusterByAmount(input);
+    expect(bands).toHaveLength(2);
+    expect(bands.map((b) => b.map((t) => t.debit))).toEqual([[22, 22, 22], [22.99, 22.99, 22.99]]);
+  });
+
+  it('never splits a price change (old amount, then new amount)', () => {
+    const input = [at(9.99, 6), at(9.99, 5), at(9.99, 4), at(10.99, 3), at(10.99, 2), at(10.99, 1)];
+    expect(clusterByAmount(input)).toHaveLength(1);
+  });
+
+  it('needs two shared months — one overlapping month is not enough', () => {
+    const input = [at(22, 3), at(22, 2), at(22.99, 2, 20), at(22.99, 1)];
+    expect(splitBySeries(input)).toHaveLength(1);
+  });
+
+  it('attaches stray amounts to the nearest series', () => {
+    const input = [at(22, 1, 3), at(22.99, 1, 12), at(22, 2, 3), at(22.99, 2, 12), at(23.49, 0, 12)];
+    const bands = splitBySeries(input).map((b) => b.map((t) => t.debit));
+    expect(bands).toEqual([[22, 22], [22.99, 22.99, 23.49]]);
+  });
+
+  it('force (manual split) drops the shared-month requirement', () => {
+    const input = [at(9.99, 6), at(9.99, 5), at(9.99, 4), at(10.99, 3), at(10.99, 2), at(10.99, 1)];
+    expect(clusterByAmount(input, { force: true })).toHaveLength(2);
+  });
+
+  it('force still needs two amounts each charged at least twice', () => {
+    expect(splitBySeries([at(9.99, 3), at(9.99, 2), at(12.5, 1)], { force: true })).toHaveLength(1);
   });
 });
 
@@ -410,6 +470,114 @@ describe('detectForTenant — aggregator merchant splitting', () => {
     const { rows } = await detectForTenant(TENANT, { mode: 'full' });
     const amounts = rows.map((r) => Number(r.amount)).sort((a, b) => a - b);
     expect(amounts).toEqual([2.99, 22]); // the €9.99 band is suppressed
+  });
+});
+
+describe('detectForTenant — close amounts and manual split (#138)', () => {
+  const MEDIA = { id: 41, name: 'App Store', icon: '📱', isRecurring: true, type: 'Lifestyle' };
+  const KEY = normalizeMerchant('APPLE.COM/BILL');
+
+  function apple(id, debit, monthsBack, day) {
+    const d = new Date();
+    d.setUTCDate(day);
+    d.setUTCMonth(d.getUTCMonth() - monthsBack);
+    return {
+      id, description: 'APPLE.COM/BILL', debit, currency: 'EUR',
+      transaction_date: d, categoryId: MEDIA.id, category: MEDIA,
+    };
+  }
+
+  // ChatGPT €22.99 and Claude Pro €22.00, both billed by Apple every month.
+  const parallel = () => [
+    apple(1, 22.99, 3, 5), apple(2, 22, 3, 18),
+    apple(3, 22.99, 2, 5), apple(4, 22, 2, 18),
+    apple(5, 22.99, 1, 5), apple(6, 22, 1, 18),
+  ];
+
+  it('two monthly charges of 22.00 and 22.99 from one merchant produce two rows', async () => {
+    mockTxns({ tierA: parallel() });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows.map((r) => Number(r.amount)).sort((a, b) => a - b)).toEqual([22, 22.99]);
+    expect(rows.every((r) => r.cadence === 'MONTHLY' && r.occurrenceCount === 3)).toBe(true);
+    expect(new Set(rows.map((r) => r.descriptionHash))).toEqual(
+      new Set([sha256Hex(`${KEY}#22`), sha256Hex(`${KEY}#23`)]),
+    );
+  });
+
+  it('keeps the cents in the key when two bands round to the same unit', async () => {
+    const tierA = [
+      apple(1, 22, 3, 5), apple(2, 22.4, 3, 18),
+      apple(3, 22, 2, 5), apple(4, 22.4, 2, 18),
+    ];
+    mockTxns({ tierA });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(new Set(rows.map((r) => r.descriptionHash))).toEqual(
+      new Set([sha256Hex(`${KEY}#22.00`), sha256Hex(`${KEY}#22.40`)]),
+    );
+  });
+
+  it('a decided combined row that now splits keeps its row for the band on its own key', async () => {
+    // Before #138 the six charges were one CONFIRMED row; its median (22.495)
+    // rounds to the "#22" key, which the €22.00 band still resolves to directly.
+    const oldKey = sha256Hex(`${KEY}#22`);
+    mockTxns({
+      tierA: parallel(),
+      existing: [existingRow({
+        id: 77, descriptionHash: oldKey, chargeKey: oldKey, state: 'CONFIRMED',
+        contributingTransactionIds: [1, 2, 3, 4, 5, 6],
+      })],
+    });
+    const { rows, reconciliations } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows.map((r) => r.descriptionHash).sort()).toEqual([oldKey, sha256Hex(`${KEY}#23`)].sort());
+    // the €22.99 band inherits the decision, but the old row is NOT deleted
+    expect(rows.every((r) => r._isConfirmed)).toBe(true);
+    expect(reconciliations).toEqual([]);
+  });
+
+  // A price change is never split automatically — only by the user's split.
+  const priceChange = () => [
+    apple(1, 9.99, 6, 10), apple(2, 9.99, 5, 10), apple(3, 9.99, 4, 10),
+    apple(4, 10.99, 3, 10), apple(5, 10.99, 2, 10), apple(6, 10.99, 1, 10),
+  ];
+
+  it('a split marker on the merchant forces one row per amount and is not emitted itself', async () => {
+    const bare = sha256Hex(KEY);
+    mockTxns({
+      tierA: priceChange(),
+      existing: [existingRow({ descriptionHash: bare, chargeKey: bare, splitByAmount: true })],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows.map((r) => Number(r.amount)).sort((a, b) => a - b)).toEqual([9.99, 10.99]);
+    expect(rows.some((r) => r.descriptionHash === bare)).toBe(false);
+  });
+
+  it('without the marker the same charges stay one row', async () => {
+    mockTxns({ tierA: priceChange() });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(sha256Hex(KEY));
+  });
+
+  it('new rows of a CONFIRMED split inherit the decision', async () => {
+    const bare = sha256Hex(KEY);
+    mockTxns({
+      tierA: priceChange(),
+      existing: [existingRow({ descriptionHash: bare, chargeKey: bare, state: 'CONFIRMED', splitByAmount: true })],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r._promoteState === 'CONFIRMED' && r.detectionReason === 'USER_CONFIRMED')).toBe(true);
+  });
+
+  it('a split marker with only one amount left comes back as the normal row', async () => {
+    const bare = sha256Hex(KEY);
+    mockTxns({
+      tierA: [apple(1, 9.99, 3, 10), apple(2, 9.99, 2, 10), apple(3, 9.99, 1, 10)],
+      existing: [existingRow({ descriptionHash: bare, chargeKey: bare, splitByAmount: true })],
+    });
+    const { rows } = await detectForTenant(TENANT, { mode: 'incremental' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].descriptionHash).toBe(bare);
   });
 });
 

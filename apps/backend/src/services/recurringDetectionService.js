@@ -47,6 +47,7 @@ const {
   SUBSCRIPTION_MAX_CONTRIBUTING_IDS,
   SUBSCRIPTION_CADENCE_BUCKETS,
   SUBSCRIPTION_CLUSTER_MIN_GROUP,
+  SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS,
 } = require('../config/classificationConfig');
 
 const BATCH_SIZE = 1000;
@@ -83,6 +84,7 @@ function normalizeMerchant(description) {
     .toLowerCase()
     .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')     // strip accents
     .replace(/^\s*(?:sq|sqc|tst|pp|pyp|ppl|dd|cke|clv|sp|py|paypal|pos)\s*\*+\s*/, ' ') // payment-aggregator prefix: "SQ *", "PAYPAL *", "TST*" (allow-list \u2014 never a merchant's own name)
+    .replace(/^\s*paypal[\s:/-]+(?=[a-z])/, ' ')            // "PayPal Spotify", "PAYPAL - SPOTIFY": PayPal prefix without the "*"
     .replace(/\bwww\./g, ' ')                              // URL prefix: "www.audible.com" -> "audible.com"
     .replace(/\.(?:com|net|org|io|co|app|dev|ai|tv|fm|gg|me|shop|store|xyz|cloud|info|biz)\b/g, ' ') // TLDs
     .replace(/\bx{2,}\d+\b/g, ' ')                         // masked card numbers: xxxx1234
@@ -112,10 +114,12 @@ function hashMerchant(description) {
 
 /**
  * Stable per-amount-band suffix for a split merchant's key. Rounds to a whole
- * currency unit so sub-unit drift (9.99 → 10.49) keeps the same key.
+ * currency unit so sub-unit drift (9.99 → 10.49) keeps the same key. `precise`
+ * keeps the cents — only used when two bands of one merchant would otherwise
+ * share a whole-unit key (e.g. €22.00 and €22.40).
  */
-function clusterKey(medianAmount) {
-  return String(Math.max(1, Math.round(medianAmount)));
+function clusterKey(medianAmount, { precise = false } = {}) {
+  return precise ? Math.abs(medianAmount).toFixed(2) : String(Math.max(1, Math.round(medianAmount)));
 }
 
 /** Priority used to pick a winner when two decided rows reconcile to one identity. */
@@ -129,10 +133,76 @@ const STATE_PRIORITY = { CONFIRMED: 3, DISMISSED: 2, DETECTED: 1 };
  *   bare merchant → sha256("<merchantKey>")
  *   amount band   → sha256("<merchantKey>#<clusterKey(median)>")
  */
-function runKeyFor(merchantKey, { isSplit = false, bandMedian = 0 } = {}) {
+function runKeyFor(merchantKey, { isSplit = false, bandMedian = 0, precise = false } = {}) {
   return isSplit
-    ? sha256Hex(`${merchantKey}#${clusterKey(bandMedian)}`)
+    ? sha256Hex(`${merchantKey}#${clusterKey(bandMedian, { precise })}`)
     : sha256Hex(merchantKey);
+}
+
+/** 'YYYY-MM' of a charge, or null when it has no usable date. */
+function monthOf(txn) {
+  const d = txn.transaction_date instanceof Date ? txn.transaction_date : new Date(txn.transaction_date);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 7);
+}
+
+/**
+ * Split interleaved series: one merchant charging two (or more) distinct
+ * amounts in parallel, e.g. ChatGPT €22.99 and Claude Pro €22.00 both billed
+ * through Apple. Their amounts are within the drift tolerance, so the gap
+ * clustering in clusterByAmount() never separates them.
+ *
+ * A "series" is an exact amount (to the cent) charged at least twice. Series
+ * that are both charged in >= SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS of the same
+ * calendar months are parallel subscriptions; each becomes the centre of a band
+ * and every other charge joins the nearest centre. A price change (old amount
+ * until month N, new amount after) shares at most one month, so it is never
+ * split.
+ *
+ * `force` (the user's manual split) drops the shared-month requirement: every
+ * series becomes its own band.
+ *
+ * @param {Array<{ debit: *, transaction_date: Date }>} occurrences
+ * @param {{ force?: boolean }} [opts]
+ * @returns {Array<Array>}  one array per band; `[occurrences]` when nothing splits
+ */
+function splitBySeries(occurrences, { force = false } = {}) {
+  const byCents = new Map();
+  for (const t of occurrences) {
+    const cents = Math.round(toNumber(t.debit) * 100);
+    if (!byCents.has(cents)) byCents.set(cents, []);
+    byCents.get(cents).push(t);
+  }
+  const series = [...byCents.entries()].filter(([, occ]) => occ.length >= 2);
+  if (series.length < 2) return [occurrences];
+
+  let centres;
+  if (force) {
+    centres = series.map(([cents]) => cents);
+  } else {
+    const months = series.map(([, occ]) => new Set(occ.map(monthOf).filter(Boolean)));
+    const parallel = new Set();
+    for (let i = 0; i < series.length; i++) {
+      for (let j = i + 1; j < series.length; j++) {
+        let shared = 0;
+        for (const m of months[i]) if (months[j].has(m)) shared += 1;
+        if (shared >= SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS) { parallel.add(i); parallel.add(j); }
+      }
+    }
+    if (parallel.size < 2) return [occurrences];
+    centres = [...parallel].map((i) => series[i][0]);
+  }
+
+  centres.sort((a, b) => a - b);
+  const bands = centres.map(() => []);
+  for (const t of occurrences) {
+    const cents = Math.round(toNumber(t.debit) * 100);
+    let best = 0;
+    for (let i = 1; i < centres.length; i++) {
+      if (Math.abs(cents - centres[i]) < Math.abs(cents - centres[best])) best = i;
+    }
+    bands[best].push(t);
+  }
+  return bands.filter((b) => b.length);
 }
 
 /**
@@ -144,14 +214,24 @@ function runKeyFor(merchantKey, { isSplit = false, bandMedian = 0 } = {}) {
  * separates the charges into bands so each real recurring price becomes its own
  * row.
  *
- * Returns `[occurrences]` unchanged when the merchant is small
- * (< SUBSCRIPTION_CLUSTER_MIN_GROUP occurrences) or when every charge lands in
- * one band — so normal single-price merchants are completely unaffected.
+ * Gap clustering only runs from SUBSCRIPTION_CLUSTER_MIN_GROUP occurrences.
+ * Each resulting band is then checked for interleaved series (splitBySeries),
+ * which also separates close amounts charged in parallel (€22.00 / €22.99).
+ * Returns `[occurrences]` unchanged when every charge lands in one band — so
+ * normal single-price merchants are completely unaffected.
  *
- * @param {Array<{ debit: * }>} occurrences  same-currency occurrences
+ * @param {Array<{ debit: *, transaction_date?: Date }>} occurrences  same-currency occurrences
+ * @param {{ force?: boolean }} [opts]  force: the user split this merchant by amount
  * @returns {Array<Array>}  one array of occurrences per band
  */
-function clusterByAmount(occurrences) {
+function clusterByAmount(occurrences, { force = false } = {}) {
+  if (!occurrences.length) return [occurrences];
+  const bands = gapCluster(occurrences).flatMap((band) => splitBySeries(band, { force }));
+  return bands.length > 1 ? bands : [occurrences];
+}
+
+/** Gap clustering: split where consecutive sorted amounts jump past the drift tolerance. */
+function gapCluster(occurrences) {
   if (occurrences.length < SUBSCRIPTION_CLUSTER_MIN_GROUP) return [occurrences];
 
   const sorted = [...occurrences].sort((a, b) => toNumber(a.debit) - toNumber(b.debit));
@@ -320,12 +400,21 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
       userCadenceLocked: true,
       userLabelLocked: true,
       mergedIntoHash: true,
+      splitByAmount: true,
       merchantLabel: true,
       categoryId: true,
       currency: true,
       contributingTransactionIds: true,
     },
   });
+
+  // Manual split markers (#138): the run key (bare merchant or amount band) the
+  // user split by amount → the marker row. Merge tombstones never split.
+  const splitMarkers = new Map(
+    existingRows
+      .filter((r) => r.splitByAmount && !r.mergedIntoHash)
+      .map((r) => [r.descriptionHash, r]),
+  );
 
   const idOf = (row) => row.chargeKey || row.descriptionHash;
   const rowByDescriptionHash = new Map(existingRows.map((r) => [r.descriptionHash, r]));
@@ -534,13 +623,35 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     // each band's identity (overlap tiebreaker included).
     const currency = dominantValue(groupOcc.map((t) => t.currency));
     const domOcc = groupOcc.filter((t) => t.currency === currency);
-    const bands = clusterByAmount(domOcc);
+    const bandMedianOf = (band) => median(band.map((t) => toNumber(t.debit))) || toNumber(band[band.length - 1].debit);
+    // A manual split marker on the bare merchant forces a split by amount; one on
+    // an amount band forces that band to split further.
+    let bands = clusterByAmount(domOcc, { force: splitMarkers.has(bareRunKey) });
+    if (bands.length > 1 && splitMarkers.size) {
+      bands = bands.flatMap((band) => (
+        splitMarkers.has(runKeyFor(merchantKey, { isSplit: true, bandMedian: bandMedianOf(band) }))
+          ? splitBySeries(band, { force: true })
+          : [band]
+      ));
+    }
     const isSplit = bands.length > 1;
 
-    for (const band of bands) {
-      const bandMedian = median(band.map((t) => toNumber(t.debit))) || toNumber(band[band.length - 1].debit);
-      const freshKey = isSplit ? runKeyFor(merchantKey, { isSplit: true, bandMedian }) : bareRunKey;
+    // Whole-unit band keys; two bands that round to the same unit (€22.00 and
+    // €22.40) keep the cents instead, so they never collapse into one identity.
+    const medians = bands.map(bandMedianOf);
+    const unitCount = new Map();
+    for (const m of medians) unitCount.set(clusterKey(m), (unitCount.get(clusterKey(m)) || 0) + 1);
+
+    for (const [i, band] of bands.entries()) {
+      const bandMedian = medians[i];
+      const precise = unitCount.get(clusterKey(bandMedian)) > 1;
+      const freshKey = isSplit ? runKeyFor(merchantKey, { isSplit: true, bandMedian, precise }) : bareRunKey;
       const bandIdentity = resolveIdentity(freshKey, band.map((t) => t.id), { splitBand: isSplit });
+      // Bands created by a manual split inherit the marker's CONFIRMED decision.
+      const marker = isSplit ? (splitMarkers.get(bareRunKey) || null) : null;
+      if (marker?.state === 'CONFIRMED' && !bandIdentity.row && !bandIdentity.promoteFrom) {
+        bandIdentity.promoteFrom = marker;
+      }
       const e = addOcc(bandIdentity, band, { freshKey, isSplitBand: isSplit });
       // A non-split band that resolved (via overlap) onto an existing decided row
       // is a deliberate collapse — treat it as "one subscription".
@@ -664,9 +775,14 @@ async function detectForTenant(tenantId, { mode = 'incremental' } = {}) {
     recordLosers(e.descriptionHash, e.metaRow, e.losers, e.promoteFrom);
   }
 
+  // Never reconcile away a row that is itself emitted this run: when a decided
+  // band splits again (€22.00 / €22.99), the band on the old key keeps the old
+  // row while the other band only inherits its decision (promoteFrom).
+  const emittedHashes = new Set(rows.map((r) => r.descriptionHash));
+
   return {
     rows,
-    reconciliations: [...reconById.values()],
+    reconciliations: [...reconById.values()].filter((r) => !emittedHashes.has(r.loserDescriptionHash)),
     tierACount: tierATxns.length,
     tierBCount: tierBTxns.length,
     tierBSkipped,
@@ -680,6 +796,7 @@ module.exports = {
   sha256Hex,
   runKeyFor,
   clusterByAmount,
+  splitBySeries,
   clusterKey,
   median,
   isAmountStable,

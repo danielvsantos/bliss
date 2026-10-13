@@ -20,10 +20,11 @@ Plaid), decrypts descriptions in memory, groups by merchant, and persists one
 | `userCadenceLocked` | `true` once the user edits the cadence — the detector then stops touching `cadence`. |
 | `userLabelLocked` | `true` once the user renames the charge — the detector then stops touching `merchantLabel`. |
 | `mergedIntoHash` | `String?`. When set, this row is a **merge tombstone**: the value is the target row's own `descriptionHash` (a plain row hash — not derived from the label, so renaming the target does not break the link). Every run folds this merchant's transactions into the target's row; the tombstone itself produces nothing and is hidden from Active/Lapsed. |
+| `splitByAmount` | `Boolean`, default `false`. When `true`, this row is a **split marker** (manual split, #138): every run splits this merchant's (or amount band's) charges into one row per distinct recurring amount; the marker itself produces nothing and is hidden from Active/Lapsed (shown under "All" with an Unsplit action). See [Manual split](#manual-split). |
 | `status` | `ACTIVE` \| `LAPSED` (`LAPSED` once no charge within `1.5 × cadence`). |
 | `detectionReason` | `CATEGORY_SIGNAL` (Tier A) \| `INTERVAL_HEURISTIC` (Tier B) \| `USER_CONFIRMED`. |
 | `amount` / `currency` | Median native amount + dominant currency across occurrences. |
-| `occurrenceCount`, `firstChargedAt`, `lastChargedAt`, `nextExpectedAt` | `nextExpectedAt = lastChargedAt + one nominal cadence period`. Never fetched from a provider. |
+| `occurrenceCount`, `firstChargedAt`, `lastChargedAt`, `nextExpectedAt` | `nextExpectedAt = lastChargedAt + one nominal cadence period`. Never fetched from a provider. `occurrenceCount` / `lastChargedAt` describe the scanned window; `firstChargedAt` is **sticky** — the worker keeps `min(stored, detected)`, so the nightly 6-month run never moves it later than a full scan found it (#138). |
 | `contributingTransactionIds` | Up to 24 most-recent ids — powers the page's "expand row → underlying charges" view. |
 
 Also: `Category.isRecurring BOOLEAN NOT NULL DEFAULT false`;
@@ -88,6 +89,22 @@ sorted amount exceeds `max(5%, 2 units)`), it is **split into one
 * A merchant with < 6 occurrences, or whose charges all land in one band, is
   **untouched** — its row keeps the bare `sha256("<merchantKey>")` hash.
 
+**Interleaved series (#138).** Gap clustering cannot separate two
+subscriptions billed by one aggregator at close prices — Apple-billed ChatGPT
+€22.99 and Claude Pro €22.00 are within `max(5%, 2 units)` of each other and
+became one row, so the monthly total was ~€22 short. After gap clustering, each
+band (and any merchant below 6 occurrences) goes through `splitBySeries()`:
+
+* A **series** is an exact amount (to the cent) charged at least twice.
+* Two series that are both charged in `>= SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS`
+  (2) of the same calendar months are parallel subscriptions. Each becomes the
+  centre of its own band; every other charge joins the nearest centre.
+* A **price change** (old amount until month N, new amount after) shares at most
+  one month, so it is never split automatically.
+* When two bands round to the same whole unit (€22.00 / €22.40), their keys keep
+  the cents (`sha256("<merchantKey>#22.00")`) so they never collapse into one
+  identity.
+
 Each band carries its own durable `chargeKey` (`sha256("<merchantKey>#<band>")`).
 Bands are **reconciled**, never retired one-directionally:
 
@@ -151,6 +168,33 @@ Subscriptions page (the merge icon in a row's action buttons):
   `{ code: 'MERGE_TARGET_HAS_DEPENDENTS' }` — the user must unmerge first. No
   cascade, so a tombstone can never point at a `chargeKey` with no row.
 
+### Manual split
+
+`unmerge` only undoes a manual merge; a row that **detection** combined (two
+amounts within the drift tolerance that are not interleaved enough to split
+automatically) needs its own action:
+
+* `POST /api/subscriptions { action: 'split', descriptionHash }` sets
+  `splitByAmount = true` on the row, clears its `contributingTransactionIds`,
+  `nextExpectedAt` and sets `status = ACTIVE` (like a merge tombstone), and
+  enqueues an incremental rescan. Refused with `400` for a merged row, an
+  already-split row or a `DISMISSED` row, `409 MERGE_TARGET_HAS_DEPENDENTS` for a
+  merge target with rows folded into it, and `400 NOTHING_TO_SPLIT` when its
+  recent charges do not repeat at two or more different amounts.
+* On every run, a marker on the merchant's bare key forces
+  `clusterByAmount(…, { force: true })` (every series becomes a band, no
+  shared-month requirement); a marker on an amount band's key forces that band
+  to split further. The resulting band rows are ordinary rows keyed
+  `"<merchantKey>#<band>"`. A `CONFIRMED` marker promotes its decision onto the
+  new band rows.
+* The marker is never emitted and never pruned (the prune skips
+  `splitByAmount = true`). If only one amount is left, the merchant comes back
+  as a normal row on the marker's own key and the worker clears
+  `splitByAmount` — the split dissolves.
+* `POST /api/subscriptions { action: 'unsplit', descriptionHash }` clears
+  `splitByAmount` and rescans. MCP: `update_subscription` actions `split` /
+  `unsplit`.
+
 ### Rename
 
 `POST /api/subscriptions { action: 'rename', descriptionHash, merchantLabel }`
@@ -175,13 +219,16 @@ Queue: `subscription-detection` (concurrency 1, `lockDuration` 300s). Worker
 In one `prisma.$transaction`, in order:
 1. **Prune** — `deleteMany` `state = 'DETECTED'` rows whose `descriptionHash` is
    no longer detected. Hardened so it can never delete a `CONFIRMED` /
-   `DISMISSED` row, a merge tombstone (`mergedIntoHash != null`), **or a merge
-   target** (a `descriptionHash` that some other row folds into).
+   `DISMISSED` row, a merge tombstone (`mergedIntoHash != null`), a split marker
+   (`splitByAmount`), **or a merge target** (a `descriptionHash` that some other
+   row folds into).
 2. **Upsert** per `(tenantId, descriptionHash)` — **create** with `state:
    'DETECTED'` and `chargeKey` stamped once (`row.chargeKey || descriptionHash`);
    **update** merges detector fields only, never `state` / `userCadenceLocked` /
    `userLabelLocked` / `chargeKey`, skips `cadence` when `userCadenceLocked`, and
-   skips `merchantLabel` when `userLabelLocked`.
+   skips `merchantLabel` when `userLabelLocked`. `firstChargedAt` is never moved
+   later than the stored value (the window only sees its own earliest charge),
+   and a split marker that came back as a normal row gets `splitByAmount = false`.
 3. **Promote** — a brand-new split-band row that inherited a `CONFIRMED` decision
    from the bare row it replaced is bumped to `CONFIRMED`.
 4. **Reconcile** — for each `(winner, loser)` the detector returned: update the
@@ -222,7 +269,8 @@ formula mirrors the backend `computeStatus` (grace = `1.5 × cadence`).
 `SUBSCRIPTION_AMOUNT_DRIFT_PCT=0.05`, `SUBSCRIPTION_AMOUNT_DRIFT_ABS=2`,
 `SUBSCRIPTION_GAP_CV_MAX=0.25`, `SUBSCRIPTION_LAPSE_MULTIPLIER=1.5`,
 `SUBSCRIPTION_REFRESH_COOLDOWN_MIN=30`, `SUBSCRIPTION_MAX_CONTRIBUTING_IDS=24`,
-`SUBSCRIPTION_CLUSTER_MIN_GROUP=6`, `SUBSCRIPTION_CADENCE_BUCKETS` (day ranges
+`SUBSCRIPTION_CLUSTER_MIN_GROUP=6`, `SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS=2`,
+`SUBSCRIPTION_CADENCE_BUCKETS` (day ranges
 per cadence).
 
 ## Merchant normalization
@@ -240,7 +288,10 @@ Pipeline (order matters), lower-casing then:
 2. Strip a **payment-aggregator prefix** — allow-list only (`sq`, `sqc`, `tst`,
    `pp`, `pyp`, `ppl`, `dd`, `cke`, `clv`, `sp`, `py`, `paypal`, `pos`) followed
    by `*`. Deliberately not "any short token + `*`" — that would eat a merchant's
-   own short name (`ADOBE *CREATIVE CLD`).
+   own short name (`ADOBE *CREATIVE CLD`). `paypal` alone is also stripped
+   **without** the `*` when followed by a separator and a word (`PayPal Spotify`,
+   `PAYPAL - SPOTIFY`, `PAYPAL SPOTIFY 4029357733` → `spotify`, #138); a bare
+   `PAYPAL` keeps its own key.
 3. Strip the `www.` URL prefix, then common **TLDs** (`.com`, `.net`, `.io`,
    `.co`, `.app`, …) — `NETFLIX.COM` → `netflix`.
 4. Strip masked card numbers (`xxxx1234`), dates (`04/12`, `2026-01-03`), and
@@ -254,7 +305,7 @@ Pipeline (order matters), lower-casing then:
    `SODEXO 07` → the merchant) — but keep the original key if this would empty
    it.
 
-So `Netflix`, `NETFLIX.COM`, `SQ *NETFLIX`, `NETFLIX 08/15 POS DEBIT`,
+So `Netflix`, `NETFLIX.COM`, `SQ *NETFLIX`, `PayPal Netflix`, `NETFLIX 08/15 POS DEBIT`,
 `Netflix Inc`, `Netflix 4`, `NÉTFLIX` all → `netflix`.
 
 **Known limits (left to Confirm/Dismiss and, later, manual merge):** it never

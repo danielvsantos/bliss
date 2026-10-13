@@ -18,6 +18,7 @@ export function normalizeMerchant(description) {
     .toLowerCase()
     .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')     // strip accents
     .replace(/^\s*(?:sq|sqc|tst|pp|pyp|ppl|dd|cke|clv|sp|py|paypal|pos)\s*\*+\s*/, ' ') // payment-aggregator prefix: "SQ *", "PAYPAL *", "TST*" (allow-list \u2014 never a merchant's own name)
+    .replace(/^\s*paypal[\s:/-]+(?=[a-z])/, ' ')            // "PayPal Spotify", "PAYPAL - SPOTIFY": PayPal prefix without the "*"
     .replace(/\bwww\./g, ' ')                              // URL prefix: "www.audible.com" -> "audible.com"
     .replace(/\.(?:com|net|org|io|co|app|dev|ai|tv|fm|gg|me|shop|store|xyz|cloud|info|biz)\b/g, ' ') // TLDs
     .replace(/\bx{2,}\d+\b/g, ' ')                         // masked card numbers: xxxx1234

@@ -98,6 +98,8 @@ const confirmMutate = vi.fn();
 const renameMutate = vi.fn();
 const mergeMutate = vi.fn();
 const unmergeMutate = vi.fn();
+const splitMutate = vi.fn();
+const unsplitMutate = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -108,6 +110,8 @@ beforeEach(() => {
   vi.mocked(UseSubs.useRenameSubscription).mockReturnValue(mockMutationResult({ mutate: renameMutate }));
   vi.mocked(UseSubs.useMergeSubscription).mockReturnValue(mockMutationResult({ mutate: mergeMutate }));
   vi.mocked(UseSubs.useUnmergeSubscription).mockReturnValue(mockMutationResult({ mutate: unmergeMutate }));
+  vi.mocked(UseSubs.useSplitSubscription).mockReturnValue(mockMutationResult({ mutate: splitMutate }));
+  vi.mocked(UseSubs.useUnsplitSubscription).mockReturnValue(mockMutationResult({ mutate: unsplitMutate }));
   vi.mocked(UseSubs.useRefreshSubscriptions).mockReturnValue(mockMutationResult({ mutate: vi.fn() }));
 });
 
@@ -245,6 +249,28 @@ describe('SubscriptionsPage', () => {
     renderPage();
     expect(screen.getByRole('button', { name: /subscriptions\.merge\.unmerge/i })).toBeInTheDocument();
     expect(screen.getByText('Orange')).toBeInTheDocument();
+  });
+
+  it('shows the Unsplit action for a split marker under the All view', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(
+      mockQueryResult(
+        baseResponse([makeItem({ descriptionHash: 'hash-apple', merchantLabel: 'Apple.com/bill', splitByAmount: true })]),
+      ),
+    );
+    renderPage();
+    expect(screen.getByText('subscriptions.split.markerHint')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.split\.unsplit/i }));
+    expect(unsplitMutate).toHaveBeenCalledWith('hash-apple', expect.any(Object));
+    expect(screen.queryByRole('button', { name: /subscriptions\.confirm/i })).not.toBeInTheDocument();
+  });
+
+  it('offers "split by amount" in the expanded charges and fires the split mutation', () => {
+    vi.mocked(UseSubs.useSubscriptions).mockReturnValue(mockQueryResult(baseResponse([makeItem()])));
+    renderPage();
+    expect(screen.queryByRole('button', { name: /subscriptions\.split\.splitByAmount/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.toggleCharges/i }));
+    fireEvent.click(screen.getByRole('button', { name: /subscriptions\.split\.splitByAmount/i }));
+    expect(splitMutate).toHaveBeenCalledWith('hash-1', expect.any(Object));
   });
 
   it('renders the "merge target missing" state on a tombstone whose target is gone', () => {

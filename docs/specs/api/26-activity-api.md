@@ -102,7 +102,7 @@ Tool counts after #100: 22 read / 41 total. Coverage: 88 reachable, 68 wrapped, 
 
 ## 26.7. Agent-triggered work
 
-Writes made with an integration key (directly or through MCP) spread `eventOrigin(req)` (`{ _trigger: 'agent' }`) into their `produceEvent` payloads. The call sites are transactions (create/update/delete, tags), Plaid review (promote, bulk promote, retry), import commit, manual asset values and subscriptions (scan / merge / unmerge). The backend forwards `_trigger` through the whole chain, so household members see that work labelled **AI agent** (PRD OQ3). Session requests add nothing.
+Writes made with an integration key (directly or through MCP) spread `eventOrigin(req)` (`{ _trigger: 'agent' }`) into their `produceEvent` payloads. The call sites are transactions (create/update/delete, tags), Plaid review (promote, bulk promote, retry), import commit, manual asset values and subscriptions (scan / merge / unmerge / split / unsplit). The backend forwards `_trigger` through the whole chain, so household members see that work labelled **AI agent** (PRD OQ3). Session requests add nothing.
 
 ## 26.8. `PROCESSING_FAILED` notification
 

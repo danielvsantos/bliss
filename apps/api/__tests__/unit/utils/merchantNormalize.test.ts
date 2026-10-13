@@ -37,6 +37,20 @@ describe('merchantNormalize', () => {
     expect(normalizeMerchant('ADOBE *CREATIVE CLD')).toBe('adobe creative cld');
   });
 
+  it('folds PayPal descriptors with and without the "*" into the merchant (#138)', () => {
+    const variants = [
+      'Paypal *spotify 123',
+      'PAYPAL *SPOTIFY',
+      'PayPal Spotify',
+      'PAYPAL SPOTIFY 4029357733',
+      'PayPal - Spotify',
+      'PAYPAL: SPOTIFY',
+      'Spotify',
+    ];
+    expect(new Set(variants.map(normalizeMerchant))).toEqual(new Set(['spotify']));
+    expect(normalizeMerchant('PAYPAL')).toBe('paypal');
+  });
+
   it('never returns an empty key for a URL-only descriptor', () => {
     expect(normalizeMerchant('www.audible.com/manage')).toBe('audible manage');
   });

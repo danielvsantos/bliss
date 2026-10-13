@@ -2388,6 +2388,14 @@ const en = {
       stale: "This merge isn't taking effect — try Unmerge and merge again.",
       dismissBlocked: "Unmerge the rows folded into this one first.",
     },
+    split: {
+      splitByAmount: "Split by amount — one subscription per price",
+      split: "Split into one subscription per amount",
+      unsplit: "Undo split",
+      unsplitDone: "Split undone",
+      markerHint: "Split by amount — each recurring price is its own subscription.",
+      nothingToSplit: "These charges don't repeat at two or more different amounts.",
+    },
     pager: {
       prev: "Previous",
       next: "Next",

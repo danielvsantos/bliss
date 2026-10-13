@@ -797,6 +797,8 @@ export type SubscriptionItem = {
   contributingTransactionIds: number[];
   /** Set when this row is a manual-merge tombstone — folded into another merchant. */
   mergedIntoHash: string | null;
+  /** Set when this row is a manual split marker — its charges are shown per amount in other rows. */
+  splitByAmount?: boolean;
   /** Human label of the merge target (the row this one folds into). */
   mergedIntoLabel: string | null;
   /** True when this tombstone's merge target row no longer exists. */

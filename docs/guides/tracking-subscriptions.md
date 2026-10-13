@@ -18,7 +18,7 @@ For spending categories that *aren't* marked recurring, Bliss looks for a patter
 
 ### Merchant grouping
 
-Charges are grouped by a normalized merchant key, so `NETFLIX.COM`, `SQ *NETFLIX`, `NETFLIX 08/15 POS DEBIT`, and `Netflix Inc` all collapse into one subscription. `Netflix` and `Netflix Games` stay separate.
+Charges are grouped by a normalized merchant key, so `NETFLIX.COM`, `SQ *NETFLIX`, `PayPal Netflix`, `NETFLIX 08/15 POS DEBIT`, and `Netflix Inc` all collapse into one subscription. `Netflix` and `Netflix Games` stay separate.
 
 **Aggregator merchants** — the Apple App Store, Amazon, PayPal — bill many unrelated things under one name. When a merchant has a handful of charges that fall into clearly different price bands, Bliss splits it into **one row per recurring price** (e.g. `Apple` at €2.99, at €9.99, and at €22.00), so each real subscription shows a meaningful amount. A one-off large purchase mixed in doesn't become a subscription.
 
@@ -46,6 +46,10 @@ The merchant matcher is deliberately cautious and won't join names that only sha
 
 The folded-away row still exists, just hidden: switch the filter to **All** (or click the *"N merged — manage"* shortcut next to the filters) to see it, dimmed, with an **Unmerge** action that returns it to a standalone subscription. Merges survive re-imports and re-scans.
 
+### Split one row into two
+
+Two subscriptions billed by the same company at almost the same price — say ChatGPT at €22.99 and Claude Pro at €22.00, both through Apple — are normally recognised as two subscriptions when both are charged in the same months. If they still show as one row, expand it and click **Split by amount**: from then on each recurring price gets its own row, and a confirmed row stays confirmed on both. The original row stays under **All** with an **Undo split** action. Splitting needs at least two different amounts that each repeat; a single price change on one subscription is not split on its own.
+
 ### Confirm / dismiss
 
 - **Confirm** pins a subscription: it stays on the list on every future scan even if it later stops matching the heuristic.
@@ -59,4 +63,4 @@ The header shows your total **monthly-normalized** recurring spend and its **ann
 
 ## Using Claude
 
-If you've [connected Claude to Bliss](/docs/guides/using-bliss-with-claude-mcp), it can list your subscriptions and, with a Read & write connection, confirm, dismiss, rename, merge or re-cadence them, or re-run detection, with the same 30-minute limit as **Scan now**.
+If you've [connected Claude to Bliss](/docs/guides/using-bliss-with-claude-mcp), it can list your subscriptions and, with a Read & write connection, confirm, dismiss, rename, merge, split or re-cadence them, or re-run detection, with the same 30-minute limit as **Scan now**.

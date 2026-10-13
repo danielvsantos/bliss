@@ -606,7 +606,7 @@ Income streams are recurring fixed amounts not produced by a holding (allowance,
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/subscriptions`
 
-Detected recurring charges, one per merchant: cadence, amount, next expected charge and whether it is still ACTIVE or LAPSED. state DETECTED = needs the user's review, CONFIRMED = accepted, DISMISSED = not a subscription. `summary` has the monthly and annual recurring spend in the display currency. view "all" also shows dismissed and merged rows.
+Detected recurring charges, one per merchant: cadence, amount, next expected charge and whether it is still ACTIVE or LAPSED. state DETECTED = needs the user's review, CONFIRMED = accepted, DISMISSED = not a subscription. `summary` has the monthly and annual recurring spend in the display currency. view "all" also shows dismissed, merged and split (splitByAmount: true) rows.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -620,11 +620,11 @@ Detected recurring charges, one per merchant: cadence, amount, next expected cha
 **Access:** Write (Read & write keys only) · can delete or discard data  
 **Wraps:** `POST /api/subscriptions`
 
-confirm (subscriptionId, or transactionId to mark a transaction's merchant as recurring), dismiss (not a subscription), restore (undo dismiss), setCadence (cadence), rename (merchantLabel), merge (subscriptionId folded into targetSubscriptionId, e.g. two descriptors of one merchant), unmerge, refresh (re-run detection; at most every 30 minutes).
+confirm (subscriptionId, or transactionId to mark a transaction's merchant as recurring), dismiss (not a subscription), restore (undo dismiss), setCadence (cadence), rename (merchantLabel), merge (subscriptionId folded into targetSubscriptionId, e.g. two descriptors of one merchant), unmerge, split (one row per distinct recurring amount, e.g. two subscriptions billed by Apple at 22.00 and 22.99; kept across scans), unsplit, refresh (re-run detection; at most every 30 minutes).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | `confirm` \| `dismiss` \| `restore` \| `setCadence` \| `rename` \| `merge` \| `unmerge` \| `refresh` | yes |  |
+| `action` | `confirm` \| `dismiss` \| `restore` \| `setCadence` \| `rename` \| `merge` \| `unmerge` \| `split` \| `unsplit` \| `refresh` | yes |  |
 | `subscriptionId` | string | no |  |
 | `transactionId` | integer | no | confirm only: a transaction of the merchant. |
 | `cadence` | `WEEKLY` \| `MONTHLY` \| `QUARTERLY` \| `ANNUAL` | no |  |

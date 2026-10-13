@@ -2388,6 +2388,14 @@ const pt = {
       stale: "Esta junção não está a ter efeito — tente desfazer e juntar novamente.",
       dismissBlocked: "Primeiro desfaça a junção das linhas integradas nesta.",
     },
+    split: {
+      splitByAmount: "Separar por valor — uma assinatura por preço",
+      split: "Separada em uma assinatura por valor",
+      unsplit: "Desfazer separação",
+      unsplitDone: "Separação desfeita",
+      markerHint: "Separada por valor — cada preço recorrente é uma assinatura própria.",
+      nothingToSplit: "Essas cobranças não se repetem em dois ou mais valores diferentes.",
+    },
     pager: {
       prev: "Anterior",
       next: "Próxima",

@@ -463,3 +463,93 @@ describe('subscription detection — chargeKey reconciliation (integration)', ()
     }
   });
 });
+
+describe('subscription detection — first charge date and manual split (#138, integration)', () => {
+  let tenantId;
+  let account;
+  let mediaCat;
+
+  beforeAll(async () => {
+    ref = await ensureReferenceData();
+    ({ tenantId } = await createIsolatedTenant({ suffix: 'subsdetect-138' }));
+    account = await seedAccount(tenantId, 'USD');
+    mediaCat = await seedCategory(tenantId, 'Streaming', true);
+  });
+
+  afterAll(async () => {
+    await prisma.recurringCharge.deleteMany({ where: { tenantId } });
+    await teardownTenant(tenantId);
+  });
+
+  it('a nightly incremental run never moves firstChargedAt later than the stored value', async () => {
+    // Monthly charges going back ~2 years: a full scan sees them all, the
+    // 6-month incremental window only the recent ones.
+    for (let n = 700; n >= 10; n -= 30) {
+      await seedTxn(tenantId, { accountId: account.id, categoryId: mediaCat.id, description: 'NETFLIX.COM', debit: 15.99, date: daysAgo(n) });
+    }
+    const where = { tenantId_descriptionHash: { tenantId, descriptionHash: hashMerchant('NETFLIX.COM') } };
+
+    await handleDetectTenant({ tenantId, mode: 'full' });
+    const afterFull = await prisma.recurringCharge.findUnique({ where });
+    expect(afterFull.firstChargedAt.getTime()).toBe(daysAgo(700).getTime());
+
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+    const afterNightly = await prisma.recurringCharge.findUnique({ where });
+    expect(afterNightly.firstChargedAt.getTime()).toBe(daysAgo(700).getTime());
+    // the detector-owned window fields still refresh
+    expect(afterNightly.occurrenceCount).toBeLessThan(afterFull.occurrenceCount);
+    expect(afterNightly.lastChargedAt.getTime()).toBe(daysAgo(10).getTime());
+  });
+
+  it('two close amounts charged in parallel (22.00 / 22.99) persist as two rows', async () => {
+    for (const n of [95, 65, 35, 5]) {
+      await seedTxn(tenantId, { accountId: account.id, categoryId: mediaCat.id, description: 'APPLE.COM/BILL', debit: 22.99, date: daysAgo(n) });
+      await seedTxn(tenantId, { accountId: account.id, categoryId: mediaCat.id, description: 'APPLE.COM/BILL', debit: 22, date: daysAgo(n - 3) });
+    }
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+    const key = normalizeMerchant('APPLE.COM/BILL');
+    const rows = await prisma.recurringCharge.findMany({
+      where: { tenantId, chargeKey: { in: [sha256Hex(`${key}#22`), sha256Hex(`${key}#23`)] } },
+      orderBy: { amount: 'asc' },
+    });
+    expect(rows.map((r) => Number(r.amount))).toEqual([22, 22.99]);
+  });
+
+  it('a split marker survives detection runs, its bands persist, and it dissolves when one amount is left', async () => {
+    // Price change: 9.99 then 10.99 — never split automatically.
+    const ids = [];
+    for (const [n, amt] of [[170, 9.99], [140, 9.99], [110, 9.99], [80, 10.99], [50, 10.99], [20, 10.99]]) {
+      const t = await seedTxn(tenantId, { accountId: account.id, categoryId: mediaCat.id, description: 'SPOTIFY', debit: amt, date: daysAgo(n) });
+      ids.push(t.id);
+    }
+    const bare = hashMerchant('SPOTIFY');
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+    expect(await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: bare } } })).toBeTruthy();
+
+    // The user splits it (what POST { action: 'split' } writes).
+    await prisma.recurringCharge.update({
+      where: { tenantId_descriptionHash: { tenantId, descriptionHash: bare } },
+      data: { splitByAmount: true, state: 'CONFIRMED', nextExpectedAt: null, contributingTransactionIds: [] },
+    });
+
+    const key = normalizeMerchant('SPOTIFY');
+    const bandKeys = [sha256Hex(`${key}#10`), sha256Hex(`${key}#11`)];
+    for (let run = 0; run < 2; run++) {
+      await handleDetectTenant({ tenantId, mode: 'incremental' });
+      const marker = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: bare } } });
+      expect(marker.splitByAmount).toBe(true);
+      const bands = await prisma.recurringCharge.findMany({
+        where: { tenantId, descriptionHash: { in: bandKeys } }, orderBy: { amount: 'asc' },
+      });
+      expect(bands.map((r) => Number(r.amount))).toEqual([9.99, 10.99]);
+      expect(bands.every((r) => r.state === 'CONFIRMED')).toBe(true);
+    }
+
+    // Only one amount left → the split dissolves and the merchant row is back.
+    await prisma.transaction.deleteMany({ where: { tenantId, id: { in: ids.slice(0, 3) } } });
+    await handleDetectTenant({ tenantId, mode: 'incremental' });
+    const marker = await prisma.recurringCharge.findUnique({ where: { tenantId_descriptionHash: { tenantId, descriptionHash: bare } } });
+    expect(marker.splitByAmount).toBe(false);
+    expect(Number(marker.amount)).toBe(10.99);
+  });
+});
