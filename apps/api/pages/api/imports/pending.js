@@ -38,27 +38,27 @@ export default withAuth(async function handler(req, res) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // For each import, count promotable rows
-    const results = await Promise.all(
-      imports.map(async (imp) => {
-        const pendingRowCount = await prisma.stagedImportRow.count({
-          where: {
-            stagedImportId: imp.id,
-            status: { in: ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE'] },
-          },
-        });
+    // Count promotable rows for every import in one grouped query — a
+    // per-import count fanned out one connection per import (#135).
+    const counts = imports.length === 0 ? [] : await prisma.stagedImportRow.groupBy({
+      by: ['stagedImportId'],
+      where: {
+        stagedImportId: { in: imports.map((imp) => imp.id) },
+        status: { in: ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE'] },
+      },
+      _count: { _all: true },
+    });
+    const countByImport = new Map(counts.map((c) => [c.stagedImportId, c._count._all]));
 
-        return {
-          id: imp.id,
-          fileName: imp.fileName,
-          adapterName: imp.adapterName,
-          accountId: imp.accountId,
-          totalRows: imp.totalRows,
-          pendingRowCount,
-          createdAt: imp.createdAt,
-        };
-      }),
-    );
+    const results = imports.map((imp) => ({
+      id: imp.id,
+      fileName: imp.fileName,
+      adapterName: imp.adapterName,
+      accountId: imp.accountId,
+      totalRows: imp.totalRows,
+      pendingRowCount: countByImport.get(imp.id) ?? 0,
+      createdAt: imp.createdAt,
+    }));
 
     // Only include imports that still have pending rows
     const pending = results.filter((r) => r.pendingRowCount > 0);

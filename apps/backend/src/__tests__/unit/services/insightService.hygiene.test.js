@@ -127,7 +127,7 @@ jest.mock('axios', () => ({
   }),
 }));
 
-// currencyService owns its own PrismaClient instance for the legitimate
+// currencyService uses the shared prisma client for the legitimate
 // write-through path used by the valuation pipeline. The insights engine
 // must never call that path. Mock it so any attempt fails loudly.
 //

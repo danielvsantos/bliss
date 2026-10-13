@@ -1,10 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
 const { Decimal } = require('@prisma/client/runtime/library');
 const axios = require('axios');
+const prisma = require('../../prisma/prisma');
 const logger = require('../utils/logger');
 const twelveDataService = require('./twelveDataService');
-
-const prisma = new PrismaClient();
 
 const CURRENCYLAYER_API_KEY = process.env.CURRENCYLAYER_API_KEY;
 const CURRENCYLAYER_BASE_URL = "https://api.currencylayer.com/historical";

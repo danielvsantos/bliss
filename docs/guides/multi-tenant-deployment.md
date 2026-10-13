@@ -11,7 +11,7 @@ Bliss ships a Dockerfile per service ([`docker/`](../../docker/)), so the whole 
 | Component | Provider | Why |
 |-----------|----------|-----|
 | **Web** | Railway (nginx container) | Serves the built Vite SPA. Front with a CDN (e.g. Cloudflare) if you need edge caching. |
-| **API** | Railway (Next.js container) | Auth (NextAuth), REST routes, Prisma. Long-running, so the connection pool is persistent -- no serverless pooler needed. |
+| **API** | Railway (Next.js container) | Auth (NextAuth), REST routes, Prisma. Long-running, so the connection pool is persistent; size it explicitly (see [Database connection pools](#database-connection-pools)). |
 | **Backend** | Railway (Express + BullMQ) | `START_MODE=web` for HTTP + `START_MODE=worker` for jobs, or a single `START_MODE=all` service for low volume. |
 | **PostgreSQL** | Railway Postgres (pgvector image) | Standard Postgres 16+ with the `vector` extension. Reachable only on Railway's private network. |
 | **Redis** | Railway (managed) | BullMQ job queues and caching. Private network -- set `REDIS_SKIP_TLS_CHECK=true` (Railway private Redis is `redis://`, not `rediss://`). |
@@ -59,7 +59,7 @@ Set these per Railway service. Use `${{<service>.VAR}}` reference variables for 
 
 | Variable | Where | Purpose |
 |----------|-------|---------|
-| `DATABASE_URL` | API + Backend | `${{Postgres.DATABASE_URL}}` -- the **internal** connection string. A direct `postgresql://` URL (not `prisma://`). |
+| `DATABASE_URL` | API + Backend | `${{Postgres.DATABASE_URL}}` -- the **internal** connection string. A direct `postgresql://` URL (not `prisma://`). Append `?connection_limit=N&pool_timeout=20` per service to size its pool (see [Database connection pools](#database-connection-pools)). |
 | `REDIS_URL` | Backend | `${{Redis.REDIS_URL}}` |
 | `REDIS_SKIP_TLS_CHECK` | Backend | `true` -- Railway's private Redis has no `rediss://` endpoint. |
 | `INTERNAL_API_KEY` | API + Backend | Service-to-service auth. Must match across all three. |
@@ -163,13 +163,29 @@ node apps/api/scripts/manage-invites.mjs revoke ana@example.com
 
 ---
 
+### Database connection pools
+
+Every service process opens its own Prisma pool, and Postgres refuses new connections past `max_connections` (Railway Postgres: **100** by default) with `FATAL: sorry, too many clients already`. Prisma's default pool is `num_cpus * 2 + 1`, and inside a container Node sees the **host's** CPUs, so unbounded pools add up fast.
+
+Bliss therefore applies a default when `DATABASE_URL` has no `connection_limit`, and an explicit value always wins:
+
+| Service | Default `connection_limit` | Suggested override |
+|---------|---------------------------|--------------------|
+| API | 10 | 10–15 |
+| Backend `START_MODE=web` | 5 | 5 |
+| Backend `START_MODE=worker` / `all` | 10 | 10 |
+
+`pool_timeout` defaults to 20 seconds. On Railway set it per service, e.g. `DATABASE_URL=${{Postgres.DATABASE_URL}}?connection_limit=15&pool_timeout=20` on the API.
+
+**Budget:** `sum(connection_limit × replicas)` across API, backend web and every worker replica must stay below `max_connections`, leaving headroom (~20) for `prisma migrate deploy`, `psql`, `pg_dump` and the provider's own connections. One API + one backend web + one worker at the defaults is 25. Before adding replicas, re-check the sum; past ~80 add PgBouncer (transaction mode, with `pgbouncer=true` in the URL) rather than raising `max_connections`.
+
 ## Scaling Considerations
 
 | Concern | Approach |
 |---------|----------|
-| **More API traffic** | Raise the API service's replica count / resources in Railway. The container holds a persistent Prisma pool, so there's no serverless connection storm. |
+| **More API traffic** | Raise the API service's replica count / resources in Railway. The container holds a persistent Prisma pool, so there's no serverless connection storm -- but each replica adds its `connection_limit` to the [connection budget](#database-connection-pools). |
 | **Slow job processing** | Add backend `START_MODE=worker` replicas. BullMQ distributes jobs automatically. |
-| **Database growth** | Scale the Railway Postgres plan (storage + compute). A long-running API means a bounded connection count -- no external pooler needed. |
+| **Database growth** | Scale the Railway Postgres plan (storage + compute). Connections are bounded per service by `connection_limit`; keep the total under `max_connections` (see [Database connection pools](#database-connection-pools)) and add PgBouncer if replicas push it past ~80. |
 | **Edge latency for the SPA** | Put Cloudflare (or another CDN) in front of the web service. |
 | **Redis memory** | BullMQ jobs are transient. Monitor queue depth; increase Redis memory if backlogs grow. |
 

@@ -6,7 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { Decimal } from '@prisma/client/runtime/library';
 import { withAuth } from '../../../utils/withAuth.js';
 import { calculateAssetCurrentValue } from '../../../services/valuation.service.js';
-import { convertCurrency } from '../../../utils/currencyConversion.js';
+import { createCurrencyConverter } from '../../../utils/currencyConversion.js';
 import {
   classifyAssetClass,
   normalizeEtfComposition,
@@ -183,6 +183,10 @@ export default withAuth(async function handler(req, res) {
     )];
 
     // 3. Enrich holdings with live prices and SecurityMaster data
+    // One FX lookup per currency pair per request, shared by every holding
+    // (unbounded per-holding lookups exhausted the DB pool — #135).
+    const convertCurrency = createCurrencyConverter();
+
     const enrichedHoldings = await Promise.all(
       stockItems.map(async (item) => {
         const quantity = new Decimal(item.quantity || 0);

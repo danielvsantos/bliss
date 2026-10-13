@@ -6,7 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { calculateAssetCurrentValue } from '../../../services/valuation.service.js';
 import { Decimal } from '@prisma/client/runtime/library';
 import { withAuth } from '../../../utils/withAuth.js';
-import { convertCurrency } from '../../../utils/currencyConversion.js';
+import { createCurrencyConverter } from '../../../utils/currencyConversion.js';
 
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
@@ -143,6 +143,10 @@ export default withAuth(async function handler(req, res) {
         })
     );
     // ─────────────────────────────────────────────────────────────────────────
+
+    // One FX lookup per currency pair per request, shared by every holding
+    // (unbounded per-holding lookups exhausted the DB pool — #135).
+    const convertCurrency = createCurrencyConverter();
 
     const enrichedAssets = await Promise.all(
       assetsFromDb.map(async (asset) => {

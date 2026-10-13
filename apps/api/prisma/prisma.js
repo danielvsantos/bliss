@@ -1,11 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { encrypt, decrypt, encryptedFields } from '../utils/encryption.js';
+import { withPoolDefaults, API_DEFAULT_CONNECTION_LIMIT } from '../utils/databaseUrl.js';
+
+// Bounded pool (#135): an explicit connection_limit in DATABASE_URL wins.
+const databaseUrl = withPoolDefaults(process.env.DATABASE_URL, {
+  connectionLimit: API_DEFAULT_CONNECTION_LIMIT,
+});
 
 // Prisma 6 removed $use() middleware — use $extends with $allOperations instead.
 // We combine encryption + validation into a single extension to preserve the
 // original execution order: encrypt → validate → DB → decrypt.
-const prisma = new PrismaClient().$extends({
+const prisma = new PrismaClient(
+  databaseUrl ? { datasources: { db: { url: databaseUrl } } } : undefined,
+).$extends({
   query: {
     $allModels: {
       async $allOperations({ model, operation, args, query }) {
