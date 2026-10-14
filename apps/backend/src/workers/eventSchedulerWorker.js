@@ -44,6 +44,7 @@ const DEBOUNCE_MERGERS = {
         _run: mergers.keepPresent,
     },
     'full-rebuild-analytics': {
+        analyticsOnly: mergers.bothTrue,      // no valuation cascade (category type/group edit)
         _rebuildMeta: mergers.keepPresent,
         _trigger: mergers.keepPresent,
         _run: mergers.keepPresent,
@@ -442,6 +443,13 @@ const processEventJob = async (job) => {
                     break;
                 }
 
+                // A category type/group edit only re-buckets analytics; holdings
+                // and their values are unchanged.
+                if (data.analyticsOnly) {
+                    logger.info(`[Event] Analytics recalculation complete (analytics-only) for tenant ${tenantId}. No valuation needed.`);
+                    break;
+                }
+
                 if (isFullRebuild) {
                     // This is a full rebuild, so trigger a full valuation for ALL assets.
                     // The valuation worker will now handle cash vs. non-cash assets correctly.
@@ -545,6 +553,41 @@ const processEventJob = async (job) => {
                     DEBOUNCE_MERGERS['process-portfolio-changes']
                 );
 
+                break;
+            }
+
+            case 'CATEGORY_CLASSIFICATION_CHANGED': {
+                // A used category's type or group was edited (PUT /api/categories).
+                // Analytics caches are keyed by type and group, so they are rebuilt.
+                // Moving into or out of Investments/Debt also creates or drops
+                // holdings: then the full portfolio chain runs, which ends in the
+                // same full analytics rebuild plus a valuation.
+                const { tenantId, categoryId, portfolioImpact } = data;
+                if (!tenantId) {
+                    logger.warn('CATEGORY_CLASSIFICATION_CHANGED event is missing tenantId.');
+                    return;
+                }
+                if (portfolioImpact) {
+                    logger.info(`[Event] Category ${categoryId} moved into/out of a portfolio type for tenant ${tenantId}. Scheduling full portfolio rebuild.`);
+                    await scheduleDebouncedJob(
+                        getPortfolioQueue(),
+                        'process-portfolio-changes',
+                        { tenantId, needsSync: [true], ...carry },
+                        'needsSync',
+                        DEBOUNCE_DELAY_SECONDS * 2,
+                        DEBOUNCE_MERGERS['process-portfolio-changes']
+                    );
+                } else {
+                    logger.info(`[Event] Category ${categoryId} type/group changed for tenant ${tenantId}. Scheduling full analytics rebuild.`);
+                    await scheduleDebouncedJob(
+                        getAnalyticsQueue(),
+                        'full-rebuild-analytics',
+                        { tenantId, needsRecalc: [true], analyticsOnly: true, ...carry },
+                        'needsRecalc',
+                        DEBOUNCE_DELAY_SECONDS,
+                        DEBOUNCE_MERGERS['full-rebuild-analytics']
+                    );
+                }
                 break;
             }
 

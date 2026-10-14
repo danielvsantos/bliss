@@ -340,6 +340,7 @@ paths:
                     - `CASH_HOLDINGS_PROCESSED` → analyticsWorker
                     - `ANALYTICS_RECALCULATION_COMPLETE` → (terminal — logs only)
                     - `TENANT_CURRENCY_SETTINGS_UPDATED` → full portfolio rebuild
+                    - `CATEGORY_CLASSIFICATION_CHANGED` → analyticsWorker full rebuild (`analyticsOnly`), or a full portfolio rebuild when `portfolioImpact` is true
                     - `TAG_ASSIGNMENT_MODIFIED` → analyticsWorker (scoped update, repopulates TagAnalyticsCacheMonthly)
                   enum:
                     - "SMART_IMPORT_REQUESTED"
@@ -354,6 +355,7 @@ paths:
                     - "CASH_HOLDINGS_PROCESSED"
                     - "ANALYTICS_RECALCULATION_COMPLETE"
                     - "TENANT_CURRENCY_SETTINGS_UPDATED"
+                    - "CATEGORY_CLASSIFICATION_CHANGED"
                     - "TAG_ASSIGNMENT_MODIFIED"
                   example: "TRANSACTIONS_IMPORTED"
                 data:

@@ -370,5 +370,30 @@ describe('debounceService — scheduleDebouncedJob()', () => {
 
       expect(scheduledData().scopes).toEqual([{ year: 2026, month: 7 }, { year: 2026, month: 8 }]);
     });
+
+    it('bothTrue: analyticsOnly survives only when every merged job set it', async () => {
+      const MERGERS = { analyticsOnly: mergers.bothTrue };
+
+      pending({ tenantId: 't1', needsRecalc: [true], analyticsOnly: true });
+      await scheduleDebouncedJob(mockQueue, 'full-rebuild-analytics', {
+        tenantId: 't1', needsRecalc: [true], analyticsOnly: true,
+      }, 'needsRecalc', 5, MERGERS);
+      expect(scheduledData().analyticsOnly).toBe(true);
+
+      // A pending organic full rebuild wants the valuation cascade: never narrowed.
+      mockQueue.add.mockClear();
+      pending({ tenantId: 't1', needsRecalc: [true] });
+      await scheduleDebouncedJob(mockQueue, 'full-rebuild-analytics', {
+        tenantId: 't1', needsRecalc: [true], analyticsOnly: true,
+      }, 'needsRecalc', 5, MERGERS);
+      expect(scheduledData()).not.toHaveProperty('analyticsOnly');
+
+      mockQueue.add.mockClear();
+      pending({ tenantId: 't1', needsRecalc: [true], analyticsOnly: true });
+      await scheduleDebouncedJob(mockQueue, 'full-rebuild-analytics', {
+        tenantId: 't1', needsRecalc: [true],
+      }, 'needsRecalc', 5, MERGERS);
+      expect(scheduledData()).not.toHaveProperty('analyticsOnly');
+    });
   });
 });

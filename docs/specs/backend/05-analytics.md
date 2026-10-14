@@ -15,6 +15,7 @@ The `eventSchedulerWorker` orchestrates the pipeline by listening for business e
 -   `CASH_HOLDINGS_PROCESSED`: The primary trigger, fired after cash holdings have been processed. This event differentiates between a full rebuild and a scoped update.
 -   `MANUAL_TRANSACTION_MODIFIED` / `CREATED`: For non-investment transactions, this may trigger cash processing first, then analytics.
 -   `TENANT_CURRENCY_SETTINGS_UPDATED`: Triggers a full portfolio, cash, and analytics rebuild.
+-   `CATEGORY_CLASSIFICATION_CHANGED` (#145): A used category's `type` or `group` was edited. The caches are keyed by both, so a debounced `full-rebuild-analytics` runs with `analyticsOnly: true` (no valuation cascade; the flag survives a debounce merge only when every merged job set it — `mergers.bothTrue`). When the type moves into or out of `Investments`/`Debt` (`portfolioImpact: true`) the full portfolio chain runs instead, since holdings are created or dropped; it ends in the same full analytics rebuild.
 
 ## 5.3. The Analytics Worker (`analyticsWorker.js`)
 

@@ -61,7 +61,8 @@ New queues and workers **must** call `trackQueue` / `trackWorker` (and map their
 |---|---|---|---|
 | events: `MANUAL_TRANSACTION_*`, `TRANSACTIONS_IMPORTED`, `MANUAL_PORTFOLIO_PRICE_UPDATED`, `PORTFOLIO_STALE_REVALUATION`, `TENANT_CURRENCY_SETTINGS_UPDATED`, `PORTFOLIO_CHANGES_PROCESSED`, `PORTFOLIO_ITEMS_RECALCULATED`, `ANALYTICS_RECALCULATION_COMPLETE` | PORTFOLIO_UPDATE | scheduling | PORTFOLIO, ANALYTICS |
 | events: `CASH_HOLDINGS_PROCESSED` | ANALYTICS_UPDATE | scheduling | ANALYTICS, PORTFOLIO |
-| events: `TAG_ASSIGNMENT_MODIFIED`, `ANALYTICS_RECALCULATION_COMPLETE` of a `full-analytics` rebuild | ANALYTICS_UPDATE | scheduling | ANALYTICS |
+| events: `TAG_ASSIGNMENT_MODIFIED`, `ANALYTICS_RECALCULATION_COMPLETE` of a `full-analytics` or `analyticsOnly` rebuild | ANALYTICS_UPDATE | scheduling | ANALYTICS |
+| events: `CATEGORY_CLASSIFICATION_CHANGED` (#145) | ANALYTICS_UPDATE (PORTFOLIO_UPDATE when `portfolioImpact`) | scheduling | ANALYTICS (PORTFOLIO, ANALYTICS when `portfolioImpact`) |
 | events: `PLAID_*` | BANK_SYNC | scheduling | BANK_SYNC, PORTFOLIO, ANALYTICS |
 | events: `SMART_IMPORT_REQUESTED` / `SMART_IMPORT_COMMIT` | IMPORT | scheduling | IMPORT (+ PORTFOLIO, ANALYTICS on commit) |
 | events: `SUBSCRIPTION_DETECTION_REQUESTED` | SUBSCRIPTION_SCAN | scheduling | SUBSCRIPTION_SCAN |
@@ -70,7 +71,7 @@ New queues and workers **must** call `trackQueue` / `trackWorker` (and map their
 | portfolio: `process-cash-holdings` | PORTFOLIO_UPDATE | updating_cash | PORTFOLIO, ANALYTICS |
 | portfolio: `value-all-assets` (long), `value-portfolio-items`, `recalculate-portfolio-items` | PORTFOLIO_UPDATE | valuing_assets | PORTFOLIO |
 | portfolio: `process-simple-liability`, `process-amortizing-loan` | PORTFOLIO_UPDATE | updating_debts | PORTFOLIO |
-| analytics: all (full rebuild = long) | ANALYTICS_UPDATE | updating_analytics | ANALYTICS (+ PORTFOLIO when it chains into valuation) |
+| analytics: all (full rebuild = long) | ANALYTICS_UPDATE | updating_analytics | ANALYTICS (+ PORTFOLIO when it chains into valuation; never for `analyticsOnly`) |
 | plaid-sync / plaid-processing | BANK_SYNC | fetching_bank / classifying | BANK_SYNC, PORTFOLIO, ANALYTICS |
 | smart-import: `process-smart-import` / `commit-smart-import` | IMPORT | processing_file / committing | IMPORT (+ PORTFOLIO, ANALYTICS on commit) |
 | security-master: `refresh-tenant-securities`, `refresh-single-symbol` with tenantId (long) | SECURITY_DATA | refreshing_market_data | SECURITY_DATA, PORTFOLIO |

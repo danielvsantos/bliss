@@ -7,6 +7,11 @@ import { ALLOWED_CATEGORY_TYPES } from '../../lib/constants.js';
 import { CUSTOM_CATEGORY_HINTS, customCategorySystemFields, systemFieldsForTypeChange } from '../../lib/customCategoryDefaults.js';
 import { withAuth } from '../../utils/withAuth.js';
 import { produceEvent } from '../../utils/produceEvent.js';
+import { eventOrigin } from '../../utils/eventOrigin.js';
+
+// Types whose transactions the portfolio pipeline turns into holdings
+// (process-portfolio-changes selects on category.type).
+const PORTFOLIO_TYPES = Object.freeze(['Investments', 'Debt']);
 
 export default withAuth(async function handler(req, res) {
 
@@ -248,6 +253,14 @@ async function handlePut(req, res, session, tenantId) {
     return;
   }
 
+  // Analytics caches are keyed by type and group, so a type/group change on a
+  // used category must rebuild them. Name/icon/description edits change
+  // nothing the pipelines read.
+  const typeChanged = Boolean(type) && type !== existingCategory.type;
+  const groupChanged = Boolean(group) && group !== existingCategory.group;
+  const isUsed = (typeChanged || groupChanged)
+    && await prisma.transaction.count({ where: { categoryId, tenantId } }) > 0;
+
   try {
     // Update category and create audit log in a transaction
     const result = await prisma.$transaction(async (prisma) => {
@@ -262,6 +275,21 @@ async function handlePut(req, res, session, tenantId) {
 
       return updatedCategory;
     });
+
+    if (isUsed) {
+      // Moving into or out of Investments/Debt creates or drops holdings, so the
+      // full portfolio chain runs (its full analytics rebuild comes with it).
+      const portfolioImpact = typeChanged
+        && (PORTFOLIO_TYPES.includes(existingCategory.type) || PORTFOLIO_TYPES.includes(type));
+      produceEvent({
+        type: 'CATEGORY_CLASSIFICATION_CHANGED',
+        tenantId,
+        categoryId,
+        portfolioImpact,
+        source: 'CATEGORY_UPDATE',
+        ...eventOrigin(req),
+      }).catch(err => Sentry.captureException(err));
+    }
 
     res.status(StatusCodes.OK).json(result);
     return;

@@ -553,6 +553,8 @@ const processAnalyticsJob = async (job, token) => {
             // (no downstream valuation cascade) from a routine full rebuild
             // that does want the cascade.
             ...(data._rebuildMeta ? { _rebuildMeta: data._rebuildMeta } : {}),
+            // Category type/group edit: re-bucket only, no valuation cascade.
+            ...(data.analyticsOnly ? { analyticsOnly: true } : {}),
             // Processing-status run id + label of the chain (#100).
             ...carryOrigin(ANALYTICS_QUEUE_NAME, job),
         });
