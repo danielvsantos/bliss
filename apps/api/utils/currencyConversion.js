@@ -23,6 +23,45 @@ export async function convertCurrency(amount, fromCurrency, toCurrency, date = n
 }
 
 /**
+ * Creates a request-scoped converter with the same signature as
+ * convertCurrency(), memoising each rate lookup by (from, to, day).
+ *
+ * findRate() can issue up to 16 sequential queries per call, so a route that
+ * converts every holding in a Promise.all would otherwise fan out
+ * holdings × conversions × 16 queries and exhaust the connection pool (#135).
+ * The cache stores the in-flight promise, so concurrent callers share one
+ * lookup. Create one per request — never at module level — so rates entered
+ * after the request still show up on the next one.
+ *
+ * @returns {(amount: Decimal|number, fromCurrency: string, toCurrency: string, date?: Date) => Promise<Decimal|null>}
+ */
+export function createCurrencyConverter() {
+  const rateCache = new Map(); // `${from}:${to}:${y}-${m}-${d}` → Promise<Decimal|null>
+
+  return async function convertCurrencyCached(amount, fromCurrency, toCurrency, date = new Date()) {
+    if (fromCurrency === toCurrency) {
+      return new Decimal(amount);
+    }
+
+    const d = new Date(date);
+    const key = `${fromCurrency}:${toCurrency}:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    let ratePromise = rateCache.get(key);
+    if (!ratePromise) {
+      ratePromise = findRate(fromCurrency, toCurrency, d);
+      rateCache.set(key, ratePromise);
+      // Don't cache failures: a transient DB error should not poison the
+      // rest of the request's conversions.
+      ratePromise.catch(() => rateCache.delete(key));
+    }
+
+    const rate = await ratePromise;
+    if (!rate) return null;
+
+    return new Decimal(amount).times(rate);
+  };
+}
+
+/**
  * Finds the exchange rate between two currencies, with forward-fill lookback.
  * Tries direct rate first, then inverse.
  *
