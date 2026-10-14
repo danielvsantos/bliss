@@ -70,7 +70,7 @@ RecentTransactionsCard: 5 rows with emoji, date, description, category, account,
 
 ### 5.2.5. Computed Values
 
-- **sparklineData**: Net worth per day from portfolio history — `(Asset.total + Investments.total) - abs(Debt.total)` — sampled to 30 points.
+- **sparklineData**: Net worth per day from portfolio history — `(Asset.total + Investments.total) - abs(Debt.total)` (`netWorthFromEntry` in `src/lib/net-worth.ts`; the `Asset` block includes the Cash group, #144) — sampled to 30 points. `useDashboardMetrics.netWorth` (live, current year) uses the same formula over portfolio items: every non-debt item, cash included, minus `abs()` of debt.
 - **previousNetWorth**: First sparkline data point (value ~3 months ago). Used to compute delta and percentage change.
 - **mostRecentSync**: Latest `lastSync` across all enriched accounts.
 - **Quick Actions**: Dynamically selected from the centralized action registry (see `specs/16-dashboard-actions.md`). Top 4 visible actions shown based on user state signals.

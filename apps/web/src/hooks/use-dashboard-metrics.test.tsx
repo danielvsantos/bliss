@@ -40,6 +40,7 @@ describe('useDashboardMetrics', () => {
         items: [
           { id: 1, name: 'House', quantity: 1, currentPrice: 500000, currency: 'USD', category: { type: 'Asset' } },
           { id: 2, name: 'Mortgage', quantity: 1, currentPrice: -300000, currency: 'USD', category: { type: 'Debt' } },
+          { id: 3, name: 'Checking', quantity: 1, currentPrice: 25000, currency: 'EUR', category: { type: 'Asset', group: 'Cash' } },
         ]
       }),
     );
@@ -66,8 +67,8 @@ describe('useDashboardMetrics', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // net worth Calculation: 500,000 asset - 300,000 debt = 200,000
-    expect(result.current.data.netWorth).toBe(200000);
+    // net worth: 500,000 asset + 25,000 cash (#144) - 300,000 debt = 225,000
+    expect(result.current.data.netWorth).toBe(225000);
 
     // Financial metrics:
     // netIncome = 10000

@@ -184,6 +184,35 @@ describe('PortfolioHoldingsPage', () => {
     expect(screen.getByText('Mortgage')).toBeInTheDocument();
   });
 
+  it('includes the Cash group in the net-worth headline and history chart (#144)', () => {
+    vi.mocked(UseItems.usePortfolioItems).mockReturnValue(
+      mockQueryResult({
+        portfolioCurrency: 'USD',
+        items: [
+          { id: 1, symbol: 'AAPL', quantity: '10', currentPrice: '1500', currency: 'USD', category: { type: 'Investments', group: 'Stocks' } },
+          { id: 2, symbol: 'Checking', quantity: '1', currentPrice: '2500', currency: 'USD', category: { type: 'Asset', group: 'Cash' } },
+          { id: 3, symbol: 'Card', quantity: '1', currentPrice: '-500', currency: 'USD', category: { type: 'Debt', group: 'Credit Card' } },
+        ],
+      }),
+    );
+    vi.mocked(UseHistory.usePortfolioHistory).mockReturnValue(
+      mockQueryResult({
+        portfolioCurrency: 'USD',
+        resolution: 'daily',
+        history: [
+          { date: '2023-01-01', Investments: { total: 1500, groups: { Stocks: 1500 } }, Asset: { total: 2500, groups: { Cash: 2500 } }, Debt: { total: -500, groups: { 'Credit Card': -500 } } },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    // Investments 1,500 + Cash 2,500 − Debt 500
+    expect(screen.getByTestId('portfolio-headline')).toHaveTextContent('$3,500.00');
+    // Cash is a stacked series in the history chart, under the net-worth line
+    expect(screen.getAllByTestId('area').map((a) => a.textContent)).toContain('Cash');
+  });
+
   it('opens the Income Terms modal from an income-capable holding row (#77)', async () => {
     vi.mocked(UseItems.usePortfolioItems).mockReturnValue(
       mockQueryResult({
