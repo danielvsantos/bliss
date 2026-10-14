@@ -57,7 +57,8 @@ usd block:     convert(marketValue, priceCurrency → 'USD')
 1. Builds URL: `GET /api/pricing/prices?symbol={symbol}&assetType={hint}&currency={currency}&exchange={exchange}`
 2. Currency param: `asset.assetCurrency || asset.currency` (falls back to account currency for crypto)
 3. Exchange param: `asset.exchange` (ISO-10383 MIC code, e.g. `XPAR`). Sent when available to disambiguate multi-listed symbols. The `exchange` field is selected from the `PortfolioItem` alongside `assetCurrency`.
-4. Returns `Decimal` price per unit, or falls back to cost-basis on failure
+4. Request timeout: 10 s (`PRICE_REQUEST_TIMEOUT_MS`)
+5. Returns `Decimal` price per unit, or falls back to cost-basis on failure. A backend `404` means "no live price and no stored price" (expected for unpriceable symbols): it is logged at info level and recorded as a Sentry breadcrumb only. Backend 5xx, network errors and timeouts are reported with `Sentry.captureException`.
 
 ### 6.2.2. Query Parameters
 

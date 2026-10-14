@@ -138,4 +138,48 @@ describe('priceService — getLatestPrice', () => {
     });
     expect(result).toEqual({ price: 63000.00, source: 'DB:AssetPrice' });
   });
+
+  // 10. Negative cache: a live-provider miss is not re-asked on the next load
+  it('does not ask the provider again for a symbol it recently had no price for', async () => {
+    getLatestStockPrice.mockResolvedValue(null);
+    prisma.assetPrice.findFirst.mockResolvedValue(null);
+
+    expect(await getLatestPrice('DELISTED', 'API_STOCK')).toBeNull();
+    expect(await getLatestPrice('DELISTED', 'API_STOCK')).toBeNull();
+
+    expect(getLatestStockPrice).toHaveBeenCalledTimes(1);
+    // The DB fallback is still consulted, so a stored price is picked up.
+    expect(prisma.assetPrice.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  // 11. The live-miss memory expires
+  it('asks the provider again once the live-miss entry has expired', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      getLatestStockPrice.mockResolvedValue(null);
+      prisma.assetPrice.findFirst.mockResolvedValue(null);
+      await getLatestPrice('DELISTED', 'API_STOCK');
+
+      nowSpy.mockReturnValue(1_000_000 + 5 * 60 * 1_000 + 1);
+      getLatestStockPrice.mockResolvedValue(12.5);
+      const result = await getLatestPrice('DELISTED', 'API_STOCK');
+
+      expect(getLatestStockPrice).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ price: 12.5, source: 'API:TwelveData' });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  // 12. A miss for one listing does not suppress another
+  it('keys the live-miss memory per symbol, currency and exchange', async () => {
+    getLatestCryptoPrice.mockResolvedValueOnce(null).mockResolvedValueOnce(64000);
+    prisma.assetPrice.findFirst.mockResolvedValue(null);
+
+    await getLatestPrice('BTC', 'API_CRYPTO', 'XYZ');
+    const result = await getLatestPrice('BTC', 'API_CRYPTO', 'EUR');
+
+    expect(getLatestCryptoPrice).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ price: 64000, source: 'API:TwelveData' });
+  });
 });

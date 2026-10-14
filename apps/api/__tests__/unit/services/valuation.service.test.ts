@@ -38,6 +38,7 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
     expect(url).toContain('http://localhost:3001/api/pricing/prices');
     expect(url).toContain('symbol=MSFT');
     expect(options.headers['x-api-key']).toBe('test-internal-api-key');
+    expect(options.timeout).toBeGreaterThan(0);
   });
 
   it('targets BACKEND_URL when it is set', async () => {
@@ -85,6 +86,60 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
     });
 
     expect(value.toString()).toBe('250');
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to cost basis without reporting to Sentry when the backend has no price (404)', async () => {
+    mockGet.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 404'), {
+        isAxiosError: true,
+        response: { status: 404, data: { error: 'Price not found for symbol PREIPO' } },
+      }),
+    );
+
+    const value = await calculateAssetCurrentValue({
+      id: 6,
+      symbol: 'PREIPO',
+      category: { processingHint: 'API_STOCK' },
+      costBasis: '300',
+      quantity: 3,
+    });
+
+    expect(value.toString()).toBe('100');
+    expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
+    expect(vi.mocked(Sentry.addBreadcrumb)).toHaveBeenCalledOnce();
+  });
+
+  it('still reports to Sentry when the backend answers 5xx', async () => {
+    mockGet.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 500'), {
+        isAxiosError: true,
+        response: { status: 500, data: {} },
+      }),
+    );
+
+    const value = await calculateAssetCurrentValue({
+      id: 7,
+      symbol: 'MSFT',
+      category: { processingHint: 'API_STOCK' },
+      costBasis: '50',
+      quantity: 1,
+    });
+
+    expect(value.toString()).toBe('50');
+    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledOnce();
+  });
+
+  it('still reports to Sentry when the backend call times out', async () => {
+    mockGet.mockRejectedValue(
+      Object.assign(new Error('timeout of 10000ms exceeded'), {
+        isAxiosError: true,
+        code: 'ECONNABORTED',
+      }),
+    );
+
+    await calculateAssetCurrentValue({ id: 8, symbol: 'MSFT', category: {}, costBasis: '10' });
+
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledOnce();
   });
 });

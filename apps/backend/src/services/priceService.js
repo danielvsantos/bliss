@@ -39,6 +39,34 @@ function _setCache(key, priceData) {
     }
 }
 
+// ── Negative cache for live-provider misses ───────────────────────────────────
+// When the live provider has no price for a symbol (delisted, pre-IPO, an
+// unsupported listing), every page load would otherwise ask it again and burn
+// a credit for the same empty answer. Remember the miss for a few minutes and
+// go straight to the DB fallback meanwhile. Key: same as _priceCache.
+// Value: timestamp of the miss.
+
+const LIVE_MISS_TTL_MS = 5 * 60 * 1_000; // 5 minutes
+const _liveMissCache = new Map();
+
+function _isRecentLiveMiss(key) {
+    const missedAt = _liveMissCache.get(key);
+    if (missedAt === undefined) return false;
+    if (Date.now() - missedAt > LIVE_MISS_TTL_MS) {
+        _liveMissCache.delete(key);
+        return false;
+    }
+    return true;
+}
+
+function _recordLiveMiss(key) {
+    _liveMissCache.set(key, Date.now());
+    const horizon = Date.now() - LIVE_MISS_TTL_MS;
+    for (const [k, missedAt] of _liveMissCache.entries()) {
+        if (missedAt < horizon) _liveMissCache.delete(k);
+    }
+}
+
 /**
  * Fetches the latest price for a given asset symbol from the most appropriate source.
  * This is intended for real-time or near-real-time price lookups.
@@ -60,9 +88,14 @@ async function getLatestPrice(symbol, assetType, currency, { exchange } = {}) {
   logger.info(`[PriceService] Fetching latest price for ${symbol} (${assetType})${exchange ? ` on ${exchange}` : ''}`);
 
   let priceData;
+  const isLiveAssetType = assetType === 'API_STOCK' || assetType === 'API_FUND' || assetType === 'API_CRYPTO';
+  const skipLive = isLiveAssetType && _isRecentLiveMiss(cacheKey);
 
-  // 1. Attempt to fetch from the live API first based on the processing hint.
-  if (assetType === 'API_STOCK' || assetType === 'API_FUND') {
+  // 1. Attempt to fetch from the live API first based on the processing hint,
+  //    unless the provider recently had nothing for this symbol.
+  if (skipLive) {
+    logger.info(`[PriceService] Recent live-price miss for ${symbol} — skipping provider.`);
+  } else if (assetType === 'API_STOCK' || assetType === 'API_FUND') {
     const price = await getLatestStockPrice(symbol, { exchange });
     if (price) {
       priceData = { price, source: `API:${STOCK_PROVIDER === 'TWELVE_DATA' ? 'TwelveData' : 'AlphaVantage'}` };
@@ -80,6 +113,8 @@ async function getLatestPrice(symbol, assetType, currency, { exchange } = {}) {
     _setCache(cacheKey, priceData);
     return priceData;
   }
+
+  if (isLiveAssetType && !skipLive) _recordLiveMiss(cacheKey);
 
   // 2. If API fails or for non-API assets, fall back to the last known price in our DB.
   logger.warn(`[PriceService] No live API price for ${symbol}. Falling back to DB.`);
@@ -104,9 +139,10 @@ async function getLatestPrice(symbol, assetType, currency, { exchange } = {}) {
   return null;
 }
 
-/** Clears the in-process price cache. Exported for test isolation only. */
+/** Clears the in-process price and live-miss caches. Exported for test isolation only. */
 function clearPriceCache() {
     _priceCache.clear();
+    _liveMissCache.clear();
 }
 
 module.exports = {
