@@ -510,9 +510,9 @@ export default function PortfolioHoldingsPage() {
     };
   }, [portfolioItems, selectedAccountId]);
 
+  // Cash is part of net worth (#144); only P&L below leaves it out.
   const totalAssetsValue = useMemo(
     () => assetList
-      .filter((item) => item.category.group !== "Cash")
       .reduce((sum, item) => sum + parseDecimal(getDisplayData(item, portfolioCurrency).marketValue), 0),
     [assetList, portfolioCurrency]
   );

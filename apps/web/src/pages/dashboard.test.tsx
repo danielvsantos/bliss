@@ -108,7 +108,7 @@ describe('Dashboard', () => {
           },
           {
             date: format(oneMonthAgo, 'yyyy-MM-dd'),
-            Asset: { total: 80000, groups: {} },
+            Asset: { total: 80000, groups: { 'Cash': 30000, 'Real Estate': 50000 } },
           },
         ],
       },
@@ -118,7 +118,7 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    // Should pick the entry closest to 1 month ago (80000), not 3 months ago (50000)
+    // Should pick the entry closest to 1 month ago (80000, cash included), not 3 months ago (50000)
     expect(heroNetWorthProps.previousNetWorth).toBe(80000);
   });
 
@@ -150,7 +150,7 @@ describe('Dashboard', () => {
     expect(heroNetWorthProps.previousNetWorth).toBe(60000);
   });
 
-  it('excludes Cash group from historical net worth to match current-year behaviour', () => {
+  it('includes the Cash group in historical net worth to match current-year behaviour (#144)', () => {
     const historicalYear = (new Date().getFullYear() - 1).toString();
     vi.mocked(TenantMeta.getTenantMeta).mockReturnValue({
       transactionYears: [parseInt(historicalYear, 10)],
@@ -161,9 +161,10 @@ describe('Dashboard', () => {
         history: [
           {
             date: `${historicalYear}-12-31`,
-            // Asset total = 90000 + 10000 cash = 100000, but Cash should be excluded
+            // Asset total = 90000 + 10000 cash = 100000; debt is subtracted
             Asset: { total: 100000, groups: { 'Real Estate': 90000, 'Cash': 10000 } },
             Investments: { total: 50000, groups: { 'Stocks': 50000 } },
+            Debt: { total: -20000, groups: { 'Mortgage': -20000 } },
           },
         ],
       },
@@ -173,7 +174,7 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    // Should be Asset(90000 excl. cash) + Investments(50000) = 140000, not 150000
-    expect(heroNetWorthProps.netWorth).toBe(140000);
+    // Asset(100000 incl. cash) + Investments(50000) − |Debt|(20000) = 130000
+    expect(heroNetWorthProps.netWorth).toBe(130000);
   });
 });

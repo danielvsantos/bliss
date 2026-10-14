@@ -143,13 +143,14 @@ export default withAuth(async function handler(req, res) {
       ? [plaidItemId]
       : tenantPlaidItemIds;
     const summaryWhere = { plaidItemId: { in: summaryPlaidIds } };
-    const [classifiedCount, pendingCount, promotedCount, skippedCount, failedCount, seedHeldCount, categoryBreakdownRaw] = await Promise.all([
-      prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'CLASSIFIED' } }),
-      prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'PENDING', seedHeld: false } }),
-      prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'PROMOTED' } }),
-      prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'SKIPPED' } }),
-      prisma.plaidTransaction.count({ where: { ...summaryWhere, promotionStatus: 'FAILED' } }),
-      prisma.plaidTransaction.count({ where: { ...summaryWhere, seedHeld: true } }),
+    // One grouped query for every badge count instead of six parallel counts —
+    // this route is polled, and the fan-out helped exhaust the pool (#135).
+    const [statusCountsRaw, categoryBreakdownRaw] = await Promise.all([
+      prisma.plaidTransaction.groupBy({
+        by: ['promotionStatus', 'seedHeld'],
+        where: summaryWhere,
+        _count: { _all: true },
+      }),
       // Category breakdown across ALL CLASSIFIED + FAILED transactions (not just the
       // current page). Drives grouped-view headers with accurate cross-page counts.
       // FAILED is included so the (always-uncategorized) failed backlog surfaces a
@@ -161,6 +162,16 @@ export default withAuth(async function handler(req, res) {
         orderBy: { _count: { id: 'desc' } },
       }),
     ]);
+
+    const sumCounts = (predicate) => statusCountsRaw
+      .filter(predicate)
+      .reduce((sum, g) => sum + g._count._all, 0);
+    const classifiedCount = sumCounts((g) => g.promotionStatus === 'CLASSIFIED');
+    const pendingCount = sumCounts((g) => g.promotionStatus === 'PENDING' && !g.seedHeld);
+    const promotedCount = sumCounts((g) => g.promotionStatus === 'PROMOTED');
+    const skippedCount = sumCounts((g) => g.promotionStatus === 'SKIPPED');
+    const failedCount = sumCounts((g) => g.promotionStatus === 'FAILED');
+    const seedHeldCount = sumCounts((g) => g.seedHeld === true);
 
     // Enrich with category names (union of page rows + breakdown IDs to avoid a second query)
     const pageCategoryIds = transactions.map((t) => t.suggestedCategoryId).filter(Boolean);

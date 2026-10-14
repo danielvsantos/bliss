@@ -21,13 +21,7 @@ import { RecentTransactionsCard } from '@/components/dashboard/recent-transactio
 import { subMonths, format } from 'date-fns';
 import type { AggregatedPortfolioHistory } from '@/lib/api';
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
-
-/* ── Helpers ── */
-function netWorthFromEntry(entry: AggregatedPortfolioHistory): number {
-  // Exclude Cash group to match useDashboardMetrics behaviour (Cash has type='Asset', group='Cash')
-  const cashTotal = entry.Asset?.groups?.['Cash'] ?? 0;
-  return (entry.Asset?.total ?? 0) - cashTotal + (entry.Investments?.total ?? 0) - Math.abs(entry.Debt?.total ?? 0);
-}
+import { netWorthFromEntry } from '@/lib/net-worth';
 
 /* ── Animation presets ── */
 const fadeUp = {

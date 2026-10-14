@@ -15,10 +15,8 @@ const mockCurrencyRate = {
   findMany: jest.fn(),
 };
 
-jest.mock('@prisma/client', () => ({
-  PrismaClient: jest.fn().mockImplementation(() => ({
-    currencyRate: mockCurrencyRate,
-  })),
+jest.mock('../../../../prisma/prisma', () => ({
+  currencyRate: mockCurrencyRate,
 }));
 
 // Set before require() so the module-level capture picks up a truthy value.
@@ -64,10 +62,8 @@ describe('fetchHistoricalRate()', () => {
       warn: jest.fn(),
       error: jest.fn(),
     }));
-    jest.mock('@prisma/client', () => ({
-      PrismaClient: jest.fn().mockImplementation(() => ({
-        currencyRate: mockCurrencyRate,
-      })),
+    jest.mock('../../../../prisma/prisma', () => ({
+      currencyRate: mockCurrencyRate,
     }));
 
     const { fetchHistoricalRate: freshFetch } = require('../../../services/currencyService');
@@ -311,9 +307,7 @@ describe('fetchHistoricalRate() / getOrCreateCurrencyRate() — TWELVE_DATA prov
     jest.mock('axios');
     jest.mock('../../../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
     jest.mock('../../../services/twelveDataService');
-    jest.mock('@prisma/client', () => ({
-      PrismaClient: jest.fn().mockImplementation(() => ({ currencyRate: mockCurrencyRate })),
-    }));
+    jest.mock('../../../../prisma/prisma', () => ({ currencyRate: mockCurrencyRate }));
 
     td = require('../../../services/twelveDataService');
     currencySvc = require('../../../services/currencyService');

@@ -45,7 +45,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
     },
     stagedImportRow: {
-      count: vi.fn(),
+      groupBy: vi.fn(),
     },
   },
 }));
@@ -107,9 +107,10 @@ describe('GET /api/imports/pending', () => {
       { id: 1, fileName: 'test.csv', adapterName: 'Generic', accountId: 10, totalRows: 50, createdAt: now },
       { id: 2, fileName: 'bank.csv', adapterName: 'Chase', accountId: 11, totalRows: 30, createdAt: now },
     ]);
-    mockPrisma.stagedImportRow.count
-      .mockResolvedValueOnce(25) // import 1: 25 pending rows
-      .mockResolvedValueOnce(10); // import 2: 10 pending rows
+    mockPrisma.stagedImportRow.groupBy.mockResolvedValueOnce([
+      { stagedImportId: 2, _count: { _all: 10 } },
+      { stagedImportId: 1, _count: { _all: 25 } },
+    ]);
 
     const req = makeReq({ method: 'GET' });
     const res = makeRes();
@@ -134,6 +135,16 @@ describe('GET /api/imports/pending', () => {
       where: { tenantId: 'test-tenant-123', status: 'READY' },
       orderBy: { createdAt: 'desc' },
     });
+    // One grouped count for all imports, not one count per import (#135)
+    expect(mockPrisma.stagedImportRow.groupBy).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.stagedImportRow.groupBy).toHaveBeenCalledWith({
+      by: ['stagedImportId'],
+      where: {
+        stagedImportId: { in: [1, 2] },
+        status: { in: ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE'] },
+      },
+      _count: { _all: true },
+    });
   });
 
   it('filters out imports with zero pending rows', async () => {
@@ -141,9 +152,10 @@ describe('GET /api/imports/pending', () => {
       { id: 1, fileName: 'test.csv', adapterName: 'Generic', accountId: 10, totalRows: 50, createdAt: new Date() },
       { id: 2, fileName: 'empty.csv', adapterName: 'Chase', accountId: 11, totalRows: 30, createdAt: new Date() },
     ]);
-    mockPrisma.stagedImportRow.count
-      .mockResolvedValueOnce(15) // import 1: has pending rows
-      .mockResolvedValueOnce(0); // import 2: zero pending rows
+    // import 2 has zero pending rows, so groupBy returns no group for it
+    mockPrisma.stagedImportRow.groupBy.mockResolvedValueOnce([
+      { stagedImportId: 1, _count: { _all: 15 } },
+    ]);
 
     const req = makeReq({ method: 'GET' });
     const res = makeRes();
@@ -165,5 +177,6 @@ describe('GET /api/imports/pending', () => {
 
     expect(res._status).toBe(200);
     expect(res._body.imports).toEqual([]);
+    expect(mockPrisma.stagedImportRow.groupBy).not.toHaveBeenCalled();
   });
 });

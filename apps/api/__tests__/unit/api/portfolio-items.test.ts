@@ -46,9 +46,10 @@ vi.mock('../../../services/valuation.service.js', () => ({
 }));
 
 // Mock currency conversion — identity passthrough
-vi.mock('../../../utils/currencyConversion.js', () => ({
-  convertCurrency: vi.fn().mockResolvedValue(null),
-}));
+vi.mock('../../../utils/currencyConversion.js', () => {
+  const convertCurrency = vi.fn().mockResolvedValue(null);
+  return { convertCurrency, createCurrencyConverter: () => convertCurrency };
+});
 
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {

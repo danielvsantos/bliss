@@ -194,7 +194,7 @@ describe('buildPortfolioChartSeries', () => {
     expect(chartData.map((e) => e.Crypto)).toEqual([200, 0, 0, 150]);
   });
 
-  it('excludes Cash and negates debt when showDebt', () => {
+  it('keeps Cash as a group (#144) and negates debt when showDebt', () => {
     const { chartData, allGroups, debtGroups } = buildPortfolioChartSeries([
       {
         date: '2026-01-01',
@@ -204,8 +204,8 @@ describe('buildPortfolioChartSeries', () => {
       },
     ], { showDebt: true });
 
-    expect(allGroups).toEqual(['Real Estate', 'Mortgage']);
+    expect(allGroups).toEqual(['Cash', 'Real Estate', 'Mortgage']);
     expect(debtGroups.has('Mortgage')).toBe(true);
-    expect(chartData[0]).toEqual({ date: '2026-01-01', 'Net Worth': 700, 'Real Estate': 1000, Mortgage: -300 });
+    expect(chartData[0]).toEqual({ date: '2026-01-01', 'Net Worth': 1200, Cash: 500, 'Real Estate': 1000, Mortgage: -300 });
   });
 });

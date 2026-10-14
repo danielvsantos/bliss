@@ -158,6 +158,7 @@ export function getDisplayData(
 // ── buildPortfolioChartSeries ──────────────────────────────────────────────
 
 import type { AggregatedPortfolioHistory } from "@/lib/api";
+import { netWorthFromEntry } from "@/lib/net-worth";
 
 export interface PortfolioChartSeries {
   chartData: Array<Record<string, string | number>>;
@@ -167,8 +168,8 @@ export interface PortfolioChartSeries {
 
 /**
  * Turns the /api/portfolio/history rows into one chart row per sample date:
- * a value per group (Cash excluded, debt negated when `showDebt`) plus
- * "Net Worth".
+ * a value per group (Cash included as its own group, #144; debt negated when
+ * `showDebt`) plus "Net Worth" from the shared `netWorthFromEntry`.
  *
  * A group missing from a row is filled with 0: the API returns every holding
  * valued on each sample date, so absence means the position was not held.
@@ -190,9 +191,7 @@ export function buildPortfolioChartSeries(
       Object.keys(item.Investments.groups).forEach((g) => groups.add(g));
     }
     if (item.Asset?.groups) {
-      Object.keys(item.Asset.groups)
-        .filter((g) => g !== "Cash")
-        .forEach((g) => groups.add(g));
+      Object.keys(item.Asset.groups).forEach((g) => groups.add(g));
     }
     if (showDebt && item.Debt?.groups) {
       Object.keys(item.Debt.groups).forEach((g) => {
@@ -206,11 +205,7 @@ export function buildPortfolioChartSeries(
 
   const chartData = data.map((row) => {
     const entry: Record<string, string | number> = { date: row.date };
-    // Exclude Cash from the chart — subtract it from Asset total
-    const cashValue = row.Asset?.groups?.["Cash"] || 0;
-    const assetsValue = (row.Investments?.total || 0) + (row.Asset?.total || 0) - cashValue;
-    const liabilitiesValue = row.Debt?.total || 0;
-    entry["Net Worth"] = assetsValue - liabilitiesValue;
+    entry["Net Worth"] = netWorthFromEntry(row);
 
     for (const group of allGroups) entry[group] = 0;
 
@@ -221,7 +216,6 @@ export function buildPortfolioChartSeries(
     }
     if (row.Asset?.groups) {
       for (const [group, value] of Object.entries(row.Asset.groups)) {
-        if (group === "Cash") continue;
         entry[group] = (entry[group] as number) + value;
       }
     }

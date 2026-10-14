@@ -11,7 +11,7 @@ vi.mock('../../../prisma/prisma.js', () => ({
 }));
 
 import prisma from '../../../prisma/prisma.js';
-import { convertCurrency, batchFetchRates } from '../../../utils/currencyConversion.js';
+import { convertCurrency, batchFetchRates, createCurrencyConverter } from '../../../utils/currencyConversion.js';
 
 const mockFindUnique = vi.mocked(prisma.currencyRate.findUnique);
 const mockFindMany = vi.mocked(prisma.currencyRate.findMany);
@@ -203,5 +203,67 @@ describe('batchFetchRates()', () => {
         orderBy: [{ year: 'desc' }, { month: 'desc' }, { day: 'desc' }],
       }),
     );
+  });
+});
+
+describe('createCurrencyConverter()', () => {
+  const date = new Date(2025, 5, 15);
+
+  it('looks a rate up once per pair and day across many concurrent conversions', async () => {
+    mockFindUnique.mockResolvedValue({ value: new Decimal(0.5) } as any);
+    const convert = createCurrencyConverter();
+
+    // 50 holdings × 4 conversions, all on the same pair (the portfolio items shape)
+    const results = await Promise.all(
+      Array.from({ length: 200 }, (_, i) => convert(i, 'USD', 'EUR', date)),
+    );
+
+    expect(mockFindUnique).toHaveBeenCalledTimes(1);
+    expect(results[10]!.toNumber()).toBe(5);
+  });
+
+  it('caches per pair and per day', async () => {
+    mockFindUnique.mockResolvedValue({ value: new Decimal(2) } as any);
+    const convert = createCurrencyConverter();
+
+    await convert(1, 'USD', 'EUR', date);
+    await convert(1, 'GBP', 'USD', date);
+    await convert(1, 'USD', 'EUR', new Date(2025, 5, 14));
+    await convert(1, 'USD', 'EUR', date);
+    await convert(1, 'EUR', 'EUR', date);
+
+    expect(mockFindUnique).toHaveBeenCalledTimes(3);
+  });
+
+  it('caches a missing rate (null) instead of re-running the 16-query lookback', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    const convert = createCurrencyConverter();
+
+    expect(await convert(100, 'USD', 'XYZ', date)).toBeNull();
+    expect(await convert(100, 'USD', 'XYZ', date)).toBeNull();
+
+    // 8 days × (direct + inverse), once
+    expect(mockFindUnique).toHaveBeenCalledTimes(16);
+  });
+
+  it('does not cache a failed lookup', async () => {
+    mockFindUnique
+      .mockRejectedValueOnce(new Error('too many clients already'))
+      .mockResolvedValue({ value: new Decimal(0.5) } as any);
+    const convert = createCurrencyConverter();
+
+    await expect(convert(10, 'USD', 'EUR', date)).rejects.toThrow('too many clients');
+    const result = await convert(10, 'USD', 'EUR', date);
+
+    expect(result!.toNumber()).toBe(5);
+  });
+
+  it('does not share its cache between converters (requests)', async () => {
+    mockFindUnique.mockResolvedValue({ value: new Decimal(0.5) } as any);
+
+    await createCurrencyConverter()(1, 'USD', 'EUR', date);
+    await createCurrencyConverter()(1, 'USD', 'EUR', date);
+
+    expect(mockFindUnique).toHaveBeenCalledTimes(2);
   });
 });

@@ -74,15 +74,17 @@ describe('GET /api/plaid/transactions', () => {
     mockPrisma.plaidTransaction.findMany.mockResolvedValue([
       { id: 'pt-1', plaidAccountId: 'pa-1', suggestedCategoryId: 5, plaidItem: { institutionName: 'Chase' } },
     ]);
-    mockPrisma.plaidTransaction.count
-      .mockResolvedValueOnce(1)   // total count
-      .mockResolvedValueOnce(1)   // classified count
-      .mockResolvedValueOnce(0)   // pending count
-      .mockResolvedValueOnce(0)   // promoted count
-      .mockResolvedValueOnce(0)   // skipped count
-      .mockResolvedValueOnce(0)   // failed count
-      .mockResolvedValueOnce(0);  // seedHeld count
-    mockPrisma.plaidTransaction.groupBy.mockResolvedValue([]);
+    mockPrisma.plaidTransaction.count.mockResolvedValueOnce(1); // total count
+    mockPrisma.plaidTransaction.groupBy
+      .mockResolvedValueOnce([   // badge counts by (promotionStatus, seedHeld)
+        { promotionStatus: 'CLASSIFIED', seedHeld: false, _count: { _all: 1 } },
+        { promotionStatus: 'CLASSIFIED', seedHeld: true, _count: { _all: 2 } },
+        { promotionStatus: 'PENDING', seedHeld: false, _count: { _all: 4 } },
+        { promotionStatus: 'PENDING', seedHeld: true, _count: { _all: 8 } },
+        { promotionStatus: 'PROMOTED', seedHeld: false, _count: { _all: 16 } },
+        { promotionStatus: 'SKIPPED', seedHeld: false, _count: { _all: 32 } },
+      ])
+      .mockResolvedValueOnce([]); // category breakdown
     mockPrisma.category.findMany.mockResolvedValue([{ id: 5, name: 'Food', group: 'Daily', type: 'Essentials' }]);
     mockPrisma.account.findMany.mockResolvedValue([]);
 
@@ -93,7 +95,16 @@ describe('GET /api/plaid/transactions', () => {
 
     expect(res._status).toBe(200);
     expect(res._body.transactions).toHaveLength(1);
-    expect(res._body.summary.classified).toBe(1);
+    expect(res._body.summary).toMatchObject({
+      classified: 3,   // CLASSIFIED regardless of seedHeld
+      pending: 4,      // PENDING and not seed-held
+      promoted: 16,
+      skipped: 32,
+      failed: 0,
+      seedHeld: 10,    // any status with seedHeld
+    });
+    // One grouped query replaces the six per-status counts (#135)
+    expect(mockPrisma.plaidTransaction.count).toHaveBeenCalledTimes(1);
   });
 
   it('includes failed count in summary and supports promotionStatus=FAILED filter', async () => {
@@ -101,15 +112,10 @@ describe('GET /api/plaid/transactions', () => {
     mockPrisma.plaidTransaction.findMany.mockResolvedValue([
       { id: 'pt-failed-1', plaidAccountId: 'pa-1', suggestedCategoryId: null, promotionStatus: 'FAILED', plaidItem: { institutionName: 'Chase' } },
     ]);
-    mockPrisma.plaidTransaction.count
-      .mockResolvedValueOnce(1)   // total count (scoped to promotionStatus=FAILED)
-      .mockResolvedValueOnce(0)   // classified count
-      .mockResolvedValueOnce(0)   // pending count
-      .mockResolvedValueOnce(0)   // promoted count
-      .mockResolvedValueOnce(0)   // skipped count
-      .mockResolvedValueOnce(3)   // failed count
-      .mockResolvedValueOnce(0);  // seedHeld count
-    mockPrisma.plaidTransaction.groupBy.mockResolvedValue([]);
+    mockPrisma.plaidTransaction.count.mockResolvedValueOnce(1); // total count (scoped to promotionStatus=FAILED)
+    mockPrisma.plaidTransaction.groupBy
+      .mockResolvedValueOnce([{ promotionStatus: 'FAILED', seedHeld: false, _count: { _all: 3 } }])
+      .mockResolvedValueOnce([]); // category breakdown
     mockPrisma.category.findMany.mockResolvedValue([]);
     mockPrisma.account.findMany.mockResolvedValue([]);
 

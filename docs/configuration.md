@@ -34,7 +34,7 @@ See [Choosing Your External Services](/docs/guides/external-services) for pickin
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DATABASE_URL` | Yes | `postgresql://bliss:changeme@localhost:5432/bliss` | PostgreSQL connection string used by Prisma in both services. Inside Docker the host is `postgres` instead of `localhost`. |
+| `DATABASE_URL` | Yes | `postgresql://bliss:changeme@localhost:5432/bliss` | PostgreSQL connection string used by Prisma in both services. Inside Docker the host is `postgres` instead of `localhost`. Without `connection_limit` in the URL, each service caps its pool (API 10, backend `START_MODE=web` 5, worker/all 10; `pool_timeout=20`); an explicit value wins. Keep the total across services and replicas below Postgres `max_connections` — see [Database connection pools](guides/multi-tenant-deployment.md#database-connection-pools). |
 | `POSTGRES_PASSWORD` | Yes | `changeme` | Superuser password passed to the `postgres` Docker image to bootstrap the database. |
 
 ## Redis
