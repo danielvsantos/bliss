@@ -38,7 +38,7 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
     expect(url).toContain('http://localhost:3001/api/pricing/prices');
     expect(url).toContain('symbol=MSFT');
     expect(options.headers['x-api-key']).toBe('test-internal-api-key');
-    expect(options.timeout).toBeGreaterThan(0);
+    expect(options.timeout).toBe(30_000);
   });
 
   it('targets BACKEND_URL when it is set', async () => {
@@ -74,7 +74,20 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
-  it('falls back to cost basis per unit and reports to Sentry when the backend call fails', async () => {
+  it('skips the pricing call for the default cash category (type Asset, processingHint CASH)', async () => {
+    const value = await calculateAssetCurrentValue({
+      id: 9,
+      symbol: 'Cash EUR',
+      category: { type: 'Asset', group: 'Cash', processingHint: 'CASH' },
+      costBasis: '500',
+      quantity: 500,
+    });
+
+    expect(value.toString()).toBe('1');
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('returns null (never cost basis) and reports to Sentry when the backend is unreachable', async () => {
     mockGet.mockRejectedValue(new Error('ECONNREFUSED'));
 
     const value = await calculateAssetCurrentValue({
@@ -85,11 +98,11 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
       quantity: 4,
     });
 
-    expect(value.toString()).toBe('250');
+    expect(value).toBeNull();
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledOnce();
   });
 
-  it('falls back to cost basis without reporting to Sentry when the backend has no price (404)', async () => {
+  it('returns null without reporting to Sentry when the backend has no price (404)', async () => {
     mockGet.mockRejectedValue(
       Object.assign(new Error('Request failed with status code 404'), {
         isAxiosError: true,
@@ -105,7 +118,7 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
       quantity: 3,
     });
 
-    expect(value.toString()).toBe('100');
+    expect(value).toBeNull();
     expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
     expect(vi.mocked(Sentry.addBreadcrumb)).toHaveBeenCalledOnce();
   });
@@ -126,20 +139,31 @@ describe('valuation.service — calculateAssetCurrentValue', () => {
       quantity: 1,
     });
 
-    expect(value.toString()).toBe('50');
+    expect(value).toBeNull();
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledOnce();
   });
 
-  it('still reports to Sentry when the backend call times out', async () => {
+  it('returns null and warns without a Sentry event when the backend call times out', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockGet.mockRejectedValue(
-      Object.assign(new Error('timeout of 10000ms exceeded'), {
+      Object.assign(new Error('timeout of 30000ms exceeded'), {
         isAxiosError: true,
         code: 'ECONNABORTED',
       }),
     );
 
-    await calculateAssetCurrentValue({ id: 8, symbol: 'MSFT', category: {}, costBasis: '10' });
+    const value = await calculateAssetCurrentValue({
+      id: 8,
+      symbol: 'VOO',
+      category: { processingHint: 'API_FUND' },
+      costBasis: '10',
+      quantity: 1,
+    });
 
-    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledOnce();
+    expect(value).toBeNull();
+    expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0][0]).toContain('VOO');
+    warn.mockRestore();
   });
 });

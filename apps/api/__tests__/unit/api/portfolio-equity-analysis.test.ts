@@ -70,6 +70,7 @@ vi.mock('../../../prisma/prisma.js', () => ({
 }));
 
 import handler from '../../../pages/api/portfolio/equity-analysis.js';
+import { calculateAssetCurrentValue } from '../../../services/valuation.service.js';
 
 // ---------------------------------------------------------------------------
 // req / res factories
@@ -172,6 +173,35 @@ describe('GET /api/portfolio/equity-analysis', () => {
     expect(res._body.groups[0].name).toBe('Technology');
     expect(res._body.groups[0].holdings).toHaveLength(1);
     expect(res._body.groups[0].holdings[0].symbol).toBe('AAPL');
+  });
+
+  it('keeps the stored value when the live price fetch fails (null)', async () => {
+    vi.mocked(calculateAssetCurrentValue).mockResolvedValueOnce(null);
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        symbol: 'WMT',
+        currency: 'USD',
+        assetCurrency: 'USD',
+        quantity: new Decimal(10),
+        costBasis: new Decimal(600),
+        currentValue: new Decimal(900),
+        costBasisInUSD: new Decimal(600),
+        currentValueInUSD: new Decimal(900),
+        source: 'PLAID',
+        category: { name: 'Stocks', group: 'US Equities', processingHint: 'API_STOCK' },
+      },
+    ]);
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([
+      { symbol: 'WMT', name: 'Walmart', sector: 'Consumer Defensive', industry: 'Discount Stores', country: 'US' },
+    ]);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { groupBy: 'sector' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(res._body.groups[0].holdings[0].currentValue).toBe(900);
   });
 
   it('returns empty when no stock holdings', async () => {

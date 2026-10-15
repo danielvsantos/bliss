@@ -196,14 +196,17 @@ export default withAuth(async function handler(req, res) {
         if (item.source !== 'MANUAL' && quantity.gt(0)) {
           try {
             const livePricePerUnit = await calculateAssetCurrentValue(item);
-            const priceCurrency = item.assetCurrency || item.currency;
-            const marketValueInPriceCurrency = livePricePerUnit.times(quantity);
+            // null = no live price (timeout, 404, 5xx): keep the stored value.
+            if (livePricePerUnit && livePricePerUnit.gt(0)) {
+              const priceCurrency = item.assetCurrency || item.currency;
+              const marketValueInPriceCurrency = livePricePerUnit.times(quantity);
 
-            if (priceCurrency === 'USD') {
-              marketValueUSD = marketValueInPriceCurrency;
-            } else {
-              const converted = await convertCurrency(marketValueInPriceCurrency, priceCurrency, 'USD');
-              marketValueUSD = converted || marketValueInPriceCurrency;
+              if (priceCurrency === 'USD') {
+                marketValueUSD = marketValueInPriceCurrency;
+              } else {
+                const converted = await convertCurrency(marketValueInPriceCurrency, priceCurrency, 'USD');
+                marketValueUSD = converted || marketValueInPriceCurrency;
+              }
             }
           } catch {
             // Fall back to stored value on live price failure
