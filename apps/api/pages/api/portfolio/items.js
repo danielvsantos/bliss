@@ -166,9 +166,8 @@ export default withAuth(async function handler(req, res) {
           const livePricePerUnit = livePriceCache.get(cacheKey) ?? null;
 
           // Only override stored values if we got a meaningful live price.
-          // When the API fails (e.g., unresolvable ticker), the fallback returns 0 or cost-basis —
-          // in that case, the pre-calculated currentValue/currentValueInUSD from the valuation
-          // worker is more accurate (it includes cost-basis fallback with proper currency conversions).
+          // A failed fetch (timeout, 404, 5xx) returns null — keep the
+          // pre-calculated currentValue/currentValueInUSD from the valuation worker.
           if (livePricePerUnit && livePricePerUnit.gt(0)) {
             const priceCurrency = asset.assetCurrency || asset.currency;
             const marketValueInPriceCurrency = livePricePerUnit.times(quantity);

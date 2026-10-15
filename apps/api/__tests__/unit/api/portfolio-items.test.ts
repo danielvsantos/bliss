@@ -67,6 +67,7 @@ vi.mock('../../../prisma/prisma.js', () => ({
 }));
 
 import handler from '../../../pages/api/portfolio/items.js';
+import { calculateAssetCurrentValue } from '../../../services/valuation.service.js';
 
 // ---------------------------------------------------------------------------
 // req / res factories
@@ -223,5 +224,50 @@ describe('GET /api/portfolio/items', () => {
 
     expect(res._status).toBe(200);
     expect(res._body.items).toEqual([]);
+  });
+
+  it('keeps the stored currentValue (not cost basis) when the live price fetch fails', async () => {
+    // valuation.service returns null on timeout / 404 / 5xx.
+    vi.mocked(calculateAssetCurrentValue).mockResolvedValueOnce(null);
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([makeDbAsset({ symbol: 'VOO' })]);
+
+    const res = makeRes();
+    await handler(makeReq({}) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const item = res._body.items[0];
+    expect(item.native.marketValue.toString()).toBe('1700');
+    expect(item.usd.marketValue.toString()).toBe('1700');
+    expect(item.native.marketValue.toString()).not.toBe(item.native.costBasis.toString());
+  });
+
+  it('overrides the stored value with a live price when one is fetched', async () => {
+    vi.mocked(calculateAssetCurrentValue).mockResolvedValueOnce(new Decimal(200));
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([makeDbAsset()]);
+
+    const res = makeRes();
+    await handler(makeReq({}) as NextApiRequest, res as unknown as NextApiResponse);
+
+    const item = res._body.items[0];
+    expect(item.native.marketValue.toString()).toBe('2000');
+    expect(item.usd.marketValue.toString()).toBe('2000');
+  });
+
+  it('makes no pricing request for cash holdings', async () => {
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([
+      makeDbAsset({
+        symbol: 'Cash USD',
+        category: { name: 'Operating Cash', group: 'Cash', type: 'Asset', icon: '💵', processingHint: 'CASH' },
+      }),
+    ]);
+
+    const res = makeRes();
+    await handler(makeReq({}) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(calculateAssetCurrentValue).not.toHaveBeenCalled();
   });
 });

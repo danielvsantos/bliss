@@ -57,8 +57,9 @@ usd block:     convert(marketValue, priceCurrency → 'USD')
 1. Builds URL: `GET /api/pricing/prices?symbol={symbol}&assetType={hint}&currency={currency}&exchange={exchange}`
 2. Currency param: `asset.assetCurrency || asset.currency` (falls back to account currency for crypto)
 3. Exchange param: `asset.exchange` (ISO-10383 MIC code, e.g. `XPAR`). Sent when available to disambiguate multi-listed symbols. The `exchange` field is selected from the `PortfolioItem` alongside `assetCurrency`.
-4. Request timeout: 10 s (`PRICE_REQUEST_TIMEOUT_MS`)
-5. Returns `Decimal` price per unit, or falls back to cost-basis on failure. A backend `404` means "no live price and no stored price" (expected for unpriceable symbols): it is logged at info level and recorded as a Sentry breadcrumb only. Backend 5xx, network errors and timeouts are reported with `Sentry.captureException`.
+4. Request timeout: 30 s (`PRICE_REQUEST_TIMEOUT_MS`) — on a cold cache the backend serialises Twelve Data calls (one every 200 ms), so the tail of a ~100-symbol prefetch starts after ~20 s
+5. Cash (`processingHint === 'CASH'`) returns `1` without a pricing request
+6. Returns `Decimal` price per unit, or `null` on any failure — callers (`items`, `equity-analysis`) then keep the stored nightly `currentValue`; cost basis is never substituted. A backend `404` means "no live price and no stored price" (expected for unpriceable symbols): it is logged at info level and recorded as a Sentry breadcrumb only. Timeouts (`ECONNABORTED`) are an expected result of the throttle and log a warning with no Sentry event. Backend 5xx and network errors are reported with `Sentry.captureException`.
 
 ### 6.2.2. Query Parameters
 
