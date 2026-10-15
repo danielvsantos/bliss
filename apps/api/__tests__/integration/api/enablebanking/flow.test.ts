@@ -553,13 +553,22 @@ describe('reconnect (R7) and disconnect', () => {
   });
 
   it('re-attaches the new session to the same connection and accounts', async () => {
-    await prisma.plaidItem.update({ where: { id: ebItemId }, data: { status: 'LOGIN_REQUIRED', lastSync: new Date('2026-10-20T06:15:00Z') } });
+    // Relative to now: startDate is max(lastSync − 7 days, createdAt − historyDays),
+    // so a fixed lastSync stops exercising the overlap branch once the
+    // connection's createdAt (today) catches up with it.
+    const lastSync = new Date(Date.now() - 2 * DAY);
+    const expectedStart = new Date(Date.UTC(lastSync.getUTCFullYear(), lastSync.getUTCMonth(), lastSync.getUTCDate()) - 7 * DAY)
+      .toISOString().slice(0, 10);
+    await prisma.plaidItem.update({
+      where: { id: ebItemId },
+      data: { status: 'LOGIN_REQUIRED', lastSync, createdAt: new Date(Date.now() - 30 * DAY) },
+    });
     const accountsBefore = await prisma.account.count({ where: { tenantId } });
     const ebBefore = await prisma.enableBankingAccount.findMany({ where: { plaidItemId: ebItemId }, orderBy: { id: 'asc' } });
 
     const { res: start, state } = await startFlow(danielToken, { reconnectItemId: ebItemId });
     expect(start._status).toBe(200);
-    expect(start._body.startDate).toBe('2026-10-13'); // lastSync − 7 days
+    expect(start._body.startDate).toBe(expectedStart); // lastSync − 7 days
     const cb = await call(callbackHandler, makeReq(danielToken, { query: { code: 'code-daniel-reconnect', state } }));
     expect(redirectQuery(cb)).toEqual({ eb: 'reconnected', connection: ebItemId });
 
