@@ -677,7 +677,7 @@ paths:
             minimum: 1
         - name: resolution
           in: query
-          description: 'Override the auto-selected resolution (daily ≤ 90 days, weekly ≤ 365 days, monthly beyond).'
+          description: 'Override the auto-selected resolution (daily ≤ 90 days, weekly ≤ ~5 years, monthly beyond). Weekly/monthly also sample the range ends, each holding''s first/last valuation and stock/crypto/fund trade days.'
           schema:
             type: string
             enum: [daily, weekly, monthly]

@@ -149,6 +149,7 @@ When adding new semantic colors, update all three layers plus this file.
 | `getGroupColor(group, isDebt, index)` | Returns hex color for a category group |
 | `buildGroupColorMap(assetGroups, debtGroups)` | Builds `Record<string, string>` color map for all groups |
 | `getGroupIcon(group, processingHint?)` | Returns Lucide icon for a category group |
+| `buildPortfolioChartSeries(history, { showDebt })` | Portfolio chart rows per sample date (groups incl. Cash, Net Worth via `netWorthFromEntry`); missing group = 0, never back-dated (#137) |
 
 ## Custom hooks (`src/hooks/`)
 

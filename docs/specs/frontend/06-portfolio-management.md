@@ -37,6 +37,8 @@ A key architectural feature of the portfolio dashboard is its reliance on **serv
 ### 6.2.2. Visualizations and Interactivity
 
 - **Performance Chart**: A "Performance" tab displays a historical area chart of the user's net worth. Users can select time ranges via `TIME_RANGES`: 1M (1 month), 6M (6 months), 1Y (1 year), and ALL (full history). These are rendered as pill-shaped toggle buttons. Net worth (the headline, the Assets card total and the chart's dashed Net Worth line) is investments + other assets **including the Cash group** − debt, via the shared `netWorthFromEntry` (#144); Cash is also a stacked series. P&L stays investments-only — cash has none.
+  - Series are built by `buildPortfolioChartSeries` (`src/lib/portfolio-utils.ts`): one stacked area per group (Cash included, debt negated) plus the dashed Net Worth line. A group missing on a sample date is 0 (not held) — no ramp-up zero is inserted before a holding's first sample, so a buy is never back-dated (#137).
+  - All series (stacked, holding mode, and the dashboard `NetWorthChart`) use `type="stepAfter"`: a value holds until the next sample, so a buy or sell is a step on its own day (the API samples buy/sell days, see the API spec §6.4.3).
 - **Filtering and Sorting**: The chart and the holdings table can be narrowed by account (and the table by country); the holdings table can be sorted by various columns. The table has no symbol search — finding one holding is the chart's holding picker (§6.2.5).
 - **Equity Analysis**: Detailed stock equity analysis (P/E ratios, dividend yields, sector breakdowns) is documented in a separate spec (`19-security-master.md`).
 

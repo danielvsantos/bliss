@@ -40,23 +40,41 @@ export default withAuth(async function handler(req, res) {
 
 // --- Resolution helpers ---
 
+const DAY_MS = 86_400_000;
+// Weekly sampling covers ranges up to ~5 years (≈ 262 sample dates), so "All"
+// on a typical portfolio is weekly rather than month-ends (#137).
+const WEEKLY_MAX_DAYS = 5 * 366;
+// Holdings whose buy/sell days become extra sample points (#137). Cash items
+// are left out on purpose: every bank transaction would become a sample date.
+const TRADED_PROCESSING_HINTS = ['API_STOCK', 'API_CRYPTO', 'API_FUND'];
+// Cap on trade days added to a sampled response; above it only each holding's
+// first/last valuation dates are added, keeping the row count bounded (P6009).
+const MAX_TRADE_SAMPLE_DATES = 400;
+
 /**
  * Determines the appropriate data resolution for a given date range.
  * Keeps Prisma query row counts bounded regardless of portfolio size:
  *   ≤ 90 days  → daily   (all dates)
- *   ≤ 365 days → weekly  (~52 dates)
- *   > 365 days → monthly (~N months)
+ *   ≤ ~5 years → weekly  (≤ ~262 dates)
+ *   longer     → monthly (~N months)
  */
 function getAutoResolution(fromDate, toDate) {
-  const days = (toDate - fromDate) / 86_400_000;
+  const days = (toDate - fromDate) / DAY_MS;
   if (days <= 90)  return 'daily';
-  if (days <= 365) return 'weekly';
+  if (days <= WEEKLY_MAX_DAYS) return 'weekly';
   return 'monthly';
+}
+
+/** UTC midnight of a date (history rows are keyed by UTC day). */
+function utcDay(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 /**
  * Builds a list of representative dates (Saturdays for weekly, last calendar
- * day of each month for monthly) within [fromDate, toDate].
+ * day of each month for monthly) within [fromDate, toDate], always including
+ * the range's first and last day so the series starts on the first valuation
+ * and ends on the latest one.
  * Returns null for 'daily' (no restriction needed).
  *
  * Because portfolioValueHistory is populated daily by the valuation worker,
@@ -65,11 +83,11 @@ function getAutoResolution(fromDate, toDate) {
 function buildSampleDates(fromDate, toDate, resolution) {
   if (resolution === 'daily') return null;
 
-  const dates = [];
+  const dates = [utcDay(fromDate)];
 
   if (resolution === 'weekly') {
     // Advance to the first Saturday on or after fromDate (using UTC to match valuation worker)
-    const d = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), fromDate.getUTCDate()));
+    const d = utcDay(fromDate);
     const daysUntilSat = (6 - d.getUTCDay() + 7) % 7;
     d.setUTCDate(d.getUTCDate() + daysUntilSat);
     while (d <= toDate) {
@@ -84,14 +102,65 @@ function buildSampleDates(fromDate, toDate, resolution) {
       if (lastDay <= toDate) dates.push(new Date(lastDay));
       d.setUTCMonth(d.getUTCMonth() + 1);
     }
-    // Always include toDate so the most recent value is represented
-    const toStr = toDate.toISOString().split('T')[0];
-    if (!dates.some(x => x.toISOString().split('T')[0] === toStr)) {
-      dates.push(new Date(toDate));
-    }
   }
 
+  // Always include toDate so the most recent value is represented
+  dates.push(utcDay(toDate));
+
   return dates;
+}
+
+/**
+ * Days on which a holding in scope starts, stops or trades within the range
+ * (#137): each asset's first and last valuation, plus the trade days of
+ * stock / crypto / fund holdings. Sampling these keeps a buy on day D a step
+ * at D (never back-dated to the previous month-end or week) and a sell-off
+ * a step to zero on the sell day.
+ */
+async function fetchHoldingEventDates({ tenantId, assetWhere, fromDate, toDate }) {
+  const range = { gte: utcDay(fromDate), lte: toDate };
+
+  const bounds = await prisma.portfolioValueHistory.groupBy({
+    by: ['assetId'],
+    where: { asset: assetWhere, date: range },
+    _min: { date: true },
+    _max: { date: true },
+  });
+
+  const { category, ...itemWhere } = assetWhere;
+  const trades = await prisma.transaction.findMany({
+    where: {
+      tenantId,
+      transaction_date: range,
+      portfolioItem: {
+        ...itemWhere,
+        category: { ...(category || {}), processingHint: { in: TRADED_PROCESSING_HINTS } },
+      },
+    },
+    select: { transaction_date: true },
+    distinct: ['transaction_date'],
+    orderBy: { transaction_date: 'asc' },
+    take: MAX_TRADE_SAMPLE_DATES + 1,
+  });
+
+  const dates = [];
+  for (const b of bounds) {
+    if (b._min?.date) dates.push(utcDay(b._min.date));
+    if (b._max?.date) dates.push(utcDay(b._max.date));
+  }
+  if (trades.length <= MAX_TRADE_SAMPLE_DATES) {
+    for (const t of trades) dates.push(utcDay(t.transaction_date));
+  }
+  return dates;
+}
+
+/** Merges date lists, dropping duplicate days, sorted ascending. */
+function mergeSampleDates(...lists) {
+  const byDay = new Map();
+  for (const list of lists) {
+    for (const d of list) byDay.set(d.toISOString().split('T')[0], d);
+  }
+  return [...byDay.values()].sort((a, b) => a - b);
 }
 
 /**
@@ -196,15 +265,13 @@ async function handleGet(req, res) {
       orderBy: { date: 'asc' },
       select: { date: true },
     });
-    fromDate = earliest ? earliest.date : new Date(toDate.getTime() - 365 * 86_400_000);
+    fromDate = earliest ? earliest.date : new Date(toDate.getTime() - 365 * DAY_MS);
   }
 
   // Determine effective resolution: explicit param > auto-detect from date range
   const effectiveResolution = (resolutionParam && ['daily', 'weekly', 'monthly'].includes(resolutionParam))
     ? resolutionParam
     : getAutoResolution(fromDate, toDate);
-
-  const sampleDates = buildSampleDates(fromDate, toDate, effectiveResolution);
 
   try {
     // Fetch tenant's portfolio currency
@@ -222,6 +289,17 @@ async function handleGet(req, res) {
       if (group) categoryFilter.group = { in: group.split(',') };
     }
 
+    const assetWhere = {
+      ...assetScope,
+      ...(categoryFilter && { category: categoryFilter }),
+    };
+
+    let sampleDates = buildSampleDates(fromDate, toDate, effectiveResolution);
+    if (sampleDates) {
+      const eventDates = await fetchHoldingEventDates({ tenantId, assetWhere, fromDate, toDate });
+      sampleDates = mergeSampleDates(sampleDates, eventDates);
+    }
+
     // Use exact sample dates for weekly/monthly, a range for daily.
     // This is the key change that prevents P6009: instead of returning every
     // row for the full date range, we only return one row per period per asset.
@@ -232,10 +310,7 @@ async function handleGet(req, res) {
     const history = await prisma.portfolioValueHistory.groupBy({
       by: ['date', 'assetId'],
       where: {
-        asset: {
-          ...assetScope,
-          ...(categoryFilter && { category: categoryFilter }),
-        },
+        asset: assetWhere,
         date: dateFilter,
       },
       _sum: {

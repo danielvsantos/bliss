@@ -48,7 +48,6 @@ import { useAccountList } from "@/hooks/use-account-list";
 import type { PortfolioItem } from "@/types/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { AggregatedPortfolioHistory } from "@/lib/api";
-import { netWorthFromEntry } from "@/lib/net-worth";
 import {
   Tooltip,
   TooltipContent,
@@ -64,6 +63,7 @@ import {
   getDisplayData,
   buildGroupColorMap,
   getGroupIcon,
+  buildPortfolioChartSeries,
 } from "@/lib/portfolio-utils";
 import { translateCategoryGroup } from "@/lib/category-i18n";
 import { IncomeTermsModal } from "@/components/income/income-terms-modal";
@@ -574,70 +574,12 @@ export default function PortfolioHoldingsPage() {
     return Object.fromEntries(entries);
   }, [sortedAssets, portfolioCurrency]);
 
-  // ── Chart Data (preserved exactly from original) ──
+  // ── Chart Data ──
 
-  const { chartData, allGroups, debtGroups } = useMemo(() => {
-    const data = historyData as AggregatedPortfolioHistory[];
-    if (!data || data.length === 0) return { chartData: [], allGroups: [], debtGroups: new Set<string>() };
-
-    const groups = new Set<string>();
-    const debtGroupNames = new Set<string>();
-
-    data.forEach((item) => {
-      if (item.Investments?.groups) {
-        Object.keys(item.Investments.groups).forEach((g) => groups.add(g));
-      }
-      if (item.Asset?.groups) {
-        Object.keys(item.Asset.groups).forEach((g) => groups.add(g));
-      }
-      if (showDebt && item.Debt?.groups) {
-        Object.keys(item.Debt.groups).forEach((g) => {
-          groups.add(g);
-          debtGroupNames.add(g);
-        });
-      }
-    });
-
-    const chartEntries = data.map((dailyData) => {
-      const entry: { [key: string]: string | number } = { date: dailyData.date };
-      entry["Net Worth"] = netWorthFromEntry(dailyData);
-
-      if (dailyData.Investments?.groups) {
-        for (const [group, value] of Object.entries(dailyData.Investments.groups)) {
-          entry[group] = ((entry[group] as number) || 0) + (value as number);
-        }
-      }
-      if (dailyData.Asset?.groups) {
-        for (const [group, value] of Object.entries(dailyData.Asset.groups)) {
-          entry[group] = ((entry[group] as number) || 0) + (value as number);
-        }
-      }
-
-      if (showDebt && dailyData.Debt?.groups) {
-        for (const [group, value] of Object.entries(dailyData.Debt.groups)) {
-          entry[group] = -Math.abs(value as number);
-        }
-      }
-
-      return entry;
-    });
-
-    // Smooth ramp-up: for each group, insert a zero value one data point before
-    // its first appearance so the area grows from zero instead of jumping.
-    const allGroupNames = Array.from(groups);
-    for (const group of allGroupNames) {
-      for (let i = 0; i < chartEntries.length; i++) {
-        if (chartEntries[i][group] !== undefined) {
-          if (i > 0 && chartEntries[i - 1][group] === undefined) {
-            chartEntries[i - 1][group] = 0;
-          }
-          break;
-        }
-      }
-    }
-
-    return { chartData: chartEntries, allGroups: allGroupNames, debtGroups: debtGroupNames };
-  }, [historyData, showDebt]);
+  const { chartData, allGroups, debtGroups } = useMemo(
+    () => buildPortfolioChartSeries(historyData as AggregatedPortfolioHistory[], { showDebt }),
+    [historyData, showDebt],
+  );
 
   // Holding mode (#131): one series replaces the stacked chart. No ramp-up zero
   // before the first valuation; a closed position steps to zero after it closed.
@@ -987,7 +929,7 @@ export default function PortfolioHoldingsPage() {
                   <RechartsTooltip content={<PerformanceChartTooltip />} />
                   <RechartsLegend />
                   <Area
-                    type="monotone"
+                    type="stepAfter"
                     dataKey="value"
                     stroke={holdingColor ?? getColor(selectedHolding.group)}
                     strokeWidth={1.5}
@@ -1036,7 +978,7 @@ export default function PortfolioHoldingsPage() {
                   .map((group) => (
                     <Area
                       key={group}
-                      type="monotone"
+                      type="stepAfter"
                       dataKey={group}
                       stackId="assets"
                       stroke={getColor(group)}
@@ -1054,7 +996,7 @@ export default function PortfolioHoldingsPage() {
                     .map((group) => (
                       <Area
                         key={group}
-                        type="monotone"
+                        type="stepAfter"
                         dataKey={group}
                         stackId="debt"
                         stroke={getColor(group)}
@@ -1067,7 +1009,7 @@ export default function PortfolioHoldingsPage() {
 
                 {/* Net Worth — dashed overlay line, not stacked */}
                 <Line
-                  type="monotone"
+                  type="stepAfter"
                   dataKey="Net Worth"
                   stroke="hsl(var(--brand-deep))"
                   strokeWidth={2}

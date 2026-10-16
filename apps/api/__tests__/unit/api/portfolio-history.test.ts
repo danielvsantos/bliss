@@ -60,6 +60,9 @@ const { mockPrisma } = vi.hoisted(() => ({
     portfolioItem: {
       findMany: vi.fn(),
     },
+    transaction: {
+      findMany: vi.fn(),
+    },
     tenant: {
       findUnique: vi.fn(),
     },
@@ -100,7 +103,23 @@ function makeRes() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPrisma.portfolioValueHistory.groupBy.mockReset();
+  mockPrisma.portfolioValueHistory.groupBy.mockResolvedValue([]);
+  mockPrisma.transaction.findMany.mockReset();
+  mockPrisma.transaction.findMany.mockResolvedValue([]);
 });
+
+/** The main history query (by date + asset), not the per-asset bounds lookup. */
+function mainGroupByArgs() {
+  const call = mockPrisma.portfolioValueHistory.groupBy.mock.calls
+    .find(([args]) => args.by.includes('date'));
+  return call![0];
+}
+
+/** Sample dates of a weekly/monthly response, as YYYY-MM-DD strings. */
+function sampledDays(): string[] {
+  return mainGroupByArgs().where.date.in.map((d: Date) => d.toISOString().split('T')[0]);
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -148,25 +167,128 @@ describe('GET /api/portfolio/history', () => {
     expect(res._body.history[0].totalUSD).toBe(1000);
   });
 
-  it('returns monthly resolution for long date ranges', async () => {
+  it('returns weekly resolution for a 2-year range, with a bounded sample count (#137)', async () => {
     const today = new Date();
     mockPrisma.portfolioValueHistory.findFirst.mockResolvedValue({
       date: today,
     });
 
     mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
-    mockPrisma.portfolioValueHistory.groupBy.mockResolvedValueOnce([]);
     mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
 
     const from = '2024-01-01';
-    const to = '2026-03-30';
+    const to = '2026-01-01';
     const req = makeReq({ query: { from, to } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(200);
+    expect(res._body.resolution).toBe('weekly');
+    const days = sampledDays();
+    // ~105 Saturdays + first and last day — one row per week, not per day.
+    expect(days.length).toBeGreaterThanOrEqual(104);
+    expect(days.length).toBeLessThanOrEqual(110);
+    expect(days[0]).toBe('2024-01-01');
+    expect(days[days.length - 1]).toBe('2026-01-01');
+    expect(new Set(days).size).toBe(days.length);
+  });
+
+  it('samples ALL (no from) weekly when the history is 2 years long', async () => {
+    mockPrisma.portfolioValueHistory.findFirst
+      .mockResolvedValueOnce({ date: new Date() }) // staleness
+      .mockResolvedValueOnce({ date: new Date('2024-06-01T00:00:00Z') }); // earliest
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { to: '2026-06-01' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._body.resolution).toBe('weekly');
+    const days = sampledDays();
+    expect(days[0]).toBe('2024-06-01');
+    expect(days.length).toBeLessThanOrEqual(110);
+  });
+
+  it('returns monthly resolution beyond ~5 years', async () => {
+    mockPrisma.portfolioValueHistory.findFirst.mockResolvedValue({ date: new Date() });
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { from: '2018-01-01', to: '2026-03-30' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
     expect(res._body.resolution).toBe('monthly');
+    expect(sampledDays().length).toBeLessThanOrEqual(102);
+  });
+
+  it('adds each holding\'s first/last valuation and trade days as sample points (#137)', async () => {
+    mockPrisma.portfolioValueHistory.findFirst.mockResolvedValue({ date: new Date() });
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
+    // Bounds lookup: a copy trade bought Tue 20 Jan 2026; crypto from 2025-02-12.
+    mockPrisma.portfolioValueHistory.groupBy.mockImplementation(async (args: { by: string[] }) => (
+      args.by.includes('date') ? [] : [
+        { assetId: 1, _min: { date: new Date('2026-01-20T00:00:00Z') }, _max: { date: new Date('2026-03-30T00:00:00Z') } },
+        { assetId: 2, _min: { date: new Date('2025-02-12T00:00:00Z') }, _max: { date: new Date('2026-03-30T00:00:00Z') } },
+      ]
+    ));
+    // Crypto sold on Wed 9 Jul and rebought on Fri 29 Aug 2025.
+    mockPrisma.transaction.findMany.mockResolvedValueOnce([
+      { transaction_date: new Date('2025-07-09T00:00:00Z') },
+      { transaction_date: new Date('2025-08-29T00:00:00Z') },
+    ]);
+
+    const res = makeRes();
+    await handler(
+      makeReq({ query: { from: '2025-01-01', to: '2026-03-30', type: 'Investments' } }) as NextApiRequest,
+      res as unknown as NextApiResponse,
+    );
+
+    expect(res._status).toBe(200);
+    const days = sampledDays();
+    for (const d of ['2026-01-20', '2025-02-12', '2025-07-09', '2025-08-29']) {
+      expect(days).toContain(d);
+    }
+    expect(days).toEqual([...days].sort());
+
+    // Trade days only come from traded (stock / crypto / fund) holdings in scope.
+    const txWhere = mockPrisma.transaction.findMany.mock.calls[0][0].where;
+    expect(txWhere.tenantId).toBe('test-tenant-123');
+    expect(txWhere.portfolioItem).toEqual({
+      tenantId: 'test-tenant-123',
+      category: {
+        type: { in: ['Investments'] },
+        processingHint: { in: ['API_STOCK', 'API_CRYPTO', 'API_FUND'] },
+      },
+    });
+  });
+
+  it('drops trade days (keeps holding bounds) when there are too many', async () => {
+    mockPrisma.portfolioValueHistory.findFirst.mockResolvedValue({ date: new Date() });
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
+    const trades = Array.from({ length: 401 }, (_, i) => ({
+      transaction_date: new Date(Date.UTC(2024, 0, 2 + i)),
+    }));
+    mockPrisma.transaction.findMany.mockResolvedValueOnce(trades);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { from: '2024-01-01', to: '2026-01-01' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(sampledDays().length).toBeLessThanOrEqual(110);
+  });
+
+  it('does not run the event-date lookups for daily ranges', async () => {
+    mockPrisma.portfolioValueHistory.findFirst.mockResolvedValue({ date: new Date() });
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { from: '2026-03-01', to: '2026-03-30' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(mockPrisma.transaction.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.portfolioValueHistory.groupBy).toHaveBeenCalledTimes(1);
   });
 
   it('triggers staleness check when history is old', async () => {
@@ -237,7 +359,7 @@ describe('GET /api/portfolio/history', () => {
       expect(mockPrisma.portfolioValueHistory.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { asset: { tenantId: 'test-tenant-123', accountId: 5 } } }),
       );
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.asset).toEqual({
         tenantId: 'test-tenant-123',
         accountId: 5,
@@ -259,7 +381,7 @@ describe('GET /api/portfolio/history', () => {
       const [staleCall, earliestCall] = mockPrisma.portfolioValueHistory.findFirst.mock.calls;
       expect(staleCall[0].where).toEqual({ asset: { tenantId: 'test-tenant-123', symbol: 'AAPL' } });
       expect(earliestCall[0].where).toEqual({ asset: { tenantId: 'test-tenant-123', symbol: 'AAPL' } });
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.asset).toEqual({ tenantId: 'test-tenant-123', symbol: 'AAPL' });
     });
 
@@ -274,28 +396,28 @@ describe('GET /api/portfolio/history', () => {
 
       await run({ symbol: 'NVDA', resolution: 'daily', to: '2026-06-30' });
 
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.date.gte).toEqual(firstValuation);
     });
 
     it('combines symbol with accountId', async () => {
       primeEmpty();
       await run({ from: '2026-03-01', to: '2026-03-30', symbol: 'AAPL', accountId: '7' });
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.asset).toEqual({ tenantId: 'test-tenant-123', accountId: 7, symbol: 'AAPL' });
     });
 
     it('trims the symbol', async () => {
       primeEmpty();
       await run({ from: '2026-03-01', to: '2026-03-30', symbol: '  MSFT ' });
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.asset.symbol).toBe('MSFT');
     });
 
     it('scopes to a single item by itemId, still under the tenant', async () => {
       primeEmpty();
       await run({ from: '2026-03-01', to: '2026-03-30', itemId: '42' });
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.asset).toEqual({ tenantId: 'test-tenant-123', id: 42 });
     });
 
@@ -320,7 +442,7 @@ describe('GET /api/portfolio/history', () => {
       primeEmpty();
       const res = await run({ from: '2026-03-01', to: '2026-03-30', symbol: '', itemId: '' });
       expect(res._status).toBe(200);
-      const where = mockPrisma.portfolioValueHistory.groupBy.mock.calls[0][0].where;
+      const where = mainGroupByArgs().where;
       expect(where.asset).toEqual({ tenantId: 'test-tenant-123' });
     });
 

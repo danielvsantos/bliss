@@ -154,3 +154,79 @@ export function getDisplayData(
     ? item.portfolio
     : item.usd;
 }
+
+// ── buildPortfolioChartSeries ──────────────────────────────────────────────
+
+import type { AggregatedPortfolioHistory } from "@/lib/api";
+import { netWorthFromEntry } from "@/lib/net-worth";
+
+export interface PortfolioChartSeries {
+  chartData: Array<Record<string, string | number>>;
+  allGroups: string[];
+  debtGroups: Set<string>;
+}
+
+/**
+ * Turns the /api/portfolio/history rows into one chart row per sample date:
+ * a value per group (Cash included as its own group, #144; debt negated when
+ * `showDebt`) plus "Net Worth" from the shared `netWorthFromEntry`.
+ *
+ * A group missing from a row is filled with 0: the API returns every holding
+ * valued on each sample date, so absence means the position was not held.
+ * Nothing is back-dated — a holding first appears on the row of its own first
+ * valuation (#137), and a sold-then-rebought position is zero only between
+ * those rows.
+ */
+export function buildPortfolioChartSeries(
+  data: AggregatedPortfolioHistory[] | undefined,
+  { showDebt }: { showDebt: boolean },
+): PortfolioChartSeries {
+  if (!data || data.length === 0) return { chartData: [], allGroups: [], debtGroups: new Set<string>() };
+
+  const groups = new Set<string>();
+  const debtGroups = new Set<string>();
+
+  data.forEach((item) => {
+    if (item.Investments?.groups) {
+      Object.keys(item.Investments.groups).forEach((g) => groups.add(g));
+    }
+    if (item.Asset?.groups) {
+      Object.keys(item.Asset.groups).forEach((g) => groups.add(g));
+    }
+    if (showDebt && item.Debt?.groups) {
+      Object.keys(item.Debt.groups).forEach((g) => {
+        groups.add(g);
+        debtGroups.add(g);
+      });
+    }
+  });
+
+  const allGroups = Array.from(groups);
+
+  const chartData = data.map((row) => {
+    const entry: Record<string, string | number> = { date: row.date };
+    entry["Net Worth"] = netWorthFromEntry(row);
+
+    for (const group of allGroups) entry[group] = 0;
+
+    if (row.Investments?.groups) {
+      for (const [group, value] of Object.entries(row.Investments.groups)) {
+        entry[group] = (entry[group] as number) + value;
+      }
+    }
+    if (row.Asset?.groups) {
+      for (const [group, value] of Object.entries(row.Asset.groups)) {
+        entry[group] = (entry[group] as number) + value;
+      }
+    }
+    if (showDebt && row.Debt?.groups) {
+      for (const [group, value] of Object.entries(row.Debt.groups)) {
+        entry[group] = -Math.abs(value);
+      }
+    }
+
+    return entry;
+  });
+
+  return { chartData, allGroups, debtGroups };
+}
