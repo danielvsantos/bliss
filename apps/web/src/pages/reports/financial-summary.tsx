@@ -29,14 +29,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Check, ChevronsUpDown, Info, X } from "lucide-react";
 import {
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
 } from "recharts";
@@ -44,6 +44,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -67,6 +68,8 @@ import {
   isCalculatedSection,
   isTypeSection,
   isSeparatorSection,
+  isOtherActivitySection,
+  toDisplayValue,
   processAnalyticsIntoFinancialStatement,
   FinancialStatement,
   MonthlyData,
@@ -222,13 +225,15 @@ export default function FinancialSummaryPage() {
     }));
   };
 
-  // Render a value with the appropriate color (negative values in red)
-  const renderValue = (value: number) => {
+  // Render a value with the appropriate color (negative values in red).
+  // Neutral values (net flows like "Net invested") never go red: a purchase
+  // or sale moves money between buckets, it is not a gain or a loss.
+  const renderValue = (value: number, { neutral = false }: { neutral?: boolean } = {}) => {
     const formattedValue = formatCurrency(value, selectedCurrency, "en-US", {
       maximumFractionDigits: 0,
       minimumFractionDigits: 0,
     });
-    const isNegative = value < 0;
+    const isNegative = !neutral && value < 0;
 
     return (
       <span className={isNegative ? "text-destructive" : "text-primary"}>
@@ -540,6 +545,9 @@ export default function FinancialSummaryPage() {
                       const typeData = isTypeSection(section)
                         ? statementData.types.find(t => t.name === section.type)
                         : null;
+                      const netFlow = isTypeSection(section) ? section.netFlow : undefined;
+                      // Rows below the separator are balance-sheet movements: no % of income.
+                      const otherActivity = isOtherActivitySection(key);
 
                       return (
                         <React.Fragment key={key}>
@@ -559,7 +567,27 @@ export default function FinancialSummaryPage() {
                                   <ChevronRight className="mr-2 h-4 w-4 text-muted-foreground" />
                                 )
                               )}
-                              {isTypeSection(section)
+                              {netFlow ? (
+                                <>
+                                  {t(netFlow.labelKey)}
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        aria-label={t(netFlow.tooltipKey)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                        className="ml-1.5 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                      >
+                                        <Info className="h-3.5 w-3.5" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs font-normal">
+                                      {t(netFlow.tooltipKey)}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </>
+                              ) : isTypeSection(section)
                                 ? translateCategoryType(t, section.name)
                                 : getCalculatedSectionLabel(section.name)}
                             </TableCell>
@@ -575,8 +603,8 @@ export default function FinancialSummaryPage() {
                               return (
                                 <TableCell key={column} className="text-right font-bold">
                                   <div className="flex flex-col items-end">
-                                    {renderValue(value)}
-                                    {!isIncomeRow && (
+                                    {renderValue(toDisplayValue(section, value), { neutral: !!netFlow })}
+                                    {!isIncomeRow && !otherActivity && (
                                       <span className="text-xs text-muted-foreground">
                                         {formatPercentage(percentage)}
                                       </span>
@@ -600,10 +628,12 @@ export default function FinancialSummaryPage() {
                                 return (
                                   <TableCell key={column} className="text-right">
                                     <div className="flex flex-col items-end">
-                                      {renderValue(value)}
-                                      <span className="text-xs text-muted-foreground">
-                                        {formatPercentage(percentage)}
-                                      </span>
+                                      {renderValue(toDisplayValue(section, value), { neutral: !!netFlow })}
+                                      {!otherActivity && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {formatPercentage(percentage)}
+                                        </span>
+                                      )}
                                     </div>
                                   </TableCell>
                                 );
@@ -643,7 +673,7 @@ export default function FinancialSummaryPage() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="month" />
                       <YAxis />
-                      <Tooltip
+                      <RechartsTooltip
                         formatter={(value) => formatCurrency(value as number, selectedCurrency, "en-US", { maximumFractionDigits: 0, minimumFractionDigits: 0 })}
                         contentStyle={{
                           backgroundColor: "hsl(var(--popover))",

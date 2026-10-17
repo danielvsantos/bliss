@@ -455,3 +455,30 @@ describe('i18n parity — expenses net of credits (#140)', () => {
     }
   });
 });
+
+// Keys introduced by task #139 (Financial Summary "Net invested" / "Net debt repaid").
+const NEW_KEYS_139 = [
+  'financialSummary.netInvested',
+  'financialSummary.netInvestedTooltip',
+  'financialSummary.netDebtRepaid',
+  'financialSummary.netDebtRepaidTooltip',
+];
+
+describe('i18n parity — task #139 financial summary net flow keys', () => {
+  for (const key of NEW_KEYS_139) {
+    it(`"${key}" is a non-empty string in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+    });
+
+    it(`"${key}" is actually translated in es/fr/pt/it`, () => {
+      const enValue = resolve(en, key) as string;
+      for (const lang of NON_EN) {
+        expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(enValue);
+      }
+    });
+  }
+});

@@ -753,6 +753,10 @@ const fr = {
     savingsCapacity: "Capacité d'Épargne",
     netSavings: 'Épargne Nette',
     otherActivity: 'Autre Activité',
+    netInvested: "Investissement net",
+    netInvestedTooltip: "Argent placé en investissements moins l'argent retiré (ventes, retraits). Une valeur positive signifie que vous avez investi plus que vous n'avez retiré. Ce n'est ni un gain ni une perte.",
+    netDebtRepaid: "Dette nette remboursée",
+    netDebtRepaidTooltip: "Dette remboursée moins les nouveaux emprunts (par exemple, un prêt versé par votre banque). Une valeur positive signifie que vous avez réduit votre dette.",
     quarters: {
       q1: "T1",
       q2: "T2",

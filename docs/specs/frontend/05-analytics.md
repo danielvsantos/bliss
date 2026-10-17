@@ -99,6 +99,16 @@ This page offers a detailed financial summary statement, allowing for in-depth f
 - **Financial Summary Statement**: A collapsible table that breaks down income and expenses into their constituent categories. Key metrics include Discretionary Income, Savings Capacity, and Net Savings.
 - **Trend Chart**: A line chart that visualizes trends in revenue, expenses, and net savings over the selected period.
 
+#### Other Activity rows (#139)
+
+Below the **Other Activity** separator (Ventures, Transfers, Investments, Debt) the rows are balance-sheet movements, not income or spending:
+
+- **No % of income** on any of these rows, on the section total or the expanded group rows (`isOtherActivitySection()` in `src/lib/financial-summary.ts`, derived from `FINANCIAL_STRUCTURE` key order).
+- **Investments → "Net invested"** and **Debt → "Net debt repaid"** (`financialSummary.netInvested` / `financialSummary.netDebtRepaid`). Both sections carry `netFlow` metadata in `FINANCIAL_STRUCTURE`, and the page shows them as `debit − credit` via `toDisplayValue()`: buying an asset or paying down debt (a debit) is positive; selling, withdrawing, or a loan disbursement deposited by the bank (a credit) is negative. The flip applies to the total and to every group row.
+- Net-flow values render in the neutral `text-primary` token whatever their sign — never `text-destructive`. Ventures and Transfers keep their existing sign and colour.
+- Each net-flow header has an info icon with a keyboard-reachable tooltip (`financialSummary.netInvestedTooltip` / `financialSummary.netDebtRepaidTooltip`) explaining the sign. Clicking the icon does not toggle the row.
+- Display only: `processAnalyticsIntoFinancialStatement` still stores `credit − debit` for Investments and Debt, and Discretionary Income, Savings Capacity and Net Savings never read either section.
+
 ## 5.4. Expense Tracking Page
 
 This page is dedicated to analyzing user spending habits.

@@ -768,6 +768,10 @@ const pt = {
     savingsCapacity: 'Capacidade de Poupança',
     netSavings: 'Poupança Líquida',
     otherActivity: 'Outra Atividade',
+    netInvested: "Investimento líquido",
+    netInvestedTooltip: "Dinheiro aplicado em investimentos menos o dinheiro retirado (vendas, resgates). Um valor positivo significa que você investiu mais do que retirou. Não é um ganho nem uma perda.",
+    netDebtRepaid: "Dívida líquida amortizada",
+    netDebtRepaidTooltip: "Dívida amortizada menos novos empréstimos (por exemplo, um empréstimo depositado pelo seu banco). Um valor positivo significa que você reduziu sua dívida.",
     quarters: {
       q1: "T1",
       q2: "T2",
