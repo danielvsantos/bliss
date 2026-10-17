@@ -183,8 +183,8 @@ When `resolution` is not explicitly provided, it is auto-detected based on the d
 Weekly and monthly responses always also sample (#137):
 
 - the first and last day of the range;
-- each holding's first and last valuation date in the range (a buy on day D is a step at D, never back-dated to the previous sample);
-- the trade days (`Transaction.transaction_date`) of stock / crypto / fund holdings (`processingHint` `API_STOCK`, `API_CRYPTO`, `API_FUND`) in scope, so a sell-off and a rebuy land on their own days. Cash items are excluded. Above 400 distinct trade days in the range, trade days are dropped and only the per-holding first/last dates are added.
+- each holding's first and last valuation date in the range (a buy on day D shows at D, never back-dated to the previous sample);
+- the trade days (`Transaction.transaction_date`) of stock / crypto / fund holdings (`processingHint` `API_STOCK`, `API_CRYPTO`, `API_FUND`) in scope, so a sell-off and a rebuy land on their own days. Each trade day D also adds D−1 when it is inside the range (#147), so on the linear chart a buy rises — and a sell-off drops — between D−1 and D rather than ramping from the previous weekly sample. Cash items are excluded. Above 400 distinct trade days in the range, trade days (and their D−1 days) are dropped and only the per-holding first/last dates are added, so trade sampling adds at most 800 dates.
 
 This keeps Prisma query row counts bounded regardless of portfolio size.
 

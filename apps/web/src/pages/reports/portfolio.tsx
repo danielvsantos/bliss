@@ -929,7 +929,7 @@ export default function PortfolioHoldingsPage() {
                   <RechartsTooltip content={<PerformanceChartTooltip />} />
                   <RechartsLegend />
                   <Area
-                    type="stepAfter"
+                    type="linear"
                     dataKey="value"
                     stroke={holdingColor ?? getColor(selectedHolding.group)}
                     strokeWidth={1.5}
@@ -978,7 +978,7 @@ export default function PortfolioHoldingsPage() {
                   .map((group) => (
                     <Area
                       key={group}
-                      type="stepAfter"
+                      type="linear"
                       dataKey={group}
                       stackId="assets"
                       stroke={getColor(group)}
@@ -996,7 +996,7 @@ export default function PortfolioHoldingsPage() {
                     .map((group) => (
                       <Area
                         key={group}
-                        type="stepAfter"
+                        type="linear"
                         dataKey={group}
                         stackId="debt"
                         stroke={getColor(group)}
@@ -1009,7 +1009,7 @@ export default function PortfolioHoldingsPage() {
 
                 {/* Net Worth — dashed overlay line, not stacked */}
                 <Line
-                  type="stepAfter"
+                  type="linear"
                   dataKey="Net Worth"
                   stroke="hsl(var(--brand-deep))"
                   strokeWidth={2}

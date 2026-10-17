@@ -157,7 +157,7 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
                   }}
                 />
                 <Area
-                  type="stepAfter"
+                  type="linear"
                   dataKey="value"
                   stroke="hsl(var(--primary))"
                   strokeWidth={2}

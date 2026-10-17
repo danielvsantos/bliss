@@ -113,9 +113,9 @@ function buildSampleDates(fromDate, toDate, resolution) {
 /**
  * Days on which a holding in scope starts, stops or trades within the range
  * (#137): each asset's first and last valuation, plus the trade days of
- * stock / crypto / fund holdings. Sampling these keeps a buy on day D a step
- * at D (never back-dated to the previous month-end or week) and a sell-off
- * a step to zero on the sell day.
+ * stock / crypto / fund holdings, each with the day before (#147). Sampling
+ * these keeps a buy on day D a rise between D−1 and D (never back-dated to
+ * the previous month-end or week) and a sell-off a drop on the sell day.
  */
 async function fetchHoldingEventDates({ tenantId, assetWhere, fromDate, toDate }) {
   const range = { gte: utcDay(fromDate), lte: toDate };
@@ -149,7 +149,16 @@ async function fetchHoldingEventDates({ tenantId, assetWhere, fromDate, toDate }
     if (b._max?.date) dates.push(utcDay(b._max.date));
   }
   if (trades.length <= MAX_TRADE_SAMPLE_DATES) {
-    for (const t of trades) dates.push(utcDay(t.transaction_date));
+    // Each trade day D also samples D−1 (#147), so a mid-week buy rises (and
+    // a sell-off drops) within one day on the linear chart instead of ramping
+    // from the previous weekly sample. Bounded: ≤ 2 × MAX_TRADE_SAMPLE_DATES.
+    const firstDay = utcDay(fromDate);
+    for (const t of trades) {
+      const day = utcDay(t.transaction_date);
+      dates.push(day);
+      const dayBefore = new Date(day.getTime() - DAY_MS);
+      if (dayBefore >= firstDay) dates.push(dayBefore);
+    }
   }
   return dates;
 }
