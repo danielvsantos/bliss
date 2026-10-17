@@ -39,19 +39,27 @@ function restFilters(args) {
     tags: args.tag,
     currencyCode: args.currency,
     source: args.source,
+    // Fixed 2 dp: the route takes plain decimals, and String(1e-7) is "1e-7".
+    amountMin: args.amountMin?.toFixed(2),
+    amountMax: args.amountMax?.toFixed(2),
   };
 }
+
+const amountBound = (what) => z.number().min(0).max(1e12).optional()
+  .describe(`${what}, inclusive: an unsigned amount in the transaction's own currency, matched against money in or out at 2-decimal precision.`);
 
 const searchTransactions = defineTool({
   name: 'search_transactions',
   access: 'read',
   title: 'Search transactions',
   description:
-    'Search committed transactions, newest first. Amounts are signed: positive = money in (credit), negative = '
-    + 'money out (debit), in the transaction\'s own currency. Filter by date range, account, category, category '
-    + 'group/type, tag, currency or source. Descriptions are encrypted at rest and cannot be searched: to find a '
-    + 'merchant use get_merchant_history, or narrow by date/category and read the page. `totals` (sum of the whole '
-    + 'filtered set) is only returned when `currency` is set.',
+    'Search committed transactions, newest first. `totals` (in / out / net over the whole filtered set, not just '
+    + 'this page) is only returned when `currency` is set. Amounts are signed: positive = money in (credit), '
+    + 'negative = money out (debit), in the transaction\'s own currency. Filter by date range, account, category, '
+    + 'category group/type, tag, currency, source or amount range. To find one transaction, combine a date range '
+    + 'with amountMin = amountMax (e.g. 2003.76 for a €2,003.76 payment) and/or a category. Descriptions are '
+    + 'encrypted at rest and cannot be searched: to find a merchant use get_merchant_history, or narrow by '
+    + 'date/amount/category and read the page.',
   input: {
     from: dateString('Start date, inclusive').optional(),
     to: dateString('End date, inclusive').optional(),
@@ -60,13 +68,18 @@ const searchTransactions = defineTool({
     categoryGroup: z.string().max(100).optional().describe('Category group, e.g. "Food".'),
     categoryType: z.string().max(100).optional().describe('Category type, e.g. "Essentials" or "Income".'),
     tag: z.string().max(100).optional().describe('Tag name or tag ID.'),
-    currency: currencyCode.optional().describe('Only transactions in this currency.'),
+    currency: currencyCode.optional().describe('Only transactions in this currency. Required for `totals`.'),
     source: z.enum(['MANUAL', 'PLAID', 'CSV']).optional(),
+    amountMin: amountBound('Smallest amount'),
+    amountMax: amountBound('Largest amount'),
     limit: limitField(50),
     cursor: cursorField,
   },
   wraps: [{ method: 'GET', route: '/api/transactions' }],
   async handler(args, { api }) {
+    if (args.amountMin !== undefined && args.amountMax !== undefined && args.amountMin > args.amountMax) {
+      throw new ToolInputError('amountMin cannot be greater than amountMax.');
+    }
     const p = pageArgs(args, 50);
     const data = await api.get('/api/transactions', { ...restFilters(args), page: p.page, limit: p.limit });
     return {
@@ -239,6 +252,32 @@ const updateTransaction = defineTool({
   },
 });
 
+const BULK_MAX_IDS = 50;
+
+const bulkUpdateTransactions = defineTool({
+  name: 'bulk_update_transactions',
+  access: 'write',
+  title: 'Recategorise transactions in bulk',
+  description:
+    `Recategorise up to ${BULK_MAX_IDS} committed transactions in one call. All-or-nothing: if any ID is not `
+    + 'found, or the target category or a row\'s current category is Investments or Debt, nothing changes. '
+    + 'Category only: for tags or other fields use update_transaction. Trains the classifier for each changed '
+    + 'row and refreshes analytics once. Rows already in the category are reported as `unchanged`.',
+  input: {
+    ids: z.array(z.number().int().positive()).min(1).max(BULK_MAX_IDS)
+      .refine((ids) => new Set(ids).size === ids.length, 'ids must not contain duplicates')
+      .describe(`1 to ${BULK_MAX_IDS} distinct transaction IDs from search_transactions.`),
+    categoryId: intId('Target category ID from list_categories (not Investments or Debt).'),
+  },
+  wraps: [{ method: 'PATCH', route: '/api/transactions/bulk' }],
+  notFoundHint: TX_HINT,
+  async handler(args, { api }) {
+    await ensureCategory(api, args.categoryId);
+    const result = await api.patch('/api/transactions/bulk', { ids: args.ids, categoryId: args.categoryId });
+    return { updated: result.updated, unchanged: result.unchanged, categoryId: args.categoryId };
+  },
+});
+
 const deleteTransaction = defineTool({
   name: 'delete_transaction',
   access: 'write',
@@ -254,6 +293,8 @@ const deleteTransaction = defineTool({
   },
 });
 
-const TOOLS = [searchTransactions, getMerchantHistory, createTransaction, updateTransaction, deleteTransaction];
+const TOOLS = [
+  searchTransactions, getMerchantHistory, createTransaction, updateTransaction, bulkUpdateTransactions, deleteTransaction,
+];
 
 export default TOOLS;

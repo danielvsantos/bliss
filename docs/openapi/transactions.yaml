@@ -109,6 +109,46 @@ components:
             debit: { type: number, format: float }
             balance: { type: number, format: float }
 
+    BulkRecategoriseRequest:
+      type: object
+      required: [ids, categoryId]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: 1 to 50 distinct committed transaction IDs.
+        categoryId:
+          type: integer
+          minimum: 1
+          description: Target category in the caller's tenant. Not an Investments or Debt category.
+
+    BulkRecategoriseResponse:
+      type: object
+      properties:
+        updated:
+          type: array
+          items: { type: integer }
+          description: IDs whose category changed, in request order.
+        unchanged:
+          type: array
+          items: { type: integer }
+          description: IDs already in the target category (not written, no feedback, no events).
+
+    BulkError:
+      type: object
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          enum: [INVALID_BODY, CATEGORY_NOT_FOUND, CATEGORY_NOT_ALLOWED, ROWS_NOT_ALLOWED, TRANSACTIONS_NOT_FOUND]
+        ids:
+          type: array
+          items: { type: integer }
+          description: The offending IDs (ROWS_NOT_ALLOWED, TRANSACTIONS_NOT_FOUND).
+
 security:
   - cookieAuth: []
   - bearerAuth: []
@@ -184,6 +224,18 @@ paths:
           in: query
           description: Filter by transaction source.
           schema: { type: string, enum: [MANUAL, PLAID, CSV] }
+        - name: amountMin
+          in: query
+          description: >
+            Smallest amount, inclusive (#141). An unsigned magnitude in the
+            transaction's own currency, matched against whichever of credit or
+            debit is set, at 2-decimal precision (rounded half-up). Pass the same
+            value as amountMax for an exact amount. Applies to total and totals.
+          schema: { type: number, minimum: 0 }
+        - name: amountMax
+          in: query
+          description: Largest amount, inclusive (#141). Same rules as amountMin.
+          schema: { type: number, minimum: 0 }
       responses:
         '200':
           description: A paginated list of transactions.
@@ -191,6 +243,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TransactionListResponse'
+        '400':
+          description: Invalid amountMin / amountMax (negative, not a number, or amountMin > amountMax).
 
     post:
       summary: Create a transaction
@@ -210,10 +264,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/Transaction'
 
+  /api/transactions/bulk:
+    patch:
+      summary: Recategorise transactions in bulk
+      description: >
+        Sets the category of up to 50 committed transactions in one
+        all-or-nothing call (#141). Every check runs before any write: an ID
+        that does not exist or belongs to another tenant, a category outside
+        the tenant, or an Investments / Debt category (as the target or as a
+        selected row's current category) refuses the whole request. Rows
+        already in the category are reported as unchanged. Each changed row
+        trains the classifier, and the call emits one scoped analytics event.
+        Admin and member sessions and Read & write integration tokens only.
+      operationId: bulkRecategoriseTransactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRecategoriseRequest'
+      responses:
+        '200':
+          description: All rows now have the category.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecategoriseResponse'
+        '400':
+          description: Invalid body, category not found or not allowed, or rows in Investments / Debt categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkError'
+        '403':
+          description: Viewer session or Read-only integration token (READ_ONLY_INTEGRATION).
+        '404':
+          description: One or more IDs not found in this tenant (TRANSACTIONS_NOT_FOUND).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkError'
+
   /api/transactions/{id}:
     put:
       summary: Update a transaction
-      description: Updates an existing transaction by its ID.
+      description: >
+        Updates an existing transaction by its ID. When the submitted values
+        match what is stored (tags compared as a set, when sent), nothing is
+        written, no classifier feedback is sent and no events are emitted; the
+        response is the same 200 with the transaction (#141).
       operationId: updateTransaction
       parameters:
         - name: id

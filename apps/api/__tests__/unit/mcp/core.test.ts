@@ -228,10 +228,10 @@ describe('loopback', () => {
 });
 
 describe('registry', () => {
-  it('has 41 tools: 22 read, 19 write, unique names', () => {
-    expect(ALL_TOOLS).toHaveLength(41);
+  it('has 42 tools: 22 read, 20 write, unique names', () => {
+    expect(ALL_TOOLS).toHaveLength(42);
     expect(READ_TOOLS).toHaveLength(22);
-    expect(new Set(ALL_TOOLS.map((t) => t.name)).size).toBe(41);
+    expect(new Set(ALL_TOOLS.map((t) => t.name)).size).toBe(42);
   });
 
   it('create_bank and create_account are write tools, hidden from read-only keys (#98)', () => {

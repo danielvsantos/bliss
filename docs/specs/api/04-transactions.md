@@ -14,9 +14,10 @@ A key design principle of the transaction management system is that the backend 
 
 ### Endpoints
 
--   **`GET /api/transactions`**: This is a powerful endpoint for retrieving transaction data. It supports a wide range of filters, including by date (year, month, quarter, or arbitrary `startDate`/`endDate` range), entity (category, account, group, type), source (`source` — MANUAL, PLAID, or CSV), and properties (currency, tags, accountCountry). It also provides robust sorting and pagination capabilities to handle large datasets efficiently. The response includes a `totals` object with aggregated `credit`, `debit`, and `balance` (credit minus debit) for the current filter set.
+-   **`GET /api/transactions`**: This is a powerful endpoint for retrieving transaction data. It supports a wide range of filters, including by date (year, month, quarter, or arbitrary `startDate`/`endDate` range), entity (category, account, group, type), source (`source` — MANUAL, PLAID, or CSV), and properties (currency, tags, accountCountry), plus an amount range (`amountMin` / `amountMax`, see [Amount filter](#amount-filter-141)). It also provides robust sorting and pagination capabilities to handle large datasets efficiently. The response includes a `totals` object with aggregated `credit`, `debit`, and `balance` (credit minus debit) for the current filter set.
 -   **`POST /api/transactions`**: Handles the creation of new transactions. A key feature of this endpoint is its ability to automatically manage `PortfolioItem`s. When a transaction is related to an investment or debt, this endpoint will automatically `upsert` a corresponding portfolio item, linking the two. It also includes special logic for handling debt repayments, which are split into principal and interest components.
--   **`PUT /api/transactions?id={transactionId}`**: Manages the updating of existing transactions. Similar to the `POST` endpoint, it will intelligently update any associated `PortfolioItem` links if the transaction's category or other key details are changed.
+-   **`PUT /api/transactions?id={transactionId}`**: Manages the updating of existing transactions. Similar to the `POST` endpoint, it will intelligently update any associated `PortfolioItem` links if the transaction's category or other key details are changed. An edit that changes nothing is a no-op (see [No-op edits](#no-op-edits-141)).
+-   **`PATCH /api/transactions/bulk`**: Recategorises up to 50 transactions in one all-or-nothing call (see [Bulk recategorisation](#bulk-recategorisation-141)).
 -   **`DELETE /api/transactions?id={transactionId}`**: Handles the deletion of transactions. To ensure data integrity, it also removes any associated `TransactionTag` entries.
 
 ### Mandatory Investment Enrichment
@@ -48,7 +49,43 @@ The transaction creation and update endpoints (`POST` and `PUT`) now support the
 
 All `write` operations (`POST`, `PUT`, `DELETE`) on this endpoint produce system events that are sent to the backend worker service. These events (`MANUAL_TRANSACTION_CREATED`, `MANUAL_TRANSACTION_MODIFIED`) trigger asynchronous background jobs, such as recalculating portfolio valuations, ensuring that the user's financial picture is always up-to-date.
 
-Additionally, when tags are assigned or changed on a transaction, a `TAG_ASSIGNMENT_MODIFIED` event is emitted. This event carries the affected `tagIds` and `transactionScopes` (year, month, currency, country) so the backend can incrementally rebuild the tag analytics cache for only the impacted dimensions.
+A `PUT` that changes nothing emits no events (#141). Additionally, when tags are assigned or changed on a transaction, a `TAG_ASSIGNMENT_MODIFIED` event is emitted. This event carries the affected `tagIds` and `transactionScopes` (year, month, currency, country) so the backend can incrementally rebuild the tag analytics cache for only the impacted dimensions.
+
+### Amount filter (#141)
+
+`amountMin` and `amountMax` on `GET /api/transactions` are optional, **unsigned magnitudes in the transaction's own currency**, both inclusive. They are matched against whichever of `credit` / `debit` is set (amounts are stored unsigned), at 2-decimal precision: each bound is rounded half-up to cents and the range is widened by half a cent, so a stored `2003.76000000` (or an FX-derived `2003.7649`) matches `2003.76`. An exact amount is `amountMin = amountMax`, e.g. `amountMin=2003.76&amountMax=2003.76`; a missing bound is open.
+
+- `400` when a value is negative or not a plain decimal, or when `amountMin > amountMax` after rounding.
+- The clause sits in the shared filter (inside `AND`), so it combines with every other filter and applies to the page, `total` and `totals`.
+- The response `filters` echo includes the rounded `amountMin` / `amountMax` (`null` when absent).
+
+Parsing lives in `apps/api/utils/amountFilter.js` (`parseAmountRange`). Descriptions stay unsearchable (encrypted with per-value keys); the amount is the usual way to find one remembered transaction.
+
+### No-op edits (#141)
+
+`PUT` builds the scalar `data` it would write (`nextData`) and compares it with the stored row using `diffTransactionUpdate` (`apps/api/utils/transactionDiff.js`): dates by instant, `Decimal(18,8)` columns at 8 dp, `null` / `''` / absent alike for optional text, tags as a set (only when `tags` was sent), and the audit `userId` ignored. When nothing differs (and no `debtTerms` was supplied), the route writes nothing, sends no classifier feedback and emits **no events**, and answers `200` with the current transaction in the same shape as an update. Agents (`update_transaction`) and the edit form resend the whole record, so this removes background work and a "busy" processing status for edits that change nothing. The diff compares exactly the object the update writes, so the field list cannot drift.
+
+### Bulk recategorisation (#141)
+
+**`PATCH /api/transactions/bulk`** (`pages/api/transactions/bulk.js`), MCP tool `bulk_update_transactions`.
+
+- **Body:** `{ ids: number[], categoryId: number }`: 1 to 50 distinct positive integer IDs.
+- **Access:** as `PUT`: admin / member sessions and Read & write integration keys; viewers and Read-only keys get `403` from `withAuth`. Same `transactions` rate limiter, so one bulk call is one request.
+- **All-or-nothing.** Every check runs before any write:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `INVALID_BODY` | `ids` empty, longer than 50, non-integer or duplicated; `categoryId` missing or not a positive integer |
+| 400 | `CATEGORY_NOT_FOUND` | `categoryId` is not in the caller's tenant (`Category not found in this tenant.`, as `PUT`) |
+| 400 | `CATEGORY_NOT_ALLOWED` | the target category is `Investments` or `Debt` |
+| 404 | `TRANSACTIONS_NOT_FOUND` | an ID does not exist or belongs to another tenant; `ids` lists the missing IDs, computed from the request, so a foreign row is never read or revealed |
+| 400 | `ROWS_NOT_ALLOWED` | a selected row is currently in an `Investments` or `Debt` category; `ids` names them |
+
+  Moves into or out of portfolio categories need ticker / quantity / price per row and change holdings, so they stay single-row `PUT`s. Members have no per-account permissions; the tenant scope is the ownership check (#90).
+- **Write:** rows already in the target category are skipped. The rest are written with one `updateMany({ id in changed, tenantId })` (`categoryId`, audit `userId`) inside `$transaction`; a short count (a row deleted meanwhile) throws and rolls back.
+- **Classifier feedback:** one fire-and-forget `POST /api/feedback/batch` with `{ description, categoryId, transactionId }` per changed row, the same `recordFeedback` (DescriptionMapping write-through + embedding) a single `PUT` triggers.
+- **One event per call:** a single `TAG_ASSIGNMENT_MODIFIED` whose `transactionScopes` are the deduplicated `{ year, month, country, type, group }` of every changed row's old and new category, with no `tagIds` and no `currency`, plus `_trigger` from `eventOrigin` (`agent` for keys). It is the backend's scoped-analytics event: the scheduler only reads `tenantId` + `transactionScopes` and enqueues one debounced `scoped-update-analytics` job that recomputes regular and tag analytics. A category change touches neither cash holdings nor the portfolio, so the `MANUAL_TRANSACTION_MODIFIED` chain would be wasted work; do not turn this into a per-row loop. Scopes omit the native currency so the analytics worker recomputes (and, when a slice empties, clears) the whole slice (see backend spec 05, "Emptied slices").
+- **Response:** `200 { updated: [ids], unchanged: [ids] }`, in request order. When every row is unchanged, nothing is written and no feedback or events are sent.
 
 ### Merchant History
 

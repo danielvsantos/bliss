@@ -13,7 +13,7 @@ apps/api/
   pages/api/            # File-based API routes (the core of this app)
     auth/               # signin, signup, signup-mode (public invite-only flag, #99), signout, session, change-password, google-token, [...nextauth]
     integrations/       # index, [id], [id]/keys (index, [keyId]) — admin-only integration token management (#84)
-    transactions/       # CRUD (index), export, merchant-history
+    transactions/       # CRUD (index), bulk (PATCH recategorise, #141), export, merchant-history
     imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
     portfolio/          # items, holdings, history, equity-analysis, passive-income, items/[assetId]/manual-values, manual-values/[valueId], items/[assetId]/debt-terms, items/[assetId]/income-terms, income-terms/detached, income-terms/[id], income-terms/[id]/attach
     passive-income/     # streams (index, [id]) — Allowance / Government Welfare income streams
@@ -198,6 +198,6 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 
 ## Lib
 
-- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (41 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
+- `mcp/` -- MCP server (#89): `server.js` (stateless SDK wiring), `loopback.js`, `errors.js`, `shape.js`, `define.js`, `registry.js` (42 tools, role filter), `exclusions.js`, `reference.js`, `tools/*.js`
 - `constants.js` -- Category types: Income, Essentials, Lifestyle, Growth, Ventures, Investments, Asset, Debt, Transfers
 - `defaultCategories.js` -- ~70 pre-seeded categories for new tenants (with type, group, icon, processingHint)

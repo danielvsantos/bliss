@@ -150,6 +150,7 @@ export function createLoopbackClient({ req, tool, fetchImpl = fetchWithTimeout }
     post: (path, body, query) => call('POST', path, { body, query }),
     postWithStatus: (path, body, query) => call('POST', path, { body, query, withStatus: true }),
     put: (path, body, query) => call('PUT', path, { body, query }),
+    patch: (path, body, query) => call('PATCH', path, { body, query }),
     del: (path, query) => call('DELETE', path, { query }),
   };
 }

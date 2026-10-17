@@ -392,3 +392,70 @@ describe('#98 — set up a workspace with create_bank and create_account', () =>
     logSpy.mockRestore();
   });
 });
+
+describe('#141 — bulk recategorisation and amount search', () => {
+  it('bulk_update_transactions recategorises 150 rows in 3 calls, one event per call', async () => {
+    const created = [];
+    for (let i = 0; i < 150; i++) {
+      created.push(await prisma.transaction.create({
+        data: {
+          transaction_date: new Date(Date.UTC(2026, 5, 1 + (i % 28))), year: 2026, month: 6, day: 1 + (i % 28), quarter: 'Q2',
+          categoryId: a.groceries, accountId: a.accountId, description: `Bulk ${i}`, debit: 5 + i, currency: 'USD',
+          tenantId: a.tenant.tenantId,
+        },
+      }));
+    }
+    const ids = created.map((t) => t.id);
+    const client = await connectMcp(server.baseUrl, a.key);
+    for (let i = 0; i < 150; i += 50) {
+      const result = await callTool(client, 'bulk_update_transactions', { ids: ids.slice(i, i + 50), categoryId: a.dining });
+      expect(result.isError, result.text).toBe(false);
+      expect(result.data).toEqual({ updated: ids.slice(i, i + 50), unchanged: [], categoryId: a.dining });
+    }
+
+    // Validation happens before the REST call: 51 IDs or duplicates never reach it.
+    const tooMany = await callTool(client, 'bulk_update_transactions', { ids: Array.from({ length: 51 }, (_, i) => i + 1), categoryId: a.dining });
+    expect(tooMany.isError).toBe(true);
+    const dupes = await callTool(client, 'bulk_update_transactions', { ids: [ids[0], ids[0]], categoryId: a.dining });
+    expect(dupes.isError).toBe(true);
+    await client.close();
+
+    const rows = await prisma.transaction.findMany({ where: { id: { in: ids } }, select: { categoryId: true } });
+    expect(rows.every((r) => r.categoryId === a.dining)).toBe(true);
+    const events = vi.mocked(produceEvent).mock.calls.map(([e]: any[]) => e);
+    expect(events).toHaveLength(3);
+    expect(events.every((e) => e.type === 'TAG_ASSIGNMENT_MODIFIED' && e._trigger === 'agent')).toBe(true);
+  });
+
+  it('search_transactions finds the €2,003.76 payment by exact amount within a date range', async () => {
+    const target = await prisma.transaction.create({
+      data: {
+        transaction_date: new Date('2026-08-12T00:00:00Z'), year: 2026, month: 8, day: 12, quarter: 'Q3',
+        categoryId: a.groceries, accountId: a.accountId, description: 'Landlord', debit: 2003.76, currency: 'USD',
+        tenantId: a.tenant.tenantId,
+      },
+    });
+    for (const debit of [2003.77, 2003, 76]) {
+      await prisma.transaction.create({
+        data: {
+          transaction_date: new Date('2026-08-13T00:00:00Z'), year: 2026, month: 8, day: 13, quarter: 'Q3',
+          categoryId: a.groceries, accountId: a.accountId, description: 'Other', debit, currency: 'USD',
+          tenantId: a.tenant.tenantId,
+        },
+      });
+    }
+    const client = await connectMcp(server.baseUrl, a.key);
+    const result = await callTool(client, 'search_transactions', {
+      from: '2026-08-01', to: '2026-08-31', amountMin: 2003.76, amountMax: 2003.76, currency: 'USD',
+    });
+    const inverted = await callTool(client, 'search_transactions', { amountMin: 10, amountMax: 5 });
+    await client.close();
+
+    expect(result.isError, result.text).toBe(false);
+    expect(result.data.items.map((t: any) => t.id)).toEqual([target.id]);
+    expect(result.data.items[0].amount).toEqual({ value: -2003.76, currency: 'USD' });
+    expect(result.data.totals).toMatchObject({ out: 2003.76, currency: 'USD' });
+    expect(inverted.isError).toBe(true);
+    expect(inverted.text).toMatch(/amountMin cannot be greater than amountMax/);
+  });
+});

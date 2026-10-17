@@ -85,10 +85,12 @@ jest.mock('../../../../prisma/prisma.js', () => ({
     findMany: jest.fn().mockResolvedValue([{ currencyId: 'USD' }]),
   },
   analyticsCacheMonthly: {
+    findMany: jest.fn().mockResolvedValue([]),
     deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     createMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   tagAnalyticsCacheMonthly: {
+    findMany: jest.fn().mockResolvedValue([]),
     deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     createMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
@@ -146,6 +148,19 @@ function queueFindMany(transactions) {
     .mockResolvedValueOnce([]);          // Pass 2 end
 }
 
+/**
+ * Multi-scope variant of queueFindMany: answers each scope's batched passes
+ * from `rowsByGroup` (keyed by the scope's category group); a cursor call
+ * ends the batch loop.
+ */
+function findManyByGroup(rowsByGroup) {
+  prisma.transaction.findMany.mockImplementation(async (args) => {
+    if (args.cursor) return [];
+    const group = args.where?.category?.group;
+    return rowsByGroup[group] || [];
+  });
+}
+
 function makeJob(name, data, { id = 'job-1' } = {}) {
   return {
     id,
@@ -169,8 +184,12 @@ describe('processAnalyticsJob — write path', () => {
     prisma.tagAnalyticsCacheMonthly.deleteMany.mockReset();
     prisma.tagAnalyticsCacheMonthly.createMany.mockReset();
     prisma.$transaction.mockReset();
+    prisma.analyticsCacheMonthly.findMany.mockReset();
+    prisma.tagAnalyticsCacheMonthly.findMany.mockReset();
 
     // Re-install defaults after reset.
+    prisma.analyticsCacheMonthly.findMany.mockResolvedValue([]);
+    prisma.tagAnalyticsCacheMonthly.findMany.mockResolvedValue([]);
     prisma.tenantCurrency.findMany.mockResolvedValue([{ currencyId: 'USD' }]);
     prisma.analyticsCacheMonthly.deleteMany.mockResolvedValue({ count: 0 });
     prisma.analyticsCacheMonthly.createMany.mockResolvedValue({ count: 0 });
@@ -384,6 +403,91 @@ describe('processAnalyticsJob — write path', () => {
       expect(where.country).toEqual({ in: ['DEU'] });
       expect(where.currency).toBeUndefined();
       expect(prisma.analyticsCacheMonthly.createMany).not.toHaveBeenCalled();
+    });
+
+    it('clears a slice a recategorise emptied while another slice recomputed (#141)', async () => {
+      // Every Dining/March row moved to Groceries: the recompute over the two
+      // flat scopes (old + new group) only yields the Groceries key, so the
+      // keyed replace never revisits Dining. Its stale row must go.
+      findManyByGroup({ Groceries: [makeTxn({ category: { id: 11, name: 'Supermarket', type: 'Expense', group: 'Groceries' } })] });
+      const key = { year: 2026, month: 3, currency: 'USD', country: 'US', type: 'Expense' };
+      prisma.analyticsCacheMonthly.findMany
+        .mockResolvedValueOnce([{ id: 1, ...key, group: 'Dining' }, { id: 4, ...key, currency: 'EUR', group: 'Dining' }]) // old scope
+        .mockResolvedValueOnce([{ id: 2, ...key, group: 'Groceries' }]); // new scope
+      prisma.tagAnalyticsCacheMonthly.findMany
+        .mockResolvedValueOnce([{ id: 7, ...key, group: 'Dining', tagId: 42, categoryId: 10 }])
+        .mockResolvedValueOnce([]);
+
+      await processAnalyticsJob(makeJob('scoped-update-analytics', {
+        tenantId: TENANT_ID,
+        scopes: [
+          { year: 2026, month: 3, country: 'US', type: 'Expense', group: 'Dining' },
+          { year: 2026, month: 3, country: 'US', type: 'Expense', group: 'Groceries' },
+        ],
+      }));
+
+      expect(prisma.analyticsCacheMonthly.findMany.mock.calls[0][0].where).toEqual({
+        tenantId: TENANT_ID, year: 2026, month: 3,
+        type: { in: ['Expense'] }, group: { in: ['Dining'] }, country: { in: ['US'] },
+      });
+      // Stale clear for Dining only (the Groceries scope has nothing stale),
+      // then the keyed replace of the recomputed Groceries row.
+      // Every display currency of the emptied slice goes.
+      expect(prisma.analyticsCacheMonthly.deleteMany.mock.calls[0][0]).toEqual({
+        where: { tenantId: TENANT_ID, id: { in: [1, 4] } },
+      });
+      expect(prisma.tagAnalyticsCacheMonthly.deleteMany.mock.calls[0][0]).toEqual({
+        where: { tenantId: TENANT_ID, id: { in: [7] } },
+      });
+      expect(prisma.analyticsCacheMonthly.deleteMany).toHaveBeenCalledTimes(2);
+      expect(prisma.analyticsCacheMonthly.deleteMany.mock.calls[1][0].where.OR[0].group).toBe('Groceries');
+      expect(prisma.analyticsCacheMonthly.createMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('never clears a slice that still has transactions, even when its FX conversion failed', async () => {
+      // Dining still has a EUR row, but no EUR→USD rate exists: the recompute
+      // produces no Dining key. The slice is not empty, so its row must stay.
+      findManyByGroup({
+        Dining: [makeTxn({ id: 2, currency: 'EUR' })],
+        Groceries: [makeTxn({ category: { id: 11, name: 'Supermarket', type: 'Expense', group: 'Groceries' } })],
+      });
+      const key = { year: 2026, month: 3, currency: 'USD', country: 'US', type: 'Expense' };
+      prisma.analyticsCacheMonthly.findMany.mockResolvedValue([{ id: 1, ...key, group: 'Dining' }]);
+
+      await processAnalyticsJob(makeJob('scoped-update-analytics', {
+        tenantId: TENANT_ID,
+        scopes: [
+          { year: 2026, month: 3, type: 'Expense', group: 'Dining' },
+          { year: 2026, month: 3, type: 'Expense', group: 'Groceries' },
+        ],
+      }));
+
+      const deletes = prisma.analyticsCacheMonthly.deleteMany.mock.calls.map(([arg]) => arg.where);
+      expect(deletes.some((w) => w.id)).toBe(false);
+      expect(deletes).toHaveLength(1); // only the keyed replace of Groceries
+    });
+
+    it('keeps recomputed keys and skips scopes constrained by native currency', async () => {
+      findManyByGroup({ Dining: [makeTxn()] });
+      prisma.analyticsCacheMonthly.findMany.mockResolvedValue([
+        { id: 3, year: 2026, month: 3, currency: 'USD', country: 'US', type: 'Expense', group: 'Dining' },
+      ]);
+
+      await processAnalyticsJob(makeJob('scoped-update-analytics', {
+        tenantId: TENANT_ID,
+        scopes: [
+          { year: 2026, month: 3, type: 'Expense', group: 'Dining' },
+          // Native-currency filter: the recompute sees only part of the slice,
+          // so a missing key would not prove it empty. Never cleaned.
+          { year: 2026, month: 3, currency: 'EUR', type: 'Expense', group: 'Travel' },
+          { earliestDate: '2026-03-01', filters: { currency: ['EUR'], group: ['Travel'] } },
+        ],
+      }));
+
+      expect(prisma.analyticsCacheMonthly.findMany).toHaveBeenCalledTimes(1);
+      // The only cached row was recomputed → no stale delete, just the replace.
+      expect(prisma.analyticsCacheMonthly.deleteMany).toHaveBeenCalledTimes(1);
+      expect(prisma.analyticsCacheMonthly.deleteMany.mock.calls[0][0].where.OR).toBeDefined();
     });
 
     it('never wipes the whole tenant when a scope has no date bound and no filters', async () => {

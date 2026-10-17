@@ -40,6 +40,7 @@ function fakeApi(routes: Record<string, Responder>) {
       post: (p: string, body?: any, query?: any) => call('POST', p, { body, query }),
       postWithStatus: (p: string, body?: any, query?: any) => call('POST', p, { body, query, withStatus: true }),
       put: (p: string, body?: any, query?: any) => call('PUT', p, { body, query }),
+      patch: (p: string, body?: any, query?: any) => call('PATCH', p, { body, query }),
       del: (p: string, query?: any) => call('DELETE', p, { query }),
     },
   };
@@ -263,6 +264,42 @@ describe('transaction tools', () => {
       account: { id: 1, name: 'Main' }, category: { id: 5, name: 'Groceries', group: 'Food', type: 'Essentials' }, tags: ['Trip'], source: 'MANUAL',
     });
     expect(result).toMatchObject({ hasMore: true, totals: { in: 0, out: 30, net: -30, currency: 'EUR' } });
+  });
+
+  it('search_transactions passes the amount range through (#141)', async () => {
+    const { calls } = await run('search_transactions', { amountMin: 2003.76, amountMax: 2003.76 }, {
+      'GET /api/transactions': { transactions: [], total: 0 },
+    });
+    expect(calls[0].query).toMatchObject({ amountMin: '2003.76', amountMax: '2003.76' });
+    const schema = z.object(getTool('search_transactions')!.input);
+    expect(() => schema.parse({ amountMin: -1 })).toThrow();
+    await expect(run('search_transactions', { amountMin: 5, amountMax: 1 }, {}))
+      .rejects.toMatchObject({ name: 'ToolInputError' });
+  });
+
+  it('bulk_update_transactions checks the category then PATCHes the bulk route (#141)', async () => {
+    const { result, calls } = await run('bulk_update_transactions', { ids: [3, 1, 2], categoryId: 6 }, {
+      'GET /api/categories': { id: 6 },
+      'PATCH /api/transactions/bulk': ({ body }: any) => ({ updated: body.ids.slice(0, 2), unchanged: [2] }),
+    });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /api/categories', 'PATCH /api/transactions/bulk']);
+    expect(calls[1].body).toEqual({ ids: [3, 1, 2], categoryId: 6 });
+    expect(result).toEqual({ updated: [3, 1], unchanged: [2], categoryId: 6 });
+  });
+
+  it('bulk_update_transactions input: 1–50 distinct IDs', () => {
+    const schema = z.object(getTool('bulk_update_transactions')!.input);
+    expect(() => schema.parse({ ids: [], categoryId: 1 })).toThrow();
+    expect(() => schema.parse({ ids: [1, 1], categoryId: 1 })).toThrow();
+    expect(() => schema.parse({ ids: Array.from({ length: 51 }, (_, i) => i + 1), categoryId: 1 })).toThrow();
+    expect(() => schema.parse({ ids: Array.from({ length: 50 }, (_, i) => i + 1), categoryId: 1 })).not.toThrow();
+  });
+
+  it('bulk_update_transactions reports a foreign category as not found without patching', async () => {
+    const { api, calls } = fakeApi({ 'GET /api/categories': notFound() });
+    await expect(getTool('bulk_update_transactions')!.handler({ ids: [1], categoryId: 99 }, { api }))
+      .rejects.toMatchObject({ name: 'ToolNotFoundError' });
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
   });
 
   it('get_merchant_history', async () => {

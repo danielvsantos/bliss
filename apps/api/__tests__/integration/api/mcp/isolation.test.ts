@@ -35,7 +35,7 @@ const { stub } = makeFetchStub(realFetch, () => server.baseUrl);
 let a: IsolatedTenant;
 let b: IsolatedTenant;
 let keyA: string;
-let ownA: { transactionId: number; assetId: number; bankId: number };
+let ownA: { transactionId: number; assetId: number; bankId: number; categoryId: number };
 let B: Record<string, any>;
 
 async function seedB() {
@@ -127,6 +127,8 @@ const CASES: Case[] = [
   { tool: 'update_transaction', args: () => ({ transactionId: B.transactionId, description: 'x' }), expect: 'notFound' },
   { tool: 'update_transaction', args: () => ({ transactionId: ownA.transactionId, categoryId: B.categoryId }), expect: 'notFound' },
   { tool: 'update_transaction', args: () => ({ transactionId: ownA.transactionId, accountId: B.accountId }), expect: 'notFound' },
+  { tool: 'bulk_update_transactions', args: () => ({ ids: [ownA.transactionId, B.transactionId], categoryId: ownA.categoryId }), expect: 'notFound' },
+  { tool: 'bulk_update_transactions', args: () => ({ ids: [ownA.transactionId], categoryId: B.categoryId }), expect: 'notFound' },
   { tool: 'delete_transaction', args: () => ({ transactionId: B.transactionId }), expect: 'notFound' },
   { tool: 'get_tag_summary', args: () => ({ tagIds: [B.tagId], view: 'year', from: '2026', to: '2026', currency: 'USD' }), expect: 'empty' },
   { tool: 'dismiss_insight', args: () => ({ insightId: B.insightId }), expect: 'notFound' },
@@ -192,7 +194,7 @@ beforeAll(async () => {
   await prisma.tenantBank.create({ data: { tenantId: a.tenantId, bankId: ref.bankId } });
   await prisma.tenantCurrency.create({ data: { tenantId: a.tenantId, currencyId: ref.currencyCode } });
   await prisma.tenantCountry.create({ data: { tenantId: a.tenantId, countryId: ref.countryId } });
-  ownA = { transactionId: txA.id, assetId: assetA.id, bankId: ref.bankId };
+  ownA = { transactionId: txA.id, assetId: assetA.id, bankId: ref.bankId, categoryId: catA.id };
   keyA = (await createIntegrationKey(a, { accessLevel: 'READ_WRITE' })).token;
   client = await connectMcp(server.baseUrl, keyA);
 });

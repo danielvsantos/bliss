@@ -55,9 +55,9 @@ describe('MCP coverage of reachable REST operations', () => {
     }
   });
 
-  it('totals: 88 reachable, 68 covered, 20 excluded', () => {
-    expect(reachable.size).toBe(88);
-    expect([...reachable].filter((o) => wrapped.has(o)).length).toBe(68);
+  it('totals: 89 reachable, 69 covered, 20 excluded', () => {
+    expect(reachable.size).toBe(89);
+    expect([...reachable].filter((o) => wrapped.has(o)).length).toBe(69);
     expect(excluded.size).toBe(20);
   });
 
