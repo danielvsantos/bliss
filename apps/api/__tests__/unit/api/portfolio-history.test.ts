@@ -250,6 +250,10 @@ describe('GET /api/portfolio/history', () => {
     for (const d of ['2026-01-20', '2025-02-12', '2025-07-09', '2025-08-29']) {
       expect(days).toContain(d);
     }
+    // Each trade day also samples the day before (#147): the sell-off drops and
+    // the rebuy rises within one day instead of ramping from the last Saturday.
+    expect(days).toContain('2025-07-08');
+    expect(days).toContain('2025-08-28');
     expect(days).toEqual([...days].sort());
 
     // Trade days only come from traded (stock / crypto / fund) holdings in scope.
@@ -262,6 +266,30 @@ describe('GET /api/portfolio/history', () => {
         processingHint: { in: ['API_STOCK', 'API_CRYPTO', 'API_FUND'] },
       },
     });
+  });
+
+  it('adds the day before each trade day only inside the range, keeping the count bounded (#147)', async () => {
+    mockPrisma.portfolioValueHistory.findFirst.mockResolvedValue({ date: new Date() });
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
+    mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
+    // 400 trade days (the cap) every other day from the first day of the range.
+    const trades = Array.from({ length: 400 }, (_, i) => ({
+      transaction_date: new Date(Date.UTC(2024, 0, 1 + 2 * i)),
+    }));
+    mockPrisma.transaction.findMany.mockResolvedValueOnce(trades);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { from: '2024-01-01', to: '2026-01-01' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    const days = sampledDays();
+    // A trade on the first day of the range adds no day before it.
+    expect(days[0]).toBe('2024-01-01');
+    expect(days).not.toContain('2023-12-31');
+    expect(days).toContain('2024-01-03');
+    expect(days).toContain('2024-01-02');
+    expect(new Set(days).size).toBe(days.length);
+    // Weekly samples + at most 2 × 400 trade-driven dates.
+    expect(days.length).toBeLessThanOrEqual(110 + 800);
   });
 
   it('drops trade days (keeps holding bounds) when there are too many', async () => {
