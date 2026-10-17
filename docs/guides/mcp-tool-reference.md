@@ -404,7 +404,7 @@ Confirm categories for seeds from list_plaid_seeds. Each confirmed seed trains t
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/imports/pending`, `GET /api/imports/[id]`
 
-Without importId: imports (uploaded statements) that still have rows to review. With importId: that import's status, row counts per status, category summary and a page of rows. Files are uploaded in the Bliss app — if nothing is pending, ask the user to upload the statement there first. Row statuses: PENDING (needs review), CONFIRMED (will be committed), POTENTIAL_DUPLICATE, DUPLICATE, SKIPPED, ERROR.
+Without importId: imports (uploaded statements) that still have rows to review. With importId: that import's status, row counts per status, category summary and a page of rows. Files are uploaded in the Bliss app — if nothing is pending, ask the user to upload the statement there first. Row statuses: PENDING (needs review), CONFIRMED (will be committed), POTENTIAL_DUPLICATE, DUPLICATE, SKIPPED, ERROR. Rows the last commit held back carry `error: "HELD_BACK:<codes>"` — MISSING_TICKER, MISSING_QUANTITY, MISSING_PRICE, MISSING_ACCOUNT, DUPLICATE, UPDATE_FAILED, COMMIT_ERROR — and `import.lastCommit` has the counts by reason.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -412,6 +412,7 @@ Without importId: imports (uploaded statements) that still have rows to review. 
 | `status` | array of `PENDING` \| `CONFIRMED` \| `POTENTIAL_DUPLICATE` \| `DUPLICATE` \| `SKIPPED` \| `ERROR` \| `STAGED` | no | Only rows with these statuses (importId only). |
 | `uncategorized` | boolean | no | Only rows without a suggested category (importId only). |
 | `categoryId` | integer | no | Only rows suggested into this category (importId only). |
+| `heldBack` | boolean | no | Only rows the last commit held back (importId only). |
 | `limit` | integer | no | Items per page (1-100, default 50). |
 | `cursor` | string | no | Opaque cursor from a previous result's nextCursor. Omit for the first page. |
 
@@ -457,7 +458,7 @@ Confirm a category for each seed description: every PENDING/CONFIRMED row with t
 **Access:** Write (Read & write keys only) · can delete or discard data  
 **Wraps:** `POST /api/imports/[id]`
 
-commit: create transactions from the import's CONFIRMED rows (optionally only rowIds); runs in the background — poll list_imports with importId for progress. cancel: discard the import and all its rows.
+commit: create transactions from the import's CONFIRMED rows (optionally only rowIds); runs in the background — poll list_imports with importId for progress; `import.lastCommit.heldBack` then explains rows that were not committed (list them with heldBack: true). cancel: discard the import and all its rows.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

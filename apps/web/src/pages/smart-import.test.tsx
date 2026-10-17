@@ -135,6 +135,21 @@ describe('SmartImportPage', () => {
     });
   });
 
+  it('explains the header-on-first-row requirement when no adapter matches', async () => {
+    detectAdapterMock.mockImplementation((_file, opts) => {
+      opts.onSuccess({ matched: false, headers: ['Account: 1234', 'Period: May'], sampleData: [] });
+    });
+    renderPage();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File(['csvdata'], 'test.csv', { type: 'text/csv' })] });
+    fireEvent.change(input);
+
+    expect(await screen.findByText('smartImport.unknownFormat')).toBeInTheDocument();
+    expect(screen.getByText('smartImport.unknownFormatHeaderHint')).toBeInTheDocument();
+    // Existing content stays: the detected headers.
+    expect(screen.getByText('Account: 1234, Period: May')).toBeInTheDocument();
+  });
+
   it('progresses to processing state', () => {
     // If we pretend upload is successful, step changes to processing
     // Let's directly fake the useStagedImport mock to return a PROCESSING import

@@ -18,14 +18,18 @@ jest.mock('../../../../prisma/prisma', () => ({
   stagedImportRow: {
     findMany: jest.fn(),
     count: jest.fn(),
+    update: jest.fn(),
     updateMany: jest.fn(),
   },
   transaction: {
     createMany: jest.fn(),
     findMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
   },
   transactionTag: {
     createMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
 }));
 
@@ -183,7 +187,7 @@ describe('commitWorker — processCommitJob', () => {
     const job = makeJob();
     const result = await processCommitJob(job);
 
-    expect(result).toEqual({ stagedImportId: 'si-1', transactionCount: 0, remaining: 0 });
+    expect(result).toEqual({ stagedImportId: 'si-1', transactionCount: 0, updateCount: 0, remaining: 0, heldBack: { total: 0, byReason: {} } });
 
     // Should set status to COMMITTED with commitResult
     expect(prisma.stagedImport.update).toHaveBeenCalledWith(
@@ -191,7 +195,7 @@ describe('commitWorker — processCommitJob', () => {
         data: expect.objectContaining({
           status: 'COMMITTED',
           progress: 100,
-          errorDetails: { commitResult: { transactionCount: 0, updateCount: 0, remaining: 0 } },
+          errorDetails: { commitResult: { transactionCount: 0, updateCount: 0, remaining: 0, heldBack: { total: 0, byReason: {} } } },
         }),
       })
     );
@@ -211,7 +215,11 @@ describe('commitWorker — processCommitJob', () => {
     const job = makeJob();
     const result = await processCommitJob(job);
 
-    expect(result).toEqual({ stagedImportId: 'si-1', transactionCount: 0, remaining: 5 });
+    expect(result).toEqual({ stagedImportId: 'si-1', transactionCount: 0, updateCount: 0, remaining: 5, heldBack: { total: 0, byReason: {} } });
+    // Rows held back by an earlier commit (STAGED) still count as remaining.
+    expect(prisma.stagedImportRow.count.mock.calls[1][0].where.status).toEqual({
+      in: ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE', 'STAGED'],
+    });
     expect(prisma.stagedImport.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'READY' }),
@@ -263,7 +271,7 @@ describe('commitWorker — processCommitJob', () => {
     // Verify rows marked as SKIPPED
     expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['row-1', 'row-2'] } },
-      data: { status: 'SKIPPED' },
+      data: { status: 'SKIPPED', errorMessage: null },
     });
 
     // Verify TRANSACTIONS_IMPORTED event enqueued
@@ -303,7 +311,7 @@ describe('commitWorker — processCommitJob', () => {
     // Only 1 transaction created (enrichment row skipped)
     expect(result.transactionCount).toBe(1);
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Skipping row row-1')
+      expect.stringContaining('Holding back row row-1')
     );
   });
 
@@ -331,7 +339,12 @@ describe('commitWorker — processCommitJob', () => {
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ categoryId: 20, assetQuantity: 10, assetPrice: 1000 });
     expect(created[0]).not.toHaveProperty('ticker');
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Skipping row stock'));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Holding back row stock'));
+    // The fund needs no ticker; the stock does.
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['stock'] } },
+      data: { status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_TICKER' },
+    });
   });
 
   // ─── Missing accountId skip (regression: PrismaClientValidationError) ───
@@ -370,14 +383,14 @@ describe('commitWorker — processCommitJob', () => {
       })
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Skipping row row-1')
+      expect.stringContaining('Holding back row row-1')
     );
 
     // The skipped row returns to STAGED for the user to fix, rather than
     // crashing the job and blocking every other row in the batch.
     expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['row-1'] } },
-      data: { status: 'STAGED' },
+      data: { status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_ACCOUNT' },
     });
   });
 
@@ -443,7 +456,7 @@ describe('commitWorker — processCommitJob', () => {
     expect(finalCall).toBeDefined();
     expect(finalCall[0].data.progress).toBe(100);
     expect(finalCall[0].data.errorDetails).toEqual({
-      commitResult: { transactionCount: 1, updateCount: 0, remaining: 0 },
+      commitResult: { transactionCount: 1, updateCount: 0, remaining: 0, heldBack: { total: 0, byReason: {} } },
     });
   });
 
@@ -620,7 +633,7 @@ describe('commitWorker — processCommitJob', () => {
     // All rows committed → SKIPPED
     expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['row-1', 'row-2', 'row-3'] } },
-      data: { status: 'SKIPPED' },
+      data: { status: 'SKIPPED', errorMessage: null },
     });
   });
 
@@ -658,7 +671,7 @@ describe('commitWorker — processCommitJob', () => {
     // Both rows flagged as POTENTIAL_DUPLICATE
     expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['row-1', 'row-2'] } },
-      data: { status: 'POTENTIAL_DUPLICATE' },
+      data: { status: 'POTENTIAL_DUPLICATE', errorMessage: 'HELD_BACK:DUPLICATE' },
     });
   });
 
@@ -799,5 +812,172 @@ describe('commitWorker — processCommitJob', () => {
     );
     expect(commitCountCall).toBeDefined();
     expect(commitCountCall[0].where.id.in).toEqual(['row-7', 'row-8']);
+  });
+  // ─── Hold-back reasons (#142) ───────────────────────────────────────────
+
+  function setupBatch(rows, { preExisting = [], created, remaining = 0 } = {}) {
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({ id: 'si-1', tenantId: 'tenant-1', status: 'COMMITTING' });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(rows.length);
+    prisma.stagedImportRow.findMany.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+    prisma.transaction.findMany.mockResolvedValueOnce(preExisting.map((externalId) => ({ externalId })));
+    prisma.transaction.createMany.mockResolvedValueOnce({ count: created ?? 0 });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(remaining);
+  }
+
+  function finalCommitResult() {
+    const call = prisma.stagedImport.update.mock.calls.find((c) => c[0].data.errorDetails);
+    return call[0].data.errorDetails.commitResult;
+  }
+
+  const STOCKS = { id: 21, name: 'Stocks', type: 'Investments', processingHint: 'API_STOCK' };
+
+  it('names every missing investment field on a held-back row', async () => {
+    getCategoriesForTenant.mockResolvedValue([STOCKS]);
+    setupBatch([
+      makeRow({ id: 'qp', suggestedCategoryId: 21, requiresEnrichment: true, ticker: 'AAPL', assetQuantity: null, assetPrice: null }),
+    ], { remaining: 1 });
+
+    const result = await processCommitJob(makeJob());
+
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['qp'] } },
+      data: { status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_QUANTITY,MISSING_PRICE' },
+    });
+    expect(result.heldBack).toEqual({ total: 1, byReason: { MISSING_QUANTITY: 1, MISSING_PRICE: 1 } });
+  });
+
+  it('combines missing enrichment and a missing account on one row', async () => {
+    getCategoriesForTenant.mockResolvedValue([STOCKS]);
+    setupBatch([
+      makeRow({ id: 'both', suggestedCategoryId: 21, requiresEnrichment: true, ticker: null, assetQuantity: '1', assetPrice: '10', accountId: null }),
+    ], { remaining: 1 });
+
+    await processCommitJob(makeJob());
+
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['both'] } },
+      data: { status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_TICKER,MISSING_ACCOUNT' },
+    });
+  });
+
+  it('keeps the strict ticker + quantity + price check for an unknown category', async () => {
+    setupBatch([
+      makeRow({ id: 'u', suggestedCategoryId: 999, requiresEnrichment: true, ticker: null, assetQuantity: null, assetPrice: '5' }),
+    ], { remaining: 1 });
+
+    await processCommitJob(makeJob());
+
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['u'] } },
+      data: { status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_TICKER,MISSING_QUANTITY' },
+    });
+  });
+
+  it('mixed batch: counts held-back rows by reason in commitResult', async () => {
+    getCategoriesForTenant.mockResolvedValue([STOCKS]);
+    const rows = [];
+    for (let i = 0; i < 18; i++) {
+      rows.push(makeRow({ id: `price-${i}`, rowNumber: rows.length + 1, suggestedCategoryId: 21, requiresEnrichment: true, ticker: 'VWCE', assetQuantity: '1', assetPrice: null, description: `buy ${i}` }));
+    }
+    for (let i = 0; i < 4; i++) {
+      rows.push(makeRow({ id: `acct-${i}`, rowNumber: rows.length + 1, accountId: null, description: `no account ${i}` }));
+    }
+    for (let i = 0; i < 3; i++) {
+      rows.push(makeRow({ id: `dup-${i}`, rowNumber: rows.length + 1, description: `dup ${i}` }));
+    }
+    rows.push(makeRow({ id: 'good-1', rowNumber: rows.length + 1, description: 'good 1' }));
+    rows.push(makeRow({ id: 'good-2', rowNumber: rows.length + 1, description: 'good 2' }));
+
+    setupBatch(rows, {
+      preExisting: ['hash-dup 0-50.00-1', 'hash-dup 1-50.00-1', 'hash-dup 2-50.00-1'],
+      created: 2,
+      remaining: 25,
+    });
+
+    const result = await processCommitJob(makeJob());
+
+    const expected = { total: 25, byReason: { MISSING_PRICE: 18, MISSING_ACCOUNT: 4, DUPLICATE: 3 } };
+    expect(result.heldBack).toEqual(expected);
+    expect(finalCommitResult()).toEqual({ transactionCount: 2, updateCount: 0, remaining: 25, heldBack: expected });
+
+    const writes = prisma.stagedImportRow.updateMany.mock.calls.map((c) => c[0]);
+    expect(writes).toContainEqual({ where: { id: { in: ['good-1', 'good-2'] } }, data: { status: 'SKIPPED', errorMessage: null } });
+    expect(writes).toContainEqual({
+      where: { id: { in: ['dup-0', 'dup-1', 'dup-2'] } },
+      data: { status: 'POTENTIAL_DUPLICATE', errorMessage: 'HELD_BACK:DUPLICATE' },
+    });
+    expect(writes).toContainEqual({
+      where: { id: { in: ['acct-0', 'acct-1', 'acct-2', 'acct-3'] } },
+      data: { status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_ACCOUNT' },
+    });
+    const priceWrite = writes.find((w) => w.data.errorMessage === 'HELD_BACK:MISSING_PRICE');
+    expect(priceWrite.where.id.in).toHaveLength(18);
+    expect(priceWrite.data.status).toBe('STAGED');
+  });
+
+  it('clears an earlier hold-back reason when the row now commits', async () => {
+    getCategoriesForTenant.mockResolvedValue([STOCKS]);
+    setupBatch([
+      makeRow({ id: 'fixed', suggestedCategoryId: 21, requiresEnrichment: true, ticker: 'AAPL', assetQuantity: '2', assetPrice: '180', errorMessage: 'HELD_BACK:MISSING_PRICE' }),
+    ], { created: 1 });
+
+    const result = await processCommitJob(makeJob());
+
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['fixed'] } },
+      data: { status: 'SKIPPED', errorMessage: null },
+    });
+    expect(result.heldBack).toEqual({ total: 0, byReason: {} });
+  });
+
+  it('records UPDATE_FAILED on a failed update row and counts a deleted target too', async () => {
+    const rows = [
+      makeRow({ id: 'upd-fail', updateTargetId: 501 }),
+      makeRow({ id: 'upd-gone', updateTargetId: 502 }),
+      makeRow({ id: 'upd-ok', updateTargetId: 503 }),
+    ];
+    prisma.stagedImport.findFirst.mockResolvedValueOnce({ id: 'si-1', tenantId: 'tenant-1', status: 'COMMITTING' });
+    prisma.stagedImportRow.count.mockResolvedValueOnce(3);
+    prisma.stagedImportRow.findMany.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+    prisma.transaction.createMany.mockResolvedValueOnce({ count: 0 });
+    prisma.transaction.findFirst
+      .mockResolvedValueOnce({ id: 501, currency: 'USD' })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 503, currency: 'USD' });
+    prisma.transaction.update
+      .mockRejectedValueOnce(new Error('deadlock detected'))
+      .mockResolvedValueOnce({});
+    prisma.stagedImportRow.update.mockResolvedValue({});
+    prisma.stagedImportRow.count.mockResolvedValueOnce(0);
+
+    const result = await processCommitJob(makeJob());
+
+    expect(prisma.stagedImportRow.update).toHaveBeenCalledWith({
+      where: { id: 'upd-fail' },
+      data: { status: 'ERROR', errorMessage: 'HELD_BACK:UPDATE_FAILED' },
+    });
+    expect(prisma.stagedImportRow.update).toHaveBeenCalledWith({
+      where: { id: 'upd-gone' },
+      data: { status: 'ERROR', errorMessage: 'Transaction was deleted before commit' },
+    });
+    expect(prisma.stagedImportRow.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['upd-ok'] } },
+      data: { status: 'SKIPPED', errorMessage: null },
+    });
+    expect(result.updateCount).toBe(1);
+    expect(result.heldBack).toEqual({ total: 2, byReason: { UPDATE_FAILED: 2 } });
+  });
+
+  it('logs one structured smart_import_commit_result line per commit', async () => {
+    setupBatch([makeRow({ id: 'a', accountId: null })], { remaining: 1 });
+
+    await processCommitJob(makeJob());
+
+    expect(logger.info).toHaveBeenCalledWith('smart_import_commit_result', expect.objectContaining({
+      stagedImportId: 'si-1',
+      transactionCount: 0,
+      heldBackTotal: 1,
+      byReason: { MISSING_ACCOUNT: 1 },
+    }));
   });
 });

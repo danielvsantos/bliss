@@ -480,4 +480,62 @@ describe('TransactionReviewPage', () => {
     const [id] = retryMutate.mock.calls[0];
     expect(id).toBe('tx-failed-1');
   });
+  // ─── Hold-back reasons (#142) ────────────────────────────────────────────
+
+  it('shows held-back STAGED rows with their reason and filters to them server-side', () => {
+    vi.mocked(UseImports.usePendingImports).mockReturnValue(
+      mockQueryResult({ imports: [{ id: 'imp-1', fileName: 'broker.csv', pendingRowCount: 1 }] }),
+    );
+    vi.mocked(UseImports.useStagedImport).mockReturnValue(
+      mockQueryResult({
+        import: {
+          id: 'imp-1',
+          fileName: 'broker.csv',
+          status: 'READY',
+          errorDetails: {
+            commitResult: { transactionCount: 0, updateCount: 0, remaining: 1, heldBack: { total: 1, byReason: { MISSING_QUANTITY: 1, MISSING_PRICE: 1 } } },
+          },
+        },
+        rows: [
+          {
+            id: 'row-1',
+            stagedImportId: 'imp-1',
+            rowNumber: 1,
+            rawData: {},
+            transactionDate: '2025-05-01',
+            description: 'BUY VWCE',
+            debit: 500,
+            credit: 0,
+            currency: 'EUR',
+            accountId: 42,
+            suggestedCategoryId: 10,
+            suggestedCategory: { id: 10, name: 'ETFs' },
+            confidence: 0.95,
+            classificationSource: 'USER_OVERRIDE',
+            status: 'STAGED',
+            requiresEnrichment: true,
+            ticker: 'VWCE',
+            errorMessage: 'HELD_BACK:MISSING_QUANTITY,MISSING_PRICE',
+          },
+        ],
+        categorySummary: [{ categoryId: 10, count: 1, category: { id: 10, name: 'ETFs' } }],
+        pagination: { page: 1, limit: 50, total: 1 },
+      }),
+    );
+
+    renderPage('?source=imports');
+
+    // STAGED (held back by a commit) is part of the review query.
+    const params = vi.mocked(UseImports.useStagedImport).mock.calls[0][1];
+    expect(params?.status?.split(',')).toContain('STAGED');
+    expect(params).not.toHaveProperty('heldBack');
+
+    fireEvent.click(screen.getByText('Grouped'));
+    expect(screen.getAllByText('review.holdBack.missingFields').length).toBeGreaterThan(0);
+
+    // The toggle appears because the last commit held rows back, and asks the API for them only.
+    fireEvent.click(screen.getByText(/review\.holdBack\.filterLabel/));
+    const lastCall = vi.mocked(UseImports.useStagedImport).mock.calls.at(-1)!;
+    expect(lastCall[1]).toMatchObject({ heldBack: true, page: 1 });
+  });
 });

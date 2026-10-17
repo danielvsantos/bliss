@@ -1,4 +1,4 @@
-import type { PlaidTransaction, StagedImportRow } from '@/types/api';
+import type { HoldBackReason, PlaidTransaction, StagedImportRow } from '@/types/api';
 
 // ─── Unified Review Item ───────────────────────────────────────────────
 // Normalizes both PlaidTransaction and StagedImportRow into a single shape
@@ -27,6 +27,7 @@ export interface ReviewItem {
   promotionStatus: string;               // Original promotion/confirm status
   updateTargetId?: number | null;        // Non-null = update row (targets existing Transaction.id)
   updateDiff?: Record<string, { old: unknown; new: unknown; oldName?: string; newName?: string }> | null;
+  holdBackReasons?: HoldBackReason[] | null; // Import rows the last commit held back (#142)
   // References to original objects for mutations
   originalPlaidTx?: PlaidTransaction;
   originalImportRow?: StagedImportRow;

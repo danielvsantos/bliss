@@ -48,7 +48,7 @@ A collapsible "Import Adapters" section below the file picker lists all availabl
 Beneath the form fields, a **Row Preview** card shows how the first `sampleData` row (from the original file detection) will be parsed with the current column/strategy/date-format settings. Updates in real time as the user adjusts form fields. Displays five fields: Date, Description, Amount (formatted as currency), Currency, Bank Category (only when a category column is mapped and the sample row has a value). Shows a placeholder when no sample data is available (edit mode with no prior detection).
 
 **Unknown Format alert:**
-When `POST /api/imports/detect-adapter` returns `matched: false`, the "Unknown Format" alert includes:
+When `POST /api/imports/detect-adapter` returns `matched: false`, the "Unknown Format" alert shows the detected headers, then a static hint (`smartImport.unknownFormatHeaderHint`, #142): Bliss reads column headers from the first row of the file (or sheet) — if there are lines above them (account name, period, balance), delete them and upload again. Detection does not apply an adapter's `skipRows` before matching, so this is the usual reason a supported bank export shows as unknown. The alert also includes:
 1. A **sample rows table** — shows up to 3 rows from `sampleData` with the detected column headers as table headings. Lets non-technical users see exactly what Bliss is reading from their file before configuring the adapter.
 2. A **"Create Adapter for this Format"** button. Clicking it opens the adapter form with the detected headers **pre-loaded as chips** in the Match Headers field and all column-mapping fields populated from those headers as `<Select>` dropdowns. The live preview card also uses the captured sample data immediately.
 
@@ -74,8 +74,9 @@ A progress screen shown while the backend worker processes the file (and also du
 **COMMITTING phase** (after user clicks "Commit Import" in Step 3):
 - The commit endpoint returns `202 Accepted` immediately with `{ status: 'COMMITTING' }`.
 - A `useRef` tracks the previous `importStatus` to detect `COMMITTING → COMMITTED` or `COMMITTING → READY` transitions.
-- On `COMMITTED`: reads `errorDetails.commitResult` (`{ transactionCount, remaining }`), shows a toast, and advances to Step 4 (Done).
-- On `COMMITTING → READY` (partial commit): reads `commitResult`, shows a "Partial Commit Complete" toast with transaction count and remaining rows, and stays on the review step.
+- On `COMMITTED`: reads `errorDetails.commitResult` (`{ transactionCount, updateCount, remaining, heldBack }`), shows a toast, and advances to Step 4 (Done).
+- On `COMMITTING → READY` (partial commit): reads `commitResult`, shows a "Partial commit complete" toast and advances to Step 4 (Done), whose CTA leads to Transaction Review for the leftover rows.
+- Both toasts come from `buildCommitToast()` (`lib/import-hold-back.ts`, shared with Transaction Review): created / updated counts, the rows held back by reason (*"25 held back: 18 missing price, 4 missing account, 3 duplicates"*) and the unconfirmed rows as *"still to review"*. See the Review spec for the badge each held-back row then shows.
 
 ---
 

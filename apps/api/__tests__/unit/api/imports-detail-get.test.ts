@@ -90,3 +90,33 @@ describe('GET /api/imports/[id] — eligibleCount predicate', () => {
     expect(eligibleCountsCall.where.status).toEqual({ in: ['PENDING', 'ERROR', 'STAGED'] });
   });
 });
+
+describe('GET /api/imports/[id] — heldBack filter (#142)', () => {
+  function primeEmpty() {
+    mockPrisma.stagedImport.findFirst.mockResolvedValue({ id: 'import-1', status: 'READY', fileName: 'march.csv' });
+    mockPrisma.stagedImportRow.findMany.mockResolvedValue([]);
+    mockPrisma.stagedImportRow.count.mockResolvedValue(0);
+    mockPrisma.stagedImportRow.findFirst.mockResolvedValue(null);
+    mockPrisma.stagedImportRow.groupBy.mockResolvedValue([]);
+  }
+
+  it('heldBack=true limits the rows, the total and the category summary to HELD_BACK: reasons', async () => {
+    primeEmpty();
+    const res = makeRes();
+    await handler(makeReq({ query: { id: 'import-1', heldBack: 'true' } }), res as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    const heldBack = { errorMessage: { startsWith: 'HELD_BACK:' } };
+    expect(mockPrisma.stagedImportRow.findMany.mock.calls[0][0].where).toMatchObject(heldBack);
+    expect(mockPrisma.stagedImportRow.count.mock.calls[0][0].where).toMatchObject(heldBack);
+    // groupBy order: statusCounts (import-wide), categorySummaryRaw (filtered)
+    expect(mockPrisma.stagedImportRow.groupBy.mock.calls[0][0].where).not.toHaveProperty('errorMessage');
+    expect(mockPrisma.stagedImportRow.groupBy.mock.calls[1][0].where).toMatchObject(heldBack);
+  });
+
+  it('applies no errorMessage filter without the param', async () => {
+    primeEmpty();
+    await handler(makeReq({ query: { id: 'import-1' } }), makeRes() as NextApiResponse);
+    expect(mockPrisma.stagedImportRow.findMany.mock.calls[0][0].where).not.toHaveProperty('errorMessage');
+  });
+});

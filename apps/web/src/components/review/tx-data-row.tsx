@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, XCircle, ArrowRight, RefreshCw, RotateCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { StatusBadge } from './status-badge';
+import { HoldBackBadge } from './hold-back-badge';
 import { ConfidenceDisplay } from './confidence-display';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { ReviewItem } from './types';
@@ -150,6 +151,7 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, onRetry, disabled 
               Update
             </Badge>
           )}
+          <HoldBackBadge reasons={item.holdBackReasons} />
         </span>
         <span className="w-[100px] shrink-0 text-xs text-muted-foreground truncate" title={item.accountName}>
           {item.accountName || '-'}
@@ -267,6 +269,7 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, onRetry, disabled 
           )}
           <span className="text-muted-foreground text-[11px]">&middot;</span>
           <StatusBadge status={item.status} />
+          <HoldBackBadge reasons={item.holdBackReasons} />
 
           {showActions && (
             <span className="ml-auto flex items-center gap-0.5 shrink-0">

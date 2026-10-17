@@ -130,7 +130,7 @@ Represents a single import session.
 | `autoConfirmedCount` | Rows auto-confirmed during processing (confidence ≥ `autoPromoteThreshold`) |
 | `seedReady` | `true` once Phase 1 classification is complete. When `true`, the frontend may show the Quick Classify card. |
 | `errorCount` | Rows that failed to parse |
-| `errorDetails` | JSON error details; after commit contains `{ commitResult: { transactionCount, remaining } }` |
+| `errorDetails` | JSON error details; after commit contains `{ commitResult: { transactionCount, updateCount, remaining, heldBack } }` (see § 9.6 "Hold-back reasons") |
 
 ### `StagedImportRow`
 
@@ -212,7 +212,7 @@ When the user clicks "Commit Import", the API endpoint (`POST /api/imports/:id?a
 2. **Fetch promotable rows** — Queries `StagedImportRow` with `status === 'CONFIRMED'` **exactly** and non-null `suggestedCategoryId`. If `rowIds` is provided in the event data, only those rows are additionally filtered (partial commit).
    - **Data-integrity guard**: `POTENTIAL_DUPLICATE` and `DUPLICATE` rows are deliberately excluded from this query. A user who wants to commit a flagged duplicate must explicitly override its status to `CONFIRMED` through the Review UI first. This keeps the `Transaction.externalId @unique` constraint as the true defense-in-depth backstop against accidental re-imports. Regression test: `apps/backend/src/__tests__/unit/workers/commitWorker.test.js` → "only fetches CONFIRMED rows — POTENTIAL_DUPLICATE and DUPLICATE are filtered out".
 3. **Batch create transactions** (batches of 200):
-   a. Filters out rows requiring enrichment that are still missing ticker/quantity/price.
+   a. **Holds back** rows that can't be created and records why (`holdBackCodes()`): a row still flagged `requiresEnrichment` that is missing ticker/quantity/price for its category (`missingInvestmentFields()` from `@bliss/shared/portfolio` — ticker optional in the built-in Funds category; an unknown category keeps the strict ticker + quantity + price check), and/or a row with no `accountId`. Every missing thing is named at once.
    b. **Occurrence counter** — Tracks how many times each base hash appears across the entire commit (counter persists across batches). When multiple `CONFIRMED` rows in the same commit share the same base hash (e.g. 7 × "$1 Commission" on the same day that the user explicitly confirmed), each gets a unique `externalId`: 1st → `baseHash`, 2nd → `baseHash:2`, 3rd → `baseHash:3`, etc. This lets a user commit legitimate same-fingerprint transactions.
 
       The counter is intentionally **scoped to a single commit** — it starts empty on each job. A re-committed row (re-import of a CSV that was previously committed) gets `externalId = baseHash` in the new commit, which already exists in the DB, so `createMany({ skipDuplicates: true })` correctly skips it. Combined with step 2's `status === 'CONFIRMED'` guard, this means any row reaching `createMany` is either a brand-new transaction or a DB-level duplicate that the unique constraint will reject — never a silent re-import.
@@ -222,14 +222,39 @@ When the user clicks "Commit Import", the API endpoint (`POST /api/imports/:id?a
    f. Calls `prisma.transaction.createMany({ skipDuplicates: true })`.
    g. **Three-bucket row classification** — after the insert, each row in the batch is classified by its commit outcome:
       - **Committed** (`externalId` not pre-existing) → `status: 'SKIPPED'` (advances the cursor, hidden from review)
-      - **Duplicate** (`externalId` pre-existing in DB) → `status: 'POTENTIAL_DUPLICATE'` (returned to user review queue)
-      - **Enrichment missing** (filtered out at step a, not in `rowIdToExternalId` map) → `status: 'STAGED'` (returned for data entry)
+      - **Duplicate** (`externalId` pre-existing in DB) → `status: 'POTENTIAL_DUPLICATE'`, `errorMessage: 'HELD_BACK:DUPLICATE'` (returned to user review queue)
+      - **Held back** (step a) → `status: 'STAGED'`, `errorMessage: 'HELD_BACK:<codes>'` (returned for data entry). One `updateMany` per distinct code combination.
+      - A committed row's `errorMessage` is cleared (`null`), so a reason from an earlier commit disappears once the row is promoted.
    h. **Tag linking**: For rows with a non-null `tags` array, tags are resolved via `resolveTagsByName()` (find-or-create by name) and linked to created transactions via `TransactionTag`.
    h. Updates `StagedImport.progress` (0→85% across batches).
 4. **Embedding feedback** (fire-and-forget, non-blocking): Calls `categorizationService.recordFeedback()` for committed rows with `classificationSource = 'LLM'` or `'USER_OVERRIDE'` to update the pgvector embedding index. Additionally, `addDescriptionEntry()` is called for **all** committed rows (regardless of classification source) to warm the in-memory description cache — this ensures EXACT_MATCH and VECTOR_MATCH descriptions are also cached for future classification. Progress → 90%.
 5. **Check remaining rows** — Counts remaining `CONFIRMED`/`PENDING`/`POTENTIAL_DUPLICATE`/`STAGED` rows with a category.
-6. **Final status** — Sets `StagedImport.status` to `'COMMITTED'` (remaining = 0) or `'READY'` (remaining > 0), with `progress: 100` and `errorDetails.commitResult = { transactionCount, remaining }`.
+6. **Final status** — Sets `StagedImport.status` to `'COMMITTED'` (remaining = 0) or `'READY'` (remaining > 0), with `progress: 100` and `errorDetails.commitResult = { transactionCount, updateCount, remaining, heldBack }`. Logs one structured `smart_import_commit_result { stagedImportId, transactionCount, updateCount, remaining, heldBackTotal, byReason }` line per commit (errorDetails is overwritten by the next commit, the log keeps the history). The "0 confirmed rows" early exit writes the same shape (`heldBack: { total: 0, byReason: {} }`) and counts `STAGED` in `remaining` too.
 7. **Downstream event** — Enqueues `TRANSACTIONS_IMPORTED` event (direct queue call) with `accountIds`, `dateScopes`, and `source: 'SMART_IMPORT'` to trigger portfolio recalculation.
+
+### Hold-back reasons (#142)
+
+A CONFIRMED row that a commit leaves uncommitted carries the reason in `StagedImportRow.errorMessage` as a stable code string — never English — so the web app can translate it and the API/MCP can filter on it. No schema change: it reuses the existing column.
+
+```
+HELD_BACK:<CODE>[,<CODE>…]        e.g. HELD_BACK:MISSING_QUANTITY,MISSING_PRICE
+```
+
+| Code | Row status | Meaning / fix |
+|------|------------|---------------|
+| `MISSING_TICKER` | `STAGED` | Investment row without a valid ticker (not required in the built-in Funds category) |
+| `MISSING_QUANTITY` | `STAGED` | Investment row without a quantity |
+| `MISSING_PRICE` | `STAGED` | Investment row without a price |
+| `MISSING_ACCOUNT` | `STAGED` | No account resolved (native-adapter rows resolve it per row) |
+| `DUPLICATE` | `POTENTIAL_DUPLICATE` | The transaction (same `externalId`) already exists |
+| `UPDATE_FAILED` | `ERROR` | A CSV round-trip update (`updateTargetId`) threw. The "Transaction was deleted before commit" case keeps its own message and is counted under `UPDATE_FAILED` |
+| `COMMIT_ERROR` | `STAGED` | Defensive fallback — a CREATE row that left the batch without a recorded reason |
+
+The contract lives in **`@bliss/shared/import`**: `HOLD_BACK_PREFIX`, `HOLD_BACK_REASONS` (canonical order: investment fields, account, then the rest), `formatHoldBack(codes)`, `parseHoldBack(errorMessage)` (`null` for staging text such as "Could not resolve account from CSV value", which is why the prefix exists) and `summarizeHeldBack(codeLists)`. The web bundle mirrors `parseHoldBack` in `apps/web/src/lib/import-hold-back.ts`.
+
+`commitResult.heldBack = { total, byReason }` covers rows held back **in this commit run**. `total` counts rows; `byReason` counts codes (keys only when > 0), so a row missing quantity and price adds 1 to `total` and 1 to each code — sum `byReason` and you can exceed `total`. Payloads written before #142 have no `heldBack`.
+
+The reason stays on the row until the next commit re-evaluates it: editing a row does not clear it.
 
 ### Error handling
 
@@ -366,14 +391,14 @@ The commit worker partitions promotable rows into `createRows` (where `updateTar
 
 **Update rows** (batches of 200):
 1. Build an update payload from the staged row data. Guarded fields (`accountId`, `source`, `externalId`, `userId`, `createdAt`) are never overwritten.
-2. Validate the target transaction still exists and belongs to the tenant. If deleted since staging → `status: 'ERROR'`.
+2. Validate the target transaction still exists and belongs to the tenant. If deleted since staging → `status: 'ERROR'` (counted as `UPDATE_FAILED` in `heldBack`).
 3. Apply via `prisma.transaction.update()` with date normalisation (year, month, day, quarter extraction).
 4. Handle category changes (portfolio item upsert) and tag changes (`resolveTagsByName()` re-link).
-5. Mark the `StagedImportRow` as `status: 'SKIPPED'` (processed).
+5. Mark the `StagedImportRow` as `status: 'SKIPPED'` (processed) and clear its `errorMessage`. If the update throws → `status: 'ERROR'`, `errorMessage: 'HELD_BACK:UPDATE_FAILED'` (the exception text goes to the log only).
 
 **Embedding feedback**: Category changes on update rows with `classificationSource = 'USER_OVERRIDE'` trigger `recordFeedback()`, same as creates.
 
-**Final status**: `errorDetails.commitResult` now includes `{ transactionCount, updateCount, remaining }`.
+**Final status**: `errorDetails.commitResult` now includes `{ transactionCount, updateCount, remaining, heldBack }`.
 
 **Downstream events**: `TRANSACTIONS_IMPORTED` includes all affected account IDs. Category changes on update rows also produce `MANUAL_TRANSACTION_UPDATED` events for portfolio recalculation.
 

@@ -17,6 +17,8 @@ Bliss supports CSV and XLSX imports with automatic format detection, AI classifi
 
 Bliss matches your file's column headers against known adapter signatures. If a match is found, it auto-maps columns. If not, you create a custom adapter.
 
+> **Headers must be on the first row.** Bliss reads column headers from the first row of the file (or of the sheet, for Excel files). Many bank exports start with a few lines above the headers — account name, statement period, balance. If your file shows as **Unknown format** even though your bank is supported, open it, delete the lines above the header row, save, and upload it again.
+
 ### Preconfigured bank adapters
 
 Bliss ships with 30+ preconfigured adapters that automatically recognize CSV exports from major banks worldwide. Just upload your file and Bliss will detect the format:
@@ -137,6 +139,21 @@ After processing, review the staged rows. The AI assigns a category and confiden
 ![Transaction review with AI drawer](/images/transactionreviewdrawer.png)
 
 Rows with confidence above your `autoPromoteThreshold` (default 0.90) are auto-confirmed.
+
+### Why some rows weren't committed
+
+When you commit, Bliss creates a transaction for every confirmed row it can. A row it can't create is **held back**: it stays in Transaction Review with a badge that says why, and the commit toast counts them by reason — for example *"12 created. 25 held back: 18 missing price, 4 missing account, 3 duplicates."* Use **Held back only** in Transaction Review to list just those rows.
+
+| Badge | What it means | How to fix it |
+|-------|---------------|---------------|
+| **Missing ticker / quantity / price** | An investment row (stock, ETF, crypto, fund) is missing what Bliss needs to track the holding. All missing fields are named at once, e.g. *Missing quantity, price*. | Open the row, fill in the fields and confirm it again. Funds in the built-in *Funds* category don't need a ticker. |
+| **Missing account** | Bliss couldn't match the row's account (usually the account column of a Bliss Native file). | Open the row, pick the account and confirm it again. |
+| **Duplicate** | The same transaction already exists in Bliss. | Skip it — or, if it really is a separate transaction, confirm it again. |
+| **Update failed** | A row updating an existing transaction (Bliss Native round-trip) couldn't be saved. | Check that the transaction still exists, then re-import the row. |
+
+Commit again once you've fixed the rows: rows that commit lose their badge. *"Still to review"* in the toast counts rows you haven't confirmed yet.
+
+AI agents see the same information through the MCP server: in `list_imports`, each held-back row has `error: "HELD_BACK:<codes>"` and `import.lastCommit.heldBack` has the counts by reason.
 
 ## Next steps
 
