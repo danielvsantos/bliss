@@ -18,12 +18,17 @@ import { startOfMonth, startOfYear, endOfMonth, subMonths, format } from 'date-f
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { translateCategoryGroup } from '@/lib/category-i18n';
-import type { AnalyticsResponse } from '@/types/api';
+import { formatCurrency } from '@/lib/utils';
+import { buildGroupColorMap } from '@/lib/portfolio-utils';
+import {
+  EXPENSE_TYPES,
+  aggregateExpenseGroups,
+  buildExpenseBreakdown,
+} from '@/lib/expense-breakdown';
 
 type ChartPeriod = 'year' | 'month' | 'prev_month' | 'quarter';
 
-// Design-token-aligned colors
-const CHART_COLORS = ['#3A3542', '#2E8B57', '#E5989B', '#6D657A', '#E09F12', '#9A95A4'];
+const OTHER_COLOR = 'hsl(var(--muted-foreground))';
 
 const RADIAN = Math.PI / 180;
 
@@ -58,58 +63,10 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{
     <div className="bg-card/95 border border-border rounded-lg px-3 py-2 shadow-lg">
       <p className="text-sm font-medium text-foreground">{d.name}</p>
       <p className="text-xs text-muted-foreground mt-0.5">{d.percentage}% {t('expenseSplit.ofSpending')}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{t('expenseSplit.basis')}</p>
     </div>
   );
 }
-
-const processAnalyticsData = (analyticsData: AnalyticsResponse | undefined) => {
-  if (!analyticsData?.data) return [];
-
-  const expenseGroups: Record<string, number> = {};
-
-  for (const timeKey in analyticsData.data) {
-    const periodData = analyticsData.data[timeKey];
-    const EXPENSE_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
-    const expenseData: Record<string, { debit: number }> = {};
-    for (const type of EXPENSE_TYPES) {
-      const typeData = periodData[type] || {};
-      for (const groupKey in typeData) {
-        expenseData[groupKey] = expenseData[groupKey] || { debit: 0 };
-        expenseData[groupKey].debit += typeData[groupKey].debit;
-      }
-    }
-    for (const groupKey in expenseData) {
-      expenseGroups[groupKey] = (expenseGroups[groupKey] ?? 0) + expenseData[groupKey].debit;
-    }
-  }
-
-  const total = Object.values(expenseGroups).reduce((s, v) => s + v, 0);
-
-  const sorted = Object.entries(expenseGroups)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-
-  const MAX_SLICES = 7;
-  const top = sorted.slice(0, MAX_SLICES);
-  const otherValue = sorted.slice(MAX_SLICES).reduce((s, item) => s + item.value, 0);
-
-  const result = top.map((item, index) => ({
-    ...item,
-    percentage: total > 0 ? parseFloat(((item.value / total) * 100).toFixed(1)) : 0,
-    color: CHART_COLORS[index % CHART_COLORS.length],
-  }));
-
-  if (otherValue > 0) {
-    result.push({
-      name: 'Others',
-      value: otherValue,
-      percentage: total > 0 ? parseFloat(((otherValue / total) * 100).toFixed(1)) : 0,
-      color: CHART_COLORS[MAX_SLICES % CHART_COLORS.length],
-    });
-  }
-
-  return result;
-};
 
 const PERIOD_LABEL_KEYS: Record<ChartPeriod, string> = {
   year: 'expenseSplit.thisYear',
@@ -167,16 +124,28 @@ export function ExpenseSplitCard({ currency, year, className }: ExpenseSplitCard
     currency,
     startMonth,
     endMonth,
-    types: ['Essentials', 'Lifestyle', 'Growth'],
+    types: [...EXPENSE_TYPES],
   });
 
-  const chartData = useMemo(() =>
-    processAnalyticsData(analyticsData).map(d => ({
-      ...d,
-      name: translateCategoryGroup(t, d.name),
-    })),
+  // #140: always debits − credits (no toggle here), same helper as the Expenses page.
+  const breakdown = useMemo(
+    () => buildExpenseBreakdown(
+      aggregateExpenseGroups(analyticsData?.data, EXPENSE_TYPES, 'net'),
+      { maxSlices: 7, otherLabel: t('common.other') },
+    ),
     [analyticsData, t],
   );
+
+  const chartData = useMemo(() => {
+    const colors = buildGroupColorMap(breakdown.allGroups, new Set());
+    return breakdown.slices.map(d => ({
+      ...d,
+      color: d.isOther ? OTHER_COLOR : colors[d.name] ?? OTHER_COLOR,
+      name: d.isOther ? d.name : translateCategoryGroup(t, d.name),
+    }));
+  }, [breakdown, t]);
+
+  const netCreditTotal = breakdown.netCredits.reduce((sum, g) => sum + g.value, 0);
 
   return (
     <Card className={`h-full ${className ?? ''}`}>
@@ -211,9 +180,13 @@ export function ExpenseSplitCard({ currency, year, className }: ExpenseSplitCard
           <div className="flex items-center justify-center py-12">
             <Skeleton className="w-full aspect-[4/3] max-h-60" />
           </div>
-        ) : chartData.length === 0 ? (
+        ) : breakdown.allGroups.length === 0 ? (
           <div className="flex items-center justify-center py-12">
             <p className="text-sm text-muted-foreground">{t('expenseSplit.noData')}</p>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-sm text-muted-foreground">{t('expenseSplit.noNetSpend')}</p>
           </div>
         ) : (
           <>
@@ -252,11 +225,17 @@ export function ExpenseSplitCard({ currency, year, className }: ExpenseSplitCard
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: d.color }}
                   />
-                  <span className="text-xs text-muted-foreground truncate">{translateCategoryGroup(t, d.name)}</span>
+                  <span className="text-xs text-muted-foreground truncate">{d.name}</span>
                   <span className="text-xs font-medium text-brand-primary ml-auto">{d.percentage}%</span>
                 </div>
               ))}
             </div>
+            {breakdown.netCredits.length > 0 && (
+              <p className="text-xs text-muted-foreground pb-2" data-testid="expense-split-net-credits">
+                {t('expenseSplit.netCredits')}:{' '}
+                <span className="font-medium text-positive">{formatCurrency(netCreditTotal, currency)}</span>
+              </p>
+            )}
           </>
         )}
       </div>

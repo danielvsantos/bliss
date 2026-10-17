@@ -298,6 +298,14 @@ const en = {
       description: "Analyze your spending patterns by category",
       selectCategoryType: "Select category type",
       countriesSelected: "{{count}} countries selected",
+      includeCredits: {
+        label: "Include credits",
+        tooltip: "On: credits to expense categories (refunds, reimbursements, a flatmate's share, insurance payouts) are subtracted from debits. Off: shows debits only."
+      },
+      basis: {
+        net: "debits − credits",
+        debitOnly: "debits only"
+      },
       timeFrame: {
         label: "Time Frame",
         month: "Month",
@@ -320,6 +328,9 @@ const en = {
           detailedList: "Detailed List"
         },
         topCategories: "Top Expense Categories",
+        netCredits: "Net credits",
+        netCreditsCaption: "Total includes {{amount}} of net credits",
+        noNetSpend: "No net spend in this period",
         trendChart: {
           movingAverageSuffix: " (6-mo avg)"
         },
@@ -331,6 +342,7 @@ const en = {
           emptyTitle: "Select a category to explore",
           emptyDescription: "Click on a slice in the pie chart or a category row to see individual transactions.",
           goToCategories: "Go to By Category",
+          capNotice: "Showing the first 1,000 transactions; totals may be incomplete",
         }
       }
     },
@@ -1862,6 +1874,10 @@ const en = {
     last3Months: "Last 3 months",
     noData: "No spending data for this period.",
     viewExpenses: "View expenses",
+    ofSpending: "of spending",
+    basis: "Debits − credits",
+    netCredits: "Net credits",
+    noNetSpend: "No net spend in this period",
   },
 
   // Smart Import page

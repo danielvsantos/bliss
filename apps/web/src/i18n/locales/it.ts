@@ -298,6 +298,14 @@ const it = {
       description: "Analizza i tuoi modelli di spesa per categoria",
       selectCategoryType: "Seleziona il tipo di categoria",
       countriesSelected: "{{count}} paesi selezionati",
+      includeCredits: {
+        label: "Includi crediti",
+        tooltip: "Attivo: i crediti nelle categorie di spesa (rimborsi, la quota di un coinquilino, indennizzi assicurativi) vengono sottratti dai debiti. Disattivo: mostra solo i debiti."
+      },
+      basis: {
+        net: "debiti − crediti",
+        debitOnly: "solo debiti"
+      },
       timeFrame: {
         label: "Periodo",
         month: "Mese",
@@ -320,6 +328,9 @@ const it = {
           detailedList: "Lista dettagliata"
         },
         topCategories: "Categorie di spesa principali",
+        netCredits: "Crediti netti",
+        netCreditsCaption: "Il totale include {{amount}} di crediti netti",
+        noNetSpend: "Nessuna spesa netta in questo periodo",
         trendChart: {
           movingAverageSuffix: " (media 6 mesi)"
         },
@@ -331,6 +342,7 @@ const it = {
           emptyTitle: "Seleziona una categoria da esplorare",
           emptyDescription: "Clicca su una fetta del grafico a torta o su una riga della categoria per vedere le singole transazioni.",
           goToCategories: "Vai a Per categoria",
+          capNotice: "Mostrate le prime 1.000 transazioni; i totali potrebbero essere incompleti",
         }
       }
     },
@@ -1862,6 +1874,10 @@ const it = {
     last3Months: "Ultimi 3 mesi",
     noData: "Nessun dato di spesa per questo periodo.",
     viewExpenses: "Visualizza spese",
+    ofSpending: "della spesa",
+    basis: "Debiti − crediti",
+    netCredits: "Crediti netti",
+    noNetSpend: "Nessuna spesa netta in questo periodo",
   },
 
   // Smart Import page

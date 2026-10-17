@@ -44,7 +44,7 @@ RecentTransactionsCard: 5 rows with emoji, date, description, category, account,
 | `HeroNetWorth` | `hero-net-worth.tsx` | `netWorth, previousNetWorth, netIncome, grossProfit, currency, lastSyncDate, sparklineData, isLoading` |
 | `NetWorthSparkline` | `net-worth-sparkline.tsx` | `dataPoints: number[], width?, height?` |
 | `SyncedAccountsCard` | `synced-accounts-card.tsx` | `accounts: EnrichedAccount[], isLoading` |
-| `ExpenseSplitCard` | `expense-split-card.tsx` | `currency: string` |
+| `ExpenseSplitCard` | `expense-split-card.tsx` | `currency: string, year?, className?` — always **debits − credits** per group (no toggle), via `lib/expense-breakdown.ts` (see §5.4.3) |
 | `QuickActionsCard` | `quick-actions-card.tsx` | `actions: DashboardAction[], signals: UserSignals` |
 | `RecentTransactionsCard` | `recent-transactions-card.tsx` | `className?` (self-contained, fetches own data, uses category emoji from API) |
 | `SetupChecklist` | `setup-checklist.tsx` | `actions?: DashboardAction[]` (onboarding items from action registry) |
@@ -70,6 +70,7 @@ RecentTransactionsCard: 5 rows with emoji, date, description, category, account,
 
 ### 5.2.5. Computed Values
 
+- **Expense split** (#140): `buildExpenseBreakdown(aggregateExpenseGroups(data, EXPENSE_TYPES, 'net'), { maxSlices: 7 })`. Same definition and pie rule as the Expenses page default view (§5.4.3): group values and the total match it; only the slice count differs (7 here, 5 on the page). Net-credit groups are listed in a "Net credits" footnote; when every group is a net credit the card shows `expenseSplit.noNetSpend`. Colours come from `buildGroupColorMap()`, keyed on the untranslated group name, so a group has the same colour on both surfaces. The tooltip states the basis ("Debits − credits").
 - **sparklineData**: Net worth per day from portfolio history — `(Asset.total + Investments.total) - abs(Debt.total)` (`netWorthFromEntry` in `src/lib/net-worth.ts`; the `Asset` block includes the Cash group, #144) — sampled to 30 points. `useDashboardMetrics.netWorth` (live, current year) uses the same formula over portfolio items: every non-debt item, cash included, minus `abs()` of debt.
 - **previousNetWorth**: First sparkline data point (value ~3 months ago). Used to compute delta and percentage change.
 - **mostRecentSync**: Latest `lastSync` across all enriched accounts.
@@ -113,15 +114,69 @@ Below the **Other Activity** separator (Ventures, Transfers, Investments, Debt) 
 This page is dedicated to analyzing user spending habits.
 
 - **File Path**: `src/pages/reports/expenses.tsx`
+- **Shared helper**: `src/lib/expense-breakdown.ts` (also used by the Dashboard `ExpenseSplitCard`, so the two can't drift apart)
 
 ### 5.4.1. Key Metrics
 
-- **Total Expenses**: The sum of all expenses within the selected period.
-- **Average Monthly Expense**: The total expenses divided by the number of months in the selected period.
-- **Highest Spending Category**: The category with the most spending.
+- **Total Expenses**: The signed sum of every group's expense for the selected period, types, countries and currency (§5.4.3). A sub-label names the active basis: "debits − credits" or "debits only".
+- **Average Monthly Expense**: The total divided by the number of months in the selected period.
+- **Highest Spending Category**: The largest positive group, or `N/A` when there is none.
+
+Totals render in `text-negative`; a net-credit total (negative) renders in `text-positive` with a leading "−", like Financial Summary.
 
 ### 5.4.2. Visualizations and Data Breakdown
 
-- **Expense Breakdown**: A pie chart showing the distribution of expenses across different categories.
-- **Monthly Trends**: A line chart to track spending in selected categories over time.
-- **Detailed Transaction List**: A table listing all transactions for a selected expense category.
+- **Expense Breakdown**: A pie chart of the positive groups (top 5 + "Other"). The "Other" slice/row is not clickable. Groups whose credits exceed debits are listed under the pie as **Net credits** (signed, `text-positive`) with the caption "Total includes {{amount}} of net credits". When groups exist but none is positive, the pie is replaced by "No net spend in this period".
+- **Monthly Trends**: A line chart of the selected groups over time, plus a 6-month moving average per group (`lib/trend-utils.ts`). The group picker lists **every** group with activity (`allGroups`), including net-credit ones. Negative months plot below zero: `YAxis domain={['auto','auto']}` and a `ReferenceLine y={0}` when any plotted value is negative.
+- **Detailed Transaction List**: A table listing all transactions for a selected expense group (§5.4.5).
+
+### 5.4.3. Expense definition (#140)
+
+**Expense = Σ debit − Σ credit**, per category group, summed across the selected expense types (Essentials / Lifestyle / Growth, or one of them). Netting is at **group level**: the analytics cache (`AnalyticsCacheMonthly`) is already per group, so a group with one credit-heavy category and larger spending categories stays positive. Credits booked to expense categories (refunds, reimbursements, a flatmate's share, insurance payouts) reduce spend; credits booked to Income categories do not.
+
+`lib/expense-breakdown.ts`:
+
+| Function | Purpose |
+|----------|---------|
+| `expenseValue(cell, basis)` | `debit − credit` (`'net'`) or `debit` (`'debit'`); missing fields count as 0 |
+| `aggregateExpenseGroups(data, types, basis)` | group → signed value for the whole period |
+| `aggregateExpenseGroupsByMonth(data, types, basis)` | month (ascending) → group → signed value, for the trend chart |
+| `buildExpenseBreakdown(groups, { maxSlices, otherLabel })` | `total`, `shareTotal`, `slices`, `netCredits`, `highest`, `allGroups` |
+| `readIncludeCredits()` / `writeIncludeCredits(v)` | the persisted toggle |
+
+**Net-negative groups or months — never clamped to 0:**
+
+- **Totals** (KPI cards, monthly totals, moving average) include negative values as they are, so the total equals Financial Summary.
+- **Pie and share-of-total**: slices and percentages come only from positive groups; `shareTotal` (sum of positive groups) is the only denominator, including for "Other", which is built only from positive groups. No negative slice, NaN or >100% value is possible.
+- **Trend chart**: negative points plot below zero.
+- Values with `|v| < 0.005` are treated as 0 (float residue): neither a slice nor a net credit.
+
+### 5.4.4. "Include credits" toggle
+
+A switch in the filter bar, labelled "Include credits", with a tooltip explaining both states.
+
+- **On (default)**: expense = debits − credits; every rule in §5.4.3 applies.
+- **Off**: expense = debits only (values are never negative, so there are no net credits).
+- One switch drives every figure: KPIs, pie, group list, trends, moving average, percentages and the Details tab. No mixed state.
+- Persisted per browser in `localStorage['bliss.expenses.includeCredits']` (`'false'` = off). If storage is unavailable it falls back to on. (Moving it to user preferences for cross-device persistence is a possible follow-up; only the two storage helpers would change.)
+- The Dashboard Expense Split has **no** toggle and always shows debits − credits.
+
+### 5.4.5. Details tab (`components/entities/expense-transaction-list.tsx`)
+
+- Category summary: per category and **per native currency**, `debit − credit` when the toggle is on, `debit` when off. Cells and the footer are coloured by sign (`text-positive` with "−" for a net credit, `text-negative` otherwise).
+- Transactions view: each row shows `debit − credit`, coloured by its sign. With the toggle off, net-credit rows are de-emphasised (`opacity-60`) but still listed.
+- **Reconciliation caveat**: the summary aggregates up to **1,000 transactions** client-side (the API's page cap), shows native currencies (not converted), and does **not** apply the page's country or type filters. It matches the chart only when the group has ≤ 1,000 transactions in the period, a single currency, and no country/type filter excludes any of them. When `total > transactions.length`, the notice "Showing the first 1,000 transactions; totals may be incomplete" is shown above the table. Moving this aggregation server-side is a follow-up.
+
+### 5.4.6. Parity with other surfaces
+
+| Surface | Definition | Matches the Expenses default view? |
+|---------|------------|-------------------------------------|
+| Expenses page, "Include credits" on | Σ debit − Σ credit per group | — |
+| Expenses page, "Include credits" off | Σ debit | No, by design (gross spend) |
+| Dashboard Expense Split | same helper, `'net'` basis | Yes: total and group values (slice count 7 vs 5) |
+| Expenses Details tab | per-transaction `debit − credit` | Yes, within the §5.4.5 caveat |
+| Financial Summary statement | signed `balance = credit − debit` per group | Yes: expense total = −Σ balance (within 0.01) |
+| Financial Summary monthly chart (`lib/financial-summary.ts`) | `Math.abs(type total)` per type per month | **Differs** in a type-month that is a net credit (the chart shows it as positive spend). Candidate follow-up |
+| AI insights spending lenses (`backend/src/services/insightService.js`) | `expenses = −Σ balance`, per group signed (never `abs()`) | Yes. `SPENDING_VELOCITY`, `CATEGORY_CONCENTRATION`, `UNUSUAL_SPENDING` and `SAVINGS_RATE` all read the same signed `monthlyData`. `CATEGORY_CONCENTRATION` percentages use the signed month total as denominator (net-credit groups are not excluded as they are from the pie) |
+| MCP `get_spending_summary` | exposes `in` (credit), `out` (debit), `net` (`balance`) | Yes: expense = −`net` |
+| Tag Analytics | shows credits and debits explicitly | Separate, unchanged |

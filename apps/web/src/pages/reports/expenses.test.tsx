@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ReactNode, ComponentType } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -95,6 +95,7 @@ vi.mock('recharts', async () => {
     )) as ComponentType<LineProps>,
     XAxis: () => null,
     YAxis: () => null,
+    ReferenceLine: () => <div data-testid="reference-line" />,
     CartesianGrid: () => null,
     Tooltip: () => null,
     Legend: () => null,
@@ -248,5 +249,118 @@ describe('ExpenseTrackingPage - Monthly Trends moving average', () => {
     // Every average line is identifiable as the dashed, emphasized series regardless of group.
     [diningAvg, groceriesAvg].forEach(line => expect(line?.dataset.dash).not.toBe(''));
     [diningRaw, groceriesRaw].forEach(line => expect(Number(line?.dataset.opacity)).toBeLessThan(1));
+  });
+});
+
+// #140: every Expenses figure is debits − credits by default (group-level netting),
+// with an "Include credits" switch for debits only.
+type Cell = { debit: number; credit: number };
+const netFixture = (months: Record<string, Record<string, Record<string, Cell>>>): AnalyticsResponse => ({
+  currency: 'USD',
+  view: 'month',
+  data: months,
+});
+
+describe('ExpenseTrackingPage - net of credits (#140)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    vi.mocked(UseMetadata.useUserPreferences).mockReturnValue(
+      mockQueryResult({ defaultCurrency: 'USD', defaultCountry: 'US', theme: 'system' as const }),
+    );
+    vi.mocked(UseMetadata.useCategories).mockReturnValue(
+      mockQueryResult([{ id: 1, name: 'Rent', group: 'Housing', type: 'Essentials', tenantId: 't1' }]),
+    );
+    vi.mocked(UseTenantSettings.useTenantSettings).mockReturnValue(
+      mockQueryResult({ autoPromoteThreshold: 0.9, reviewThreshold: 0.7, portfolioCurrency: 'USD', plaidHistoryDays: 30 }),
+    );
+  });
+
+  const renderPage = () => {
+    const user = userEvent.setup();
+    const result = render(
+      <MemoryRouter>
+        <ExpenseTrackingPage />
+      </MemoryRouter>
+    );
+    return { ...result, user };
+  };
+
+  const housing = netFixture({
+    '2023-01': { Essentials: { Housing: { debit: 8164, credit: 3401.5 } } },
+    '2023-02': { Essentials: { Housing: { debit: 8164, credit: 3401.5 } } },
+  });
+
+  it('shows Housing net of credits (16,328 − 6,803 = 9,525) with the "debits − credits" basis', () => {
+    vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(mockQueryResult(housing));
+    renderPage();
+    // KPI total, highest-category value and the group row all read 9,525.
+    expect(screen.getAllByText('$9,525.00').length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText('$16,328.00')).not.toBeInTheDocument();
+    expect(screen.getByTestId('expenses-basis')).toHaveTextContent('pages.expenses.basis.net');
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('turning "Include credits" off shows debits only and is remembered', async () => {
+    vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(mockQueryResult(housing));
+    const { user, unmount } = renderPage();
+    await user.click(screen.getByRole('switch'));
+
+    expect(screen.getAllByText('$16,328.00').length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText('$9,525.00')).not.toBeInTheDocument();
+    expect(screen.getByTestId('expenses-basis')).toHaveTextContent('pages.expenses.basis.debitOnly');
+    expect(window.localStorage.getItem('bliss.expenses.includeCredits')).toBe('false');
+
+    unmount();
+    renderPage();
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByTestId('expenses-basis')).toHaveTextContent('pages.expenses.basis.debitOnly');
+  });
+
+  it('+600 / +400 / −200: total 800, shares 60/40, the credit group listed under Net credits', () => {
+    vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(mockQueryResult(netFixture({
+      '2023-01': {
+        Essentials: { Housing: { debit: 600, credit: 0 }, Insurance: { debit: 0, credit: 200 } },
+        Lifestyle: { Dining: { debit: 400, credit: 0 } },
+      },
+    })));
+    const { container } = renderPage();
+
+    expect(screen.getAllByText('$800.00').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('60%')).toBeInTheDocument();
+    expect(screen.getByText('40%')).toBeInTheDocument();
+    const netCredits = screen.getByTestId('net-credits');
+    const amount = within(netCredits).getByText('-$200.00');
+    expect(amount).toHaveClass('text-positive');
+    expect(within(netCredits).getByText('Insurance')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/NaN|-\d+(\.\d)?%/);
+  });
+
+  it('all groups net credit: "No net spend" instead of the pie, no crash', () => {
+    vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(mockQueryResult(netFixture({
+      '2023-01': { Essentials: { Insurance: { debit: 0, credit: 300 } } },
+    })));
+    renderPage();
+    expect(screen.getByText('pages.expenses.breakdown.noNetSpend')).toBeInTheDocument();
+    expect(screen.queryByTestId('pie-chart')).not.toBeInTheDocument();
+    expect(screen.getAllByText('-$300.00').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('plots a net-credit month below zero with a zero reference line', async () => {
+    vi.mocked(UseAnalytics.useAnalytics).mockReturnValue(mockQueryResult(netFixture({
+      '2023-01': { Essentials: { Housing: { debit: 500, credit: 0 } } },
+      '2023-02': { Essentials: { Housing: { debit: 0, credit: 900 } } },
+    })));
+    const { user } = renderPage();
+    await user.click(screen.getByText('pages.expenses.breakdown.tabs.monthlyTrends'));
+    const combobox = screen.getAllByRole('combobox').at(-1);
+    if (!combobox) throw new Error('Trend group picker combobox not found');
+    await user.click(combobox);
+    // The trend picker lists net-credit groups too (sourced from every group, not the pie).
+    const item = await screen.findByText((_, el) =>
+      el?.getAttribute('data-slot') === 'command-item' && el?.getAttribute('data-value') === 'Housing'
+    );
+    await user.click(item);
+    expect(screen.getByTestId('reference-line')).toBeInTheDocument();
   });
 });

@@ -298,6 +298,14 @@ const pt = {
       description: "Analise seus padrões de gastos por categoria",
       selectCategoryType: "Selecionar tipo de categoria",
       countriesSelected: "{{count}} países selecionados",
+      includeCredits: {
+        label: "Incluir créditos",
+        tooltip: "Ativado: créditos em categorias de despesa (estornos, reembolsos, a parte de um colega de casa, indenizações de seguro) são subtraídos dos débitos. Desativado: mostra apenas os débitos."
+      },
+      basis: {
+        net: "débitos − créditos",
+        debitOnly: "apenas débitos"
+      },
       timeFrame: {
         label: "Período",
         month: "Mês",
@@ -320,6 +328,9 @@ const pt = {
           detailedList: "Lista Detalhada"
         },
         topCategories: "Principais Categorias de Despesa",
+        netCredits: "Créditos líquidos",
+        netCreditsCaption: "O total inclui {{amount}} de créditos líquidos",
+        noNetSpend: "Sem gasto líquido neste período",
         trendChart: {
           movingAverageSuffix: " (média de 6 meses)"
         },
@@ -331,6 +342,7 @@ const pt = {
           emptyTitle: "Selecione uma categoria para explorar",
           emptyDescription: "Clique em uma fatia do gráfico de pizza ou em uma linha de categoria para ver as transações individuais.",
           goToCategories: "Ir para Por Categoria",
+          capNotice: "Mostrando as primeiras 1.000 transações; os totais podem estar incompletos",
         }
       }
     },
@@ -1862,6 +1874,10 @@ const pt = {
     last3Months: "Últimos 3 meses",
     noData: "Sem dados de gastos para este período.",
     viewExpenses: "Ver despesas",
+    ofSpending: "dos gastos",
+    basis: "Débitos − créditos",
+    netCredits: "Créditos líquidos",
+    noNetSpend: "Sem gasto líquido neste período",
   },
 
   // Página de importação inteligente

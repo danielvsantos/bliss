@@ -284,6 +284,14 @@ const fr = {
       description: "Analysez vos habitudes de dépenses par catégorie",
       selectCategoryType: "Sélectionner le type de catégorie",
       countriesSelected: "{{count}} pays sélectionnés",
+      includeCredits: {
+        label: "Inclure les crédits",
+        tooltip: "Activé : les crédits dans les catégories de dépenses (remboursements, la part d'un colocataire, indemnités d'assurance) sont soustraits des débits. Désactivé : affiche uniquement les débits."
+      },
+      basis: {
+        net: "débits − crédits",
+        debitOnly: "débits uniquement"
+      },
       timeFrame: {
         label: "Période",
         month: "Mois",
@@ -306,6 +314,9 @@ const fr = {
           detailedList: "Liste détaillée"
         },
         topCategories: "Principales catégories de dépenses",
+        netCredits: "Crédits nets",
+        netCreditsCaption: "Le total inclut {{amount}} de crédits nets",
+        noNetSpend: "Aucune dépense nette sur cette période",
         trendChart: {
           movingAverageSuffix: " (moy. 6 mois)"
         },
@@ -317,6 +328,7 @@ const fr = {
           emptyTitle: "Sélectionnez une catégorie",
           emptyDescription: "Cliquez sur une tranche du graphique ou sur une ligne de catégorie pour voir les transactions individuelles.",
           goToCategories: "Aller aux catégories",
+          capNotice: "Affichage des 1 000 premières transactions ; les totaux peuvent être incomplets",
         }
       }
     },
@@ -1821,6 +1833,10 @@ const fr = {
     last3Months: "3 derniers mois",
     noData: "Aucune donnée de dépense pour cette période.",
     viewExpenses: "Voir les dépenses",
+    ofSpending: "des dépenses",
+    basis: "Débits − crédits",
+    netCredits: "Crédits nets",
+    noNetSpend: "Aucune dépense nette sur cette période",
   },
 
   // Smart Import page

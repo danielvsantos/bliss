@@ -418,6 +418,44 @@ describe('i18n parity — Enable Banking (#132)', () => {
   });
 });
 
+// Expenses net of credits (#140): the "Include credits" toggle, basis labels,
+// net-credit and empty-state copy, the Details cap notice and the Dashboard card.
+describe('i18n parity — expenses net of credits (#140)', () => {
+  const keys = [
+    'pages.expenses.includeCredits.label',
+    'pages.expenses.includeCredits.tooltip',
+    'pages.expenses.basis.net',
+    'pages.expenses.basis.debitOnly',
+    'pages.expenses.breakdown.netCredits',
+    'pages.expenses.breakdown.netCreditsCaption',
+    'pages.expenses.breakdown.noNetSpend',
+    'pages.expenses.breakdown.details.capNotice',
+    'expenseSplit.ofSpending',
+    'expenseSplit.basis',
+    'expenseSplit.netCredits',
+    'expenseSplit.noNetSpend',
+  ];
+
+  it('every key is a non-empty string, translated in es/fr/pt/it', () => {
+    for (const key of keys) {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+      for (const lang of NON_EN) {
+        expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(resolve(en, key));
+      }
+    }
+  });
+
+  it('netCreditsCaption keeps the {{amount}} placeholder in every locale', () => {
+    for (const lang of Object.keys(LOCALES)) {
+      expect(resolve(LOCALES[lang], 'pages.expenses.breakdown.netCreditsCaption'), lang).toContain('{{amount}}');
+    }
+  });
+});
+
 // Keys introduced by task #139 (Financial Summary "Net invested" / "Net debt repaid").
 const NEW_KEYS_139 = [
   'financialSummary.netInvested',

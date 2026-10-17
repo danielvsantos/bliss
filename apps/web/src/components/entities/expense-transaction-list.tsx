@@ -22,11 +22,17 @@ interface ExpenseTransactionListProps {
   dateRange: { from: Date; to: Date };
   currency: string;
   categoryGroup: string;
+  /** #140: on (default) totals are debits − credits; off they are debits only. */
+  includeCredits?: boolean;
 }
 
 const PAGE_SIZE = 50;
+const SUMMARY_LIMIT = 1000;
 
-export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: ExpenseTransactionListProps) {
+/** Net spend reads as negative-family; a net credit reads as money coming back. */
+const amountClass = (value: number) => (value < 0 ? 'text-positive' : 'text-negative');
+
+export function ExpenseTransactionList({ dateRange, categoryGroup, currency, includeCredits = true }: ExpenseTransactionListProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'transactions' | 'categories'>('categories');
@@ -45,10 +51,10 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
 
   const { data, isLoading, isError } = useTransactions(filters);
 
-  // Category summary query — fetch up to 1000 to aggregate
+  // Category summary query — fetch up to SUMMARY_LIMIT to aggregate
   const summaryFilters: TransactionFilters = useMemo(() => ({
     page: 1,
-    limit: 1000,
+    limit: SUMMARY_LIMIT,
     sortField: 'transaction_date',
     sortDirection: 'desc' as const,
     startDate: format(dateRange.from, 'yyyy-MM-dd'),
@@ -75,7 +81,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
       if (!totals[catName]) {
         totals[catName] = { name: catName, defaultCategoryCode: tx.category?.defaultCategoryCode, byCurrency: {}, count: 0, totalRaw: 0 };
       }
-      const net = (tx.debit || 0) - (tx.credit || 0);
+      const net = includeCredits ? (tx.debit || 0) - (tx.credit || 0) : (tx.debit || 0);
       totals[catName].byCurrency[cur] = (totals[catName].byCurrency[cur] || 0) + net;
       totals[catName].totalRaw += net;
       totals[catName].count += 1;
@@ -91,7 +97,12 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
     }
 
     return { categorySummary: sorted, currencies: sortedCurrencies, currencyTotals: cTotals };
-  }, [summaryData, viewMode, currency]);
+  }, [summaryData, viewMode, currency, includeCredits]);
+
+  // The summary aggregates client-side; past the API page cap its totals are partial.
+  const summaryIncomplete = viewMode === 'categories'
+    && !!summaryData?.transactions
+    && (summaryData.total ?? 0) > summaryData.transactions.length;
 
 
   // Reset page when filters change
@@ -154,6 +165,12 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
             {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
           </div>
         ) : (
+          <>
+          {summaryIncomplete && (
+            <p className="text-xs text-muted-foreground" data-testid="summary-cap-notice">
+              {t('pages.expenses.breakdown.details.capNotice')}
+            </p>
+          )}
           <div className="border rounded-md">
             <Table>
               <TableHeader>
@@ -179,7 +196,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                       {cat.count}
                     </TableCell>
                     {currencies.map((cur) => (
-                      <TableCell key={cur} className="text-right font-semibold tabular-nums text-negative">
+                      <TableCell key={cur} className={`text-right font-semibold tabular-nums ${amountClass(cat.byCurrency[cur] || 0)}`}>
                         {cat.byCurrency[cur] ? formatCurrency(cat.byCurrency[cur], cur) : '—'}
                       </TableCell>
                     ))}
@@ -196,7 +213,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                       {categorySummary.reduce((sum, c) => sum + c.count, 0)}
                     </td>
                     {currencies.map((cur) => (
-                      <td key={cur} className="px-4 py-3 text-right font-bold tabular-nums text-negative">
+                      <td key={cur} className={`px-4 py-3 text-right font-bold tabular-nums ${amountClass(currencyTotals[cur] || 0)}`}>
                         {formatCurrency(currencyTotals[cur] || 0, cur)}
                       </td>
                     ))}
@@ -205,6 +222,7 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
               )}
             </Table>
           </div>
+          </>
         )
       )}
 
@@ -222,8 +240,14 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.transactions.map((transaction) => (
-                  <TableRow key={transaction.id} onClick={() => navigate(`/transactions?id=${transaction.id}`)} className="cursor-pointer hover:bg-muted/50">
+                {data.transactions.map((transaction) => {
+                  const net = (transaction.debit || 0) - (transaction.credit || 0);
+                  return (
+                  <TableRow
+                    key={transaction.id}
+                    onClick={() => navigate(`/transactions?id=${transaction.id}`)}
+                    className={`cursor-pointer hover:bg-muted/50 ${!includeCredits && net < 0 ? 'opacity-60' : ''}`}
+                  >
                     <TableCell>{format(new Date(transaction.transaction_date), 'PP')}</TableCell>
                     <TableCell className="font-medium">{transaction.description}</TableCell>
                     <TableCell>
@@ -231,11 +255,12 @@ export function ExpenseTransactionList({ dateRange, categoryGroup, currency }: E
                         {transaction.category ? translateCategoryName(t, transaction.category) : '—'}
                       </span>
                     </TableCell>
-                    <TableCell className={`text-right font-semibold tabular-nums ${(transaction.credit || 0) > 0 ? 'text-positive' : 'text-negative'}`}>
-                      {formatCurrency((transaction.debit || 0) - (transaction.credit || 0), transaction.currency)}
+                    <TableCell className={`text-right font-semibold tabular-nums ${amountClass(net)}`}>
+                      {formatCurrency(net, transaction.currency)}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -284,6 +284,14 @@ const es = {
       description: "Analiza tus patrones de gasto por categoría",
       selectCategoryType: "Seleccionar tipo de categoría",
       countriesSelected: "{{count}} países seleccionados",
+      includeCredits: {
+        label: "Incluir créditos",
+        tooltip: "Activado: los créditos en categorías de gasto (reembolsos, devoluciones, la parte de un compañero de piso, indemnizaciones de seguros) se restan de los débitos. Desactivado: muestra solo los débitos."
+      },
+      basis: {
+        net: "débitos − créditos",
+        debitOnly: "solo débitos"
+      },
       timeFrame: {
         label: "Período de tiempo",
         month: "Mes",
@@ -306,12 +314,21 @@ const es = {
           detailedList: "Lista detallada"
         },
         topCategories: "Principales categorías de gasto",
+        netCredits: "Créditos netos",
+        netCreditsCaption: "El total incluye {{amount}} de créditos netos",
+        noNetSpend: "Sin gasto neto en este período",
         trendChart: {
           movingAverageSuffix: " (prom. 6 meses)"
         },
         comingSoon: {
           trends: "La vista de tendencias mensuales estará disponible pronto.",
           details: "La vista detallada de gastos estará disponible pronto."
+        },
+        details: {
+          emptyTitle: "Selecciona una categoría para explorar",
+          emptyDescription: "Haz clic en una porción del gráfico circular o en una fila de categoría para ver las transacciones individuales.",
+          goToCategories: "Ir a Por categoría",
+          capNotice: "Mostrando las primeras 1.000 transacciones; los totales pueden estar incompletos",
         }
       }
     },
@@ -1815,6 +1832,10 @@ const es = {
     last3Months: "Últimos 3 meses",
     noData: "No hay datos de gasto para este período.",
     viewExpenses: "Ver gastos",
+    ofSpending: "del gasto",
+    basis: "Débitos − créditos",
+    netCredits: "Créditos netos",
+    noNetSpend: "Sin gasto neto en este período",
   },
 
   // Smart Import page

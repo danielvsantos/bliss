@@ -84,3 +84,41 @@ describe('ExpenseSplitCard', () => {
     expect(lastCall.endMonth).toBe('2024-12');
   });
 });
+
+// #140: the card always shows debits − credits (no toggle), via the shared helper.
+describe('ExpenseSplitCard - net of credits (#140)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const mockData = (data: Record<string, unknown>) => {
+    vi.mocked(useAnalytics).mockReturnValue({
+      data: { currency: 'USD', view: 'month', data }, isLoading: false, isError: false,
+    } as unknown as ReturnType<typeof useAnalytics>);
+  };
+
+  it('nets credits per group and lists net-credit groups outside the pie', () => {
+    mockData({
+      '2024-01': {
+        Essentials: { Housing: { debit: 1000, credit: 300 }, Insurance: { debit: 0, credit: 200 } },
+        Lifestyle: { Dining: { debit: 500, credit: 0 } },
+      },
+    });
+    render(<MemoryRouter><ExpenseSplitCard currency="USD" /></MemoryRouter>);
+
+    // Housing 700 / Dining 500 → 58.3% / 41.7%; Insurance (−200) is not a slice.
+    expect(screen.getByText('Housing')).toBeInTheDocument();
+    expect(screen.getByText('58.3%')).toBeInTheDocument();
+    expect(screen.getByText('41.7%')).toBeInTheDocument();
+    expect(screen.queryByText('Insurance')).not.toBeInTheDocument();
+    const credits = screen.getByTestId('expense-split-net-credits');
+    expect(credits).toHaveTextContent('expenseSplit.netCredits');
+    expect(screen.getByText('-$200.00')).toHaveClass('text-positive');
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('shows "No net spend" when every group is a net credit', () => {
+    mockData({ '2024-01': { Essentials: { Insurance: { debit: 0, credit: 300 } } } });
+    render(<MemoryRouter><ExpenseSplitCard currency="USD" /></MemoryRouter>);
+    expect(screen.getByText('expenseSplit.noNetSpend')).toBeInTheDocument();
+    expect(screen.queryByTestId('recharts-pie')).not.toBeInTheDocument();
+  });
+});
