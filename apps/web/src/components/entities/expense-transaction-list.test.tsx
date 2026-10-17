@@ -147,3 +147,63 @@ describe('ExpenseTransactionList', () => {
     expect(screen.getByText('$1,200.00')).toBeInTheDocument();
   });
 });
+
+// #140: sign-aware colouring, the "Include credits" toggle, the 1,000-row cap notice.
+type ListData = NonNullable<ReturnType<typeof UseTransactions.useTransactions>['data']>;
+
+describe('ExpenseTransactionList - net of credits (#140)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const props = {
+    dateRange: { from: new Date('2023-01-01'), to: new Date('2023-01-31') },
+    currency: 'USD',
+    categoryGroup: 'Insurance',
+  };
+
+  const rows = {
+    transactions: [
+      { id: 10, transaction_date: '2023-01-05', description: 'Premium', debit: 100, credit: null, currency: 'USD', category: { name: 'Car Insurance' } },
+      { id: 11, transaction_date: '2023-01-20', description: 'Claim payout', debit: null, credit: 400, currency: 'USD', category: { name: 'Car Insurance' } },
+      { id: 12, transaction_date: '2023-01-21', description: 'Policy', debit: 50, credit: null, currency: 'USD', category: { name: 'Home Insurance' } },
+    ],
+    total: 3, page: 1, limit: 1000, totalPages: 1,
+  } as unknown as ListData;
+
+  const renderList = (extra: { includeCredits?: boolean } = {}) =>
+    render(<MemoryRouter><ExpenseTransactionList {...props} {...extra} /></MemoryRouter>);
+
+  it('renders a net-credit category and footer in positive styling with a minus', () => {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryResult(rows));
+    renderList();
+    const carCell = screen.getByText('-$300.00');
+    expect(carCell).toHaveClass('text-positive');
+    expect(carCell).not.toHaveClass('text-negative');
+    expect(screen.getByText('$50.00')).toHaveClass('text-negative');
+    // Footer: −300 + 50 = −250
+    expect(screen.getByText('-$250.00')).toHaveClass('text-positive');
+  });
+
+  it('with "Include credits" off sums debits only and de-emphasises credit rows', () => {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryResult(rows));
+    renderList({ includeCredits: false });
+    expect(screen.getByText('$100.00')).toHaveClass('text-negative');
+    expect(screen.getByText('$150.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.transactions' }));
+    expect(screen.getByText('Claim payout').closest('tr')).toHaveClass('opacity-60');
+    expect(screen.getByText('Premium').closest('tr')).not.toHaveClass('opacity-60');
+    expect(screen.getByText('-$400.00')).toHaveClass('text-positive');
+  });
+
+  it('shows the incomplete-totals notice when the summary hits the 1,000-row cap', () => {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryResult({ ...rows, total: 1500 }));
+    renderList();
+    expect(screen.getByTestId('summary-cap-notice')).toHaveTextContent('pages.expenses.breakdown.details.capNotice');
+  });
+
+  it('shows no notice when every transaction was aggregated', () => {
+    vi.mocked(UseTransactions.useTransactions).mockReturnValue(mockQueryResult(rows));
+    renderList();
+    expect(screen.queryByTestId('summary-cap-notice')).not.toBeInTheDocument();
+  });
+});

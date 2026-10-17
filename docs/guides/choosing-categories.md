@@ -51,6 +51,12 @@ If you're an independent adult, you probably won't use this category — but it'
 
 Both are money in, but they have very different mental models — keep them separate so they don't pollute each other's trends.
 
+### Refunds and reimbursements
+
+Book refunds and reimbursements to the **original expense category** so they're subtracted. A merchant refund, a flatmate's half of the rent credited to *Rent*, or an insurance payout booked to the insurance category all reduce that group's spend on the Expenses report and the Dashboard Expense Split (expense = debits − credits). Credits booked to **Income** categories count as income and don't offset any expense.
+
+If a group's credits exceed its debits for the period, it appears under **Net credits** below the Expenses pie rather than as a slice. To see gross spend, turn off **Include credits** on the Expenses page.
+
 ## Custom categories
 
 If none of the defaults fit, create a custom category from the Categories page:

@@ -27,10 +27,10 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
-import { ArrowLeft, Calendar as CalendarIcon, Check, ChevronsUpDown, PieChart as PieChartIcon } from "lucide-react";
+import { ArrowLeft, Calendar as CalendarIcon, Check, ChevronsUpDown, Info, PieChart as PieChartIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnalytics } from "@/hooks/use-analytics";
-import type { AnalyticsResponse, Country, Currency } from "@/types/api";
+import type { Country, Currency } from "@/types/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getTenantMeta } from "@/utils/tenantMetaStorage";
@@ -38,6 +38,13 @@ import { useTenantSettings } from "@/hooks/use-tenant-settings";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useUserPreferences, useCategories } from "@/hooks/use-metadata";
 import {
@@ -46,6 +53,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  ReferenceLine,
   Legend as RechartsLegend,
 } from "recharts";
 import { ExpenseTransactionList } from "@/components/entities/expense-transaction-list";
@@ -54,72 +62,20 @@ import { TREND_MOVING_AVERAGE_WINDOW, movingAverageKey, computeTrendMovingAverag
 import { MobileFilterDrawer } from "@/components/ui/mobile-filter-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
+import {
+  EXPENSE_TYPES,
+  aggregateExpenseGroups,
+  aggregateExpenseGroupsByMonth,
+  buildExpenseBreakdown,
+  readIncludeCredits,
+  writeIncludeCredits,
+} from "@/lib/expense-breakdown";
+import { buildGroupColorMap } from "@/lib/portfolio-utils";
 
-const ALLOWED_TYPES = ['Essentials', 'Lifestyle', 'Growth'];
+const OTHER_COLOR = "hsl(var(--muted-foreground))";
 
-const CHART_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-];
-
-const processAnalyticsData = (
-  analyticsData: AnalyticsResponse | undefined,
-  selectedType: string,
-  t: (key: string) => string
-) => {
-  if (!analyticsData?.data) {
-    return { pieData: [], totalExpenses: 0, highestCategory: { name: 'N/A', value: 0 } };
-  }
-
-  const expenseGroups: { [key: string]: number } = {};
-
-  for (const timeKey in analyticsData.data) {
-    const periodData = analyticsData.data[timeKey];
-    const typesToProcess = selectedType === 'All'
-      ? Object.keys(periodData).filter(key => ALLOWED_TYPES.includes(key))
-      : [selectedType];
-    for (const typeKey of typesToProcess) {
-      const expenseData = periodData[typeKey] || {};
-      for (const groupKey in expenseData) {
-        if (!expenseGroups[groupKey]) {
-          expenseGroups[groupKey] = 0;
-        }
-        expenseGroups[groupKey] += expenseData[groupKey].debit;
-      }
-    }
-  }
-
-  const totalExpenses = Object.values(expenseGroups).reduce((sum, value) => sum + value, 0);
-
-  const sortedData = Object.entries(expenseGroups)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-
-  const top5 = sortedData.slice(0, 5);
-  const otherValue = sortedData.slice(5).reduce((sum, item) => sum + item.value, 0);
-
-  const pieData = top5.map((item, index) => ({
-    ...item,
-    percentage: totalExpenses > 0 ? ((item.value / totalExpenses) * 100).toFixed(1) : "0.0",
-    color: CHART_COLORS[index % CHART_COLORS.length],
-  }));
-
-  if (otherValue > 0) {
-    pieData.push({
-      name: t('common.other'),
-      value: otherValue,
-      percentage: totalExpenses > 0 ? ((otherValue / totalExpenses) * 100).toFixed(1) : "0.0",
-      color: CHART_COLORS[5 % CHART_COLORS.length],
-    });
-  }
-
-  const highestCategory = sortedData.length > 0 ? sortedData[0] : { name: 'N/A', value: 0 };
-
-  return { pieData, totalExpenses, highestCategory };
-};
+/** Credits (net-negative amounts) read as money coming back, like Financial Summary. */
+const amountClass = (value: number) => (value < 0 ? "text-positive" : "text-negative");
 
 export default function ExpenseTrackingPage() {
   const { t } = useTranslation();
@@ -148,6 +104,14 @@ export default function ExpenseTrackingPage() {
   const [selectedGroupsForTrend, setSelectedGroupsForTrend] = useState<string[]>([]);
   const [openGroups, setOpenGroups] = useState(false);
   const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(null);
+  // #140: "Include credits" on = expense is debits − credits (default); off = debits only.
+  const [includeCredits, setIncludeCredits] = useState<boolean>(readIncludeCredits);
+  const basis = includeCredits ? 'net' as const : 'debit' as const;
+
+  const handleIncludeCreditsChange = (value: boolean) => {
+    setIncludeCredits(value);
+    writeIncludeCredits(value);
+  };
 
   // Initialize selected countries from tenant metadata
   useEffect(() => {
@@ -175,7 +139,7 @@ export default function ExpenseTrackingPage() {
   }, [categories]);
 
   const analyticsFilters = useMemo(() => {
-    const typesParam = selectedCategoryType === 'All' ? ALLOWED_TYPES : [selectedCategoryType];
+    const typesParam = selectedCategoryType === 'All' ? [...EXPENSE_TYPES] : [selectedCategoryType];
     if (!startDate || !selectedCurrency || selectedCountries.length === 0) {
       return { view: 'month' as const, types: typesParam };
     }
@@ -195,29 +159,44 @@ export default function ExpenseTrackingPage() {
   }, [startDate, endDate, selectedCurrency, selectedCountries, selectedCategoryType]);
 
   const { data: analyticsData, isLoading, isError } = useAnalytics(analyticsFilters);
-  const { pieData, totalExpenses, highestCategory } = useMemo(() => processAnalyticsData(analyticsData, selectedCategoryType, t), [analyticsData, selectedCategoryType, t]);
+  const selectedTypes = useMemo(
+    () => (selectedCategoryType === 'All' ? EXPENSE_TYPES : [selectedCategoryType]),
+    [selectedCategoryType]
+  );
+
+  const breakdown = useMemo(
+    () => buildExpenseBreakdown(
+      aggregateExpenseGroups(analyticsData?.data, selectedTypes, basis),
+      { maxSlices: 5, otherLabel: t('common.other') }
+    ),
+    [analyticsData, selectedTypes, basis, t]
+  );
+  const totalExpenses = breakdown.total;
+
+  // Keyed on the untranslated group name so the Dashboard card, pie and trend lines agree.
+  const groupColors = useMemo(() => buildGroupColorMap(breakdown.allGroups, new Set()), [breakdown.allGroups]);
+  const colorFor = (name: string, isOther = false) => (isOther ? OTHER_COLOR : groupColors[name] ?? OTHER_COLOR);
+
+  const pieData = useMemo(
+    () => breakdown.slices.map(slice => ({ ...slice, color: slice.isOther ? OTHER_COLOR : groupColors[slice.name] ?? OTHER_COLOR })),
+    [breakdown.slices, groupColors]
+  );
 
   const trendChartData = useMemo(() => {
-    if (!analyticsData?.data || selectedGroupsForTrend.length === 0) return [];
-    const trendData: { [key: string]: Record<string, number | string> } = {};
-    const typesToMerge = selectedCategoryType === 'All' ? ALLOWED_TYPES : [selectedCategoryType];
-    Object.keys(analyticsData.data).forEach(timeKey => {
-      trendData[timeKey] = { name: timeKey };
-      const periodData = analyticsData.data[timeKey];
-      // Merge all relevant types into a single group→debit map
-      const expenseData: Record<string, number> = {};
-      for (const type of typesToMerge) {
-        const typeData = periodData[type] || {};
-        for (const group in typeData) {
-          expenseData[group] = (expenseData[group] || 0) + (typeData[group]?.debit || 0);
-        }
-      }
+    if (selectedGroupsForTrend.length === 0) return [];
+    return aggregateExpenseGroupsByMonth(analyticsData?.data, selectedTypes, basis).map(({ month, groups }) => {
+      const row: Record<string, number | string> = { name: month };
       selectedGroupsForTrend.forEach(group => {
-        trendData[timeKey][group] = expenseData[group] || 0;
+        row[group] = groups[group] ?? 0;
       });
+      return row;
     });
-    return Object.values(trendData).sort((a, b) => (a.name as string).localeCompare(b.name as string));
-  }, [analyticsData, selectedGroupsForTrend, selectedCategoryType]);
+  }, [analyticsData, selectedGroupsForTrend, selectedTypes, basis]);
+
+  const trendHasNegative = useMemo(
+    () => trendChartData.some(row => selectedGroupsForTrend.some(group => Number(row[group]) < 0)),
+    [trendChartData, selectedGroupsForTrend]
+  );
 
   const trendChartDataWithAverages = useMemo(
     () => computeTrendMovingAverages(trendChartData, selectedGroupsForTrend),
@@ -243,9 +222,9 @@ export default function ExpenseTrackingPage() {
             boxShadow: "0 4px 12px rgba(58,53,66,0.08)",
           }}
         >
-          <p className="font-semibold text-foreground">{translateCategoryGroup(t, data.name)}</p>
-          <p className="text-negative">{formatCurrency(data.value, analyticsData?.currency)}</p>
-          <p className="text-muted-foreground">{data.percentage}% of total</p>
+          <p className="font-semibold text-foreground">{data.isOther ? data.name : translateCategoryGroup(t, data.name)}</p>
+          <p className={amountClass(data.value)}>{formatCurrency(data.value, analyticsData?.currency)}</p>
+          <p className="text-muted-foreground">{data.percentage}%</p>
         </div>
       );
     }
@@ -411,6 +390,33 @@ export default function ExpenseTrackingPage() {
                 </PopoverContent>
               </Popover>
             </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <Label htmlFor="expenses-include-credits" className="text-xs text-muted-foreground">
+                  {t("pages.expenses.includeCredits.label")}
+                </Label>
+                <TooltipProvider>
+                  <UiTooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="text-muted-foreground" aria-label={t("pages.expenses.includeCredits.tooltip")}>
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      {t("pages.expenses.includeCredits.tooltip")}
+                    </TooltipContent>
+                  </UiTooltip>
+                </TooltipProvider>
+              </div>
+              <div className="flex h-9 items-center">
+                <Switch
+                  id="expenses-include-credits"
+                  checked={includeCredits}
+                  onCheckedChange={handleIncludeCreditsChange}
+                />
+              </div>
+            </div>
           </div>
           </MobileFilterDrawer>
         </div>
@@ -423,12 +429,13 @@ export default function ExpenseTrackingPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? <Skeleton className="h-9 w-3/4" /> : (
-                <div className="text-[2rem] font-semibold tracking-tight text-negative leading-tight">
+                <div className={cn("text-[2rem] font-semibold tracking-tight leading-tight", amountClass(totalExpenses))}>
                   {formatCurrency(totalExpenses, analyticsData?.currency)}
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1.5">
                 <span className="font-medium">{selectedDateLabel}</span>
+                <span data-testid="expenses-basis"> · {t(includeCredits ? "pages.expenses.basis.net" : "pages.expenses.basis.debitOnly")}</span>
               </p>
             </CardContent>
           </Card>
@@ -440,7 +447,7 @@ export default function ExpenseTrackingPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? <Skeleton className="h-9 w-3/4" /> : (
-                <div className="text-[2rem] font-semibold tracking-tight text-negative leading-tight">
+                <div className={cn("text-[2rem] font-semibold tracking-tight leading-tight", amountClass(totalExpenses))}>
                   {formatCurrency(totalExpenses / monthsDifference, analyticsData?.currency)}
                 </div>
               )}
@@ -459,10 +466,10 @@ export default function ExpenseTrackingPage() {
               {isLoading ? <Skeleton className="h-9 w-3/4" /> : (
                 <>
                   <div className="text-[2rem] font-semibold tracking-tight leading-tight">
-                    {translateCategoryGroup(t, highestCategory.name)}
+                    {breakdown.highest ? translateCategoryGroup(t, breakdown.highest.name) : 'N/A'}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1.5">
-                    {formatCurrency(highestCategory.value, analyticsData?.currency)}
+                    {formatCurrency(breakdown.highest?.value ?? 0, analyticsData?.currency)}
                   </p>
                 </>
               )}
@@ -506,12 +513,17 @@ export default function ExpenseTrackingPage() {
                   <div className="text-center p-12 text-destructive">
                     <p>{t("notifications.error.generic")}</p>
                   </div>
-                ) : pieData.length === 0 ? (
+                ) : breakdown.allGroups.length === 0 ? (
                   <div className="text-center p-12 text-muted-foreground">
                     <p>{t("notifications.info.noResults")}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {pieData.length === 0 ? (
+                      <div className={cn("flex items-center justify-center text-center text-muted-foreground", isMobile ? "h-[280px]" : "h-[400px]")}>
+                        <p>{t("pages.expenses.breakdown.noNetSpend")}</p>
+                      </div>
+                    ) : (
                     <div className={isMobile ? "h-[280px]" : "h-[400px]"}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -523,9 +535,10 @@ export default function ExpenseTrackingPage() {
                             outerRadius={isMobile ? 95 : 140}
                             paddingAngle={2}
                             dataKey="value"
-                            label={isMobile ? false : ({ name, percentage }) => parseFloat(percentage) >= 5 ? `${translateCategoryGroup(t, name)}: ${percentage}%` : ''}
+                            label={isMobile ? false : ({ name, percentage, isOther }) => percentage >= 5 ? `${isOther ? name : translateCategoryGroup(t, name)}: ${percentage}%` : ''}
                             labelLine={false}
                             onClick={(data) => {
+                              if (data.isOther) return;
                               setActiveCategoryGroup(data.name);
                               setActiveTab('details');
                             }}
@@ -534,7 +547,7 @@ export default function ExpenseTrackingPage() {
                               <Cell
                                 key={`cell-${index}`}
                                 fill={entry.color}
-                                className="cursor-pointer"
+                                className={entry.isOther ? undefined : "cursor-pointer"}
                               />
                             ))}
                           </Pie>
@@ -543,6 +556,7 @@ export default function ExpenseTrackingPage() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
+                    )}
                     <div>
                       <h3 className="text-lg font-semibold mb-4">{t("pages.expenses.breakdown.topCategories")}</h3>
                       <div className="space-y-2">
@@ -550,8 +564,9 @@ export default function ExpenseTrackingPage() {
                           .map((category, index) => (
                             <div
                               key={index}
-                              className="p-2.5 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                              className={cn("p-2.5 rounded-lg transition-colors", !category.isOther && "hover:bg-muted/50 cursor-pointer")}
                               onClick={() => {
+                                if (category.isOther) return;
                                 setActiveCategoryGroup(category.name);
                                 setActiveTab('details');
                               }}
@@ -562,10 +577,10 @@ export default function ExpenseTrackingPage() {
                                     className="w-3 h-3 rounded-full shrink-0"
                                     style={{ backgroundColor: category.color }}
                                   />
-                                  <span className="text-sm font-medium">{translateCategoryGroup(t, category.name)}</span>
+                                  <span className="text-sm font-medium">{category.isOther ? category.name : translateCategoryGroup(t, category.name)}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                  <span className="text-sm font-semibold text-negative tabular-nums">
+                                  <span className={cn("text-sm font-semibold tabular-nums", amountClass(category.value))}>
                                     {formatCurrency(category.value, analyticsData?.currency)}
                                   </span>
                                   <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">
@@ -587,6 +602,33 @@ export default function ExpenseTrackingPage() {
                             </div>
                           ))}
                       </div>
+                      {breakdown.netCredits.length > 0 && (
+                        <div className="mt-6" data-testid="net-credits">
+                          <h4 className="text-sm font-semibold mb-2">{t("pages.expenses.breakdown.netCredits")}</h4>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            {t("pages.expenses.breakdown.netCreditsCaption", {
+                              amount: formatCurrency(breakdown.netCredits.reduce((sum, g) => sum + g.value, 0), analyticsData?.currency),
+                            })}
+                          </p>
+                          <div className="space-y-1">
+                            {breakdown.netCredits.map(group => (
+                              <div
+                                key={group.name}
+                                className="flex justify-between items-center p-2.5 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                                onClick={() => {
+                                  setActiveCategoryGroup(group.name);
+                                  setActiveTab('details');
+                                }}
+                              >
+                                <span className="text-sm font-medium">{translateCategoryGroup(t, group.name)}</span>
+                                <span className="text-sm font-semibold tabular-nums text-positive">
+                                  {formatCurrency(group.value, analyticsData?.currency)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -616,24 +658,24 @@ export default function ExpenseTrackingPage() {
                           <CommandEmpty>{t("notifications.info.noResults")}</CommandEmpty>
                           <CommandList>
                             <CommandGroup>
-                              {pieData.map((group) => (
+                              {breakdown.allGroups.map((group) => (
                                 <CommandItem
-                                  key={group.name}
-                                  value={group.name}
+                                  key={group}
+                                  value={group}
                                   onSelect={() => {
-                                    const newSelection = selectedGroupsForTrend.includes(group.name)
-                                      ? selectedGroupsForTrend.filter((g) => g !== group.name)
-                                      : [...selectedGroupsForTrend, group.name];
+                                    const newSelection = selectedGroupsForTrend.includes(group)
+                                      ? selectedGroupsForTrend.filter((g) => g !== group)
+                                      : [...selectedGroupsForTrend, group];
                                     setSelectedGroupsForTrend(newSelection);
                                   }}
                                 >
                                   <Check
                                     className={cn(
                                       "mr-2 h-4 w-4",
-                                      selectedGroupsForTrend.includes(group.name) ? "opacity-100" : "opacity-0"
+                                      selectedGroupsForTrend.includes(group) ? "opacity-100" : "opacity-0"
                                     )}
                                   />
-                                  {translateCategoryGroup(t, group.name)}
+                                  {translateCategoryGroup(t, group)}
                                 </CommandItem>
                               ))}
                             </CommandGroup>
@@ -651,7 +693,8 @@ export default function ExpenseTrackingPage() {
                         >
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="name" />
-                          <YAxis />
+                          <YAxis domain={['auto', 'auto']} />
+                          {trendHasNegative && <ReferenceLine y={0} stroke="hsl(var(--border))" />}
                           {/* Recharts' Tooltip filters out payload entries with a null/undefined
                               value by default (filterNull), which is what hides the moving-average
                               row for the first months where it isn't yet computed. */}
@@ -664,8 +707,8 @@ export default function ExpenseTrackingPage() {
                             }}
                           />
                           <RechartsLegend />
-                          {selectedGroupsForTrend.map((group, index) => {
-                            const color = CHART_COLORS[index % CHART_COLORS.length];
+                          {selectedGroupsForTrend.map((group) => {
+                            const color = colorFor(group);
                             const groupLabel = translateCategoryGroup(t, group);
                             const hasMovingAverage = trendChartData.length >= TREND_MOVING_AVERAGE_WINDOW;
                             return (
@@ -720,6 +763,7 @@ export default function ExpenseTrackingPage() {
                       dateRange={{ from: startDate, to: endDate }}
                       currency={selectedCurrency}
                       categoryGroup={activeCategoryGroup}
+                      includeCredits={includeCredits}
                     />
                   </div>
                 ) : (
