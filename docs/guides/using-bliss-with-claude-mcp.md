@@ -4,7 +4,7 @@ Bliss includes an **MCP server**, so Claude (Cowork, claude.ai, Claude Desktop,
 Claude Code) and other
 [Model Context Protocol](https://modelcontextprotocol.io) clients can work with
 your finances in plain language. You don't need to teach the agent the REST API:
-it gets **41 tools** — set up your banks and accounts, search and re-categorise
+it gets **42 tools** — set up your banks and accounts, search and re-categorise
 transactions, work the bank-sync review queue, review an imported statement,
 answer spending and portfolio questions, clean up subscriptions — and a short
 briefing on how Bliss works.
@@ -71,7 +71,7 @@ Follow [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents#
 
 - **Read-only** — the agent sees the **22 read tools** only. It can answer
   questions but cannot change anything, whatever it's told.
-- **Read & write** — all **41 tools**, including creating banks and manual
+- **Read & write** — all **42 tools**, including creating banks and manual
   accounts, re-categorising, approving review items, committing imports and
   editing portfolio data.
 
@@ -164,7 +164,8 @@ agent tells you when one isn't. Asking twice never creates a duplicate.
 - *"How much did my Japan trip cost?"* (a tag)
 
 **Transactions** (Read & write)
-- *"Find my transactions filed under Uncategorized in September and re-categorise them."*
+- *"Find my transactions filed under Uncategorized in September and re-categorise them."* (up to 50 per call, all-or-nothing)
+- *"Find the €2,003.76 payment from March."* (descriptions are encrypted, so the agent searches by amount and date)
 - *"Tag everything from 3–17 May in Portugal as 'Portugal 2026'."*
 
 **Bank-sync review queue** (Read & write)

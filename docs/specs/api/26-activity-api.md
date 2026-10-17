@@ -98,7 +98,7 @@ Keys are `activity:v1:{tenantId}` and `activity:v1:{tenantId}:last`; the route o
 
 A read tool (all keys) in `lib/mcp/tools/analytics.js` wrapping `GET /api/activity`. It returns the REST payload shaped by `shapeProcessingStatus()`: `available`, `workerOnline`, `serverTime`, `summary`, `inFlight`, `lastCompletedAt`, `recent` trimmed to 20, plus `settled` (`available && inFlight.length === 0`). The MCP server instructions tell agents to poll it after a write until nothing in flight `affects` what they changed. This replaces the old "allow a minute" guess. AC13 is checked by `__tests__/integration/api/activity.test.ts`: a read-only key gets the same shaped payload from REST and from the tool over the real MCP server.
 
-Tool counts after #100: 22 read / 41 total. Coverage: 88 reachable, 68 wrapped, 20 excluded.
+Tool counts after #100: 22 read / 41 total. Coverage: 88 reachable, 68 wrapped, 20 excluded. (#141 added `bulk_update_transactions`: 22 read / 42 total; 89 reachable, 69 wrapped.)
 
 ## 26.7. Agent-triggered work
 

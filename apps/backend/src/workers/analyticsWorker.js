@@ -14,6 +14,10 @@ const prisma = require('../../prisma/prisma.js');
 
 // --- Enhanced Analytics Calculation Logic ---
 
+// An analytics-cache slice independent of display currency.
+const sliceKey = (e) => `${e.year}-${e.month}-${e.country}-${e.type}-${e.group}`;
+const tagSliceKey = (e) => `${e.tagId}-${sliceKey(e)}-${e.categoryId}`;
+
 async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat = async () => {}, onProgress = () => {}) {
   logger.info('Starting analytics calculation:', { tenantId, scope, targetCurrencies });
 
@@ -22,6 +26,11 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
   const requiredRates = new Map();
   const analyticsMap = new Map();
   const tagAnalyticsMap = new Map();
+  // Slices (cache key minus display currency) that have at least one
+  // transaction, recorded before currency conversion so a missing FX rate
+  // never makes a populated slice look empty (#141, clearEmptiedSlices).
+  const seenSlices = new Set();
+  const seenTagSlices = new Set();
 
   // Normalise scope: consolidated scopes use { earliestDate, filters },
   // while legacy/full-rebuild scopes may use flat { year, month, type, group, currency, country }.
@@ -164,6 +173,17 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
         if (scopeCountry  && !scopeCountry.includes(txn.account?.countryId)) return false;
         return true;
     });
+
+    for (const txn of filteredTransactions) {
+        const slice = sliceKey({
+          year: txn.year, month: txn.month, country: txn.account?.countryId || "Unknown",
+          type: txn.category?.type || "Uncategorized", group: txn.category?.group || "Uncategorized",
+        });
+        seenSlices.add(slice);
+        for (const { tagId } of txn.tags || []) {
+          seenTagSlices.add(`${tagId}-${slice}-${txn.category?.id || 0}`);
+        }
+    }
     
     for (const targetCurrency of targetCurrencies) {
       for (const txn of filteredTransactions) {
@@ -249,7 +269,7 @@ async function calculateAnalytics(tenantId, scope, targetCurrencies, heartbeat =
     tenantId,
     scope
   });
-  return { analytics: results, tagAnalytics: tagResults };
+  return { analytics: results, tagAnalytics: tagResults, seenSlices, seenTagSlices };
 }
 
 // Cash holdings processing has been moved to the dedicated cash-processor.js worker
@@ -294,6 +314,49 @@ function scopeToCacheWhere(scope = {}) {
   if (country && country.length) { where.country = { in: country }; bounded = true; }
 
   return bounded ? where : null;
+}
+
+/**
+ * Delete the analytics-cache rows inside `scopes` whose slice no longer has
+ * any transaction (#141). The keyed delete+create write only visits
+ * recomputed keys, so without this an emptied slice keeps its old totals until
+ * the next full rebuild. `seenSlices` / `seenTagSlices` come from
+ * calculateAnalytics and ignore display currency, so a slice whose
+ * conversion failed is still "seen" and never deleted here.
+ *
+ * Only scopes that do not constrain the transaction's native currency are
+ * cleaned: a slice can be fed by several native currencies, so a
+ * currency-filtered recompute sees only part of it and an unseen slice would
+ * not prove it empty.
+ */
+async function clearEmptiedSlices(tenantId, scopes, seenSlices, seenTagSlices) {
+  const keySelect = { id: true, year: true, month: true, country: true, type: true, group: true };
+
+  for (const singleScope of scopes) {
+    const constrainsCurrency = singleScope.currency || (singleScope.filters && singleScope.filters.currency);
+    if (constrainsCurrency) continue;
+    const cacheWhere = scopeToCacheWhere(singleScope);
+    if (!cacheWhere) continue;
+
+    const [rows, tagRows] = await Promise.all([
+      prisma.analyticsCacheMonthly.findMany({ where: { tenantId, ...cacheWhere }, select: keySelect }),
+      prisma.tagAnalyticsCacheMonthly.findMany({
+        where: { tenantId, ...cacheWhere },
+        select: { ...keySelect, tagId: true, categoryId: true },
+      }),
+    ]);
+    const staleIds = rows.filter((r) => !seenSlices.has(sliceKey(r))).map((r) => r.id);
+    const staleTagIds = tagRows.filter((r) => !seenTagSlices.has(tagSliceKey(r))).map((r) => r.id);
+    if (staleIds.length === 0 && staleTagIds.length === 0) continue;
+
+    logger.info('[AnalyticsWorker] Clearing emptied analytics slices', {
+      tenantId, scope: singleScope, rows: staleIds.length, tagRows: staleTagIds.length,
+    });
+    await prisma.$transaction([
+      prisma.analyticsCacheMonthly.deleteMany({ where: { tenantId, id: { in: staleIds } } }),
+      prisma.tagAnalyticsCacheMonthly.deleteMany({ where: { tenantId, id: { in: staleTagIds } } }),
+    ]);
+  }
 }
 
 // --- BullMQ Worker Setup ---
@@ -357,11 +420,15 @@ const processAnalyticsJob = async (job, token) => {
         switch (name) {
             case 'scoped-update-analytics':
                 if (scopes && scopes.length > 0) {
+                    const seenSlices = new Set();
+                    const seenTagSlices = new Set();
                     for (const [scopeIndex, singleScope] of scopes.entries()) {
                         const onProgress = (fraction) => reportProgress((scopeIndex + fraction) * 80, scopes.length * 100);
-                        const { analytics, tagAnalytics } = await calculateAnalytics(tenantId, singleScope, targetCurrencies, heartbeat, onProgress);
-                        newAnalytics.push(...analytics);
-                        newTagAnalytics.push(...tagAnalytics);
+                        const result = await calculateAnalytics(tenantId, singleScope, targetCurrencies, heartbeat, onProgress);
+                        newAnalytics.push(...result.analytics);
+                        newTagAnalytics.push(...result.tagAnalytics);
+                        for (const k of result.seenSlices || []) seenSlices.add(k);
+                        for (const k of result.seenTagSlices || []) seenTagSlices.add(k);
                     }
                     // De-duplicate results in case scopes overlapped
                     const uniqueKeys = new Set();
@@ -399,6 +466,14 @@ const processAnalyticsJob = async (job, token) => {
                                 prisma.tagAnalyticsCacheMonthly.deleteMany({ where: { tenantId, ...cacheWhere } }),
                             ]);
                         }
+                    } else {
+                        // Some slices recomputed, others may have emptied (#141):
+                        // a recategorise moves every "Restaurants / March" row
+                        // into "Groceries", so Groceries recomputes but nothing
+                        // revisits the Restaurants key and its stale row would
+                        // stay. Clear the in-scope slices that no longer have
+                        // any transaction.
+                        await clearEmptiedSlices(tenantId, scopes, seenSlices, seenTagSlices);
                     }
                 }
                 break;

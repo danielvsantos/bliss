@@ -170,6 +170,7 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
 
   // ── Transactions ──────────────────────────────────────────────────────────
   'transactions/index.js': { auth: 'withAuth', methods: RW_ALL(['GET', 'POST', 'PUT', 'DELETE']) },
+  'transactions/bulk.js': { auth: 'withAuth', methods: RW_ALL(['PATCH']) },
   'transactions/export.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'transactions/merchant-history.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
 };

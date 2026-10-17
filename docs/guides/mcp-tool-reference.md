@@ -2,7 +2,7 @@
 
 <!-- Generated from apps/api/lib/mcp/registry.js by `pnpm --filter @bliss/api mcp:reference`. Do not edit by hand. -->
 
-Bliss exposes **41 tools** over MCP at `POST /api/mcp`: **22 read** tools available to every integration key and **19 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
+Bliss exposes **42 tools** over MCP at `POST /api/mcp`: **22 read** tools available to every integration key and **20 write** tools available only to *Read & write* keys. Setup: [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp).
 
 Conventions: dates are `YYYY-MM-DD`; amounts are `{ value, currency }`; transaction amounts are signed (positive = money in, negative = money out); lists return `hasMore` and `nextCursor` — pass `nextCursor` back as `cursor` for the next page (default 50 items, max 100).
 
@@ -131,7 +131,7 @@ Create a manual account (bank, card, savings, brokerage…) in the user's worksp
 **Access:** Read (all keys)  
 **Wraps:** `GET /api/transactions`
 
-Search committed transactions, newest first. Amounts are signed: positive = money in (credit), negative = money out (debit), in the transaction's own currency. Filter by date range, account, category, category group/type, tag, currency or source. Descriptions are encrypted at rest and cannot be searched: to find a merchant use get_merchant_history, or narrow by date/category and read the page. `totals` (sum of the whole filtered set) is only returned when `currency` is set.
+Search committed transactions, newest first. `totals` (in / out / net over the whole filtered set, not just this page) is only returned when `currency` is set. Amounts are signed: positive = money in (credit), negative = money out (debit), in the transaction's own currency. Filter by date range, account, category, category group/type, tag, currency, source or amount range. To find one transaction, combine a date range with amountMin = amountMax (e.g. 2003.76 for a €2,003.76 payment) and/or a category. Descriptions are encrypted at rest and cannot be searched: to find a merchant use get_merchant_history, or narrow by date/amount/category and read the page.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -142,8 +142,10 @@ Search committed transactions, newest first. Amounts are signed: positive = mone
 | `categoryGroup` | string | no | Category group, e.g. "Food". |
 | `categoryType` | string | no | Category type, e.g. "Essentials" or "Income". |
 | `tag` | string | no | Tag name or tag ID. |
-| `currency` | string | no | Only transactions in this currency. |
+| `currency` | string | no | Only transactions in this currency. Required for `totals`. |
 | `source` | `MANUAL` \| `PLAID` \| `CSV` | no |  |
+| `amountMin` | number | no | Smallest amount, inclusive: an unsigned amount in the transaction's own currency, matched against money in or out at 2-decimal precision. |
+| `amountMax` | number | no | Largest amount, inclusive: an unsigned amount in the transaction's own currency, matched against money in or out at 2-decimal precision. |
 | `limit` | integer | no | Items per page (1-100, default 50). |
 | `cursor` | string | no | Opaque cursor from a previous result's nextCursor. Omit for the first page. |
 
@@ -205,6 +207,18 @@ Change fields of a transaction (only the ones you pass). Re-categorising here is
 | `assetPrice` | number | no |  |
 | `exchange` | string | no | ISO-10383 MIC of the listing (mic_code from search_ticker), e.g. "XETR". Pass it when the ticker trades on several exchanges. |
 | `isin` | string | no | ISIN of the security, e.g. "US67066G1040". |
+
+### `bulk_update_transactions` — Recategorise transactions in bulk
+
+**Access:** Write (Read & write keys only)  
+**Wraps:** `PATCH /api/transactions/bulk`
+
+Recategorise up to 50 committed transactions in one call. All-or-nothing: if any ID is not found, or the target category or a row's current category is Investments or Debt, nothing changes. Category only: for tags or other fields use update_transaction. Trains the classifier for each changed row and refreshes analytics once. Rows already in the category are reported as `unchanged`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ids` | array of integer | yes | 1 to 50 distinct transaction IDs from search_transactions. |
+| `categoryId` | integer | yes | Target category ID from list_categories (not Investments or Debt). |
 
 ### `delete_transaction` — Delete transaction
 

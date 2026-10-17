@@ -10,6 +10,8 @@ import { eventOrigin } from '../../../utils/eventOrigin.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { resolveTagsByName } from '../../../utils/tagUtils.js';
 import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../utils/investmentEnrichment.js';
+import { parseAmountRange } from '../../../utils/amountFilter.js';
+import { diffTransactionUpdate } from '../../../utils/transactionDiff.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -112,6 +114,8 @@ async function handleGet(req, res) {
     source, // [NEW] Filter by source (MANUAL, PLAID, CSV)
     startDate,
     endDate,
+    amountMin,
+    amountMax,
   } = req.query;
 
   // Normalize tags input to always be an array
@@ -164,6 +168,13 @@ async function handleGet(req, res) {
     return;
   }
 
+  // Unsigned magnitude range over credit/debit (#141); validated before any query.
+  const amountRange = parseAmountRange({ amountMin, amountMax });
+  if (amountRange.error) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: amountRange.error });
+    return;
+  }
+
   // Parse comma-separated ids filter (Subscriptions expandable-row view)
   const idList = ids
     ? String(ids)
@@ -210,6 +221,8 @@ async function handleGet(req, res) {
         ...(endDate && { lte: new Date(endDate + 'T23:59:59.999Z') }),
       },
     } : {}),
+    // Inside AND so it never collides with another top-level OR.
+    ...(amountRange.where && { AND: [amountRange.where] }),
   };
 
   // Parse pagination parameters
@@ -318,7 +331,9 @@ async function handleGet(req, res) {
         accountCountry,
         tags: normalizedTags,
         group,
-        type
+        type,
+        amountMin: amountRange.amountMin,
+        amountMax: amountRange.amountMax,
       },
       sort: {
         field: actualSortField,
@@ -720,6 +735,7 @@ async function handlePut(req, res) {
     }
 
     let tagConnections = undefined;
+    let nextTagIds; // undefined when the request did not send `tags`
     if (tags && Array.isArray(tags)) {
       const processedTags = await Promise.all(tags.map(async (tag) => {
         if (!isNaN(parseInt(tag, 10))) {
@@ -741,60 +757,83 @@ async function handlePut(req, res) {
         return null;
       }));
       const validTags = processedTags.filter(tag => tag !== null);
+      nextTagIds = validTags.map(tag => tag.id);
       tagConnections = {
         deleteMany: {},
         create: validTags.map(tag => ({ tag: { connect: { id: tag.id } } }))
       };
     }
 
+    // The scalar columns this edit writes. The no-op check below compares
+    // exactly this object, so the two cannot drift apart.
+    const nextData = {
+      userId: req.user.email,
+      transaction_date: date,
+      year,
+      quarter,
+      month,
+      day,
+      categoryId: parseInt(categoryId, 10),
+      accountId: parseInt(accountId, 10),
+      description,
+      details,
+      credit: credit ? parseFloat(credit) : null,
+      debit: debit ? parseFloat(debit) : null,
+      currency,
+      assetQuantity: assetQuantity ? parseFloat(assetQuantity) : null,
+      assetPrice: assetPrice ? parseFloat(assetPrice) : null,
+      ticker,
+      isin: isin || null,
+      exchange: exchange || null,
+      assetCurrency: assetCurrency || null,
+      portfolioItemId: portfolioItem?.id, // Link to the new/existing item
+    };
+
+    const responseInclude = {
+      account: {
+        select: {
+          name: true,
+          currencyCode: true,
+          country: true
+        }
+      },
+      category: { select: { name: true, group: true, type: true } },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              id: true,
+              name: true,
+              color: true,
+              emoji: true
+            }
+          }
+        }
+      }
+    };
+
+    // No-op edit (#141): agents and the edit form often resend the current
+    // values. Write nothing, send no classifier feedback and emit no events,
+    // so no background work (or "busy" processing status) follows. A supplied
+    // debtTerms always counts as a change: it was written to its own table above.
+    const changedFields = diffTransactionUpdate(existing, nextData, { tagIds: nextTagIds });
+    if (changedFields.length === 0 && !debtTerms) {
+      const current = await prisma.transaction.findUnique({
+        where: { id: transactionId },
+        include: responseInclude,
+      });
+      res.status(StatusCodes.OK).json({ ...current, tags: current.tags.map(t => t.tag) });
+      return;
+    }
+
     const result = await prisma.$transaction(async (prisma) => {
       const updatedTransaction = await prisma.transaction.update({
         where: { id: transactionId },
         data: {
-          userId: req.user.email,
-          transaction_date: date,
-          year,
-          quarter,
-          month,
-          day,
-          categoryId: parseInt(categoryId, 10),
-          accountId: parseInt(accountId, 10),
-          description,
-          details,
-          credit: credit ? parseFloat(credit) : null,
-          debit: debit ? parseFloat(debit) : null,
-          currency,
-          assetQuantity: assetQuantity ? parseFloat(assetQuantity) : null,
-          assetPrice: assetPrice ? parseFloat(assetPrice) : null,
-          ticker,
-          isin: isin || null,
-          exchange: exchange || null,
-          assetCurrency: assetCurrency || null,
-          portfolioItemId: portfolioItem?.id, // Link to the new/existing item
+          ...nextData,
           ...(tagConnections !== undefined && { tags: tagConnections })
         },
-        include: {
-          account: {
-            select: {
-              name: true,
-              currencyCode: true,
-              country: true
-            }
-          },
-          category: { select: { name: true, group: true, type: true } },
-          tags: {
-            include: {
-              tag: {
-                select: {
-                  id: true,
-                  name: true,
-                  color: true,
-                  emoji: true
-                }
-              }
-            }
-          }
-        }
+        include: responseInclude,
       });
 
       return updatedTransaction;
