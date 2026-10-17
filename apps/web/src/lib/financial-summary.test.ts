@@ -8,10 +8,13 @@ import {
   isCalculatedSection,
   isTypeSection,
   isSeparatorSection,
+  isOtherActivitySection,
+  toDisplayValue,
   FINANCIAL_STRUCTURE,
   processAnalyticsIntoFinancialStatement,
 } from './financial-summary';
 import type { FinancialStatement } from './financial-summary';
+import type { AnalyticsResponse } from '@/types/api';
 
 function makeStatement(overrides: Record<string, number> = {}): FinancialStatement {
   const defaults: Record<string, number> = {
@@ -212,5 +215,87 @@ describe('processAnalyticsIntoFinancialStatement', () => {
     expect(statement.netIncome).toEqual({});
     expect(statement.netSavings).toEqual({});
     expect(monthlyData).toEqual([]);
+  });
+});
+
+describe('toDisplayValue (Other Activity net flows, #139)', () => {
+  it('shows an investment purchase (credit − debit < 0) as positive', () => {
+    expect(toDisplayValue(FINANCIAL_STRUCTURE.INVESTMENTS, -1000)).toBe(1000);
+  });
+
+  it('shows a net investment sale as negative', () => {
+    expect(toDisplayValue(FINANCIAL_STRUCTURE.INVESTMENTS, 300)).toBe(-300);
+  });
+
+  it('shows a debt payment as positive and a loan disbursement as negative', () => {
+    expect(toDisplayValue(FINANCIAL_STRUCTURE.DEBT, -500)).toBe(500);
+    expect(toDisplayValue(FINANCIAL_STRUCTURE.DEBT, 1500)).toBe(-1500);
+  });
+
+  it('normalises zero so it never renders as -0', () => {
+    expect(Object.is(toDisplayValue(FINANCIAL_STRUCTURE.INVESTMENTS, 0), 0)).toBe(true);
+  });
+
+  it('leaves every other section unchanged', () => {
+    for (const key of ['INCOME', 'ESSENTIALS', 'NET_SAVINGS', 'VENTURES', 'TRANSFERS']) {
+      expect(toDisplayValue(FINANCIAL_STRUCTURE[key], -42), key).toBe(-42);
+    }
+  });
+
+  it('only Investments and Debt are net-flow sections', () => {
+    const netFlowKeys = Object.entries(FINANCIAL_STRUCTURE)
+      .filter(([, s]) => isTypeSection(s) && s.netFlow)
+      .map(([k]) => k);
+    expect(netFlowKeys).toEqual(['INVESTMENTS', 'DEBT']);
+  });
+});
+
+describe('isOtherActivitySection', () => {
+  it('is true for every section after the separator', () => {
+    for (const key of ['VENTURES', 'TRANSFERS', 'INVESTMENTS', 'DEBT']) {
+      expect(isOtherActivitySection(key), key).toBe(true);
+    }
+  });
+
+  it('is false for sections above the separator, the separator itself and unknown keys', () => {
+    for (const key of ['INCOME', 'ESSENTIALS', 'DISCRETIONARY_INCOME', 'LIFESTYLE', 'SAVINGS_CAPACITY', 'GROWTH', 'NET_SAVINGS', 'OTHER_ACTIVITY', 'NOPE']) {
+      expect(isOtherActivitySection(key), key).toBe(false);
+    }
+  });
+});
+
+describe('processAnalyticsIntoFinancialStatement — Investments & Debt (#139)', () => {
+  const analytics = {
+    data: {
+      '2025': {
+        Income: { Salary: { balance: 10000 } },
+        Essentials: { Rent: { balance: -4000 } },
+        Investments: { Funds: { debit: 1000, credit: 0 }, ETFs: { debit: 0, credit: 300 } },
+        Debt: { Loan: { debit: 500, credit: 2000 } },
+      },
+    },
+    currency: 'USD',
+    view: 'year',
+  } as AnalyticsResponse;
+
+  it('keeps raw credit − debit totals in the statement (display flip only)', () => {
+    const { statement } = processAnalyticsIntoFinancialStatement(analytics, ['2025'], null);
+    const investments = statement.types.find(t => t.name === 'Investments')!;
+    expect(investments.totals['2025']).toBe(-700);
+    expect(investments.categories.find(c => c.name === 'Funds')!.values['2025']).toBe(-1000);
+    expect(statement.types.find(t => t.name === 'Debt')!.totals['2025']).toBe(1500);
+  });
+
+  it('displays net invested and net debt repaid with the flipped sign', () => {
+    const { statement } = processAnalyticsIntoFinancialStatement(analytics, ['2025'], null);
+    const investments = statement.types.find(t => t.name === 'Investments')!;
+    const debt = statement.types.find(t => t.name === 'Debt')!;
+    expect(toDisplayValue(FINANCIAL_STRUCTURE.INVESTMENTS, investments.totals['2025'])).toBe(700);
+    expect(toDisplayValue(FINANCIAL_STRUCTURE.DEBT, debt.totals['2025'])).toBe(-1500);
+  });
+
+  it('does not let Investments or Debt affect Net Savings', () => {
+    const { statement } = processAnalyticsIntoFinancialStatement(analytics, ['2025'], null);
+    expect(statement.netSavings['2025']).toBe(6000);
   });
 });

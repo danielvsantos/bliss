@@ -756,6 +756,10 @@ const it = {
     savingsCapacity: 'Capacità di Risparmio',
     netSavings: 'Risparmio Netto',
     otherActivity: 'Altra Attività',
+    netInvested: "Investimento netto",
+    netInvestedTooltip: "Denaro destinato agli investimenti meno il denaro prelevato (vendite, prelievi). Un valore positivo significa che hai investito più di quanto hai prelevato. Non è un guadagno né una perdita.",
+    netDebtRepaid: "Debito netto rimborsato",
+    netDebtRepaidTooltip: "Debito rimborsato meno i nuovi prestiti (ad esempio, un prestito accreditato dalla tua banca). Un valore positivo significa che hai ridotto il tuo debito.",
     quarters: {
       q1: "T1",
       q2: "T2",

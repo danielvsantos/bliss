@@ -51,6 +51,9 @@ export interface FinancialSection {
 export interface FinancialTypeSection extends FinancialSection {
   type: string;
   isCalculated: false;
+  /** Balance-sheet movement shown as a net flow: sign inverted (debit − credit),
+   *  neutral colour, own label + tooltip. Display only — statement totals keep credit − debit. */
+  netFlow?: { labelKey: string; tooltipKey: string };
   isSeparator?: never;
   calculation?: never;
 }
@@ -174,12 +177,14 @@ export const FINANCIAL_STRUCTURE: Record<string, FinancialSectionType> = {
     type: 'Investments',
     isCalculated: false,
     isExpandable: true,
+    netFlow: { labelKey: 'financialSummary.netInvested', tooltipKey: 'financialSummary.netInvestedTooltip' },
   },
   DEBT: {
     name: 'Debt',
     type: 'Debt',
     isCalculated: false,
     isExpandable: true,
+    netFlow: { labelKey: 'financialSummary.netDebtRepaid', tooltipKey: 'financialSummary.netDebtRepaidTooltip' },
   }
 };
 
@@ -194,6 +199,24 @@ export function isTypeSection(section: FinancialSectionType): section is Financi
 
 export function isSeparatorSection(section: FinancialSectionType): section is FinancialSeparatorSection {
   return 'isSeparator' in section && section.isSeparator === true;
+}
+
+// Value as shown in the statement. Inverts netFlow sections (so an investment
+// purchase or a debt payment reads positive); normalises -0 to 0 so
+// formatCurrency never prints "-€0".
+export function toDisplayValue(section: FinancialSectionType, value: number): number {
+  if (isTypeSection(section) && section.netFlow) {
+    return value === 0 ? 0 : -value;
+  }
+  return value;
+}
+
+// True for every section after the OTHER_ACTIVITY separator, derived from
+// FINANCIAL_STRUCTURE key order.
+export function isOtherActivitySection(key: string): boolean {
+  const keys = Object.keys(FINANCIAL_STRUCTURE);
+  const index = keys.indexOf(key);
+  return index !== -1 && index > keys.indexOf('OTHER_ACTIVITY');
 }
 
 export const processAnalyticsIntoFinancialStatement = (
