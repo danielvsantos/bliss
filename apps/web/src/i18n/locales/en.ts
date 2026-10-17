@@ -756,6 +756,10 @@ const en = {
     savingsCapacity: 'Savings Capacity',
     netSavings: 'Net Savings',
     otherActivity: 'Other Activity',
+    netInvested: "Net invested",
+    netInvestedTooltip: "Money moved into investments minus money taken out (sales, withdrawals). Positive means you invested more than you took out. This is not a gain or a loss.",
+    netDebtRepaid: "Net debt repaid",
+    netDebtRepaidTooltip: "Debt paid down minus new borrowing (for example, a loan deposited by your bank). Positive means you reduced your debt.",
     quarters: {
       q1: "Q1",
       q2: "Q2",
