@@ -15,6 +15,8 @@
  *       rename     { descriptionHash, merchantLabel }                → user label, kept across scans
  *       merge      { sourceDescriptionHash, targetDescriptionHash }  → folds source merchant into target
  *       unmerge    { descriptionHash }                               → undoes a merge
+ *       split      { descriptionHash }                               → one row per distinct amount, kept across scans
+ *       unsplit    { descriptionHash }                               → undoes a split
  *       refresh                              → 202 (enqueues an incremental scan; 30-min cooldown → 429)
  *       fullScan                             → 202 (enqueues a 48-month full scan; called from Settings → Maintenance)
  *
@@ -140,11 +142,12 @@ async function handleGet(req, res, tenantId) {
   });
   const displayCurrency = tenant?.portfolioCurrency || 'USD';
 
-  // `all` surfaces DISMISSED + merge tombstones too, so the UI can offer
-  // "Restore" / "Unmerge". `active` / `lapsed` never show tombstones.
+  // `all` surfaces DISMISSED, merge tombstones and split markers too, so the UI
+  // can offer "Restore" / "Unmerge" / "Unsplit". `active` / `lapsed` never show
+  // tombstones.
   const where = {
     tenantId,
-    ...(view !== 'all' && { state: { not: 'DISMISSED' }, mergedIntoHash: null }),
+    ...(view !== 'all' && { state: { not: 'DISMISSED' }, mergedIntoHash: null, splitByAmount: false }),
     ...(view === 'active' && { status: 'ACTIVE' }),
     ...(view === 'lapsed' && { status: 'LAPSED' }),
     ...(categoryId && { categoryId }),
@@ -161,7 +164,7 @@ async function handleGet(req, res, tenantId) {
     select: {
       id: true, descriptionHash: true, chargeKey: true, state: true, status: true,
       cadence: true, amount: true, currency: true, lastChargedAt: true,
-      updatedAt: true, mergedIntoHash: true, contributingTransactionIds: true,
+      updatedAt: true, mergedIntoHash: true, splitByAmount: true, contributingTransactionIds: true,
     },
   });
 
@@ -173,7 +176,7 @@ async function handleGet(req, res, tenantId) {
   for (const row of [...allRows].sort(
     (a, b) => (STATE_RANK[b.state] - STATE_RANK[a.state]) || (a.id - b.id),
   )) {
-    if (row.mergedIntoHash != null) continue;
+    if (row.mergedIntoHash != null || row.splitByAmount) continue;
     const ids = row.contributingTransactionIds || [];
     const clash = ids.find((id) => claimed.has(id));
     if (clash != null) {
@@ -228,7 +231,7 @@ async function handleGet(req, res, tenantId) {
   let lapsedCount = 0;
   let fxUnavailableCount = 0;
   for (const row of visibleRows) {
-    const isTombstone = row.state === 'DISMISSED' || row.mergedIntoHash != null;
+    const isTombstone = row.state === 'DISMISSED' || row.mergedIntoHash != null || row.splitByAmount;
     const { monthlyAmount, fxUnavailable } = convertRow(row);
     if (!isTombstone && row.status === 'ACTIVE') activeCount += 1;
     if (!isTombstone && row.status === 'LAPSED') lapsedCount += 1;
@@ -249,11 +252,11 @@ async function handleGet(req, res, tenantId) {
   ] = await Promise.all([
     prisma.recurringCharge.groupBy({
       by: ['categoryId'],
-      where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
+      where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null, splitByAmount: false },
       _count: { _all: true },
     }),
     prisma.recurringCharge.findMany({
-      where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null },
+      where: { tenantId, state: { not: 'DISMISSED' }, mergedIntoHash: null, splitByAmount: false },
       orderBy: [{ status: 'asc' }, { merchantLabel: 'asc' }],
       include: { category: { select: { icon: true, name: true } } },
     }),
@@ -347,6 +350,7 @@ async function handleGet(req, res, tenantId) {
       lastDetectedAt: row.lastDetectedAt,
       contributingTransactionIds: row.contributingTransactionIds,
       mergedIntoHash: row.mergedIntoHash ?? null,
+      splitByAmount: row.splitByAmount === true,
       mergedIntoLabel: row.mergedIntoHash ? (mergeLabelByHash[row.mergedIntoHash] ?? null) : null,
       mergeTargetMissing,
       mergeStale,
@@ -394,13 +398,17 @@ async function handlePost(req, res, tenantId) {
       return await handleMerge(req, res, tenantId);
     case 'unmerge':
       return await handleUnmerge(req, res, tenantId);
+    case 'split':
+      return await handleSplit(req, res, tenantId);
+    case 'unsplit':
+      return await handleUnsplit(req, res, tenantId);
     case 'refresh':
       return await handleScan(req, res, tenantId, 'incremental');
     case 'fullScan':
       return await handleScan(req, res, tenantId, 'full');
     default:
       return res.status(StatusCodes.BAD_REQUEST).json({
-        error: 'action must be one of: confirm, dismiss, restore, setCadence, rename, merge, unmerge, refresh, fullScan',
+        error: 'action must be one of: confirm, dismiss, restore, setCadence, rename, merge, unmerge, split, unsplit, refresh, fullScan',
       });
   }
 }
@@ -667,6 +675,112 @@ async function handleUnmerge(req, res, tenantId) {
   });
 
   return res.status(StatusCodes.OK).json({ unmerged: result.count });
+}
+
+/**
+ * Split one row by amount: every detection run then gives each distinct
+ * recurring amount of this merchant (or amount band) its own row, even when the
+ * amounts are within the drift tolerance — e.g. Apple-billed €22.99 and €22.00.
+ *
+ * The row becomes a split marker (`splitByAmount`), persisted like a merge
+ * tombstone: hidden from Active/Lapsed, shown under "All" with an Unsplit
+ * action. A CONFIRMED decision carries over to the new rows.
+ */
+async function handleSplit(req, res, tenantId) {
+  const { descriptionHash } = req.body || {};
+  if (!descriptionHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'split requires descriptionHash' });
+  }
+  const row = await prisma.recurringCharge.findUnique({
+    where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
+  });
+  if (!row) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No subscription with that id' });
+  }
+  if (row.mergedIntoHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'A merged subscription cannot be split — unmerge it first' });
+  }
+  if (row.splitByAmount) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'That subscription is already split' });
+  }
+  if (row.state === 'DISMISSED') {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'A dismissed subscription cannot be split — restore it first' });
+  }
+  const dependents = await prisma.recurringCharge.count({
+    where: { tenantId, mergedIntoHash: descriptionHash },
+  });
+  if (dependents > 0) {
+    return res.status(StatusCodes.CONFLICT).json({
+      error: 'This subscription has other subscriptions merged into it. Unmerge them first.',
+      code: 'MERGE_TARGET_HAS_DEPENDENTS',
+    });
+  }
+
+  // Only split when the charges really hold two or more recurring amounts
+  // (each charged at least twice) — the same rule the detector applies.
+  const txns = await prisma.transaction.findMany({
+    where: { tenantId, id: { in: row.contributingTransactionIds || [] } },
+    select: { debit: true },
+  });
+  const countByCents = new Map();
+  for (const t of txns) {
+    if (t.debit == null) continue;
+    const cents = Math.round(Number(t.debit) * 100);
+    countByCents.set(cents, (countByCents.get(cents) || 0) + 1);
+  }
+  const recurringAmounts = [...countByCents.values()].filter((n) => n >= 2).length;
+  if (recurringAmounts < 2) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      error: 'Nothing to split: these charges do not repeat at two or more different amounts',
+      code: 'NOTHING_TO_SPLIT',
+    });
+  }
+
+  await prisma.recurringCharge.update({
+    where: { tenantId_descriptionHash: { tenantId, descriptionHash } },
+    data: {
+      splitByAmount: true,
+      status: 'ACTIVE',
+      nextExpectedAt: null,
+      // Released so the per-amount rows own these charges (no overlap with the marker).
+      contributingTransactionIds: [],
+    },
+  });
+
+  await produceEvent({
+    ...eventOrigin(req),
+    type: 'SUBSCRIPTION_DETECTION_REQUESTED',
+    tenantId,
+    mode: 'incremental',
+    source: 'split',
+  });
+
+  return res.status(StatusCodes.OK).json({ split: 1, amounts: recurringAmounts });
+}
+
+/** Undo a split — the merchant goes back to one row on the next detection run. */
+async function handleUnsplit(req, res, tenantId) {
+  const { descriptionHash } = req.body || {};
+  if (!descriptionHash) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'unsplit requires descriptionHash' });
+  }
+  const result = await prisma.recurringCharge.updateMany({
+    where: { tenantId, descriptionHash, splitByAmount: true },
+    data: { splitByAmount: false },
+  });
+  if (result.count === 0) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'No split subscription with that id' });
+  }
+
+  await produceEvent({
+    ...eventOrigin(req),
+    type: 'SUBSCRIPTION_DETECTION_REQUESTED',
+    tenantId,
+    mode: 'incremental',
+    source: 'unsplit',
+  });
+
+  return res.status(StatusCodes.OK).json({ unsplit: result.count });
 }
 
 async function handleScan(req, res, tenantId, mode) {

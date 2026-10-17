@@ -7,7 +7,8 @@
  *                         persists the result: one RecurringCharge row per
  *                         merchant. Detector fields are merged into existing
  *                         rows; the user-owned fields (state, userCadenceLocked,
- *                         a locked cadence) are never touched. Stale DETECTED
+ *                         a locked cadence) are never touched, and a stored
+ *                         firstChargedAt is never moved later. Stale DETECTED
  *                         rows (no longer detected) are pruned. `mode: 'full'`
  *                         additionally stamps Tenant.subscriptionsFullScanAt.
  *
@@ -70,6 +71,8 @@ async function handleDetectTenant(data) {
       userCadenceLocked: true,
       userLabelLocked: true,
       mergedIntoHash: true,
+      splitByAmount: true,
+      firstChargedAt: true,
     },
   });
   const existingByHash = new Map(existing.map((r) => [r.descriptionHash, r]));
@@ -87,6 +90,15 @@ async function handleDetectTenant(data) {
     if (!prior?.userCadenceLocked) update.cadence = row.cadence;
     // Never overwrite a merchant label the user has renamed.
     if (prior?.userLabelLocked) delete update.merchantLabel;
+    // The scan window is 6 months (incremental) or 48 (full), so the detected
+    // first charge is only the earliest one *in the window*. Never move a stored
+    // earlier date forward — the nightly run would otherwise undo a full scan.
+    if (prior?.firstChargedAt && row.firstChargedAt && prior.firstChargedAt < row.firstChargedAt) {
+      update.firstChargedAt = prior.firstChargedAt;
+    }
+    // A split marker that came back as a normal row means only one amount is
+    // left to split by — dissolve the split so the row shows again.
+    if (prior?.splitByAmount) update.splitByAmount = false;
 
     return prisma.recurringCharge.upsert({
       where: { tenantId_descriptionHash: { tenantId, descriptionHash: row.descriptionHash } },
@@ -135,13 +147,15 @@ async function handleDetectTenant(data) {
   }
 
   // Prune DETECTED rows that are no longer detected. CONFIRMED / DISMISSED
-  // rows, merge tombstones (`mergedIntoHash` set) and merge *targets* are all
-  // retained — the guard against ever deleting a user decision or a fold target.
+  // rows, merge tombstones (`mergedIntoHash` set), split markers
+  // (`splitByAmount`) and merge *targets* are all retained — the guard against
+  // ever deleting a user decision or a fold target.
   const prune = prisma.recurringCharge.deleteMany({
     where: {
       tenantId,
       state: 'DETECTED',
       mergedIntoHash: null,
+      splitByAmount: false,
       descriptionHash: {
         notIn: [...new Set([
           ...(desiredHashes.length ? desiredHashes : ['__none__']),

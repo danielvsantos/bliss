@@ -2340,6 +2340,14 @@ const es = {
       stale: "Esta combinación no está surtiendo efecto: prueba a deshacerla y combinar de nuevo.",
       dismissBlocked: "Primero deshaz la combinación de las filas integradas en esta.",
     },
+    split: {
+      splitByAmount: "Dividir por importe — una suscripción por precio",
+      split: "Dividida en una suscripción por importe",
+      unsplit: "Deshacer división",
+      unsplitDone: "División deshecha",
+      markerHint: "Dividida por importe — cada precio recurrente es su propia suscripción.",
+      nothingToSplit: "Estos cargos no se repiten con dos o más importes distintos.",
+    },
     pager: {
       prev: "Anterior",
       next: "Siguiente",

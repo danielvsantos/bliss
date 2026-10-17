@@ -2346,6 +2346,14 @@ const fr = {
       stale: "Cette fusion ne prend pas effet — annulez-la puis fusionnez à nouveau.",
       dismissBlocked: "Annulez d'abord la fusion des lignes intégrées à celle-ci.",
     },
+    split: {
+      splitByAmount: "Séparer par montant — un abonnement par prix",
+      split: "Séparé en un abonnement par montant",
+      unsplit: "Annuler la séparation",
+      unsplitDone: "Séparation annulée",
+      markerHint: "Séparé par montant — chaque prix récurrent est un abonnement distinct.",
+      nothingToSplit: "Ces prélèvements ne se répètent pas à deux montants différents ou plus.",
+    },
     pager: {
       prev: "Précédent",
       next: "Suivant",

@@ -314,6 +314,13 @@ are covered exactly like Plaid):
   decision promoted. `RecurringCharge.userLabelLocked` (set by `rename`) stops
   the detector overwriting a user-chosen `merchantLabel`. Both mirror
   `userCadenceLocked`.
+- **Close amounts & manual split (#138).** `splitBySeries()` splits two exact
+  amounts on one merchant that are both charged in ≥2 of the same months
+  (Apple-billed €22.00 / €22.99), even within the drift tolerance; a price
+  change never splits. `split` sets `RecurringCharge.splitByAmount` — a marker
+  row, persisted like a merge tombstone (never emitted or pruned, shown under
+  "All" with `unsplit`) that forces a split by amount every run.
+  `firstChargedAt` is sticky: the worker keeps `min(stored, detected)`.
 
 Nightly incremental scan (5 AM UTC, 6-month window). "Scan now" on the page
 (30-min cooldown). "Full history scan" in Settings → Maintenance widens Tier A

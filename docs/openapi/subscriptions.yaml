@@ -72,6 +72,11 @@ components:
           description: >
             Non-null → this row is a manual-merge tombstone whose charges are
             folded into the target merchant. Only surfaces under view=all.
+        splitByAmount:
+          type: boolean
+          description: >
+            True → this row is a manual split marker (#138): its charges show as
+            one row per recurring amount. Only surfaces under view=all.
         mergedIntoLabel:
           type: string
           nullable: true
@@ -181,7 +186,7 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [confirm, dismiss, restore, setCadence, rename, merge, unmerge, refresh, fullScan]
+                  enum: [confirm, dismiss, restore, setCadence, rename, merge, unmerge, split, unsplit, refresh, fullScan]
                 descriptionHash: { type: string }
                 transactionId: { type: integer }
                 cadence: { type: string, enum: [WEEKLY, MONTHLY, QUARTERLY, ANNUAL] }
@@ -192,9 +197,11 @@ paths:
         `merge` repoints the source row's durable `chargeKey` to the target's, so
         the detector folds by stored identity on the next run (bare, band or
         confirm-from-transaction rows alike). `confirm` by transactionId stamps
-        the new row with a `chargeKey`.
+        the new row with a `chargeKey`. `split` turns the row into a split marker
+        (one row per recurring amount from the next run on; `400 NOTHING_TO_SPLIT`
+        when its charges repeat at only one amount); `unsplit` undoes it.
       responses:
-        '200': { description: Applied (confirm/dismiss/restore/setCadence/rename/merge/unmerge) }
+        '200': { description: Applied (confirm/dismiss/restore/setCadence/rename/merge/unmerge/split/unsplit) }
         '201': { description: Provisional row created (confirm by transactionId) }
         '202': { description: Detection scan enqueued (refresh/fullScan) }
         '400':

@@ -17,6 +17,7 @@ import {
   GitMerge,
   Undo2,
   Pencil,
+  Split,
 } from 'lucide-react';
 
 import { api } from '@/lib/api';
@@ -29,6 +30,8 @@ import {
   useRenameSubscription,
   useMergeSubscription,
   useUnmergeSubscription,
+  useSplitSubscription,
+  useUnsplitSubscription,
   useRefreshSubscriptions,
 } from '@/hooks/use-subscriptions';
 import { useToast } from '@/hooks/use-toast';
@@ -139,9 +142,12 @@ function SubscriptionRow({
   const rename = useRenameSubscription();
   const merge = useMergeSubscription();
   const unmerge = useUnmergeSubscription();
+  const split = useSplitSubscription();
+  const unsplit = useUnsplitSubscription();
 
   const locale = i18n.language || 'en';
   const isMerged = item.mergedIntoHash != null;
+  const isSplitMarker = item.splitByAmount === true;
   const isTombstone = item.state === 'DISMISSED' || isMerged;
 
   const handleErr = (err: unknown) => {
@@ -152,7 +158,9 @@ function SubscriptionRow({
       description:
         code === 'MERGE_TARGET_HAS_DEPENDENTS'
           ? t('subscriptions.merge.dismissBlocked')
-          : ax?.response?.data?.error || ax?.message || '',
+          : code === 'NOTHING_TO_SPLIT'
+            ? t('subscriptions.split.nothingToSplit')
+            : ax?.response?.data?.error || ax?.message || '',
       variant: 'destructive',
     });
   };
@@ -230,6 +238,37 @@ function SubscriptionRow({
         >
           <Undo2 className="h-4 w-4 mr-1" />
           {t('subscriptions.merge.unmerge')}
+        </Button>
+      </div>
+    );
+  }
+
+  // A manual split marker renders as a compact, dimmed row with an Unsplit
+  // action. Only ever reached in the "All" view.
+  if (isSplitMarker) {
+    return (
+      <div className="flex items-center gap-3 py-3 border-b border-border/60 last:border-0 text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem_13rem] sm:items-center sm:gap-3">
+        <div className="flex items-center gap-3 min-w-0 sm:col-span-4">
+          <Split className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium text-foreground">{item.merchantLabel}</div>
+            <div className="text-xs truncate">{t('subscriptions.split.markerHint')}</div>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="sm:justify-self-end"
+          disabled={unsplit.isPending}
+          onClick={() =>
+            unsplit.mutate(item.descriptionHash, {
+              onSuccess: () => toast({ title: t('subscriptions.split.unsplitDone') }),
+              onError: handleErr,
+            })
+          }
+        >
+          <Undo2 className="h-4 w-4 mr-1" />
+          {t('subscriptions.split.unsplit')}
         </Button>
       </div>
     );
@@ -487,6 +526,23 @@ function SubscriptionRow({
       {expanded && (
         <div className="pl-10 pr-2 pb-3">
           <ExpandedCharges ids={item.contributingTransactionIds} />
+          {!isTombstone && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="mt-2 text-muted-foreground"
+              disabled={split.isPending}
+              onClick={() =>
+                split.mutate(item.descriptionHash, {
+                  onSuccess: () => toast({ title: t('subscriptions.split.split') }),
+                  onError: handleErr,
+                })
+              }
+            >
+              <Split className="h-4 w-4 mr-1" />
+              {t('subscriptions.split.splitByAmount')}
+            </Button>
+          )}
         </div>
       )}
     </div>

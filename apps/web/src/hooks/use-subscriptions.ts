@@ -103,6 +103,26 @@ export function useUnmergeSubscription() {
   });
 }
 
+export function useSplitSubscription() {
+  const invalidate = useInvalidateSubscriptions();
+  return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['SUBSCRIPTION_SCAN'] },
+    mutationFn: (descriptionHash: string) => api.splitSubscription(descriptionHash),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUnsplitSubscription() {
+  const invalidate = useInvalidateSubscriptions();
+  return useMutation({
+    // Processing status (#100): show the background work as queued right away.
+    meta: { activity: ['SUBSCRIPTION_SCAN'] },
+    mutationFn: (descriptionHash: string) => api.unsplitSubscription(descriptionHash),
+    onSuccess: invalidate,
+  });
+}
+
 export function useRefreshSubscriptions() {
   const invalidate = useInvalidateSubscriptions();
   return useMutation({

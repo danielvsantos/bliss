@@ -17,7 +17,7 @@ Task #100. API: [`docs/specs/api/26-activity-api.md`](../api/26-activity-api.md)
 
 **Optimistic Queued (R4.3, AC1).** After a write that starts background work, its activity types show as `queued` immediately, and the `['activity']` query is invalidated so the first real poll happens now. Sources:
 
-- `meta: { activity: [...] }` on mutations: import commit, Plaid resync / historical fetch / review update / retry / bulk promote, subscription scan / merge / unmerge / full scan, insight generation. `useTriggerRebuild` marks types by scope in `onSuccess`.
+- `meta: { activity: [...] }` on mutations: import commit, Plaid resync / historical fetch / review update / retry / bulk promote, subscription scan / merge / unmerge / split / unsplit / full scan, insight generation. `useTriggerRebuild` marks types by scope in `onSuccess`.
 - Direct `markActivityPending` calls where the API is called without a mutation: the transaction form (create/update), transaction delete, manual price create/update/delete.
 
 A pending entry clears once a poll completed ≥ 1.5 s after the write. That is long enough for routes that emit their event without awaiting it. It also clears after a 20 s grace at most. It is ignored once the server says status is unavailable.

@@ -159,6 +159,15 @@ const SUBSCRIPTION_CADENCE_BUCKETS = {
  *  qualify, so a lone large purchase in the mix never becomes a subscription. */
 const SUBSCRIPTION_CLUSTER_MIN_GROUP = 6;
 
+/** Interleaved-series split (#138): two distinct amounts on one merchant, each
+ *  charged at least twice, that are BOTH charged in at least this many of the
+ *  same calendar months are two parallel subscriptions (e.g. ChatGPT €22.99 and
+ *  Claude Pro €22.00, both billed through Apple) — split even when the amounts
+ *  are within the drift tolerance and below SUBSCRIPTION_CLUSTER_MIN_GROUP.
+ *  A price change (old amount, then new amount) shares at most one month, so it
+ *  never splits. */
+const SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS = 2;
+
 module.exports = {
     EXACT_MATCH_CONFIDENCE,
     GLOBAL_VECTOR_DISCOUNT,
@@ -181,4 +190,5 @@ module.exports = {
     SUBSCRIPTION_MAX_CONTRIBUTING_IDS,
     SUBSCRIPTION_CADENCE_BUCKETS,
     SUBSCRIPTION_CLUSTER_MIN_GROUP,
+    SUBSCRIPTION_SERIES_MIN_SHARED_MONTHS,
 };

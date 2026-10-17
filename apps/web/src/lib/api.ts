@@ -1216,6 +1216,18 @@ class APIClient {
     return response.data;
   }
 
+  /** Split a row by amount — one subscription per distinct recurring price, kept across scans. */
+  async splitSubscription(descriptionHash: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'split', descriptionHash });
+    return response.data;
+  }
+
+  /** Undo a split — the merchant goes back to one row. */
+  async unsplitSubscription(descriptionHash: string): Promise<unknown> {
+    const response = await this.client.post('/api/subscriptions', { action: 'unsplit', descriptionHash });
+    return response.data;
+  }
+
   async refreshSubscriptions(): Promise<{ status: string; mode: string }> {
     const response = await this.client.post('/api/subscriptions', { action: 'refresh' });
     return response.data;

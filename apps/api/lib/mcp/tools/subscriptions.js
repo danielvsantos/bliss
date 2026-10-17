@@ -10,7 +10,7 @@ import { pageArgs, pageMeta, money, isoDate } from '../shape.js';
  */
 
 const SUB_HINT = 'Use list_subscriptions with view "all" to find subscription IDs.';
-const SUBSCRIPTION_ACTIONS = ['confirm', 'dismiss', 'restore', 'setCadence', 'rename', 'merge', 'unmerge', 'refresh'];
+const SUBSCRIPTION_ACTIONS = ['confirm', 'dismiss', 'restore', 'setCadence', 'rename', 'merge', 'unmerge', 'split', 'unsplit', 'refresh'];
 
 function shapeSubscription(s, displayCurrency) {
   return {
@@ -28,6 +28,7 @@ function shapeSubscription(s, displayCurrency) {
     lastChargedAt: isoDate(s.lastChargedAt),
     nextExpectedAt: isoDate(s.nextExpectedAt),
     ...(s.mergedIntoHash && { mergedInto: { subscriptionId: s.mergedIntoHash, merchant: s.mergedIntoLabel } }),
+    ...(s.splitByAmount && { splitByAmount: true }),
     transactionIds: (s.contributingTransactionIds || []).slice(0, 12),
   };
 }
@@ -40,7 +41,7 @@ const listSubscriptions = defineTool({
     'Detected recurring charges, one per merchant: cadence, amount, next expected charge and whether it is still '
     + 'ACTIVE or LAPSED. state DETECTED = needs the user\'s review, CONFIRMED = accepted, DISMISSED = not a '
     + 'subscription. `summary` has the monthly and annual recurring spend in the display currency. view "all" '
-    + 'also shows dismissed and merged rows.',
+    + 'also shows dismissed, merged and split (splitByAmount: true) rows.',
   input: {
     view: z.enum(['active', 'lapsed', 'all']).optional(),
     categoryId: intId('Only this category.').optional(),
@@ -72,8 +73,9 @@ const updateSubscription = defineTool({
   description:
     'confirm (subscriptionId, or transactionId to mark a transaction\'s merchant as recurring), dismiss (not a '
     + 'subscription), restore (undo dismiss), setCadence (cadence), rename (merchantLabel), merge '
-    + '(subscriptionId folded into targetSubscriptionId, e.g. two descriptors of one merchant), unmerge, refresh '
-    + '(re-run detection; at most every 30 minutes).',
+    + '(subscriptionId folded into targetSubscriptionId, e.g. two descriptors of one merchant), unmerge, split (one '
+    + 'row per distinct recurring amount, e.g. two subscriptions billed by Apple at 22.00 and 22.99; kept across '
+    + 'scans), unsplit, refresh (re-run detection; at most every 30 minutes).',
   input: {
     action: z.enum(SUBSCRIPTION_ACTIONS),
     subscriptionId: z.string().min(1).max(200).optional(),
@@ -100,6 +102,8 @@ const updateSubscription = defineTool({
       case 'dismiss':
       case 'restore':
       case 'unmerge':
+      case 'split':
+      case 'unsplit':
         body = { descriptionHash: need('subscriptionId') };
         break;
       case 'setCadence':

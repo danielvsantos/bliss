@@ -727,6 +727,8 @@ describe('subscription tools', () => {
       [{ action: 'dismiss', subscriptionId: 'h' }, { action: 'dismiss', descriptionHash: 'h' }],
       [{ action: 'restore', subscriptionId: 'h' }, { action: 'restore', descriptionHash: 'h' }],
       [{ action: 'unmerge', subscriptionId: 'h' }, { action: 'unmerge', descriptionHash: 'h' }],
+      [{ action: 'split', subscriptionId: 'h' }, { action: 'split', descriptionHash: 'h' }],
+      [{ action: 'unsplit', subscriptionId: 'h' }, { action: 'unsplit', descriptionHash: 'h' }],
       [{ action: 'setCadence', subscriptionId: 'h', cadence: 'ANNUAL' }, { action: 'setCadence', descriptionHash: 'h', cadence: 'ANNUAL' }],
       [{ action: 'rename', subscriptionId: 'h', merchantLabel: 'NF' }, { action: 'rename', descriptionHash: 'h', merchantLabel: 'NF' }],
       [{ action: 'merge', subscriptionId: 'a', targetSubscriptionId: 'b' }, { action: 'merge', sourceDescriptionHash: 'a', targetDescriptionHash: 'b' }],
@@ -742,5 +744,6 @@ describe('subscription tools', () => {
     expect(renamed.result).toEqual({ action: 'rename', subscriptionId: 'h', merchant: 'NF', state: 'CONFIRMED', cadence: 'MONTHLY' });
     await expect(run('update_subscription', { action: 'confirm' }, {})).rejects.toThrow(/subscriptionId or transactionId/);
     await expect(run('update_subscription', { action: 'setCadence', subscriptionId: 'h' }, {})).rejects.toThrow(/cadence/);
+    await expect(run('update_subscription', { action: 'split' }, {})).rejects.toThrow(/split requires subscriptionId/);
   });
 });

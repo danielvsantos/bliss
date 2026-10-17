@@ -1103,6 +1103,14 @@ model RecurringCharge {
   // null = not merged.
   mergedIntoHash  String?
 
+  // Manual split (#138): when true, this row is a split marker. Every detection
+  // run splits this merchant's (or amount band's) charges into one row per
+  // distinct recurring amount, even when the amounts are within the drift
+  // tolerance (e.g. €22.00 and €22.99 billed through Apple). The marker itself
+  // produces nothing and is hidden from Active/Lapsed (shown under "All" with an
+  // Unsplit action). Cleared by the detector when only one amount remains.
+  splitByAmount   Boolean  @default(false)
+
   // Durable identity key. Assigned once when the row is first created and never
   // re-derived from the live bank descriptor thereafter. On a manual merge the
   // source row's `chargeKey` is repointed to the target's `chargeKey`, so the

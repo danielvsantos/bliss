@@ -67,7 +67,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       upsert: vi.fn(),
     },
     category: { findMany: vi.fn() },
-    transaction: { findFirst: vi.fn() },
+    transaction: { findFirst: vi.fn(), findMany: vi.fn() },
   },
 }));
 vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
@@ -184,6 +184,7 @@ function detailRow(o: Row): Row {
     updatedAt: o.updatedAt ?? new Date('2026-09-02T00:00:00Z'),
     contributingTransactionIds: o.contributingTransactionIds ?? [],
     mergedIntoHash: o.mergedIntoHash ?? null,
+    splitByAmount: o.splitByAmount ?? false,
   };
 }
 
@@ -193,6 +194,24 @@ beforeEach(() => {
 });
 
 describe('GET /api/subscriptions', () => {
+  it('hides split markers from active/lapsed and the merge picker, and flags them under "all" (#138)', async () => {
+    setupGet({ rows: [detailRow({ id: 1, descriptionHash: 'apple', splitByAmount: true, amount: 22 })] });
+    await handler(makeReq({ query: { view: 'active' } }) as NextApiRequest, makeRes() as unknown as NextApiResponse);
+    const liteWhere = mockPrisma.recurringCharge.findMany.mock.calls.find(([a]) => a?.select?.chargeKey)![0].where;
+    expect(liteWhere).toEqual(expect.objectContaining({ mergedIntoHash: null, splitByAmount: false }));
+    const pickerWhere = mockPrisma.recurringCharge.findMany.mock.calls.find(([a]) => a?.include?.category && a?.where?.state)![0].where;
+    expect(pickerWhere).toEqual(expect.objectContaining({ splitByAmount: false }));
+
+    vi.clearAllMocks();
+    setupGet({ rows: [detailRow({ id: 1, descriptionHash: 'apple', splitByAmount: true, amount: 22 })] });
+    const res = makeRes();
+    await handler(makeReq({ query: { view: 'all' } }) as NextApiRequest, res as unknown as NextApiResponse);
+    expect(res._body.items[0].splitByAmount).toBe(true);
+    // a marker is a tombstone: it never counts toward the recurring total
+    expect(res._body.summary.monthlyTotal).toBe(0);
+    expect(res._body.summary.activeCount).toBe(0);
+  });
+
   it('computes the monthly + annual summary over the full filtered set with parallel FX', async () => {
     setupGet({
       rows: [
@@ -642,5 +661,94 @@ describe('POST /api/subscriptions actions', () => {
     const res = makeRes();
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
     expect(res._status).toBe(404);
+  });
+
+  describe('split / unsplit (#138)', () => {
+    const splittable = {
+      id: 7, tenantId: 'tenant-A', descriptionHash: 'apple', state: 'CONFIRMED',
+      mergedIntoHash: null, splitByAmount: false, contributingTransactionIds: [1, 2, 3, 4],
+    };
+
+    it('split marks the row, releases its charges and rescans', async () => {
+      mockPrisma.recurringCharge.findUnique.mockResolvedValue(splittable);
+      mockPrisma.recurringCharge.count.mockResolvedValue(0);
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        { debit: 22 }, { debit: 22.99 }, { debit: 22 }, { debit: 22.99 },
+      ]);
+      mockPrisma.recurringCharge.update.mockResolvedValue({});
+      const req = makeReq({ method: 'POST', body: { action: 'split', descriptionHash: 'apple' } });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      expect(res._body).toEqual({ split: 1, amounts: 2 });
+      expect(mockPrisma.transaction.findMany.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-A', id: { in: [1, 2, 3, 4] } });
+      const call = mockPrisma.recurringCharge.update.mock.calls[0][0];
+      expect(call.where).toEqual({ tenantId_descriptionHash: { tenantId: 'tenant-A', descriptionHash: 'apple' } });
+      expect(call.data).toEqual(expect.objectContaining({ splitByAmount: true, contributingTransactionIds: [] }));
+      expect(call.data.state).toBeUndefined(); // the decision stays on the marker
+      expect(produceEvent).toHaveBeenCalledWith(expect.objectContaining({ source: 'split', tenantId: 'tenant-A' }));
+    });
+
+    it('split refuses a row whose charges repeat at only one amount', async () => {
+      mockPrisma.recurringCharge.findUnique.mockResolvedValue(splittable);
+      mockPrisma.recurringCharge.count.mockResolvedValue(0);
+      mockPrisma.transaction.findMany.mockResolvedValue([{ debit: 22 }, { debit: 22 }, { debit: 30 }]);
+      const req = makeReq({ method: 'POST', body: { action: 'split', descriptionHash: 'apple' } });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(400);
+      expect(res._body.code).toBe('NOTHING_TO_SPLIT');
+      expect(mockPrisma.recurringCharge.update).not.toHaveBeenCalled();
+      expect(produceEvent).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ mergedIntoHash: 'other' }, 400],
+      [{ splitByAmount: true }, 400],
+      [{ state: 'DISMISSED' }, 400],
+    ])('split rejects %o', async (over, status) => {
+      mockPrisma.recurringCharge.findUnique.mockResolvedValue({ ...splittable, ...over });
+      const req = makeReq({ method: 'POST', body: { action: 'split', descriptionHash: 'apple' } });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(status);
+      expect(mockPrisma.recurringCharge.update).not.toHaveBeenCalled();
+    });
+
+    it('split refuses a merge target with rows folded into it', async () => {
+      mockPrisma.recurringCharge.findUnique.mockResolvedValue(splittable);
+      mockPrisma.recurringCharge.count.mockResolvedValue(2);
+      const req = makeReq({ method: 'POST', body: { action: 'split', descriptionHash: 'apple' } });
+      const res = makeRes();
+      await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(409);
+      expect(res._body.code).toBe('MERGE_TARGET_HAS_DEPENDENTS');
+    });
+
+    it('split returns 404 for an unknown row and 400 without an id', async () => {
+      mockPrisma.recurringCharge.findUnique.mockResolvedValue(null);
+      let res = makeRes();
+      await handler(makeReq({ method: 'POST', body: { action: 'split', descriptionHash: 'nope' } }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(404);
+      res = makeRes();
+      await handler(makeReq({ method: 'POST', body: { action: 'split' } }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(400);
+    });
+
+    it('unsplit clears the marker and rescans; 404 when the row is not split', async () => {
+      mockPrisma.recurringCharge.updateMany.mockResolvedValueOnce({ count: 1 });
+      let res = makeRes();
+      await handler(makeReq({ method: 'POST', body: { action: 'unsplit', descriptionHash: 'apple' } }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(200);
+      const call = mockPrisma.recurringCharge.updateMany.mock.calls[0][0];
+      expect(call.where).toEqual({ tenantId: 'tenant-A', descriptionHash: 'apple', splitByAmount: true });
+      expect(call.data).toEqual({ splitByAmount: false });
+      expect(produceEvent).toHaveBeenCalledWith(expect.objectContaining({ source: 'unsplit' }));
+
+      mockPrisma.recurringCharge.updateMany.mockResolvedValueOnce({ count: 0 });
+      res = makeRes();
+      await handler(makeReq({ method: 'POST', body: { action: 'unsplit', descriptionHash: 'apple' } }) as NextApiRequest, res as unknown as NextApiResponse);
+      expect(res._status).toBe(404);
+    });
   });
 });

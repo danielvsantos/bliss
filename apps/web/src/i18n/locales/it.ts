@@ -2388,6 +2388,14 @@ const it = {
       stale: "Questa unione non ha effetto — annullala e unisci di nuovo.",
       dismissBlocked: "Prima annulla l'unione delle righe integrate in questa.",
     },
+    split: {
+      splitByAmount: "Dividi per importo — un abbonamento per prezzo",
+      split: "Diviso in un abbonamento per importo",
+      unsplit: "Annulla divisione",
+      unsplitDone: "Divisione annullata",
+      markerHint: "Diviso per importo — ogni prezzo ricorrente è un abbonamento a sé.",
+      nothingToSplit: "Questi addebiti non si ripetono con due o più importi diversi.",
+    },
     pager: {
       prev: "Precedente",
       next: "Successiva",
