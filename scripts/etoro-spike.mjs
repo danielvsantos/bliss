@@ -48,6 +48,7 @@ const sum = (xs) => xs.reduce((s, x) => s + (Number(x) || 0), 0);
 const isoDay = (d) => d.toISOString().slice(0, 10);
 
 let lastRate = null;
+const seenExchanges = new Map(); // exchangeID -> Set of example symbols
 
 async function get(name, path, query = {}) {
   const url = new URL(path, BASE);
@@ -281,6 +282,20 @@ async function main() {
   }
   log();
 
+  // 4f. What are eToro's exchange ids? (needed to map listings to MIC codes, e.g. what is exchange 33 behind .RTH)
+  if (seenExchanges.size) {
+    log('## 4f. eToro exchanges seen above');
+    const ex = await get('exchanges', '/api/v1/market-data/exchanges', { exchangeIds: [...seenExchanges.keys()].join(',') });
+    const desc = new Map((ex?.exchangeInfo || []).map((e) => [Number(e.exchangeID), e.exchangeDescription]));
+    log();
+    log('| exchangeID | description | example symbols |');
+    log('|---|---|---|');
+    for (const [id, syms] of [...seenExchanges.entries()].sort((a, b) => a[0] - b[0])) {
+      log(`| ${id} | ${desc.get(Number(id)) ?? '?'} | ${[...syms].map((x) => `\`${x}\``).join(', ')} |`);
+    }
+    log();
+  }
+
   // 5. P2 probes: confirm what history exists (counts only)
   log('## 5. Movement endpoints (P2 confirmation)');
   const since = new Date(Date.now() - 90 * 864e5);
@@ -327,6 +342,11 @@ function logSymbolTable(ids, meta, typeName, weight) {
   for (const id of rows) {
     const m = meta.get(id);
     const t = m?.instrumentTypeID;
+    if (m?.exchangeID != null) {
+      if (!seenExchanges.has(m.exchangeID)) seenExchanges.set(m.exchangeID, new Set());
+      const ex = seenExchanges.get(m.exchangeID);
+      if (ex.size < 4) ex.add(m.symbolFull);
+    }
     log(`| \`${m?.symbolFull ?? `id:${id}`}\` | ${(m?.instrumentDisplayName ?? '?').replace(/\|/g, '/')} | ${typeName.get(Number(t)) || t || '?'} | ${m?.exchangeID ?? '?'} | ${m?.priceSource ?? '-'} |${weight ? ` ${(weight.get(id) || 0).toFixed(1)}% |` : ''}`);
   }
 }
