@@ -44,13 +44,17 @@ const listImports = defineTool({
     'Without importId: imports (uploaded statements) that still have rows to review. With importId: that '
     + 'import\'s status, row counts per status, category summary and a page of rows. Files are uploaded in the '
     + 'Bliss app — if nothing is pending, ask the user to upload the statement there first. Row statuses: '
-    + 'PENDING (needs review), CONFIRMED (will be committed), POTENTIAL_DUPLICATE, DUPLICATE, SKIPPED, ERROR.',
+    + 'PENDING (needs review), CONFIRMED (will be committed), POTENTIAL_DUPLICATE, DUPLICATE, SKIPPED, ERROR. '
+    + 'Rows the last commit held back carry `error: "HELD_BACK:<codes>"` — MISSING_TICKER, MISSING_QUANTITY, '
+    + 'MISSING_PRICE, MISSING_ACCOUNT, DUPLICATE, UPDATE_FAILED, COMMIT_ERROR — and `import.lastCommit` has '
+    + 'the counts by reason.',
   input: {
     importId: pathId().optional(),
     status: z.array(z.enum(['PENDING', 'CONFIRMED', 'POTENTIAL_DUPLICATE', 'DUPLICATE', 'SKIPPED', 'ERROR', 'STAGED']))
       .max(7).optional().describe('Only rows with these statuses (importId only).'),
     uncategorized: z.boolean().optional().describe('Only rows without a suggested category (importId only).'),
     categoryId: intId('Only rows suggested into this category (importId only).').optional(),
+    heldBack: z.boolean().optional().describe('Only rows the last commit held back (importId only).'),
     limit: limitField(50),
     cursor: cursorField,
   },
@@ -81,6 +85,7 @@ const listImports = defineTool({
       status: args.status?.join(','),
       uncategorized: args.uncategorized ? 'true' : undefined,
       categoryId: args.categoryId,
+      heldBack: args.heldBack ? 'true' : undefined,
     });
     const total = data.pagination?.total ?? 0;
     const imp = data.import || {};
@@ -94,6 +99,9 @@ const listImports = defineTool({
         rowsByStatus: imp.statusSummary,
         progress: imp.progress,
         seedReady: imp.seedReady,
+        // { transactionCount, updateCount, remaining, heldBack: { total, byReason } } — heldBack is absent on
+        // imports committed before #142.
+        lastCommit: imp.errorDetails?.commitResult ?? null,
       },
       categorySummary: (data.categorySummary || []).slice(0, 50).map((c) => ({
         categoryId: c.categoryId, category: c.category?.name ?? null, rows: c.count, bulkConfirmable: c.eligibleCount,
@@ -219,7 +227,8 @@ const finalizeImport = defineTool({
   title: 'Commit or cancel a staged import',
   description:
     'commit: create transactions from the import\'s CONFIRMED rows (optionally only rowIds); runs in the '
-    + 'background — poll list_imports with importId for progress. cancel: discard the import and all its rows.',
+    + 'background — poll list_imports with importId for progress; `import.lastCommit.heldBack` then explains '
+    + 'rows that were not committed (list them with heldBack: true). cancel: discard the import and all its rows.',
   input: {
     importId: stringId('Import ID from list_imports.'),
     action: z.enum(['commit', 'cancel']),

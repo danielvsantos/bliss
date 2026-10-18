@@ -48,13 +48,27 @@ export function requiresTicker(category) {
 }
 
 /**
+ * Which of ticker / quantity / price `row` is still missing for its category,
+ * in that order. Empty when the category does not require enrichment or the
+ * row is complete. Quantity and price are "present" when not
+ * null/undefined/'' (0 is a value); a ticker must pass isValidTicker().
+ *
+ * @returns {('ticker'|'quantity'|'price')[]}
+ */
+export function missingInvestmentFields(category, row) {
+  if (!requiresInvestmentEnrichment(category)) return [];
+  const present = (v) => v !== null && v !== undefined && v !== '';
+  const missing = [];
+  if (requiresTicker(category) && !isValidTicker(row?.ticker)) missing.push('ticker');
+  if (!present(row?.assetQuantity)) missing.push('quantity');
+  if (!present(row?.assetPrice)) missing.push('price');
+  return missing;
+}
+
+/**
  * True when `row` carries everything its category needs. Categories that do
- * not require enrichment are always complete. Quantity and price are "present"
- * when not null/undefined/'' (0 is a value).
+ * not require enrichment are always complete.
  */
 export function isInvestmentEnrichmentComplete(category, row) {
-  if (!requiresInvestmentEnrichment(category)) return true;
-  const present = (v) => v !== null && v !== undefined && v !== '';
-  if (!present(row?.assetQuantity) || !present(row?.assetPrice)) return false;
-  return !requiresTicker(category) || isValidTicker(row?.ticker);
+  return missingInvestmentFields(category, row).length === 0;
 }

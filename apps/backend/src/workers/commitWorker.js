@@ -7,18 +7,48 @@ const categorizationService = require('../services/categorizationService');
 const { addDescriptionEntry } = require('../utils/descriptionCache');
 const { enqueueEvent } = require('../queues/eventsQueue');
 const { getCategoriesForTenant } = require('../utils/categoryCache');
-const { isInvestmentEnrichmentComplete } = require('@bliss/shared/portfolio');
+const { missingInvestmentFields } = require('@bliss/shared/portfolio');
+const {
+    HOLD_BACK_PREFIX,
+    FIELD_HOLD_BACK_REASONS,
+    formatHoldBack,
+    summarizeHeldBack,
+} = require('@bliss/shared/import');
 
 const COMMIT_BATCH_SIZE = 200;
 
+/** Statuses that still count as "remaining" once a commit run finishes. */
+const REMAINING_STATUSES = ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE', 'STAGED'];
+
 /**
+ * Reason codes (@bliss/shared/import) that keep a CREATE row from committing,
+ * empty when it can be committed. All missing things are named at once so the
+ * user can fix the row in one pass.
+ *
  * A row still flagged requiresEnrichment may be committed once it carries what
- * its category needs (shared rule: ticker optional in the built-in Funds category). An unknown
- * category keeps the strict ticker + quantity + price check.
+ * its category needs (shared rule: ticker optional in the built-in Funds
+ * category). An unknown category keeps the strict ticker + quantity + price check.
  */
-function isEnrichedForCommit(row, category) {
-    if (category) return isInvestmentEnrichmentComplete(category, row);
-    return !!row.ticker && row.assetQuantity != null && row.assetPrice != null;
+function holdBackCodes(row, category) {
+    const codes = [];
+    if (row.requiresEnrichment) {
+        const missing = category
+            ? missingInvestmentFields(category, row)
+            : [
+                ...(!row.ticker ? ['ticker'] : []),
+                ...(row.assetQuantity == null ? ['quantity'] : []),
+                ...(row.assetPrice == null ? ['price'] : []),
+            ];
+        for (const field of missing) codes.push(FIELD_HOLD_BACK_REASONS[field]);
+    }
+    // Transaction.accountId is a required (non-nullable) column. Native-adapter
+    // rows resolve accountId per-row from the CSV's account column (see
+    // smartImportWorker.js) and can end up CONFIRMED with no match — passing
+    // that through to createMany() throws a PrismaClientValidationError that
+    // fails the ENTIRE batch, not just this row. Hold it back instead so it
+    // returns to STAGED for the user to assign an account.
+    if (row.accountId == null) codes.push('MISSING_ACCOUNT');
+    return codes;
 }
 
 /**
@@ -77,27 +107,29 @@ const processCommitJob = async (job) => {
 
         if (totalConfirmed === 0) {
             // No CONFIRMED rows to promote — check remaining
+            // (STAGED included: rows held back by an earlier commit still need the user.)
             const remainingCount = await prisma.stagedImportRow.count({
                 where: {
                     stagedImportId,
-                    status: { in: ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE'] },
+                    status: { in: REMAINING_STATUSES },
                     suggestedCategoryId: { not: null },
                 },
             });
 
+            const heldBack = summarizeHeldBack([]);
             const finalStatus = (!isPartialCommit && remainingCount === 0) ? 'COMMITTED' : 'READY';
             await prisma.stagedImport.update({
                 where: { id: stagedImportId },
                 data: {
                     status: finalStatus,
                     progress: 100,
-                    errorDetails: { commitResult: { transactionCount: 0, updateCount: 0, remaining: remainingCount } },
+                    errorDetails: { commitResult: { transactionCount: 0, updateCount: 0, remaining: remainingCount, heldBack } },
                 },
             });
             await job.updateProgress(100);
 
             logger.info(`[CommitWorker] No confirmed rows for ${stagedImportId}. Status → ${finalStatus}`);
-            return { stagedImportId, transactionCount: 0, remaining: remainingCount };
+            return { stagedImportId, transactionCount: 0, updateCount: 0, remaining: remainingCount, heldBack };
         }
 
         // ─── 4. Batch-fetch, create, and mark SKIPPED ───────────────────────
@@ -124,6 +156,9 @@ const processCommitJob = async (job) => {
         // (duplicate-flagged rows are filtered upstream in rowWhere).
         const hashOccurrenceCount = new Map(); // baseHash → count seen so far
 
+        // One reason-code list per row held back in this run → commitResult.heldBack.
+        const heldBackCodeLists = [];
+
         // Category lookup for the enrichment guard (ticker optional for API_FUND).
         const categoryById = new Map((await getCategoriesForTenant(tenantId)).map((c) => [c.id, c]));
 
@@ -144,22 +179,14 @@ const processCommitJob = async (job) => {
 
             // 4a. Filter + map rows to transaction data (CREATE rows only).
             const rowIdToExternalId = new Map(); // rowId → externalId
+            const rowIdToHoldBack = new Map(); // rowId → reason codes (held back)
             const transactionData = [];
 
             for (const row of createRows) {
-                if (row.requiresEnrichment && !isEnrichedForCommit(row, categoryById.get(row.suggestedCategoryId))) {
-                    logger.warn(`[CommitWorker] Skipping row ${row.id} — requiresEnrichment=true, ticker=${row.ticker}, qty=${row.assetQuantity}, price=${row.assetPrice}`);
-                    continue;
-                }
-                // Transaction.accountId is a required (non-nullable) column. Native-adapter
-                // rows resolve accountId per-row from the CSV's account column (see
-                // smartImportWorker.js) and can end up CONFIRMED with no match — passing
-                // that through to createMany() throws a PrismaClientValidationError that
-                // fails the ENTIRE batch, not just this row. Skip it here so it falls
-                // through to the enrichmentPendingRowIds bucket below and returns to STAGED
-                // for the user to assign an account, instead of blocking every other row.
-                if (row.accountId == null) {
-                    logger.warn(`[CommitWorker] Skipping row ${row.id} — accountId is missing (required to create a Transaction)`);
+                const codes = holdBackCodes(row, categoryById.get(row.suggestedCategoryId));
+                if (codes.length > 0) {
+                    logger.warn(`[CommitWorker] Holding back row ${row.id} — ${codes.join(',')} (ticker=${row.ticker}, qty=${row.assetQuantity}, price=${row.assetPrice}, accountId=${row.accountId})`);
+                    rowIdToHoldBack.set(row.id, codes);
                     continue;
                 }
                 const date = new Date(row.transactionDate);
@@ -223,22 +250,29 @@ const processCommitJob = async (job) => {
             });
             totalCreated += count;
 
-            // 4d. Classify each batch row by its commit outcome and mark accordingly:
+            // 4d. Classify each batch row by its commit outcome and mark accordingly.
+            // Every row that does not commit gets a reason in errorMessage
+            // (HELD_BACK:<codes>, @bliss/shared/import); a committed row's is cleared.
             //   • Committed successfully   → SKIPPED  (advances the cursor, hidden from review)
-            //   • Duplicate externalId     → POTENTIAL_DUPLICATE (surfaces in review queue)
-            //   • Enrichment data missing  → STAGED   (returns to review for data entry)
+            //   • Duplicate externalId     → POTENTIAL_DUPLICATE + DUPLICATE (surfaces in review queue)
+            //   • Held back (missing data) → STAGED + its codes (returns to review for data entry)
             const committedRowIds = [];
             const duplicateRowIds = [];
-            const enrichmentPendingRowIds = [];
+            const heldBackGroups = new Map(); // formatted errorMessage → rowIds
 
             for (const row of createRows) {
                 const externalId = rowIdToExternalId.get(row.id);
                 if (externalId === undefined) {
-                    // Row was filtered out (missing enrichment) — send back to STAGED
-                    enrichmentPendingRowIds.push(row.id);
+                    // Held back before createMany. No codes would be a bug — never leave it silent.
+                    const codes = rowIdToHoldBack.get(row.id) || ['COMMIT_ERROR'];
+                    const message = formatHoldBack(codes);
+                    if (!heldBackGroups.has(message)) heldBackGroups.set(message, []);
+                    heldBackGroups.get(message).push(row.id);
+                    heldBackCodeLists.push(codes);
                 } else if (preExistingExternalIds.has(externalId)) {
                     // Transaction already existed — flag for user review
                     duplicateRowIds.push(row.id);
+                    heldBackCodeLists.push(['DUPLICATE']);
                 } else {
                     // Successfully created
                     committedRowIds.push(row.id);
@@ -250,7 +284,7 @@ const processCommitJob = async (job) => {
                 statusUpdates.push(
                     prisma.stagedImportRow.updateMany({
                         where: { id: { in: committedRowIds } },
-                        data: { status: 'SKIPPED' },
+                        data: { status: 'SKIPPED', errorMessage: null },
                     })
                 );
             }
@@ -258,19 +292,20 @@ const processCommitJob = async (job) => {
                 statusUpdates.push(
                     prisma.stagedImportRow.updateMany({
                         where: { id: { in: duplicateRowIds } },
-                        data: { status: 'POTENTIAL_DUPLICATE' },
+                        data: { status: 'POTENTIAL_DUPLICATE', errorMessage: formatHoldBack(['DUPLICATE']) },
                     })
                 );
                 logger.info(`[CommitWorker] Batch ${batchNumber}: ${duplicateRowIds.length} row(s) flagged as POTENTIAL_DUPLICATE`);
             }
-            if (enrichmentPendingRowIds.length > 0) {
+            // One write per distinct reason combination (a handful), not per row.
+            for (const [message, ids] of heldBackGroups) {
                 statusUpdates.push(
                     prisma.stagedImportRow.updateMany({
-                        where: { id: { in: enrichmentPendingRowIds } },
-                        data: { status: 'STAGED' },
+                        where: { id: { in: ids } },
+                        data: { status: 'STAGED', errorMessage: message },
                     })
                 );
-                logger.info(`[CommitWorker] Batch ${batchNumber}: ${enrichmentPendingRowIds.length} row(s) returned to STAGED (missing enrichment)`);
+                logger.info(`[CommitWorker] Batch ${batchNumber}: ${ids.length} row(s) returned to STAGED (${message.slice(HOLD_BACK_PREFIX.length)})`);
             }
             await Promise.all(statusUpdates);
 
@@ -286,6 +321,7 @@ const processCommitJob = async (job) => {
                             where: { id: row.id },
                             data: { status: 'ERROR', errorMessage: 'Transaction was deleted before commit' },
                         });
+                        heldBackCodeLists.push(['UPDATE_FAILED']);
                         continue;
                     }
 
@@ -329,9 +365,10 @@ const processCommitJob = async (job) => {
                     updatedRowIds.push(row.id);
                 } catch (err) {
                     logger.error(`[CommitWorker] Failed to update tx ${row.updateTargetId}: ${err.message}`);
+                    heldBackCodeLists.push(['UPDATE_FAILED']);
                     await prisma.stagedImportRow.update({
                         where: { id: row.id },
-                        data: { status: 'ERROR', errorMessage: `Update failed: ${err.message}` },
+                        data: { status: 'ERROR', errorMessage: formatHoldBack(['UPDATE_FAILED']) },
                     }).catch(() => {});
                 }
             }
@@ -340,7 +377,7 @@ const processCommitJob = async (job) => {
             if (updatedRowIds.length > 0) {
                 await prisma.stagedImportRow.updateMany({
                     where: { id: { in: updatedRowIds } },
-                    data: { status: 'SKIPPED' },
+                    data: { status: 'SKIPPED', errorMessage: null },
                 });
             }
 
@@ -452,16 +489,17 @@ const processCommitJob = async (job) => {
 
         // ─── 5. Check remaining rows ────────────────────────────────────────
         // POTENTIAL_DUPLICATE = flagged during this commit run (user needs to review)
-        // STAGED = returned because enrichment data was missing (user needs to complete)
+        // STAGED = held back because data was missing (user needs to complete)
         const remainingCount = await prisma.stagedImportRow.count({
             where: {
                 stagedImportId,
-                status: { in: ['CONFIRMED', 'PENDING', 'POTENTIAL_DUPLICATE', 'STAGED'] },
+                status: { in: REMAINING_STATUSES },
                 suggestedCategoryId: { not: null },
             },
         });
 
         // ─── 6. Final status update ─────────────────────────────────────────
+        const heldBack = summarizeHeldBack(heldBackCodeLists);
         const finalStatus = remainingCount === 0 ? 'COMMITTED' : 'READY';
         await prisma.stagedImport.update({
             where: { id: stagedImportId },
@@ -469,9 +507,19 @@ const processCommitJob = async (job) => {
                 status: finalStatus,
                 progress: 100,
                 errorDetails: {
-                    commitResult: { transactionCount: totalCreated, updateCount: totalUpdated, remaining: remainingCount },
+                    commitResult: { transactionCount: totalCreated, updateCount: totalUpdated, remaining: remainingCount, heldBack },
                 },
             },
+        });
+        // Structured line per commit — the success metric needs history that
+        // errorDetails (overwritten each commit) does not keep.
+        logger.info('smart_import_commit_result', {
+            stagedImportId,
+            transactionCount: totalCreated,
+            updateCount: totalUpdated,
+            remaining: remainingCount,
+            heldBackTotal: heldBack.total,
+            byReason: heldBack.byReason,
         });
         await job.updateProgress(100);
 
@@ -493,7 +541,7 @@ const processCommitJob = async (job) => {
             `[CommitWorker] Commit complete for ${stagedImportId}: ` +
                 `${totalCreated} created, ${totalUpdated} updated, ${remainingCount} remaining. Status → ${finalStatus}`
         );
-        return { stagedImportId, transactionCount: totalCreated, updateCount: totalUpdated, remaining: remainingCount };
+        return { stagedImportId, transactionCount: totalCreated, updateCount: totalUpdated, remaining: remainingCount, heldBack };
     } catch (error) {
         // ─── Error handler: only persist ERROR once retries are exhausted ────
         // smartImportQueue retries this job (attempts: 2). If every failed

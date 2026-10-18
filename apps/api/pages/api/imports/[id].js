@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { produceEvent } from '../../../utils/produceEvent.js';
 import { eventOrigin } from '../../../utils/eventOrigin.js';
 import { withAuth } from '../../../utils/withAuth.js';
+import { HOLD_BACK_PREFIX } from '@bliss/shared/import';
 
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
@@ -91,10 +92,17 @@ async function handleGet(req, res, user, stagedImportId) {
       ? { suggestedCategoryId: categoryIdFilter }
       : {};
 
+  // Optional `heldBack=true`: only rows the last commit held back (#142) —
+  // errorMessage carries "HELD_BACK:<codes>" (@bliss/shared/import).
+  const heldBackClause = req.query.heldBack === 'true'
+    ? { errorMessage: { startsWith: HOLD_BACK_PREFIX } }
+    : {};
+
   const rowWhere = {
     stagedImportId,
     ...statusClause,
     ...categoryClause,
+    ...heldBackClause,
   };
 
   // Statuses that still need user action — used for the category breakdown summary.
@@ -104,6 +112,7 @@ async function handleGet(req, res, user, stagedImportId) {
   const pendingWhere = {
     stagedImportId,
     status: { in: pendingStatuses },
+    ...heldBackClause,
   };
 
   const [rows, total, statusCounts, earliestRow, categorySummaryRaw, eligibleCountsRaw] = await Promise.all([

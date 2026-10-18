@@ -86,8 +86,10 @@ Full Plaid transaction review interface. Shows `CLASSIFIED` PlaidTransactions fo
 
 Review and commit interface for staged file imports.
 - Import selector bar at top — one button per pending import from `usePendingImports()`.
-- Row table below with same controls as the Plaid tab.
+- Row table below with same controls as the Plaid tab. The row query asks for `PENDING,POTENTIAL_DUPLICATE,ERROR,CONFIRMED,STAGED` — `STAGED` rows are the ones a commit held back (#142) and need the user to fix them.
+- **"Held back only" toggle** — shown when the last commit held rows back (`errorDetails.commitResult.heldBack.total > 0`, the count is in the label) or while it is on. Sends `heldBack: true` to `GET /api/imports/:id` (server-side, since rows are paginated) and resets the page; it turns off when another import is selected.
 - "Commit Import" button at bottom — calls `POST /api/imports/:id?action=commit`.
+- **Commit toast** — `buildCommitToast()` in `lib/import-hold-back.ts`, shared with Smart Import. Title "Import committed" / "Partial commit complete"; description lists the created/updated counts (or "No rows committed"), then the held-back rows by reason in canonical order — *"12 created. 25 held back: 18 missing price, 4 missing account, 3 duplicates."* — then *"N still to review"* for the rows of `remaining` that were never confirmed (`remaining − (heldBack.total − byReason.UPDATE_FAILED)`; failed update rows are `ERROR`, which `remaining` doesn't count). Reason counts use i18next `_one` / `_other` plurals under `review.commitToast.*`. Payloads without `heldBack` (pre-#142) render the counts only.
 
 ---
 
@@ -159,6 +161,22 @@ When the user clicks the **✓ Approve** button on a single Plaid transaction ro
 - The dialog shows a spinner while the mutation is in-flight and closes only on success or error.
 
 State: `pendingApproveItem` holds the row the user clicked. `pendingApproveMatches` memo computes the full set of matching-description rows each render.
+
+---
+
+## Hold-back Badge: `components/review/hold-back-badge.tsx`
+
+Import rows only (#142). `importRowToReviewItem()` sets `ReviewItem.holdBackReasons = parseHoldBack(row.errorMessage)` — the codes the last commit wrote as `HELD_BACK:<codes>` (`null` for staging text and other rows). `HoldBackBadge` renders one `bg-warning/10 text-warning border-warning/20` badge per label from `holdBackLabels()`:
+
+| Codes | Label (en) |
+|---|---|
+| `MISSING_TICKER` / `MISSING_QUANTITY` / `MISSING_PRICE` | merged into one: *"Missing quantity, price"* (`review.holdBack.missingFields` with the translated field names) |
+| `MISSING_ACCOUNT` | *"Missing account"* |
+| `DUPLICATE` | *"Duplicate"* — shown next to the existing *"Possible dup"* `StatusBadge` |
+| `UPDATE_FAILED` | *"Update failed"* |
+| `COMMIT_ERROR` | *"Commit error"* |
+
+Rendered after the merchant name in the desktop row, after the `StatusBadge` in the mobile row and in the drawer header. The reason stays until the next commit re-evaluates the row (editing it doesn't clear it).
 
 ---
 

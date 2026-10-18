@@ -21,6 +21,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertTriangle, RotateCw } from 'lucide-react';
 import { StatusBadge } from './status-badge';
+import { HoldBackBadge } from './hold-back-badge';
 import { AIAnalysisPanel } from './ai-analysis-panel';
 import { InvestmentEnrichmentForm } from './investment-enrichment-form';
 import { isInvestmentEnrichmentComplete, requiresTicker } from '@/lib/investment-utils';
@@ -254,6 +255,7 @@ export function DeepDiveDrawer({
             </Select>
 
             <StatusBadge status={item.status} />
+            <HoldBackBadge reasons={item.holdBackReasons} />
           </div>
         </SheetHeader>
 

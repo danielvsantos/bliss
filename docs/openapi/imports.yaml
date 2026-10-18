@@ -31,6 +31,37 @@ components:
         Sent automatically by the browser on all credentialed requests.
 
   schemas:
+    HoldBackReason:
+      type: string
+      description: Why a commit held a row back (#142). Stored on the row as `errorMessage = "HELD_BACK:<CODE>[,<CODE>…]"`.
+      enum: [MISSING_TICKER, MISSING_QUANTITY, MISSING_PRICE, MISSING_ACCOUNT, DUPLICATE, UPDATE_FAILED, COMMIT_ERROR]
+    CommitResult:
+      type: object
+      description: Result of the last commit run, written by the backend commitWorker.
+      properties:
+        transactionCount:
+          type: integer
+          description: Transactions created.
+        updateCount:
+          type: integer
+          description: Existing transactions updated (CSV round-trip rows).
+        remaining:
+          type: integer
+          description: Rows still to act on (CONFIRMED, PENDING, POTENTIAL_DUPLICATE, STAGED). Can include rows the user never confirmed.
+        heldBack:
+          type: object
+          description: |
+            Rows held back by this commit run. `total` counts rows; `byReason` counts reason codes,
+            so a row missing quantity and price adds 1 to each. Absent on imports committed before #142.
+          properties:
+            total:
+              type: integer
+            byReason:
+              type: object
+              description: Keys are HoldBackReason codes; only reasons with a count > 0 appear.
+              additionalProperties:
+                type: integer
+              example: { MISSING_PRICE: 18, MISSING_ACCOUNT: 4, DUPLICATE: 3 }
     Adapter:
       type: object
       description: A CSV adapter configuration that maps bank-specific column formats to Bliss fields.
@@ -540,6 +571,15 @@ paths:
             When `true`, filters rows to those with `suggestedCategoryId IS NULL`. Mutually
             exclusive with `categoryId` (when both are sent, `uncategorized` wins). Needed so
             the "Uncategorized" group in the grouped view is drillable.
+        - name: heldBack
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: |
+            When `true`, only rows the last commit held back (`errorMessage` starts with
+            `HELD_BACK:`). Applies to `rows`, `pagination.total` and `categorySummary`;
+            `statusSummary` stays import-wide.
       responses:
         '200':
           description: |
@@ -574,8 +614,16 @@ paths:
                       errorCount:
                         type: integer
                       errorDetails:
-                        type: string
+                        type: object
                         nullable: true
+                        description: |
+                          Free-form JSON. After a commit it carries `commitResult`; after a failed
+                          job, `{ message }`.
+                        properties:
+                          commitResult:
+                            $ref: '#/components/schemas/CommitResult'
+                          message:
+                            type: string
                       autoConfirmedCount:
                         type: integer
                         nullable: true

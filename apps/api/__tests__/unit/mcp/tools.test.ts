@@ -539,6 +539,33 @@ describe('import tools', () => {
     expect(JSON.stringify(detail.result)).not.toContain('secret');
   });
 
+  it('list_imports surfaces hold-back reasons and the last commit counts (#142)', async () => {
+    const heldBack = { total: 2, byReason: { MISSING_PRICE: 1, DUPLICATE: 1 } };
+    const detail = await run('list_imports', { importId: 'imp', heldBack: true }, {
+      'GET /api/imports/imp': {
+        import: {
+          id: 'imp', status: 'READY', statusSummary: { STAGED: 1, POTENTIAL_DUPLICATE: 1 },
+          errorDetails: { commitResult: { transactionCount: 3, updateCount: 0, remaining: 2, heldBack } },
+        },
+        rows: [
+          { id: 'r1', rowNumber: 1, transactionDate: '2026-04-01', description: 'X', debit: '5', credit: null, currency: 'EUR', status: 'STAGED', errorMessage: 'HELD_BACK:MISSING_PRICE' },
+          { id: 'r2', rowNumber: 2, transactionDate: '2026-04-02', description: 'Y', debit: '6', credit: null, currency: 'EUR', status: 'POTENTIAL_DUPLICATE', errorMessage: 'HELD_BACK:DUPLICATE' },
+        ],
+        categorySummary: [],
+        pagination: { total: 2 },
+      },
+    });
+    expect(detail.calls[0].query).toMatchObject({ heldBack: 'true' });
+    expect(detail.result.rows.map((r: { error?: string }) => r.error)).toEqual(['HELD_BACK:MISSING_PRICE', 'HELD_BACK:DUPLICATE']);
+    expect(detail.result.import.lastCommit).toEqual({ transactionCount: 3, updateCount: 0, remaining: 2, heldBack });
+
+    const legacy = await run('list_imports', { importId: 'imp' }, {
+      'GET /api/imports/imp': { import: { id: 'imp', status: 'READY' }, rows: [], categorySummary: [], pagination: { total: 0 } },
+    });
+    expect(legacy.calls[0].query.heldBack).toBeUndefined();
+    expect(legacy.result.import.lastCommit).toBeNull();
+  });
+
   it('review_import_rows per row and bulk', async () => {
     const r = await run('review_import_rows', { importId: 'imp', rows: [{ rowId: 'r1', categoryId: 5, status: 'CONFIRMED' }, { rowId: 'r2' }] }, {
       'PUT /api/imports/imp/rows/r1': { row: { status: 'CONFIRMED' } },

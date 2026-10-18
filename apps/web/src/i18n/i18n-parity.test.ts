@@ -482,3 +482,44 @@ describe('i18n parity — task #139 financial summary net flow keys', () => {
     });
   }
 });
+
+// Keys introduced by task #142 (Smart Import hold-back reasons). "ticker" is
+// the term every locale already uses, so it is the one key allowed to match EN.
+const HOLD_BACK_KEYS = [
+  'smartImport.unknownFormatHeaderHint',
+  ...['missingFields', 'fieldQuantity', 'fieldPrice', 'missingAccount', 'duplicate', 'updateFailed', 'commitError', 'filterLabel']
+    .map((k) => `review.holdBack.${k}`),
+  ...['committedTitle', 'partialTitle', 'created', 'updated', 'noneCommitted', 'heldBack', 'stillToReview', 'done']
+    .map((k) => `review.commitToast.${k}`),
+  ...['missingTicker', 'missingQuantity', 'missingPrice', 'missingAccount', 'duplicate', 'updateFailed', 'commitError']
+    .flatMap((k) => [`review.commitToast.${k}_one`, `review.commitToast.${k}_other`]),
+];
+
+describe('i18n parity — task #142 smart import hold-back keys', () => {
+  for (const key of [...HOLD_BACK_KEYS, 'review.holdBack.fieldTicker']) {
+    it(`"${key}" is a non-empty string in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  it('is translated in es/fr/pt/it', () => {
+    for (const key of HOLD_BACK_KEYS) {
+      const enValue = resolve(en, key) as string;
+      for (const lang of NON_EN) {
+        expect(resolve(LOCALES[lang], key), `${lang}:${key}`).not.toBe(enValue);
+      }
+    }
+  });
+
+  it('keeps the interpolation placeholders in every locale', () => {
+    for (const lang of Object.keys(LOCALES)) {
+      expect(resolve(LOCALES[lang], 'review.holdBack.missingFields'), lang).toContain('{{fields}}');
+      expect(resolve(LOCALES[lang], 'review.commitToast.heldBack'), lang).toContain('{{reasons}}');
+      expect(resolve(LOCALES[lang], 'review.commitToast.heldBack'), lang).toContain('{{count}}');
+    }
+  });
+});

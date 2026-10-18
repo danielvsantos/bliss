@@ -63,7 +63,8 @@ import { translateCategoryName } from '@/lib/category-i18n';
 import { previewRow, inferDateFormat } from '@/lib/adapter-preview';
 import type { AmountStrategy } from '@/lib/adapter-preview';
 import { itemNeedsReview } from '@/lib/investment-utils';
-import type { ImportAdapter, DetectAdapterResult, StagedImportRow, Account, Category, CreateAdapterRequest, SeedItem } from '@/types/api';
+import { buildCommitToast, parseHoldBack } from '@/lib/import-hold-back';
+import type { ImportAdapter, DetectAdapterResult, StagedImportRow, Account, Category, CreateAdapterRequest, SeedItem, CommitResult } from '@/types/api';
 import { TxDataRow } from '@/components/review/tx-data-row';
 import { GroupCard } from '@/components/review/group-card';
 import { DeepDiveDrawer, type DrawerSaveData } from '@/components/review/deep-dive-drawer';
@@ -168,6 +169,7 @@ function toReviewItem(
     promotionStatus: row.status,
     updateTargetId: row.updateTargetId ?? null,
     updateDiff: row.updateDiff ?? null,
+    holdBackReasons: parseHoldBack(row.errorMessage),
     originalImportRow: row,
   };
 }
@@ -459,7 +461,7 @@ export default function SmartImportPage() {
 
     // Extract commit result stored by the worker in errorDetails.commitResult
     const errorDetails = stagedData?.import?.errorDetails as
-      | { commitResult?: { transactionCount: number; updateCount?: number; remaining: number } }
+      | { commitResult?: CommitResult }
       | null;
     const result = errorDetails?.commitResult;
 
@@ -469,13 +471,7 @@ export default function SmartImportPage() {
       }
       commitInFlightRef.current = false;
       setStep('done');
-      const parts = [];
-      if (result?.transactionCount) parts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
-      if (result?.updateCount) parts.push(t('smartImport.toast.nUpdated', { count: result.updateCount }));
-      toast({
-        title: t('smartImport.toast.importCommitted'),
-        description: parts.length > 0 ? `${parts.join(', ')}.` : t('smartImport.toast.done'),
-      });
+      toast(buildCommitToast(t, result, 'committed'));
       // Now that transactions exist, invalidate transaction queries
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     } else if (commitInFlightRef.current && importStatus === 'READY' && result) {
@@ -499,13 +495,7 @@ export default function SmartImportPage() {
       });
       commitInFlightRef.current = false;
       setStep('done');
-      const partialParts = [];
-      if (result.transactionCount) partialParts.push(t('smartImport.toast.nCreated', { count: result.transactionCount }));
-      if (result.updateCount) partialParts.push(t('smartImport.toast.nUpdated', { count: result.updateCount }));
-      toast({
-        title: t('smartImport.toast.partialCommit'),
-        description: `${partialParts.join(', ')}. ${t('smartImport.toast.rowsRemaining', { count: result.remaining })}`,
-      });
+      toast(buildCommitToast(t, result, 'partial'));
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
     // Suppress the unused-var lint for prevStatus — kept because the ref
@@ -1025,6 +1015,7 @@ export default function SmartImportPage() {
                           {t('smartImport.unknownFormatDesc')}{' '}
                           <code className="text-xs">{detectionResult.headers?.join(', ')}</code>
                         </p>
+                        <p className="text-xs">{t('smartImport.unknownFormatHeaderHint')}</p>
                         {/* Fix 1 — sample rows table */}
                         {detectionResult.sampleData && detectionResult.sampleData.length > 0 && detectionResult.headers && (
                           <div className="space-y-1">

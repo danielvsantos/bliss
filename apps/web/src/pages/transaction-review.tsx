@@ -42,7 +42,8 @@ import { translateCategoryName } from '@/lib/category-i18n';
 import { api } from '@/lib/api';
 import { itemNeedsEnrichment, itemNeedsReview } from '@/lib/investment-utils';
 import { commitTransitionKind } from '@/lib/import-commit-status';
-import type { PlaidTransaction, Category, StagedImportRow } from '@/types/api';
+import { buildCommitToast, parseHoldBack } from '@/lib/import-hold-back';
+import type { PlaidTransaction, Category, StagedImportRow, CommitResult } from '@/types/api';
 
 // ─── New review components ───────────────────────────────────────────
 import type { ReviewItem, TxStatus } from '@/components/review/types';
@@ -157,6 +158,7 @@ function importRowToReviewItem(
     requiresEnrichment: row.requiresEnrichment ?? false,
     enrichmentType: row.enrichmentType ?? null,
     promotionStatus: row.status,
+    holdBackReasons: parseHoldBack(row.errorMessage),
     originalImportRow: row,
   };
 }
@@ -240,6 +242,8 @@ export default function TransactionReviewPage() {
   const [selectedImportId, setSelectedImportId] = useState<string | null>(importIdParam);
   const [importPage, setImportPage] = useState(1);
   const [importCategoryFilter, setImportCategoryFilter] = useState<number | 'uncategorized' | null>(null);
+  // "Held back only": rows the last commit could not promote (#142), filtered server-side.
+  const [heldBackOnly, setHeldBackOnly] = useState(false);
   const { data: stagedData, isLoading: stagedLoading, dataUpdatedAt: stagedDataUpdatedAt } = useStagedImport(
     selectedImportId,
     {
@@ -249,14 +253,19 @@ export default function TransactionReviewPage() {
       // DUPLICATE (hard duplicates w/ timestamp match) is intentionally excluded —
       // those rows must never reach the Review UI as committable. POTENTIAL_DUPLICATE
       // stays visible so the user can override to CONFIRMED if it's a legit tx.
-      status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,CONFIRMED',
+      // STAGED = held back by a commit (missing account / enrichment) — the user must fix it.
+      status: 'PENDING,POTENTIAL_DUPLICATE,ERROR,CONFIRMED,STAGED',
       ...(typeof importCategoryFilter === 'number' ? { categoryId: importCategoryFilter } : {}),
       ...(importCategoryFilter === 'uncategorized' ? { uncategorized: true } : {}),
+      ...(heldBackOnly ? { heldBack: true } : {}),
     },
   );
   const importRows = useMemo(() => stagedData?.rows ?? [], [stagedData]);
   const importInfo = useMemo(() => stagedData?.import, [stagedData]);
   const importPagination = useMemo(() => stagedData?.pagination, [stagedData]);
+  // Rows the last commit held back (#142) — drives the "Held back only" toggle.
+  const lastCommitHeldBack =
+    (importInfo?.errorDetails as { commitResult?: CommitResult } | null | undefined)?.commitResult?.heldBack?.total ?? 0;
   // Server-side category breakdown — accurate counts across ALL pending rows
   const importCategorySummary = useMemo(
     () => stagedData?.categorySummary ?? [],
@@ -278,9 +287,9 @@ export default function TransactionReviewPage() {
 
   // Reset page when category filters change so we don't land on a non-existent page
   useEffect(() => { setPlaidPage(1); }, [plaidCategoryFilter]);
-  useEffect(() => { setImportPage(1); }, [importCategoryFilter]);
-  // Clear category filter when the selected import changes
-  useEffect(() => { setImportCategoryFilter(null); }, [selectedImportId]);
+  useEffect(() => { setImportPage(1); }, [importCategoryFilter, heldBackOnly]);
+  // Clear category + held-back filters when the selected import changes
+  useEffect(() => { setImportCategoryFilter(null); setHeldBackOnly(false); }, [selectedImportId]);
 
   // Populated by renderGrouped* — used to scroll the expanded card into view after refetch.
   const groupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -333,7 +342,7 @@ export default function TransactionReviewPage() {
     if (!kind) return;
 
     const errorDetails = importInfo?.errorDetails as
-      | { commitResult?: { transactionCount: number; updateCount?: number; remaining: number } }
+      | { commitResult?: CommitResult }
       | null;
     const result = errorDetails?.commitResult;
 
@@ -341,13 +350,7 @@ export default function TransactionReviewPage() {
       // COMMITTED is terminal — always fire, even if commitResult somehow
       // isn't populated (defensive; toast just shows 0 counts in that case).
       commitInFlightRef.current = false;
-      const parts = [];
-      if (result?.transactionCount) parts.push(`${result.transactionCount} created`);
-      if (result?.updateCount) parts.push(`${result.updateCount} updated`);
-      toast({
-        title: 'Import committed',
-        description: parts.length > 0 ? `${parts.join(', ')}.` : 'Done.',
-      });
+      toast(buildCommitToast(t, result, 'committed'));
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       // Import is fully committed — deselect it and refresh pending list
       queryClient.invalidateQueries({ queryKey: ['imports', 'pending'] });
@@ -358,16 +361,10 @@ export default function TransactionReviewPage() {
       // completion if a commitResult is actually attached; otherwise leave
       // commitInFlightRef set so the next poll gets another chance to see it.
       commitInFlightRef.current = false;
-      const parts = [];
-      if (result.transactionCount) parts.push(`${result.transactionCount} created`);
-      if (result.updateCount) parts.push(`${result.updateCount} updated`);
-      toast({
-        title: 'Partial commit complete',
-        description: `${parts.join(', ') || 'No rows committed'}. ${result.remaining} row(s) remaining.`,
-      });
+      toast(buildCommitToast(t, result, 'partial'));
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- importInfo?.status/errorDetails intentionally omitted: stagedDataUpdatedAt is the reliable re-trigger (see docstring above); adding them back would just be redundant since they're read from the same importInfo snapshot captured inside the effect body.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- importInfo?.status/errorDetails intentionally omitted: stagedDataUpdatedAt is the reliable re-trigger (see docstring above); adding them back would just be redundant since they're read from the same importInfo snapshot captured inside the effect body. t is omitted too: it changes reference on every render and translations are stable within a session.
   }, [stagedDataUpdatedAt, toast, queryClient]);
 
   // ── Metadata ──
@@ -1415,6 +1412,19 @@ export default function TransactionReviewPage() {
 
                   {importInfo?.status !== 'COMMITTING' && (
                     <>
+                      {(heldBackOnly || lastCommitHeldBack > 0) && (
+                        <div className="flex justify-end">
+                          <Button
+                            variant={heldBackOnly ? 'default' : 'outline'}
+                            size="sm"
+                            aria-pressed={heldBackOnly}
+                            onClick={() => setHeldBackOnly((v) => !v)}
+                          >
+                            {t('review.holdBack.filterLabel')}
+                            {lastCommitHeldBack > 0 && ` (${lastCommitHeldBack})`}
+                          </Button>
+                        </div>
+                      )}
                       {stagedLoading ? (
                         loadingSkeleton
                       ) : importReviewItems.length === 0 ? (

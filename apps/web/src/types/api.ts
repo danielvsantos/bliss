@@ -407,6 +407,25 @@ export type StagedImport = {
   updatedAt: string;
 };
 
+/** Reason a commit held a row back (#142) — mirrors HOLD_BACK_REASONS in @bliss/shared/import. */
+export type HoldBackReason =
+  | 'MISSING_TICKER'
+  | 'MISSING_QUANTITY'
+  | 'MISSING_PRICE'
+  | 'MISSING_ACCOUNT'
+  | 'DUPLICATE'
+  | 'UPDATE_FAILED'
+  | 'COMMIT_ERROR';
+
+/** `StagedImport.errorDetails.commitResult`, written by the backend commitWorker. */
+export type CommitResult = {
+  transactionCount: number;
+  updateCount?: number;
+  remaining: number;
+  /** Rows held back in this commit run. `total` counts rows; a row can carry several reasons. Absent before #142. */
+  heldBack?: { total: number; byReason: Partial<Record<HoldBackReason, number>> };
+};
+
 export type StagedImportRow = {
   id: string;
   stagedImportId: string;

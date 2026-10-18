@@ -853,7 +853,7 @@ class APIClient {
     return response.data;
   }
 
-  async getStagedImport(id: string, params?: { page?: number; limit?: number; status?: string; categoryId?: number; uncategorized?: boolean }): Promise<StagedImportResponse> {
+  async getStagedImport(id: string, params?: { page?: number; limit?: number; status?: string; categoryId?: number; uncategorized?: boolean; heldBack?: boolean }): Promise<StagedImportResponse> {
     const response = await this.client.get(`/api/imports/${id}`, { params });
     return response.data;
   }
