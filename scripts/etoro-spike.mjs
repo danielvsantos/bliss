@@ -238,9 +238,48 @@ async function main() {
       const weight = new Map();
       for (const p of pos) weight.set(Number(p.instrumentId), (weight.get(Number(p.instrumentId)) || 0) + (Number(p.investmentPct) || 0));
       logSymbolTable(piIds, piMeta, typeName, weight);
+      const ownIds = new Set((agg?.instrumentAggregates || []).map((a) => Number(a.instrumentId)));
+      const sameSet = piIds.length > 0 && piIds.length === ownIds.size && piIds.every((id) => ownIds.has(id));
+      if (sameSet && pos.length === (pf?.clientPortfolio?.positions || []).length) {
+        log();
+        log('**⚠️ This portfolio has exactly your own positions and instruments: ETORO_PI_USERNAME looks like your own username. Re-run with someone else\'s.**');
+      }
     }
     log();
   }
+
+  // 4d. Public allocation history of the same investor: current-value weights, daily
+  if (pi) {
+    log('## 4d. Public asset-allocation history (v2) of ETORO_PI_USERNAME');
+    const today = new Date();
+    const hist = await get('pi-assets-history', `/api/v2/portfolios/${encodeURIComponent(pi)}/assets/history`, {
+      minDate: isoDay(new Date(today - 30 * 864e5)), maxDate: isoDay(today),
+    });
+    if (hist) {
+      const days = hist.results || [];
+      const last = days[days.length - 1];
+      log(`- days returned (last 30 requested): ${days.length} · latest date: ${last?.date ?? '-'}`);
+      if (last) {
+        const assets = last.assets || [];
+        log(`- latest: ${assets.length} instruments · Σ valuePct ${(sum(assets.map((a) => a.valuePct)) * 100).toFixed(1)}% · cash of total equity ${((Number(last.cashOfTotalEquityPct) || 0) * 100).toFixed(1)}%`);
+        log(`- top 5 by valuePct: ${[...assets].sort((a, b) => b.valuePct - a.valuePct).slice(0, 5).map((a) => `\`${a.symbol}\` ${(a.valuePct * 100).toFixed(1)}%`).join(' · ')}`);
+      }
+    }
+    log();
+  }
+
+  // 4e. Does eToro expose ETF composition? Look at every field it returns for a few ETFs.
+  const etfs = (process.env.ETORO_ETF_SYMBOLS || 'VOO,QQQ').split(',').map((s) => s.trim()).filter(Boolean);
+  log('## 4e. ETF composition check');
+  const hint = /compos|constitu|holding|underly|alloc|weight|sector|countr|region/i;
+  for (const sym of etfs) {
+    const inst = await get(`instrument-${sym}`, `/api/v1/instruments/${encodeURIComponent(sym)}`);
+    if (!inst) continue;
+    const fields = Object.keys(inst);
+    const related = fields.filter((f) => hint.test(f));
+    log(`- \`${sym}\`: ${fields.length} fields · composition-like fields: ${related.length ? related.map((f) => `\`${f}\`=${JSON.stringify(inst[f]).slice(0, 80)}`).join(', ') : 'none'}`);
+  }
+  log();
 
   // 5. P2 probes: confirm what history exists (counts only)
   log('## 5. Movement endpoints (P2 confirmation)');
