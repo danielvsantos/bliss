@@ -18,8 +18,8 @@ import {
   applyRateLimit,
   consentValidUntil,
   getCallbackUrl,
-  getEnableBankingClient,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
+  notEnabled,
   signState,
 } from '../../../utils/enableBanking.js';
 import { syncCutoffDate, syncDateFrom, isoDate } from '@bliss/shared/enablebanking';
@@ -31,14 +31,14 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
-  if (!isEnableBankingEnabled()) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'Enable Banking is not configured', code: 'NOT_ENABLED' });
-  }
 
   const user = req.user;
   const { aspspName, aspspCountry, reconnectItemId } = req.body || {};
 
   try {
+    const eb = await getTenantEnableBanking(user.tenantId);
+    if (!eb) return notEnabled(res);
+
     const tenant = await prisma.tenant.findUnique({
       where: { id: user.tenantId },
       select: { plaidHistoryDays: true },
@@ -81,7 +81,7 @@ export default withAuth(async function handler(req, res) {
       startDate = syncCutoffDate(new Date(), historyDays);
     }
 
-    const client = getEnableBankingClient();
+    const { client } = eb;
     const aspsp = (await client.getAspsps(country)).find((a) => a.name === name);
     if (!aspsp) {
       return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Unknown bank', code: 'UNKNOWN_ASPSP' });

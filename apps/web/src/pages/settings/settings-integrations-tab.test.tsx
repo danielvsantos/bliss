@@ -32,6 +32,7 @@ vi.mock('@/utils/tenantMetaStorage', () => ({
 vi.mock('@/components/settings/maintenance-tab', () => ({ MaintenanceTab: () => <div>maintenance</div> }));
 vi.mock('@/components/settings/integrations-tab', () => ({ IntegrationsTab: () => <div>integrations</div> }));
 vi.mock('@/components/settings/processing-tab', () => ({ ProcessingTab: () => <div>processing-tab-content</div> }));
+vi.mock('@/components/settings/bank-sync-tab', () => ({ BankSyncTab: () => <div>bank-sync-tab-content</div> }));
 
 function renderAs(role: 'admin' | 'member' | 'viewer', path = '/settings') {
   vi.mocked(useAuth).mockReturnValue({
@@ -92,7 +93,7 @@ describe('Settings page — Integrations tab', () => {
   it('shows every tab label (no icon-only tabs) in a vertical tablist on desktop', () => {
     renderAs('admin');
     expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'vertical');
-    expect(screen.getAllByRole('tab')).toHaveLength(7);
+    expect(screen.getAllByRole('tab')).toHaveLength(8);
   });
 
   it('switches to a horizontal (scrollable) tablist on mobile', () => {
@@ -120,5 +121,20 @@ describe('Settings page — Processing tab (#100)', () => {
     renderAs('admin', '/settings?tab=processing');
     expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.processing/ })).toHaveAttribute('data-state', 'active');
     expect(screen.getByText('processing-tab-content')).toBeInTheDocument();
+  });
+});
+
+describe('Settings page — Bank sync tab (#148)', () => {
+  it('is an admin tab that opens from ?tab=bank-sync', () => {
+    renderAs('admin', '/settings?tab=bank-sync');
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.bank_sync/ })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText('bank-sync-tab-content')).toBeInTheDocument();
+  });
+
+  it.each(['member', 'viewer'] as const)('is hidden from %s users, and the deep link falls back to General', (role) => {
+    renderAs(role, '/settings?tab=bank-sync');
+    expect(screen.queryByRole('tab', { name: /pages\.settings\.tabs\.bank_sync/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('bank-sync-tab-content')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /pages\.settings\.tabs\.general/ })).toHaveAttribute('data-state', 'active');
   });
 });

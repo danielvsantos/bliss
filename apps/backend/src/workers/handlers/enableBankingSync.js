@@ -11,6 +11,10 @@
  * existing plaid-processing queue exactly like a Plaid sync.
  *
  * Every run writes exactly one PlaidSyncLog row (R13 / #51: no silent path).
+ * A connection of a tenant without Enable Banking credentials (#148) is
+ * "paused": skipped before the run starts, so it writes no log and its status
+ * never changes. A 401/403 the GET /application probe confirms as a credential
+ * failure marks the tenant's credentials INVALID, never the connection.
  * See docs/specs/backend/24-enable-banking.md.
  */
 
@@ -21,11 +25,17 @@ const { getRedisConnection } = require('../../utils/redis');
 const { carryOrigin } = require('../../utils/activityTracker');
 const { getPlaidProcessingQueue } = require('../../queues/plaidProcessingQueue');
 const { getPlaidSyncQueue, enableBankingSyncOpts } = require('../../queues/plaidSyncQueue');
-const { getEnableBankingClient } = require('../../services/enableBanking/client');
+const { getTenantEnableBanking, markCredentialInvalid } = require('../../services/enableBanking/client');
 const { mapEnableBankingTransaction, transactionKey } = require('../../services/enableBanking/mapper');
 const { syncCutoffDate, syncDateFrom, isoDate } = require('../../services/enableBanking/dateWindow');
 const { consumeAccess } = require('../../services/enableBanking/budget');
-const { pickBalance, EnableBankingError, ebAccountKey } = require('@bliss/shared/enablebanking');
+const {
+    pickBalance,
+    EnableBankingError,
+    ebAccountKey,
+    isCredentialError,
+    probeApplication,
+} = require('@bliss/shared/enablebanking');
 
 const QUEUE_NAME = 'plaid-sync';
 const PROVIDER = 'ENABLE_BANKING';
@@ -134,6 +144,20 @@ async function syncConnection(job) {
         return { skipped: 'inactive' };
     }
 
+    // Paused (#148, R6): no credentials, no run — no log, no status change.
+    const eb = await getTenantEnableBanking(item.tenantId);
+    if (!eb) {
+        logger.info(`[enableBankingSync] Skipping ${plaidItemId}: tenant has no Enable Banking credentials (paused)`);
+        return { skipped: 'paused' };
+    }
+    // D9: credentials known to be invalid wait for a re-verify or replace;
+    // a manual "Sync now" still runs so an admin can test.
+    if (eb.credential.status === 'INVALID' && source === 'SCHEDULED') {
+        logger.info(`[enableBankingSync] Skipping ${plaidItemId}: tenant credentials are invalid`);
+        return { skipped: 'credentials_invalid' };
+    }
+    const { client } = eb;
+
     const syncType = item.lastSync ? 'SYNC_UPDATE' : 'INITIAL_SYNC';
     const now = new Date();
 
@@ -144,12 +168,6 @@ async function syncConnection(job) {
         });
         await writeLog(item.id, syncType, 'FAILED', { error: 'CONSENT_EXPIRED', consentExpiration: item.consentExpiration });
         return { status: 'LOGIN_REQUIRED' };
-    }
-
-    const client = getEnableBankingClient();
-    if (!client) {
-        await writeLog(item.id, syncType, 'FAILED', { error: 'NOT_CONFIGURED' });
-        return { skipped: 'not_configured' };
     }
 
     // Only accounts still linked to this connection are synced (a disconnect
@@ -182,8 +200,11 @@ async function syncConnection(job) {
             perAccount.push(r);
         }
     } catch (err) {
+        // D5: a 401/403 that does not name the session may be the app's own
+        // credentials. One probe with the same client decides.
+        const credentialsInvalid = isCredentialError(err) && await confirmCredentialFailure(client);
         const details = {
-            error: err.message,
+            error: credentialsInvalid ? 'CREDENTIALS_INVALID' : err.message,
             code: err.code || null,
             httpStatus: err.status ?? null,
             ...totals,
@@ -195,6 +216,14 @@ async function syncConnection(job) {
 
         // Rows already inserted are safe (synthetic keys) — hand them to the classifier.
         if (totals.added > 0) await enqueueProcessing(job, item, syncType, null);
+
+        if (credentialsInvalid) {
+            // The connection is healthy; the tenant's app is not. Admins are told
+            // through the credential status (notification + Bank sync tab).
+            await markCredentialInvalid(item.tenantId, eb.credential.version);
+            logger.warn(`[enableBankingSync] Enable Banking rejected tenant ${item.tenantId}'s credentials (${err.status})`);
+            return { status: 'CREDENTIALS_INVALID' };
+        }
 
         if (err.rateLimited) {
             // Back off to the next scheduled slot: no retry, no Sentry (R13).
@@ -247,6 +276,15 @@ async function syncConnection(job) {
     return { status: 'SUCCESS', ...totals };
 }
 
+/** True when GET /application with the same client is rejected too (D5). */
+async function confirmCredentialFailure(client) {
+    try {
+        return (await probeApplication(client)).result === 'INVALID';
+    } catch {
+        return false;
+    }
+}
+
 async function enqueueProcessing(job, item, syncType, syncLogId) {
     await getPlaidProcessingQueue().add('PLAID_SYNC_COMPLETE', {
         plaidItemId: item.id,
@@ -257,11 +295,16 @@ async function enqueueProcessing(job, item, syncType, syncLogId) {
     });
 }
 
-/** Scheduled fan-out: expire lapsed consents, then one deduplicated sync per active connection. */
+/**
+ * Scheduled fan-out: expire lapsed consents, then one deduplicated sync per
+ * active connection. Only tenants with usable credentials take part (#148):
+ * paused connections and INVALID credentials are left alone.
+ */
 async function syncAll() {
     const now = new Date();
+    const withCredentials = { tenant: { enableBankingCredential: { is: { status: { not: 'INVALID' } } } } };
     const expired = await prisma.plaidItem.findMany({
-        where: { provider: PROVIDER, status: 'ACTIVE', consentExpiration: { lte: now } },
+        where: { provider: PROVIDER, status: 'ACTIVE', consentExpiration: { lte: now }, ...withCredentials },
         select: { id: true },
     });
     for (const { id } of expired) {
@@ -270,7 +313,7 @@ async function syncAll() {
     }
 
     const active = await prisma.plaidItem.findMany({
-        where: { provider: PROVIDER, status: 'ACTIVE' },
+        where: { provider: PROVIDER, status: 'ACTIVE', ...withCredentials },
         select: { id: true, tenantId: true },
     });
     const queue = getPlaidSyncQueue();

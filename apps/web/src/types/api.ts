@@ -542,6 +542,8 @@ export type PlaidItem = {
   aspspCountry?: string | null;
   /** The user who authorised the connection (only they can reconnect an Enable Banking one). */
   userId?: string | null;
+  /** Enable Banking only (#148): the tenant has no credentials, so the connection does not sync. */
+  paused?: boolean;
   createdAt: string;
   accounts?: {
     id: number;
@@ -648,6 +650,54 @@ export type UserSignal = {
 
 // ─── Enable Banking (#132) ─────────────────────────────────────────────────────
 
+/** GET /api/enablebanking/status (#148). */
+export type EnableBankingStatus = {
+  /** The tenant has saved Enable Banking credentials (any validation status). */
+  enabled: boolean;
+  /** The caller may set the credentials up (admins). */
+  configurable: boolean;
+  /** Connections waiting for credentials (0 when enabled). */
+  pausedConnections: number;
+};
+
+export type EnableBankingCredentialStatus = 'VERIFIED' | 'UNVERIFIED' | 'INVALID';
+export type EnableBankingCredentialAction = 'SET' | 'REPLACED' | 'KEY_ROTATED' | 'REMOVED';
+
+/** The tenant's Enable Banking app (#148). The private key is write-only and never returned. */
+export type EnableBankingCredential = {
+  appId: string;
+  keyFingerprint: string;
+  keyBits: number;
+  status: EnableBankingCredentialStatus;
+  lastValidatedAt: string | null;
+  /** Whether the Bliss callback URL is registered on the app; null = unknown. */
+  callbackRegistered: boolean | null;
+  updatedAt: string;
+};
+
+export type EnableBankingCredentialEvent = {
+  action: EnableBankingCredentialAction;
+  appId: string;
+  keyFingerprint: string | null;
+  user: { id: string; name: string | null } | null;
+  createdAt: string;
+};
+
+/** GET /api/enablebanking/credentials (admins only). */
+export type EnableBankingCredentialsView = {
+  configured: boolean;
+  callbackUrl: string;
+  credential: EnableBankingCredential | null;
+  usage: { activeConnections: number; pausedConnections: number; linkedAccounts: number; limit: number };
+  history: EnableBankingCredentialEvent[];
+};
+
+export type EnableBankingCredentialsRequest = {
+  appId: string;
+  privateKey: string;
+  confirmAppChange?: boolean;
+};
+
 export type EnableBankingAspsp = {
   name: string;
   /** ISO 3166-1 alpha-2 */
@@ -677,6 +727,8 @@ export type EnableBankingConnection = {
   lastSync: string | null;
   createdAt: string;
   authorizedByMe: boolean;
+  /** The tenant has no Enable Banking credentials, so the connection does not sync (#148). */
+  paused?: boolean;
 };
 
 export type EnableBankingBankAccount = {
@@ -749,6 +801,8 @@ export type EnableBankingErrorBody = {
   code?: string;
   resetsAt?: string;
   accounts?: EnableBankingSwitchAccount[];
+  /** 409 CONFIRMATION_REQUIRED on the credential routes (#148). */
+  affectedConnections?: number;
 };
 
 // ─── Merchant History Types ────────────────────────────────────────────────────

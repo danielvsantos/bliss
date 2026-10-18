@@ -1,10 +1,18 @@
 /**
  * Unit tests for utils/enableBanking.js (#132): signed single-use state (D6),
- * consent validity, callback URL, IBAN last-4 matching (R5) and the read-only
- * budget view (D5).
+ * consent validity, callback URL, IBAN last-4 matching (R5), the read-only
+ * budget view (D5) and the per-tenant client resolver (#148).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+const { mockFindUnique } = vi.hoisted(() => ({ mockFindUnique: vi.fn() }));
+vi.mock('../../../prisma/prisma.js', () => ({
+  default: { enableBankingCredential: { findUnique: mockFindUnique } },
+}));
+
 import {
   signState,
   consumeState,
@@ -13,7 +21,7 @@ import {
   lastFour,
   suggestAccountId,
   budgetStatus,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
   STATE_TTL_SECONDS,
 } from '../../../utils/enableBanking.js';
 import { __setRedisClientForTests } from '../../../utils/redisClient.js';
@@ -86,7 +94,7 @@ describe('consentValidUntil', () => {
   });
 });
 
-describe('getCallbackUrl / isEnableBankingEnabled', () => {
+describe('getCallbackUrl / getTenantEnableBanking', () => {
   it('defaults to the NEXTAUTH_URL origin and honours the explicit override', () => {
     delete process.env.ENABLE_BANKING_REDIRECT_URL;
     process.env.NEXTAUTH_URL = 'https://api.example.test/some/path';
@@ -95,15 +103,31 @@ describe('getCallbackUrl / isEnableBankingEnabled', () => {
     expect(getCallbackUrl()).toBe('https://bliss.local/cb');
   });
 
-  it('is disabled without both the app id and a key', () => {
-    delete process.env.ENABLE_BANKING_APP_ID;
-    delete process.env.ENABLE_BANKING_PRIVATE_KEY;
-    delete process.env.ENABLE_BANKING_PRIVATE_KEY_PATH;
-    expect(isEnableBankingEnabled()).toBe(false);
+  const pem = readFileSync(join(__dirname, '../../../../../packages/shared/test-fixtures/enablebanking-keys/rsa2048-pkcs8.pem'), 'utf8');
+  const row = (overrides = {}) => ({
+    id: 'cred-1', tenantId: 't1', appId: 'app-1', appIdHash: 'h', privateKey: pem,
+    keyFingerprint: 'SHA256:x', keyBits: 2048, status: 'VERIFIED', version: 1, ...overrides,
+  });
+
+  it('is null for a tenant without credentials, even with the retired env vars set', async () => {
     process.env.ENABLE_BANKING_APP_ID = 'app';
-    expect(isEnableBankingEnabled()).toBe(false);
-    process.env.ENABLE_BANKING_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----';
-    expect(isEnableBankingEnabled()).toBe(true);
+    process.env.ENABLE_BANKING_PRIVATE_KEY = pem;
+    mockFindUnique.mockResolvedValueOnce(null);
+    expect(await getTenantEnableBanking('t1')).toBeNull();
+    expect(await getTenantEnableBanking(undefined as any)).toBeNull();
+    expect(mockFindUnique).toHaveBeenCalledWith({ where: { tenantId: 't1' } });
+  });
+
+  it('returns a cached client per credential version and metadata without the key', async () => {
+    mockFindUnique.mockResolvedValue(row());
+    const a = await getTenantEnableBanking('t1');
+    const b = await getTenantEnableBanking('t1');
+    expect(a!.client).toBe(b!.client);
+    expect(a!.credential).toEqual({ id: 'cred-1', tenantId: 't1', version: 1, status: 'VERIFIED', appIdHash: 'h' });
+    expect(JSON.stringify(a!.credential)).not.toContain('PRIVATE KEY');
+    mockFindUnique.mockResolvedValue(row({ version: 2 }));
+    const c = await getTenantEnableBanking('t1');
+    expect(c!.client).not.toBe(a!.client);
   });
 });
 

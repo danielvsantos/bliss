@@ -92,9 +92,13 @@ vi.mock('@/components/plaid-connect', () => ({
 }));
 
 // Enable Banking (#132): configured or not per test; the UI pieces are stubbed.
+// Status (#148): `configurable` = the viewer is an admin.
 const ebEnabled = vi.fn(() => false);
+const ebConfigurable = vi.fn(() => false);
 vi.mock('@/hooks/use-enable-banking', () => ({
-  useEnableBankingEnabled: () => ebEnabled(),
+  useEnableBankingStatus: () => ({
+    data: { enabled: ebEnabled(), configurable: ebConfigurable(), pausedConnections: 0 },
+  }),
 }));
 vi.mock('@/components/enable-banking/connect-dialog', () => ({
   EnableBankingConnect: () => <button data-testid="eb-connect">eb</button>,
@@ -141,6 +145,7 @@ describe('AccountsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ebEnabled.mockReturnValue(false);
+    ebConfigurable.mockReturnValue(false);
   });
 
   it('renders accounts page heading', () => {
@@ -264,6 +269,27 @@ describe('AccountsPage', () => {
       renderPage('/accounts?eb=map&connection=item-1');
       await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounts$/));
       expect(screen.queryByTestId('eb-mapping-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Enable Banking setup entry point (#148)', () => {
+    it('shows admins of a tenant without credentials a link to Settings → Bank sync', () => {
+      ebConfigurable.mockReturnValue(true);
+      renderPage();
+      expect(screen.getByTestId('eb-setup-link')).toHaveAttribute('href', '/settings?tab=bank-sync');
+      expect(screen.getByText('enableBanking.credentials.setupLink')).toBeInTheDocument();
+    });
+
+    it('shows members and viewers no Enable Banking entry point', () => {
+      renderPage();
+      expect(screen.queryByTestId('eb-setup-link')).not.toBeInTheDocument();
+    });
+
+    it('drops the setup link once the tenant has credentials', () => {
+      ebEnabled.mockReturnValue(true);
+      ebConfigurable.mockReturnValue(true);
+      renderPage();
+      expect(screen.queryByTestId('eb-setup-link')).not.toBeInTheDocument();
     });
   });
 });

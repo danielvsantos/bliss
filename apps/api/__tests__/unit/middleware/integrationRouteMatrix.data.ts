@@ -141,13 +141,17 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
 
   // ── Plaid: review queue + reads allowed; connection lifecycle denied ─────
   // Enable Banking (#132): the whole connection lifecycle is denylisted.
-  'enablebanking/status.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
+  // role === 'admin' only computes the `configurable` flag (#148); it gates nothing.
+  'enablebanking/status.js': { auth: 'withAuth', inlineAdmin: [], methods: DENY_ALL(['GET']) },
   'enablebanking/aspsps.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
   'enablebanking/connect.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
   'enablebanking/callback.js': { auth: 'withAuth', methods: DENY_ALL(['GET']) },
   'enablebanking/connections/[id].js': { auth: 'withAuth', inlineAdmin: ['DELETE'], methods: DENY_ALL(['GET', 'DELETE']) },
   'enablebanking/connections/[id]/map.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
   'enablebanking/connections/[id]/sync.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
+  // Per-tenant credentials (#148): admin only, and denylisted by the prefix above.
+  'enablebanking/credentials/index.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['GET', 'PUT', 'DELETE']) },
+  'enablebanking/credentials/verify.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['POST']) },
   'plaid/accounts.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'plaid/sync-logs.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'plaid/items.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'PATCH']) },

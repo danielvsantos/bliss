@@ -106,7 +106,7 @@ describe('verify-encryption-key: run() never reads ENCRYPTION_SECRET_PREVIOUS', 
       for (const entry of ROTATION_COVERAGE) {
         const row = { id: `${entry.prismaModel}-1` };
         for (const field of entry.fields) {
-          const plaintext = field.name === 'rawJson' ? JSON.stringify({ ok: true }) : field.name === 'email' ? 'user@example.com' : `${field.name}-value`;
+          const plaintext = field.name === 'rawJson' ? JSON.stringify({ ok: true }) : field.name === 'email' ? 'user@example.com' : field.name === 'privateKey' ? '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n' : `${field.name}-value`;
           row[field.name] = await oldHelpers.encrypt(plaintext, field.searchable);
         }
         tables[entry.prismaModel] = [row];
@@ -137,7 +137,7 @@ describe('verify-encryption-key: run() never reads ENCRYPTION_SECRET_PREVIOUS', 
     for (const entry of ROTATION_COVERAGE) {
       const row = { id: `${entry.prismaModel}-1` };
       for (const field of entry.fields) {
-        const plaintext = field.name === 'rawJson' ? JSON.stringify({ ok: true }) : field.name === 'email' ? 'user@example.com' : `${field.name}-value`;
+        const plaintext = field.name === 'rawJson' ? JSON.stringify({ ok: true }) : field.name === 'email' ? 'user@example.com' : field.name === 'privateKey' ? '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n' : `${field.name}-value`;
         row[field.name] = await newHelpers.encrypt(plaintext, field.searchable);
       }
       tables[entry.prismaModel] = [row];

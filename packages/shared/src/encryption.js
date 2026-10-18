@@ -150,6 +150,15 @@ export const encryptedFields = {
     // Matching uses the plaintext ibanLast4 column, so never searchable.
     iban: { searchable: false },
   },
+  EnableBankingCredential: {
+    // Per-tenant Enable Banking app (#148). The private key is write-only (no
+    // API returns it); app-change comparison uses the plaintext appIdHash.
+    appId: { searchable: false },
+    privateKey: { searchable: false },
+  },
+  EnableBankingCredentialEvent: {
+    appId: { searchable: false },
+  },
   SignupInvite: {
     // Invite-only sign-up allowlist (#99). Searchable (deterministic) like
     // User.email so the gate can look an invite up by normalized address.

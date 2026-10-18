@@ -1,5 +1,5 @@
 import { isInviteOnly, isUnknownSignupMode } from './signupMode.js';
-import { getEnableBankingConfig } from '@bliss/shared/enablebanking';
+import { retiredEnvVars } from '@bliss/shared/enablebanking';
 
 const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 
@@ -75,11 +75,13 @@ export function validateEnv() {
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
     warnings.push('Plaid credentials not set — Plaid integration will be unavailable');
   }
-  // Enable Banking (#132) is optional; only a half-configured pair is worth a warning.
-  if (getEnableBankingConfig().partial) {
+  // Enable Banking credentials are per tenant since #148: the deployment-level
+  // app is retired and never read, so leftovers are worth a warning.
+  const retired = retiredEnvVars();
+  if (retired.length > 0) {
     warnings.push(
-      'Enable Banking is half-configured — set both ENABLE_BANKING_APP_ID and ENABLE_BANKING_PRIVATE_KEY ' +
-        '(or ENABLE_BANKING_PRIVATE_KEY_PATH). The feature stays hidden.'
+      `${retired.join(' / ')} ${retired.length === 1 ? 'is' : 'are'} ignored — Enable Banking credentials are ` +
+        'per tenant now: enter them in Settings → Bank sync, then remove these variables.'
     );
   }
   if (!process.env.REDIS_URL) {

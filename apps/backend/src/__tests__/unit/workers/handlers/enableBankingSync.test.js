@@ -1,7 +1,8 @@
 /**
  * Enable Banking sync handler (#132): window, paging, pending exclusion,
  * provider dedupe counts, budget, failure matrix (one log row on every path),
- * consent expiry and the scheduled fan-out.
+ * consent expiry and the scheduled fan-out; per-tenant credentials (#148):
+ * paused skip, the credential/consent split (D5) and the fan-out filter.
  */
 
 jest.mock('../../../../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
@@ -20,10 +21,13 @@ jest.mock('../../../../queues/plaidSyncQueue', () => ({
     enableBankingSyncOpts: (id) => ({ deduplication: { id: `eb-sync:${id}` }, attempts: 3 }),
 }));
 
-const mockClient = { getTransactions: jest.fn(), getBalances: jest.fn() };
-let mockClientEnabled = true;
+const mockClient = { getTransactions: jest.fn(), getBalances: jest.fn(), getApplication: jest.fn() };
+let mockCredential = null;
+const mockGetTenantEnableBanking = jest.fn();
+const mockMarkCredentialInvalid = jest.fn();
 jest.mock('../../../../services/enableBanking/client', () => ({
-    getEnableBankingClient: () => (mockClientEnabled ? mockClient : null),
+    getTenantEnableBanking: (...a) => mockGetTenantEnableBanking(...a),
+    markCredentialInvalid: (...a) => mockMarkCredentialInvalid(...a),
 }));
 
 const mockConsumeAccess = jest.fn();
@@ -78,7 +82,10 @@ const logs = () => mockPrisma.plaidSyncLog.create.mock.calls.map(c => c[0].data)
 
 beforeEach(() => {
     jest.clearAllMocks();
-    mockClientEnabled = true;
+    mockCredential = { id: 'cred-1', tenantId: 't1', version: 3, status: 'VERIFIED' };
+    mockGetTenantEnableBanking.mockImplementation(async () => (mockCredential ? { client: mockClient, credential: mockCredential } : null));
+    mockMarkCredentialInvalid.mockResolvedValue(true);
+    mockClient.getApplication.mockResolvedValue({});
     mockPrisma.plaidItem.findUnique.mockResolvedValue(item());
     mockPrisma.plaidItem.update.mockResolvedValue({});
     mockPrisma.plaidSyncLog.create.mockResolvedValue({ id: 'log-1' });
@@ -271,10 +278,65 @@ describe('syncConnection — failure matrix (one log row each)', () => {
         expect(logs()).toEqual([expect.objectContaining({ status: 'FAILED' })]);
     });
 
-    it('logs NOT_CONFIGURED when the client is unavailable', async () => {
-        mockClientEnabled = false;
+});
+
+describe('syncConnection — per-tenant credentials (#148)', () => {
+    it('resolves the client with the connection\'s own tenant', async () => {
         await syncConnection(job());
-        expect(logs()).toEqual([expect.objectContaining({ status: 'FAILED', details: { error: 'NOT_CONFIGURED' } })]);
+        expect(mockGetTenantEnableBanking).toHaveBeenCalledWith('t1');
+    });
+
+    it('paused: no credentials → skipped, no log, no status change, no provider call', async () => {
+        mockCredential = null;
+        await expect(syncConnection(job({ source: 'SCHEDULED' }))).resolves.toEqual({ skipped: 'paused' });
+        expect(logs()).toEqual([]);
+        expect(mockPrisma.plaidItem.update).not.toHaveBeenCalled();
+        expect(mockClient.getTransactions).not.toHaveBeenCalled();
+    });
+
+    it('paused wins over an expired consent: the status is left untouched', async () => {
+        mockCredential = null;
+        mockPrisma.plaidItem.findUnique.mockResolvedValue(item({ consentExpiration: new Date('2020-01-01') }));
+        await expect(syncConnection(job())).resolves.toEqual({ skipped: 'paused' });
+        expect(mockPrisma.plaidItem.update).not.toHaveBeenCalled();
+        expect(logs()).toEqual([]);
+    });
+
+    it('INVALID credentials: a scheduled run is skipped, a manual "Sync now" still runs', async () => {
+        mockCredential = { ...mockCredential, status: 'INVALID' };
+        await expect(syncConnection(job({ source: 'SCHEDULED' }))).resolves.toEqual({ skipped: 'credentials_invalid' });
+        expect(logs()).toEqual([]);
+        await expect(syncConnection(job({ source: 'MANUAL_RESYNC' }))).resolves.toMatchObject({ status: 'SUCCESS' });
+    });
+
+    it('401 confirmed by the probe: FAILED CREDENTIALS_INVALID, credential marked, connection untouched', async () => {
+        mockClient.getTransactions.mockRejectedValue(new EnableBankingError('401', { status: 401 }));
+        mockClient.getApplication.mockRejectedValue(new EnableBankingError('401', { status: 401 }));
+        await expect(syncConnection(job())).resolves.toEqual({ status: 'CREDENTIALS_INVALID' });
+        expect(logs()).toEqual([expect.objectContaining({ status: 'FAILED', details: expect.objectContaining({ error: 'CREDENTIALS_INVALID', httpStatus: 401 }) })]);
+        expect(mockMarkCredentialInvalid).toHaveBeenCalledWith('t1', 3);
+        expect(mockPrisma.plaidItem.update).not.toHaveBeenCalled();
+        expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('403 with a healthy app (probe succeeds): the connection is at fault, as before', async () => {
+        mockClient.getTransactions.mockRejectedValue(new EnableBankingError('403', { status: 403 }));
+        await expect(syncConnection(job())).resolves.toEqual({ status: 'ERROR' });
+        expect(mockClient.getApplication).toHaveBeenCalledTimes(1);
+        expect(mockMarkCredentialInvalid).not.toHaveBeenCalled();
+    });
+
+    it('a session error code never triggers the probe', async () => {
+        mockClient.getTransactions.mockRejectedValue(new EnableBankingError('401', { status: 401, code: 'EXPIRED_SESSION' }));
+        await expect(syncConnection(job())).resolves.toEqual({ status: 'LOGIN_REQUIRED' });
+        expect(mockClient.getApplication).not.toHaveBeenCalled();
+    });
+
+    it('a probe that cannot reach Enable Banking keeps the old behaviour', async () => {
+        mockClient.getTransactions.mockRejectedValue(new EnableBankingError('403', { status: 403 }));
+        mockClient.getApplication.mockRejectedValue(new EnableBankingError('net', { status: 0, retryable: true }));
+        await expect(syncConnection(job())).resolves.toEqual({ status: 'ERROR' });
+        expect(mockMarkCredentialInvalid).not.toHaveBeenCalled();
     });
 });
 
@@ -294,6 +356,14 @@ describe('syncAll (scheduled fan-out)', () => {
             expect.objectContaining({ deduplication: { id: 'eb-sync:a1' } }),
         );
         expect(mockSyncAdd).toHaveBeenCalledTimes(2);
+    });
+
+    it('only covers tenants with credentials that are not INVALID (#148)', async () => {
+        mockPrisma.plaidItem.findMany.mockResolvedValue([]);
+        await syncAll();
+        const filter = { tenant: { enableBankingCredential: { is: { status: { not: 'INVALID' } } } } };
+        expect(mockPrisma.plaidItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining(filter) }));
+        expect(mockPrisma.plaidItem.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining(filter) }));
     });
 
     it('dispatches by job name and rejects unknown names', async () => {

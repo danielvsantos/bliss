@@ -8,8 +8,7 @@
  * See docs/specs/backend/24-enable-banking.md.
  */
 
-import { createSign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { createHash, createPrivateKey, createPublicKey, createSign } from 'node:crypto';
 
 export const DEFAULT_BASE_URL = 'https://api.enablebanking.com';
 export const JWT_TTL_SECONDS = 3600;
@@ -44,45 +43,132 @@ export function signJwt({ appId, privateKeyPem, now }) {
   return `${signingInput}.${signature}`;
 }
 
-/**
- * Reads the private key from the environment: `ENABLE_BANKING_PRIVATE_KEY`
- * (PEM contents; `\n`-escaped newlines accepted, as most PaaS env editors are
- * single-line) or `ENABLE_BANKING_PRIVATE_KEY_PATH` (a file path).
- *
- * @returns {string | null} the PEM, or null when neither is set.
- */
-export function loadPrivateKey(env = process.env) {
-  const inline = env.ENABLE_BANKING_PRIVATE_KEY;
-  if (inline && inline.trim()) {
-    return inline.includes('\\n') ? inline.replace(/\\n/g, '\n') : inline;
-  }
-  const path = env.ENABLE_BANKING_PRIVATE_KEY_PATH;
-  if (path && path.trim()) {
-    return readFileSync(path.trim(), 'utf8');
-  }
-  return null;
+// ── Deployment configuration ───────────────────────────────────────────────
+// The Enable Banking app itself is per tenant (#148): its id and key live
+// encrypted in EnableBankingCredential. Only the API base URL stays
+// deployment-wide.
+
+export function getBaseUrl(env = process.env) {
+  return (env.ENABLE_BANKING_API_URL || '').trim() || DEFAULT_BASE_URL;
 }
 
+/** Env vars of the retired deployment-level app (#148), so boot can warn. */
+export const RETIRED_ENV_VARS = ['ENABLE_BANKING_APP_ID', 'ENABLE_BANKING_PRIVATE_KEY', 'ENABLE_BANKING_PRIVATE_KEY_PATH'];
+
+/** The retired env vars that are still set (non-empty). */
+export function retiredEnvVars(env = process.env) {
+  return RETIRED_ENV_VARS.filter((name) => typeof env[name] === 'string' && env[name].trim() !== '');
+}
+
+// ── Private key parsing (#148, R1a) ────────────────────────────────────────
+// The server is the authority; apps/web/src/lib/pem.ts mirrors the format
+// checks for instant feedback. Both are tested against the same fixtures in
+// packages/shared/test-fixtures/enablebanking-keys/.
+
+export const MAX_PRIVATE_KEY_BYTES = 16 * 1024;
+export const MIN_RSA_BITS = 2048;
+
 /**
- * The feature's configuration state. `enabled` requires both the app id and a
- * key; `partial` flags a half-configured deployment so boot can warn.
+ * Format error of a private key. `code` is one of KEY_NOT_PEM, KEY_PUBLIC,
+ * KEY_CERTIFICATE, KEY_NOT_RSA, KEY_ENCRYPTED, KEY_TRUNCATED, KEY_TOO_LARGE,
+ * KEY_TOO_SMALL. The message never contains key material.
  */
-export function getEnableBankingConfig(env = process.env) {
-  const appId = (env.ENABLE_BANKING_APP_ID || '').trim();
-  const hasKey = Boolean(
-    (env.ENABLE_BANKING_PRIVATE_KEY && env.ENABLE_BANKING_PRIVATE_KEY.trim())
-    || (env.ENABLE_BANKING_PRIVATE_KEY_PATH && env.ENABLE_BANKING_PRIVATE_KEY_PATH.trim()),
-  );
+export class KeyFormatError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'KeyFormatError';
+    this.code = code;
+  }
+}
+
+const PEM_BEGIN = /-----BEGIN ([A-Z0-9 ]+)-----/;
+
+/**
+ * Validates and normalises an RSA private key PEM: CRLF / CR line endings,
+ * literal `\n` escapes (a key copied from a .env file), surrounding whitespace
+ * and blank lines are accepted; PKCS#8 and PKCS#1 both load.
+ *
+ * @param {string} input
+ * @returns {{ pem: string, bits: number, fingerprint: string }} `pem` is the
+ *   re-exported PKCS#8 PEM (the stored form).
+ * @throws {KeyFormatError}
+ */
+export function parsePrivateKey(input) {
+  if (typeof input !== 'string' || input.trim() === '') {
+    throw new KeyFormatError('KEY_NOT_PEM', 'The private key is empty');
+  }
+  if (Buffer.byteLength(input, 'utf8') > MAX_PRIVATE_KEY_BYTES) {
+    throw new KeyFormatError('KEY_TOO_LARGE', 'The private key is larger than 16 KB');
+  }
+  const text = input.replace(/\\r\\n|\\n|\\r/g, '\n').replace(/\r\n?/g, '\n').trim();
+
+  const begin = PEM_BEGIN.exec(text);
+  if (!begin) throw new KeyFormatError('KEY_NOT_PEM', 'This is not a PEM private key');
+  const label = begin[1].trim();
+  if (label.includes('CERTIFICATE')) throw new KeyFormatError('KEY_CERTIFICATE', 'This is a certificate, not a private key');
+  if (label.includes('PUBLIC KEY')) throw new KeyFormatError('KEY_PUBLIC', 'This is a public key, not a private key');
+  if (label === 'ENCRYPTED PRIVATE KEY' || /Proc-Type:\s*4,\s*ENCRYPTED/i.test(text)) {
+    throw new KeyFormatError('KEY_ENCRYPTED', 'Password-protected private keys are not supported');
+  }
+  if (label === 'EC PRIVATE KEY' || label === 'DSA PRIVATE KEY') {
+    throw new KeyFormatError('KEY_NOT_RSA', 'Only RSA private keys are supported');
+  }
+  if (label !== 'PRIVATE KEY' && label !== 'RSA PRIVATE KEY') {
+    throw new KeyFormatError('KEY_NOT_PEM', 'This is not a PEM private key');
+  }
+
+  const endMarker = `-----END ${label}-----`;
+  const bodyStart = begin.index + begin[0].length;
+  const endIndex = text.indexOf(endMarker, bodyStart);
+  if (endIndex === -1) throw new KeyFormatError('KEY_TRUNCATED', 'The private key is incomplete (the END line is missing)');
+
+  const body = text.slice(bodyStart, endIndex).replace(/\s+/g, '');
+  if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
+    throw new KeyFormatError('KEY_NOT_PEM', 'This is not a PEM private key');
+  }
+  const pemIn = `-----BEGIN ${label}-----\n${body.match(/.{1,64}/g).join('\n')}\n${endMarker}\n`;
+
+  let key;
+  try {
+    key = createPrivateKey({ key: pemIn, format: 'pem' });
+  } catch {
+    throw new KeyFormatError('KEY_TRUNCATED', 'The private key could not be read; it may be incomplete');
+  }
+  if (key.asymmetricKeyType !== 'rsa') {
+    throw new KeyFormatError('KEY_NOT_RSA', 'Only RSA private keys are supported');
+  }
+  const bits = key.asymmetricKeyDetails?.modulusLength ?? 0;
+  if (bits < MIN_RSA_BITS) {
+    throw new KeyFormatError('KEY_TOO_SMALL', `RSA keys must be at least ${MIN_RSA_BITS} bits`);
+  }
   return {
-    enabled: Boolean(appId) && hasKey,
-    partial: Boolean(appId) !== hasKey,
-    appId: appId || null,
-    baseUrl: (env.ENABLE_BANKING_API_URL || '').trim() || DEFAULT_BASE_URL,
+    pem: key.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    bits,
+    fingerprint: keyFingerprint(key),
   };
 }
 
+/**
+ * `SHA256:` + the first 16 base64 chars of sha256(SPKI DER of the public key).
+ * Identifies an installed key without exposing it.
+ */
+export function keyFingerprint(privateKey) {
+  const der = createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
+  return `SHA256:${createHash('sha256').update(der).digest('base64').slice(0, 16)}`;
+}
+
+const APP_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Enable Banking application ids are UUIDs. */
+export const isValidAppId = (appId) => typeof appId === 'string' && APP_ID_PATTERN.test(appId.trim());
+
+/** sha256 hex (first 32 chars) of the case-folded app id: compared without decrypting. */
+export const appIdHash = (appId) => createHash('sha256').update(String(appId).trim().toLowerCase()).digest('hex').slice(0, 32);
+
 /** Error codes Enable Banking returns when a session can no longer be used. */
 const CONSENT_ERROR_PATTERN = /EXPIRED|REVOKED|SESSION|CONSENT|UNAUTHORI[SZ]ED/i;
+/** The subset that names the session or consent itself (reconnect, not credentials). */
+export const SESSION_ERROR_PATTERN = /EXPIRED|REVOKED|SESSION|CONSENT/i;
 
 /**
  * Typed error for every non-2xx (or network) failure. `status` is the HTTP
@@ -192,6 +278,93 @@ export function createClient({
       { query: { date_from: dateFrom, continuation_key: continuationKey } },
     ),
     getBalances: async (uid) => (await request('GET', `/accounts/${encodeURIComponent(uid)}/balances`)).balances || [],
+    /** GET /application → the app's own details (the credential probe, #148). */
+    getApplication: () => request('GET', '/application'),
+  };
+}
+
+/**
+ * A 401/403 that does not name the session or consent: possibly the app's
+ * credentials (#148, D5). The caller confirms with `probeApplication`.
+ */
+export function isCredentialError(err) {
+  return err instanceof EnableBankingError
+    && (err.status === 401 || err.status === 403)
+    && !(err.code && SESSION_ERROR_PATTERN.test(err.code));
+}
+
+/**
+ * Checks a client's credentials with GET /application (#148, D6).
+ *
+ * @param {{ getApplication: () => Promise<any> }} client
+ * @param {{ callbackUrl?: string }} [opts]
+ * @returns {Promise<{ result: 'VERIFIED' | 'INVALID' | 'SANDBOX' | 'UNREACHABLE', callbackRegistered: boolean | null, httpStatus?: number }>}
+ *   INVALID: 401/403/404 (unknown app, key mismatch). UNREACHABLE: network,
+ *   timeout, 429 or 5xx. Other errors are rethrown.
+ */
+export async function probeApplication(client, { callbackUrl } = {}) {
+  let app;
+  try {
+    app = await client.getApplication();
+  } catch (err) {
+    if (!(err instanceof EnableBankingError)) throw err;
+    if ([401, 403, 404].includes(err.status)) return { result: 'INVALID', callbackRegistered: null, httpStatus: err.status };
+    if (err.retryable || err.status === 0) return { result: 'UNREACHABLE', callbackRegistered: null, httpStatus: err.status };
+    return { result: 'INVALID', callbackRegistered: null, httpStatus: err.status };
+  }
+  // Field names are read defensively: an absent field is "unknown", never a failure.
+  if (typeof app?.environment === 'string' && /SANDBOX/i.test(app.environment)) {
+    return { result: 'SANDBOX', callbackRegistered: null };
+  }
+  const urls = Array.isArray(app?.redirect_urls) ? app.redirect_urls : null;
+  const callbackRegistered = urls && callbackUrl
+    ? urls.some((u) => typeof u === 'string' && u.replace(/\/+$/, '') === callbackUrl.replace(/\/+$/, ''))
+    : null;
+  return { result: 'VERIFIED', callbackRegistered };
+}
+
+/**
+ * Per-process cache of tenant clients keyed `tenantId:credentialId:version`
+ * (#148, D2), so a signed JWT is reused while valid and a credential change
+ * (version bump, or a new row after Remove + Set) takes effect on the next
+ * call on every instance. Bounded LRU.
+ *
+ * @param {{ max?: number, baseUrl?: string, fetchImpl?: typeof fetch }} [opts]
+ */
+export function createTenantClientCache({ max = 200, baseUrl, fetchImpl } = {}) {
+  const entries = new Map(); // key → client (insertion order = recency)
+
+  return {
+    /**
+     * @param {{ id?: string, tenantId: string, version: number, appId: string, privateKey: string }} credential
+     */
+    get(credential) {
+      const key = `${credential.tenantId}:${credential.id ?? ''}:${credential.version}`;
+      const hit = entries.get(key);
+      if (hit) {
+        entries.delete(key);
+        entries.set(key, hit);
+        return hit;
+      }
+      for (const k of entries.keys()) {
+        if (k.startsWith(`${credential.tenantId}:`)) entries.delete(k);
+      }
+      const client = createClient({
+        appId: credential.appId,
+        privateKey: credential.privateKey,
+        baseUrl: baseUrl ?? getBaseUrl(),
+        ...(fetchImpl && { fetchImpl }),
+      });
+      entries.set(key, client);
+      while (entries.size > max) entries.delete(entries.keys().next().value);
+      return client;
+    },
+    clear() {
+      entries.clear();
+    },
+    get size() {
+      return entries.size;
+    },
   };
 }
 

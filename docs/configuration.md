@@ -21,7 +21,7 @@ The one required integration is an **LLM provider** for AI classification and in
 |---|---|---|---|
 | LLM (Gemini / OpenAI / Anthropic) | **Yes** | `LLM_PROVIDER`, `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | AI classification + insights |
 | Plaid | No | `PLAID_CLIENT_ID`, `PLAID_SECRET` | Bank account linking |
-| Enable Banking | No | `ENABLE_BANKING_APP_ID`, `ENABLE_BANKING_PRIVATE_KEY` | EU bank sync over PSD2 (e.g. Revolut ES) |
+| Enable Banking | No | none — each workspace's admin enters its own app in Settings → Bank sync | EU bank sync over PSD2 (e.g. Revolut ES) |
 | Market data | No | `TWELVE_DATA_API_KEY` | Stock price fetching + FX rates (default) |
 | Currency / FX rates | No | `CURRENCY_PROVIDER` (`TWELVE_DATA` default \| `CURRENCYLAYER`), `CURRENCYLAYER_API_KEY` (legacy only) | Automatic FX rate fetching |
 | Observability | No | `SENTRY_DSN` | Error tracking |
@@ -140,13 +140,14 @@ Plaid integration is optional. CSV import works without it. To enable bank-accou
 
 ## Enable Banking (optional)
 
-EU bank sync through [Enable Banking](https://enablebanking.com) (PSD2 account information, #132). Hidden unless both the app id and a key are set. Set the variables on **both** the API and the backend worker. Setup and the Plaid migration runbook: [EU Bank Sync with Enable Banking](/docs/guides/enable-banking) guide.
+EU bank sync through [Enable Banking](https://enablebanking.com) (PSD2 account information, #132). Credentials are **per workspace** (#148): a tenant admin enters the workspace's own application id and private key in **Settings → Bank sync**, where they are stored encrypted. A workspace without credentials sees no Enable Banking UI. Setup, the upgrade note and the Plaid migration runbook: [EU Bank Sync with Enable Banking](/docs/guides/enable-banking) guide.
+
+`ENABLE_BANKING_APP_ID`, `ENABLE_BANKING_PRIVATE_KEY` and `ENABLE_BANKING_PRIVATE_KEY_PATH` are **retired**: they are never read, and both services log a warning at startup while any of them is still set.
+
+The server-wide settings below go on **both** the API and the backend worker:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `ENABLE_BANKING_APP_ID` | No | -- | Enable Banking application id (the JWT `kid`). |
-| `ENABLE_BANKING_PRIVATE_KEY` | No | -- | The application's RSA private key, PEM contents (newlines may be written as `\n`). Never commit it. |
-| `ENABLE_BANKING_PRIVATE_KEY_PATH` | No | -- | Alternative to the above: path to the `.pem` file. |
 | `ENABLE_BANKING_REDIRECT_URL` | No | `<NEXTAUTH_URL origin>/api/enablebanking/callback` | Callback registered on the Enable Banking app. Must match exactly. |
 | `ENABLE_BANKING_SYNC_TIMES` | No | `06:15,13:15,20:15` | Scheduled sync slots (Europe/Madrid, `HH:MM`, comma-separated). |
 | `ENABLE_BANKING_DAILY_BUDGET` | No | `4` | Unattended accesses per bank account per Madrid day (PSD2 limit). Keep it above the number of slots so "Sync now" works. |

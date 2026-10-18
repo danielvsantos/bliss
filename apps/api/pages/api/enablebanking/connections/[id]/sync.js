@@ -15,7 +15,8 @@ import {
   PROVIDER,
   applyRateLimit,
   budgetStatus,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
+  notEnabled,
 } from '../../../../../utils/enableBanking.js';
 
 export default withAuth(async function handler(req, res) {
@@ -25,11 +26,10 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
-  if (!isEnableBankingEnabled()) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'Enable Banking is not configured', code: 'NOT_ENABLED' });
-  }
 
   try {
+    if (!(await getTenantEnableBanking(req.user.tenantId))) return notEnabled(res);
+
     const item = await prisma.plaidItem.findFirst({
       where: { id: String(req.query.id), tenantId: req.user.tenantId, provider: PROVIDER },
       select: {

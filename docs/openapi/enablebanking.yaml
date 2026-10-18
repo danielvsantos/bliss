@@ -8,8 +8,11 @@ info:
     land in the existing Plaid review queue (see plaid.yaml).
 
     Every route is refused for integration tokens (403
-    NOT_AVAILABLE_TO_INTEGRATIONS). When ENABLE_BANKING_APP_ID or the private
-    key is not configured, every route except /status answers 404 NOT_ENABLED.
+    NOT_AVAILABLE_TO_INTEGRATIONS). Each tenant brings its own Enable Banking
+    application (#148), managed by tenant admins through /credentials. When the
+    tenant has no credentials, every route except /status and
+    GET /connections/{id} answers 404 NOT_ENABLED. The private key is
+    write-only and never part of any response.
 
 components:
   securitySchemes:
@@ -47,6 +50,7 @@ components:
         lastSync: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         authorizedByMe: { type: boolean }
+        paused: { type: boolean, description: "#148 — the tenant has no Enable Banking credentials and the connection is not revoked" }
 
     BankAccount:
       type: object
@@ -89,13 +93,60 @@ components:
             currencyCode: { type: string, example: EUR }
         skip: { type: boolean, enum: [true] }
 
+    CredentialsView:
+      type: object
+      properties:
+        configured: { type: boolean }
+        callbackUrl: { type: string, example: 'https://api.bliss.example.com/api/enablebanking/callback' }
+        credential:
+          type: object
+          nullable: true
+          properties:
+            appId: { type: string, format: uuid }
+            keyFingerprint: { type: string, example: 'SHA256:Ykx6kBhllCCFAvf5' }
+            keyBits: { type: integer, example: 4096 }
+            status: { type: string, enum: [VERIFIED, UNVERIFIED, INVALID] }
+            lastValidatedAt: { type: string, format: date-time, nullable: true }
+            callbackRegistered: { type: boolean, nullable: true, description: null when unknown }
+            updatedAt: { type: string, format: date-time }
+        usage:
+          type: object
+          properties:
+            activeConnections: { type: integer }
+            pausedConnections: { type: integer }
+            linkedAccounts: { type: integer }
+            limit: { type: integer, example: 5 }
+        history:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              action: { type: string, enum: [SET, REPLACED, KEY_ROTATED, REMOVED] }
+              appId: { type: string }
+              keyFingerprint: { type: string, nullable: true }
+              user:
+                type: object
+                nullable: true
+                properties:
+                  id: { type: string }
+                  name: { type: string, nullable: true }
+              createdAt: { type: string, format: date-time }
+
+    ConfirmationRequired:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [CONFIRMATION_REQUIRED] }
+        affectedConnections: { type: integer }
+
 security:
   - cookieAuth: []
 
 paths:
   /api/enablebanking/status:
     get:
-      summary: Whether Enable Banking is configured
+      summary: Whether the tenant has Enable Banking credentials (all roles)
       tags: [Enable Banking]
       responses:
         '200':
@@ -105,7 +156,84 @@ paths:
               schema:
                 type: object
                 properties:
-                  enabled: { type: boolean }
+                  enabled: { type: boolean, description: The tenant has saved credentials (any status) }
+                  configurable: { type: boolean, description: The caller is an admin }
+                  pausedConnections: { type: integer, description: Non-revoked connections while there are no credentials, else 0 }
+
+  /api/enablebanking/credentials:
+    get:
+      summary: The tenant's Enable Banking app (admins only, #148)
+      tags: [Enable Banking]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CredentialsView' }
+        '403': { description: Not an admin, or an integration token (NOT_AVAILABLE_TO_INTEGRATIONS) }
+    put:
+      summary: Set, replace or rotate the credentials (validated live with GET /application)
+      tags: [Enable Banking]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appId, privateKey]
+              properties:
+                appId: { type: string, format: uuid }
+                privateKey:
+                  type: string
+                  maxLength: 16384
+                  description: RSA private key PEM (PKCS#8 or PKCS#1). CRLF and literal \n escapes are accepted. Write-only.
+                confirmAppChange: { type: boolean, description: Confirms stopping live connections of a different app }
+      responses:
+        '200':
+          description: Replaced, rotated or re-saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CredentialsView' }
+        '201':
+          description: First Set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CredentialsView' }
+        '400': { description: 'INVALID_APP_ID, KEY_NOT_PEM, KEY_PUBLIC, KEY_CERTIFICATE, KEY_NOT_RSA, KEY_ENCRYPTED, KEY_TRUNCATED, KEY_TOO_LARGE or KEY_TOO_SMALL' }
+        '403': { description: Not an admin, or an integration token }
+        '409':
+          description: A different app while ACTIVE/ERROR connections exist, without confirmAppChange
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfirmationRequired' }
+        '422': { description: INVALID_CREDENTIALS or SANDBOX_APP — nothing stored }
+    delete:
+      summary: Remove the credentials (connections become paused, data kept)
+      tags: [Enable Banking]
+      parameters:
+        - { name: confirm, in: query, schema: { type: string, enum: ['true'] } }
+      responses:
+        '204': { description: Removed; a REMOVED history entry is written }
+        '403': { description: Not an admin, or an integration token }
+        '404': { description: NOT_CONFIGURED }
+        '409':
+          description: Connections exist and confirm is not set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfirmationRequired' }
+
+  /api/enablebanking/credentials/verify:
+    post:
+      summary: Re-run the credential probe (no history entry)
+      tags: [Enable Banking]
+      responses:
+        '200':
+          description: VERIFIED, INVALID or UNVERIFIED (unreachable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CredentialsView' }
+        '403': { description: Not an admin, or an integration token }
+        '404': { description: NOT_CONFIGURED }
 
   /api/enablebanking/aspsps:
     get:

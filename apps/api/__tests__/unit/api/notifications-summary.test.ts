@@ -19,6 +19,7 @@ const { mockPrisma } = vi.hoisted(() => ({
     account: { count: vi.fn() },
     transaction: { findFirst: vi.fn() },
     user: { update: vi.fn() },
+    enableBankingCredential: { findFirst: vi.fn() },
   },
 }));
 
@@ -99,6 +100,8 @@ beforeEach(() => {
   mockReadActivity.mockResolvedValue({ available: false, recent: [] });
   // Second findMany call: Enable Banking consents expiring (#132) — none by default.
   mockPrisma.plaidItem.findMany.mockResolvedValue([]);
+  // Enable Banking credentials (#148) — valid (or absent) by default.
+  mockPrisma.enableBankingCredential.findFirst.mockResolvedValue(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -346,5 +349,67 @@ describe('GET /api/notifications/summary — Enable Banking', () => {
     } finally {
       mockUser.lastNotificationSeenAt = null;
     }
+  });
+});
+
+describe('GET /api/notifications/summary — Enable Banking credentials (#148)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  function primeCounts() {
+    mockPrisma.plaidTransaction.count.mockResolvedValue(0);
+    mockPrisma.stagedImportRow.count.mockResolvedValue(0);
+    mockPrisma.insight.count.mockResolvedValue(0);
+    mockPrisma.tenant.findUnique.mockResolvedValue({ onboardingProgress: null, onboardingCompletedAt: new Date() });
+    mockPrisma.account.count.mockResolvedValue(1);
+    mockPrisma.transaction.findFirst.mockResolvedValue({ id: 1 });
+  }
+
+  const run = async () => {
+    const res = makeRes();
+    await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+    return res._body.signals.filter((s: any) => s.type === 'ENABLE_BANKING_CREDENTIALS_INVALID');
+  };
+
+  it('tells admins when the credentials are INVALID, linking to Bank sync', async () => {
+    primeCounts();
+    mockPrisma.enableBankingCredential.findFirst.mockResolvedValueOnce({ invalidatedAt: new Date() });
+    const signals = await run();
+    expect(signals).toEqual([expect.objectContaining({
+      count: 1, href: '/settings?tab=bank-sync', severity: 'warning', isNew: true,
+      label: 'Enable Banking credentials need attention',
+    })]);
+    expect(mockPrisma.enableBankingCredential.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-1', status: 'INVALID' },
+      select: { invalidatedAt: true },
+    });
+  });
+
+  it('is not new when invalidated before the last visit', async () => {
+    primeCounts();
+    (mockUser as any).lastNotificationSeenAt = new Date();
+    try {
+      mockPrisma.enableBankingCredential.findFirst.mockResolvedValueOnce({ invalidatedAt: new Date(Date.now() - DAY) });
+      expect((await run())[0]).toMatchObject({ isNew: false });
+    } finally {
+      mockUser.lastNotificationSeenAt = null;
+    }
+  });
+
+  it('never reaches members or viewers (the credential is not even read)', async () => {
+    primeCounts();
+    const original = mockUser.role;
+    mockUser.role = 'member';
+    try {
+      mockPrisma.enableBankingCredential.findFirst.mockResolvedValue({ invalidatedAt: new Date() });
+      expect(await run()).toEqual([]);
+      expect(mockPrisma.enableBankingCredential.findFirst).not.toHaveBeenCalled();
+    } finally {
+      mockUser.role = original;
+    }
+  });
+
+  it('says nothing while the credentials are fine', async () => {
+    primeCounts();
+    expect(await run()).toEqual([]);
   });
 });

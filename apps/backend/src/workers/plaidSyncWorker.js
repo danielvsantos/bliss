@@ -9,7 +9,6 @@ const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker } = require('../utils/activityTracker');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
 const { enableBankingDispatch, syncConnection } = require('./handlers/enableBankingSync');
-const { isEnableBankingEnabled } = require('../services/enableBanking/client');
 const { syncCutoffDate } = require('../services/enableBanking/dateWindow');
 const { getSyncTimes, BUDGET_TIMEZONE } = require('@bliss/shared/enablebanking');
 
@@ -61,7 +60,8 @@ function trackEarliestDate(transactions, currentEarliest) {
 /**
  * Registers one repeatable ENABLE_BANKING_SYNC_ALL job scheduler per
  * ENABLE_BANKING_SYNC_TIMES slot (Europe/Madrid), and removes schedulers for
- * slots no longer configured. No-op when Enable Banking is not configured.
+ * slots no longer configured. Always registered (#148): credentials are per
+ * tenant, so whether anything syncs is decided per connection by the fan-out.
  */
 async function registerEnableBankingSchedule() {
     const queue = getPlaidSyncQueue();
@@ -73,7 +73,6 @@ async function registerEnableBankingSchedule() {
             await queue.removeJobScheduler(s.key);
         }
     }
-    if (!isEnableBankingEnabled()) return [];
     for (const time of times) {
         const [hh, mm] = time.split(':').map(Number);
         await queue.upsertJobScheduler(

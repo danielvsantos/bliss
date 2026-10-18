@@ -48,6 +48,7 @@ export default withAuth(async function handler(req, res) {
         plaidFailedCount,
         activity,
         expiringConsents,
+        invalidEnableBankingCredential,
       ] = await Promise.all([
         // 1. Plaid transactions awaiting review
         prisma.plaidTransaction.count({
@@ -113,6 +114,13 @@ export default withAuth(async function handler(req, res) {
           },
           select: { id: true, institutionName: true, consentExpiration: true },
         }),
+        // 11. The tenant's Enable Banking credentials rejected by Enable Banking (#148, admins only)
+        user.role === 'admin'
+          ? prisma.enableBankingCredential.findFirst({
+            where: { tenantId: user.tenantId, status: 'INVALID' },
+            select: { invalidatedAt: true },
+          })
+          : null,
       ]);
 
       const totalReviewCount = plaidClassifiedCount + pendingImportCount;
@@ -162,6 +170,20 @@ export default withAuth(async function handler(req, res) {
           severity: urgent ? 'warning' : 'info',
           isNew: thresholdCrossedAt > lastSeenAt,
           expiresAt: expiresAt.toISOString(),
+        });
+      }
+
+      // Signal 2c: the tenant's Enable Banking app credentials need attention
+      // (#148). Admin only, separate from the per-connection reconnect signal.
+      if (invalidEnableBankingCredential) {
+        const invalidatedAt = invalidEnableBankingCredential.invalidatedAt;
+        signals.push({
+          type: 'ENABLE_BANKING_CREDENTIALS_INVALID',
+          count: 1,
+          label: 'Enable Banking credentials need attention',
+          href: '/settings?tab=bank-sync',
+          severity: 'warning',
+          isNew: !invalidatedAt || new Date(invalidatedAt) > lastSeenAt,
         });
       }
 

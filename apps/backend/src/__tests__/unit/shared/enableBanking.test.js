@@ -1,17 +1,24 @@
 /**
  * @bliss/shared/enablebanking + @bliss/shared/bank-tx-label (#132):
- * JWT signing, key loading, config, typed errors, balances, the R8 date
- * window and the D5 budget helpers.
+ * JWT signing, key parsing (#148, against the shared test keys), the
+ * credential probe, the tenant client cache, typed errors, balances, the R8
+ * date window and the D5 budget helpers.
  */
 
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const {
     signJwt,
-    loadPrivateKey,
-    getEnableBankingConfig,
+    parsePrivateKey,
+    KeyFormatError,
+    appIdHash,
+    isValidAppId,
+    getBaseUrl,
+    retiredEnvVars,
+    createTenantClientCache,
+    isCredentialError,
+    probeApplication,
     createClient,
     EnableBankingError,
     pickBalance,
@@ -29,6 +36,10 @@ const { bankTxLabel } = require('@bliss/shared/bank-tx-label');
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' });
+
+const KEYS_DIR = path.join(__dirname, '../../../../../../packages/shared/test-fixtures/enablebanking-keys');
+const readKey = (name) => fs.readFileSync(path.join(KEYS_DIR, name), 'utf8');
+const MANIFEST = JSON.parse(readKey('manifest.json'));
 
 const decode = (part) => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
 
@@ -60,28 +71,124 @@ describe('signJwt', () => {
     });
 });
 
-describe('loadPrivateKey / getEnableBankingConfig', () => {
-    it('accepts a \\n-escaped single-line PEM', () => {
-        const escaped = PRIVATE_PEM.replace(/\n/g, '\\n');
-        expect(loadPrivateKey({ ENABLE_BANKING_PRIVATE_KEY: escaped })).toBe(PRIVATE_PEM);
+describe('parsePrivateKey (#148, shared test keys)', () => {
+    const accepted = Object.entries(MANIFEST).filter(([, e]) => e.ok);
+    const rejected = Object.entries(MANIFEST).filter(([, e]) => !e.ok);
+
+    it.each(accepted)('accepts %s', (file, expected) => {
+        const parsed = parsePrivateKey(readKey(file));
+        expect(parsed.bits).toBe(expected.bits);
+        expect(parsed.pem.startsWith('-----BEGIN PRIVATE KEY-----\n')).toBe(true);
+        expect(parsed.fingerprint).toMatch(/^SHA256:[A-Za-z0-9+/]{16}$/);
     });
 
-    it('reads the key from a path', () => {
-        const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'eb-')), 'key.pem');
-        fs.writeFileSync(file, PRIVATE_PEM);
-        expect(loadPrivateKey({ ENABLE_BANKING_PRIVATE_KEY_PATH: file })).toBe(PRIVATE_PEM);
+    it.each(rejected)('rejects %s with its code', (file, expected) => {
+        const err = (() => { try { parsePrivateKey(readKey(file)); return null; } catch (e) { return e; } })();
+        expect(err).toBeInstanceOf(KeyFormatError);
+        expect(err.code).toBe(expected.code);
     });
 
-    it('returns null when nothing is configured', () => {
-        expect(loadPrivateKey({})).toBeNull();
+    it('gives every variant of the same key the same fingerprint and stored form', () => {
+        const variants = accepted.filter(([, e]) => e.key === 'k4096').map(([f]) => parsePrivateKey(readKey(f)));
+        expect(variants).toHaveLength(4);
+        expect(new Set(variants.map((v) => v.fingerprint)).size).toBe(1);
+        expect(new Set(variants.map((v) => v.pem)).size).toBe(1);
+        expect(parsePrivateKey(readKey('rsa2048-pkcs8.pem')).fingerprint).not.toBe(variants[0].fingerprint);
     });
 
-    it('is enabled only with both the app id and a key, and flags a half configuration', () => {
-        expect(getEnableBankingConfig({})).toMatchObject({ enabled: false, partial: false });
-        expect(getEnableBankingConfig({ ENABLE_BANKING_APP_ID: 'a' })).toMatchObject({ enabled: false, partial: true });
-        expect(getEnableBankingConfig({ ENABLE_BANKING_PRIVATE_KEY: 'k' })).toMatchObject({ enabled: false, partial: true });
-        expect(getEnableBankingConfig({ ENABLE_BANKING_APP_ID: 'a', ENABLE_BANKING_PRIVATE_KEY_PATH: '/k' }))
-            .toMatchObject({ enabled: true, partial: false, appId: 'a', baseUrl: 'https://api.enablebanking.com' });
+    it('re-exports a key that signs JWTs verifiable with the original public key', () => {
+        const { pem } = parsePrivateKey(PRIVATE_PEM.replace(/\n/g, '\r\n'));
+        const [h, c, sig] = signJwt({ appId: 'app', privateKeyPem: pem, now: 1 }).split('.');
+        const ok = crypto.createVerify('RSA-SHA256').update(`${h}.${c}`).verify(publicKey, Buffer.from(sig, 'base64url'));
+        expect(ok).toBe(true);
+    });
+
+    it('rejects empty input and never echoes key material in messages', () => {
+        expect(() => parsePrivateKey('')).toThrow(KeyFormatError);
+        expect(() => parsePrivateKey(undefined)).toThrow(KeyFormatError);
+        const truncated = readKey('truncated.pem');
+        const err = (() => { try { parsePrivateKey(truncated); return null; } catch (e) { return e; } })();
+        expect(err.message).not.toContain(truncated.split('\n')[1]);
+    });
+});
+
+describe('app id, env and probe helpers (#148)', () => {
+    it('validates UUID app ids and hashes them case-insensitively', () => {
+        expect(isValidAppId('9a1b2c3d-1111-2222-3333-444455556666')).toBe(true);
+        expect(isValidAppId('not-a-uuid')).toBe(false);
+        expect(isValidAppId(undefined)).toBe(false);
+        expect(appIdHash('9A1B2C3D-1111-2222-3333-444455556666')).toBe(appIdHash(' 9a1b2c3d-1111-2222-3333-444455556666 '));
+        expect(appIdHash('9a1b2c3d-1111-2222-3333-444455556666')).toHaveLength(32);
+    });
+
+    it('keeps only the API base URL deployment-wide and lists retired env vars that are set', () => {
+        expect(getBaseUrl({})).toBe('https://api.enablebanking.com');
+        expect(getBaseUrl({ ENABLE_BANKING_API_URL: ' https://x.test ' })).toBe('https://x.test');
+        expect(retiredEnvVars({})).toEqual([]);
+        expect(retiredEnvVars({ ENABLE_BANKING_APP_ID: 'a', ENABLE_BANKING_PRIVATE_KEY: ' ', ENABLE_BANKING_PRIVATE_KEY_PATH: '/k' }))
+            .toEqual(['ENABLE_BANKING_APP_ID', 'ENABLE_BANKING_PRIVATE_KEY_PATH']);
+    });
+
+    it('treats a 401/403 without a session code as a possible credential error', () => {
+        expect(isCredentialError(new EnableBankingError('x', { status: 401 }))).toBe(true);
+        expect(isCredentialError(new EnableBankingError('x', { status: 403, code: 'UNAUTHORIZED' }))).toBe(true);
+        expect(isCredentialError(new EnableBankingError('x', { status: 401, code: 'EXPIRED_SESSION' }))).toBe(false);
+        expect(isCredentialError(new EnableBankingError('x', { status: 400 }))).toBe(false);
+        expect(isCredentialError(new Error('x'))).toBe(false);
+    });
+
+    it('classifies the GET /application probe', async () => {
+        const cb = 'https://bliss.test/api/enablebanking/callback';
+        const ok = (body) => ({ getApplication: async () => body });
+        const fail = (status, code) => ({ getApplication: async () => { throw new EnableBankingError('x', { status, code, retryable: status === 0 || status === 429 || status >= 500 }); } });
+        await expect(probeApplication(ok({ redirect_urls: [`${cb}/`] }), { callbackUrl: cb })).resolves.toEqual({ result: 'VERIFIED', callbackRegistered: true });
+        await expect(probeApplication(ok({ redirect_urls: ['https://other.test'] }), { callbackUrl: cb })).resolves.toEqual({ result: 'VERIFIED', callbackRegistered: false });
+        await expect(probeApplication(ok({}), { callbackUrl: cb })).resolves.toEqual({ result: 'VERIFIED', callbackRegistered: null });
+        await expect(probeApplication(ok({ environment: 'SANDBOX' }))).resolves.toMatchObject({ result: 'SANDBOX' });
+        for (const status of [401, 403, 404]) {
+            await expect(probeApplication(fail(status))).resolves.toMatchObject({ result: 'INVALID', httpStatus: status });
+        }
+        for (const status of [0, 429, 502]) {
+            await expect(probeApplication(fail(status))).resolves.toMatchObject({ result: 'UNREACHABLE' });
+        }
+        await expect(probeApplication({ getApplication: async () => { throw new TypeError('bug'); } })).rejects.toThrow('bug');
+    });
+});
+
+describe('createTenantClientCache (#148, D2)', () => {
+    const cred = (tenantId, version, appId = 'app') => ({ tenantId, version, appId, privateKey: PRIVATE_PEM });
+
+    it('reuses a client per (tenant, version) and replaces it on a version bump', () => {
+        const cache = createTenantClientCache({ max: 10 });
+        const a1 = cache.get(cred('t1', 1));
+        expect(cache.get(cred('t1', 1))).toBe(a1);
+        const a2 = cache.get(cred('t1', 2));
+        expect(a2).not.toBe(a1);
+        expect(cache.size).toBe(1);
+        cache.get(cred('t2', 1));
+        expect(cache.size).toBe(2);
+    });
+
+    it('is bounded and evicts the least recently used tenant', () => {
+        const cache = createTenantClientCache({ max: 2 });
+        const t1 = cache.get(cred('t1', 1));
+        cache.get(cred('t2', 1));
+        cache.get(cred('t1', 1)); // t1 is now most recent
+        cache.get(cred('t3', 1));
+        expect(cache.size).toBe(2);
+        expect(cache.get(cred('t1', 1))).toBe(t1);
+    });
+
+    it('signs each tenant with its own app id', async () => {
+        const seen = [];
+        const fetchImpl = async (url, init) => {
+            seen.push(decode(init.headers.Authorization.slice(7).split('.')[0]).kid);
+            return { ok: true, status: 200, text: async () => '{}' };
+        };
+        const cache = createTenantClientCache({ fetchImpl });
+        await cache.get(cred('tA', 1, 'app-A')).getApplication();
+        await cache.get(cred('tB', 1, 'app-B')).getApplication();
+        expect(seen).toEqual(['app-A', 'app-B']);
     });
 });
 

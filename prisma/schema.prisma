@@ -74,6 +74,8 @@ model Tenant {
   apiKeys             ApiKey[]
   signupInvites       SignupInvite[]
   enableBankingAccounts EnableBankingAccount[]
+  enableBankingCredential       EnableBankingCredential?
+  enableBankingCredentialEvents EnableBankingCredentialEvent[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -130,6 +132,8 @@ model User {
   accountOwnerships AccountOwner[]
   plaidItems        PlaidItem[]
   enableBankingAccounts EnableBankingAccount[]
+  enableBankingCredentialsUpdated EnableBankingCredential[]
+  enableBankingCredentialEvents   EnableBankingCredentialEvent[]
 
   // Notification center
   lastNotificationSeenAt DateTime?  // When user last opened notification center
@@ -249,6 +253,53 @@ model EnableBankingAccount {
   @@unique([plaidItemId, identificationHash])
   @@index([tenantId])
   @@index([accountId])
+}
+
+/// Enable Banking (#148): the tenant's own Enable Banking application, 1:1
+/// with Tenant. Managed by tenant admins in Settings → Bank sync; every Enable
+/// Banking call of the tenant is signed with it. No row = no Enable Banking
+/// (connections of the tenant are "paused", derived on read, never stored).
+///
+/// `privateKey` is write-only: no API ever returns it. `version` is bumped on
+/// every change so per-process client caches pick up a replace or removal.
+model EnableBankingCredential {
+  id                 String    @id @default(cuid())
+  tenantId           String    @unique
+  appId              String    // [ENCRYPTED]
+  appIdHash          String    // sha256(appId) hex, first 32 chars — app-change comparison
+  privateKey         String    // [ENCRYPTED] normalised PKCS#8 PEM
+  keyFingerprint     String    // "SHA256:xxxxxxxxxxxxxxxx" of the derived public key
+  keyBits            Int
+  status             String    // VERIFIED | UNVERIFIED | INVALID
+  lastValidatedAt    DateTime?
+  invalidatedAt      DateTime? // drives the admin notification's isNew
+  callbackRegistered Boolean?  // from GET /application; null = unknown
+  version            Int       @default(1)
+  updatedByUserId    String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  updatedBy User?  @relation(fields: [updatedByUserId], references: [id], onDelete: SetNull)
+}
+
+/// Enable Banking (#148): append-only change history of a tenant's
+/// credentials. Holds no key material. The latest REMOVED event is the
+/// "previous app" when credentials are set again.
+model EnableBankingCredentialEvent {
+  id             String   @id @default(cuid())
+  tenantId       String
+  action         String   // SET | REPLACED | KEY_ROTATED | REMOVED
+  appId          String   // [ENCRYPTED]
+  appIdHash      String
+  keyFingerprint String?
+  userId         String?
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
 }
 
 model PlaidSyncLog {

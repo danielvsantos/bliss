@@ -18,6 +18,9 @@ describe('validateEnv', () => {
     'PLAID_SECRET',
     'REDIS_URL',
     'SENTRY_DSN',
+    'ENABLE_BANKING_APP_ID',
+    'ENABLE_BANKING_PRIVATE_KEY',
+    'ENABLE_BANKING_PRIVATE_KEY_PATH',
   ];
 
   beforeEach(() => {
@@ -106,6 +109,38 @@ describe('validateEnv', () => {
       validateEnv();
       const msgs = warnSpy.mock.calls.map((c) => String(c[0]));
       expect(msgs.some((m) => m.includes('Plaid'))).toBe(true);
+      warnSpy.mockRestore();
+    });
+
+    it('warns that retired Enable Banking env vars are ignored (#148)', () => {
+      setAllRequired();
+      setAllOptional();
+      process.env.ENABLE_BANKING_APP_ID = 'app';
+      process.env.ENABLE_BANKING_PRIVATE_KEY_PATH = '/keys/eb.pem';
+      delete process.env.ENABLE_BANKING_PRIVATE_KEY;
+      process.env.NODE_ENV = 'development';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      validateEnv();
+      const msgs = warnSpy.mock.calls.map((c) => String(c[0]));
+      const msg = msgs.find((m) => m.includes('ENABLE_BANKING_APP_ID'));
+      expect(msg).toContain('ENABLE_BANKING_PRIVATE_KEY_PATH');
+      expect(msg).toContain('Settings → Bank sync');
+      expect(msg).not.toContain('/keys/eb.pem');
+      warnSpy.mockRestore();
+    });
+
+    it('does not mention Enable Banking when no retired env var is set', () => {
+      setAllRequired();
+      setAllOptional();
+      delete process.env.ENABLE_BANKING_APP_ID;
+      delete process.env.ENABLE_BANKING_PRIVATE_KEY;
+      delete process.env.ENABLE_BANKING_PRIVATE_KEY_PATH;
+      process.env.NODE_ENV = 'development';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      validateEnv();
+      expect(warnSpy.mock.calls.some((c) => String(c[0]).includes('ENABLE_BANKING'))).toBe(false);
       warnSpy.mockRestore();
     });
 
