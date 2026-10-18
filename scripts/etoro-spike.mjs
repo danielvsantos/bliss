@@ -3,6 +3,7 @@
 //
 //   ETORO_API_KEY=... ETORO_USER_KEY=... node scripts/etoro-spike.mjs            # real account
 //   ETORO_ENV=demo ETORO_API_KEY=... ETORO_USER_KEY=... node scripts/etoro-spike.mjs
+//   ETORO_PI_USERNAME=<investor> ...                                   # also read a public investor's live portfolio
 //
 // Needs Node 18+. Writes ./etoro-spike-out/:
 //   report.md   - safe to paste back: counts, ratios, percentages, symbols. No amounts, no names, no ids.
@@ -211,6 +212,36 @@ async function main() {
   }
   log();
 
+  // 4b. Symbol mapping on direct holdings: answers "do eToro symbols map to Twelve Data?" without copy trades
+  const directIds = [...new Set((agg?.instrumentAggregates || []).map((a) => Number(a.instrumentId)))]
+    .filter((id) => Number.isFinite(id) && !meta.has(id));
+  if (directIds.length) {
+    log('## 4b. Symbols of direct holdings (symbol-mapping check, no amounts)');
+    await fetchMeta(directIds, 'direct-instruments', meta);
+    logSymbolTable(directIds, meta, typeName);
+    log();
+  }
+
+  // 4c. Optional: a public investor's live portfolio (fallback composition source)
+  const pi = process.env.ETORO_PI_USERNAME;
+  if (pi) {
+    log(`## 4c. Public live portfolio of the investor in ETORO_PI_USERNAME`);
+    const live = await get('pi-portfolio-live', `/api/v1/user-info/people/${encodeURIComponent(pi)}/portfolio/live`);
+    if (live) {
+      const pos = live.positions || [];
+      const social = live.socialTrades || [];
+      log(`- direct positions: ${pos.length} · social trades (their own copies): ${social.length}`);
+      log(`- Σ investmentPct over positions: ${sum(pos.map((p) => p.investmentPct)).toFixed(1)} · leveraged: ${pos.filter((p) => Number(p.leverage) > 1).length} · short: ${pos.filter((p) => p.isBuy === false).length}`);
+      const piIds = [...new Set(pos.map((p) => Number(p.instrumentId)))].filter(Number.isFinite);
+      const piMeta = new Map();
+      await fetchMeta(piIds, 'pi-instruments', piMeta);
+      const weight = new Map();
+      for (const p of pos) weight.set(Number(p.instrumentId), (weight.get(Number(p.instrumentId)) || 0) + (Number(p.investmentPct) || 0));
+      logSymbolTable(piIds, piMeta, typeName, weight);
+    }
+    log();
+  }
+
   // 5. P2 probes: confirm what history exists (counts only)
   log('## 5. Movement endpoints (P2 confirmation)');
   const since = new Date(Date.now() - 90 * 864e5);
@@ -231,6 +262,34 @@ async function main() {
 
   writeFileSync(join(OUT, 'report.md'), report.join('\n') + '\n');
   console.log(`\nWrote ${join(OUT, 'report.md')} (safe to share) and ${join(OUT, 'raw')}/ (keep local).`);
+}
+
+async function fetchMeta(ids, name, into) {
+  for (let i = 0; i < ids.length; i += 50) {
+    const r = await get(`${name}-${i / 50 + 1}`, PATHS.instruments, { instrumentIds: ids.slice(i, i + 50).join(',') });
+    for (const d of r?.instrumentDisplayDatas || []) into.set(Number(pick(d, 'instrumentID', 'instrumentId')), d);
+  }
+}
+
+// Symbol table for the mapping check. `weight` (optional) is a percentage per instrument id.
+function logSymbolTable(ids, meta, typeName, weight) {
+  const suffixes = {};
+  for (const id of ids) {
+    const s = meta.get(id)?.symbolFull || '';
+    const suffix = s.includes('.') ? `.${s.split('.').pop()}` : '(none)';
+    suffixes[suffix] = (suffixes[suffix] || 0) + 1;
+  }
+  log(`- instruments: ${ids.length} · metadata returned: ${ids.filter((id) => meta.has(id)).length}`);
+  log(`- symbol suffixes: ${Object.entries(suffixes).map(([k, v]) => `\`${k}\`: ${v}`).join(' · ') || '-'}`);
+  log();
+  log(`| symbolFull | name | type | exchange id | price source |${weight ? ' weight |' : ''}`);
+  log(`|---|---|---|---|---|${weight ? '---|' : ''}`);
+  const rows = [...ids].sort((a, b) => (weight ? (weight.get(b) || 0) - (weight.get(a) || 0) : 0));
+  for (const id of rows) {
+    const m = meta.get(id);
+    const t = m?.instrumentTypeID;
+    log(`| \`${m?.symbolFull ?? `id:${id}`}\` | ${(m?.instrumentDisplayName ?? '?').replace(/\|/g, '/')} | ${typeName.get(Number(t)) || t || '?'} | ${m?.exchangeID ?? '?'} | ${m?.priceSource ?? '-'} |${weight ? ` ${(weight.get(id) || 0).toFixed(1)}% |` : ''}`);
+  }
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
