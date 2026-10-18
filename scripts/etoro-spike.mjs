@@ -174,6 +174,32 @@ async function main() {
   }
   log();
 
+  // 3b. Drift and dividends: model each real copy from its investor's public gain series and compare
+  const pfMirrors = pf?.clientPortfolio?.mirrors || [];
+  if (pfMirrors.length) {
+    log('## 3b. Copy drift check (public gain series vs your real copy)');
+    log('Modelled value = initial investment x compounded daily gain since the copy started. Exact only when there were no later deposits or withdrawals.');
+    log();
+    log('| # | days of gains | first gain date vs copy start | later deposits/withdrawals | modelled vs real value | positions with dividend/fee credits (totalFees < 0) |');
+    log('|---|---|---|---|---|---|');
+    for (const [i, m] of pfMirrors.entries()) {
+      const start = (m.startedCopyDate || '').slice(0, 10);
+      const aggM = (agg?.mirrors || []).find((x) => Number(x.mirrorId) === Number(m.mirrorID));
+      const real = Number(aggM?.mirrorTotals?.mirrorLiquidationValue) || 0;
+      const extra = (Number(m.depositSummary) || 0) + (Number(m.withdrawalSummary) || 0);
+      const credits = (m.positions || []).filter((p) => Number(p.totalFees) < 0).length;
+      let cells = ['-', '-', extra ? 'yes (approximate)' : 'none (exact)', '-'];
+      if (m.parentUsername && start) {
+        const series = await get(`mirror-${i + 1}-gain-daily`, `/api/v2/portfolios/${encodeURIComponent(m.parentUsername)}/gain/daily`, { minDate: start, maxDate: isoDay(new Date()) });
+        const c = compound(series);
+        const modelled = (Number(m.initialInvestment) || 0) * c.index;
+        cells = [String(c.n), `${c.first ?? '-'} vs ${start}`, cells[2], real ? pct(modelled, real) : '-'];
+      }
+      log(`| C${i + 1} | ${cells.join(' | ')} | ${credits}/${(m.positions || []).length} |`);
+    }
+    log();
+  }
+
   // 4. Instrument metadata: can we map to Twelve Data symbols?
   log('## 4. Instruments held inside copy trades');
   const ids = [...mirrorInstrumentIds.keys()].filter((n) => Number.isFinite(n));
@@ -269,6 +295,19 @@ async function main() {
     log();
   }
 
+  // 4d2. How far back does the public gain series go?
+  if (pi) {
+    log('## 4d2. Gain series depth for ETORO_PI_USERNAME');
+    for (const gran of ['daily', 'monthly']) {
+      const series = await get(`pi-gain-${gran}`, `/api/v2/portfolios/${encodeURIComponent(pi)}/gain/${gran}`, { minDate: '2010-01-01', maxDate: isoDay(new Date()) });
+      if (series) {
+        const c = compound(series);
+        log(`- ${gran}: ${c.n} points · first ${c.first ?? '-'} · last ${c.last ?? '-'} · compounded ${((c.index - 1) * 100).toFixed(1)}% · API totalGain ${series.totalGain != null ? (series.totalGain * 100).toFixed(1) + '%' : '-'}`);
+      }
+    }
+    log();
+  }
+
   // 4e. Does eToro expose ETF composition? Look at every field it returns for a few ETFs.
   const etfs = (process.env.ETORO_ETF_SYMBOLS || 'VOO,QQQ').split(',').map((s) => s.trim()).filter(Boolean);
   log('## 4e. ETF composition check');
@@ -349,6 +388,12 @@ function logSymbolTable(ids, meta, typeName, weight) {
     }
     log(`| \`${m?.symbolFull ?? `id:${id}`}\` | ${(m?.instrumentDisplayName ?? '?').replace(/\|/g, '/')} | ${typeName.get(Number(t)) || t || '?'} | ${m?.exchangeID ?? '?'} | ${m?.priceSource ?? '-'} |${weight ? ` ${(weight.get(id) || 0).toFixed(1)}% |` : ''}`);
   }
+}
+
+// Compound a gain series ({ gains: [{ date, gain }] }, decimal fractions per period).
+function compound(series) {
+  const gains = (series?.gains || []).filter((g) => Number.isFinite(Number(g.gain)));
+  return { index: gains.reduce((acc, g) => acc * (1 + Number(g.gain)), 1), first: gains[0]?.date, last: gains[gains.length - 1]?.date, n: gains.length };
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
