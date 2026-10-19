@@ -1,0 +1,2 @@
+# Test-only key fixtures (#148): keep bytes exact (rsa4096-crlf.pem must keep its CRLF line endings).
+packages/shared/test-fixtures/enablebanking-keys/** -text
