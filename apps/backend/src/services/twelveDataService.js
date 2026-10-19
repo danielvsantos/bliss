@@ -1,22 +1,12 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const twelveDataBudget = require('../utils/twelveDataBudget');
+const { getTwelveDataContext } = require('../utils/twelveDataContext');
+const { creditCost, DEFAULT_PRIORITY } = require('../config/twelveDataCredits');
 const { Decimal } = require('@prisma/client/runtime/library');
 
 const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY;
 const BASE_URL = 'https://api.twelvedata.com';
-
-// Three independent rate-limit queues so import bursts, continuous valuation, and
-// nightly fundamentals don't block each other. All share the 377 credits/minute Grow plan limit:
-//   Import       (searchSymbol + getSymbolProfile): 150 calls/min → 1 slot / 400ms
-//   Valuation    (getHistoricalPrice + getLatestPrice): 200 calls/min → 1 slot / 300ms
-//   Fundamentals (getEarnings + getDividends, nightly only): ~30 calls/min → 1 slot / 2000ms
-//   Combined worst-case (import + valuation): 350/min — safely below the 377 cap.
-//   Fundamentals run overnight when import/valuation are idle.
-const IMPORT_THROTTLE_MS = Math.ceil(60_000 / 70);          // ~857ms per import slot
-const VALUATION_THROTTLE_MS = Math.ceil(60_000 / 300);      // ~200ms per valuation slot
-const FUNDAMENTALS_THROTTLE_MS = Math.ceil(60_000 / 30);    // ~2000ms per fundamentals slot
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Safely parse a numeric value from Twelve Data.
@@ -28,40 +18,97 @@ function safeParseFloat(value) {
     return Number.isNaN(num) ? null : num;
 }
 
+/** Consecutive Twelve Data 429s tolerated per request before giving up (the caller gets its null path). */
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+function isRateLimited(response, error) {
+    const status = error ? error.response?.status : response?.status;
+    if (status === 429) return true;
+    const body = error ? error.response?.data : response?.data;
+    return Boolean(body && body.status === 'error' && Number(body.code) === 429);
+}
+
 /**
- * Rate-limit slot acquirers — one per usage domain.
- *
- * Each caller reserves the NEXT available slot synchronously (before any
- * await), so concurrent callers always get staggered slots rather than
- * firing simultaneously. This is safe in Node's single-threaded event loop:
- * the synchronous portion of two concurrent calls never interleaves.
- *
- * acquireImportSlot        — used by searchSymbol() and getSymbolProfile()
- * acquireValuationSlot     — used by getHistoricalPrice() and getLatestPrice()
- * acquireFundamentalsSlot  — used by getEarnings() and getDividends() (nightly batch)
+ * How long to pause after a 429: the `Retry-After` header (seconds or an HTTP
+ * date) when present, otherwise until one second past the next minute
+ * boundary, when Twelve Data's per-minute counter resets.
  */
-let _importNextSlotTime = 0;
-async function acquireImportSlot() {
-    const now = Date.now();
-    const wait = Math.max(0, _importNextSlotTime - now);
-    _importNextSlotTime = Math.max(now, _importNextSlotTime) + IMPORT_THROTTLE_MS;
-    if (wait > 0) await sleep(wait);
+function retryAfterMs(headers) {
+    const raw = headers?.['retry-after'];
+    if (raw != null && raw !== '') {
+        const seconds = Number(raw);
+        if (Number.isFinite(seconds) && seconds >= 0) return Math.max(1000, seconds * 1000);
+        const at = Date.parse(raw);
+        if (!Number.isNaN(at)) return Math.max(1000, at - Date.now());
+    }
+    return 60_000 - (Date.now() % 60_000) + 1000;
 }
 
-let _valuationNextSlotTime = 0;
-async function acquireValuationSlot() {
-    const now = Date.now();
-    const wait = Math.max(0, _valuationNextSlotTime - now);
-    _valuationNextSlotTime = Math.max(now, _valuationNextSlotTime) + VALUATION_THROTTLE_MS;
-    if (wait > 0) await sleep(wait);
-}
+/**
+ * The single path to api.twelvedata.com (#150). Reserves the endpoint's credits
+ * from the shared budget at the caller's priority (from the Twelve Data
+ * context, see `utils/twelveDataContext.js`), makes the request and records
+ * usage on the context. A 429 pauses the shared budget and retries; waiting
+ * never throws. Non-429 errors are rethrown unchanged for the caller's catch.
+ *
+ * @param {string} endpoint Path without the leading slash, e.g. 'time_series'.
+ * @param {Object} params Query params, including `apikey`.
+ * @returns {Promise<Object>} The axios response.
+ */
+async function tdGet(endpoint, params) {
+    const ctx = getTwelveDataContext();
+    const priority = ctx?.priority ?? DEFAULT_PRIORITY;
+    if (!ctx) {
+        logger.debug('[TwelveData] Call outside a priority context, using the default priority', { endpoint });
+    }
+    const credits = creditCost(endpoint);
 
-let _fundamentalsNextSlotTime = 0;
-async function acquireFundamentalsSlot() {
-    const now = Date.now();
-    const wait = Math.max(0, _fundamentalsNextSlotTime - now);
-    _fundamentalsNextSlotTime = Math.max(now, _fundamentalsNextSlotTime) + FUNDAMENTALS_THROTTLE_MS;
-    if (wait > 0) await sleep(wait);
+    for (let attempt = 0; ; attempt++) {
+        const reservation = await twelveDataBudget.acquire({ endpoint, credits, priority });
+        if (ctx?.usage) {
+            ctx.usage.waitedMs += reservation.waitedMs;
+            ctx.usage.mode = reservation.mode;
+        }
+
+        let response;
+        let error;
+        try {
+            response = await axios.get(`${BASE_URL}/${endpoint}`, { timeout: 10000, params });
+        } catch (err) {
+            error = err;
+        }
+        const headers = (error ? error.response?.headers : response?.headers) || {};
+
+        if (ctx?.usage) {
+            ctx.usage.credits += reservation.credits;
+            ctx.usage.calls += 1;
+        }
+        logger.debug('[TwelveData] Credits', {
+            endpoint,
+            reserved: reservation.credits,
+            minuteUsed: safeParseFloat(headers['api-credits-used']),
+            minuteLeft: safeParseFloat(headers['api-credits-left']),
+        });
+
+        if (!isRateLimited(response, error)) {
+            if (error) throw error;
+            return response;
+        }
+
+        const pauseMs = retryAfterMs(headers);
+        twelveDataBudget.pause(pauseMs);
+        if (ctx?.usage) ctx.usage.rateLimited += 1;
+        if (attempt >= MAX_RATE_LIMIT_RETRIES) {
+            logger.warn('[TwelveData] Still rate limited after retries, giving up on this request', {
+                endpoint, symbol: params?.symbol, attempts: attempt + 1,
+            });
+            if (error) throw error;
+            return response;
+        }
+        logger.warn('[TwelveData] Rate limited (429), pausing the shared budget and retrying', {
+            endpoint, symbol: params?.symbol, pauseMs, attempt: attempt + 1,
+        });
+    }
 }
 
 /**
@@ -87,16 +134,12 @@ async function getHistoricalPrice(symbol, date, { micCode, expectedCurrency } = 
     startDate.setDate(startDate.getDate() - 3);
     const startStr = startDate.toISOString().split('T')[0];
 
-    const url = `${BASE_URL}/time_series`;
+    const endpoint = 'time_series';
 
-    await acquireValuationSlot();
     logger.info(`[TwelveData] Fetching historical price for ${symbol}`, { startDate: startStr, endDate, micCode: micCode || 'none' });
 
     try {
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: { symbol, interval: '1day', start_date: startStr, end_date: endDate, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
-        });
+        const response = await tdGet(endpoint, { symbol, interval: '1day', start_date: startStr, end_date: endDate, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) });
 
         if (response.data.status === 'error') {
             // If the call failed WITH a mic_code, retry WITHOUT it. The mic_code
@@ -107,11 +150,7 @@ async function getHistoricalPrice(symbol, date, { micCode, expectedCurrency } = 
             // ETF, #134), so its price is only used when its currency matches.
             if (micCode) {
                 logger.info(`[TwelveData] Retrying ${symbol} without mic_code (was: ${micCode})`);
-                await acquireValuationSlot();
-                const retryResponse = await axios.get(url, {
-                    timeout: 10000,
-                    params: { symbol, interval: '1day', start_date: startStr, end_date: endDate, apikey: TWELVE_DATA_API_KEY },
-                });
+                const retryResponse = await tdGet(endpoint, { symbol, interval: '1day', start_date: startStr, end_date: endDate, apikey: TWELVE_DATA_API_KEY });
 
                 if (retryResponse.data.status === 'error') {
                     logger.warn(`[TwelveData] API error for ${symbol} (retry without mic_code): ${retryResponse.data.message}`);
@@ -170,16 +209,12 @@ async function getLatestPrice(symbol, { micCode, extended } = {}) {
         return null;
     }
 
-    const url = `${BASE_URL}/quote`;
+    const endpoint = 'quote';
 
-    await acquireValuationSlot();
     logger.info(`[TwelveData] Fetching latest price for ${symbol}`);
 
     try {
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
-        });
+        const response = await tdGet(endpoint, { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) });
 
         if (response.data.status === 'error') {
             logger.warn(`[TwelveData] API error for ${symbol}: ${response.data.message}`);
@@ -223,16 +258,12 @@ async function searchSymbol(query) {
         return [];
     }
 
-    const url = `${BASE_URL}/symbol_search`;
+    const endpoint = 'symbol_search';
 
-    await acquireImportSlot();
     logger.info(`[TwelveData] Searching symbols for: ${query}`);
 
     try {
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: { symbol: query, outputsize: 10, apikey: TWELVE_DATA_API_KEY },
-        });
+        const response = await tdGet(endpoint, { symbol: query, outputsize: 10, apikey: TWELVE_DATA_API_KEY });
 
         if (response.data.status === 'error') {
             logger.warn(`[TwelveData] Search error: ${response.data.message}`);
@@ -270,16 +301,12 @@ async function getSymbolProfile(symbol, { micCode } = {}) {
         return null;
     }
 
-    const url = `${BASE_URL}/profile`;
+    const endpoint = 'profile';
 
-    await acquireImportSlot();
     logger.info(`[TwelveData] Fetching profile for ${symbol}`);
 
     try {
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
-        });
+        const response = await tdGet(endpoint, { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) });
 
         if (response.data.status === 'error') {
             logger.warn(`[TwelveData] Profile error for ${symbol}: ${response.data.message}`);
@@ -322,9 +349,8 @@ async function getEarnings(symbol, { micCode } = {}) {
         return null;
     }
 
-    const url = `${BASE_URL}/earnings`;
+    const endpoint = 'earnings';
 
-    await acquireFundamentalsSlot();
     logger.info(`[TwelveData] Fetching earnings for ${symbol}`);
 
     try {
@@ -335,14 +361,11 @@ async function getEarnings(symbol, { micCode } = {}) {
         twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
         const startDate = twoYearsAgo.toISOString().split('T')[0]; // YYYY-MM-DD
 
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: {
-                symbol,
-                apikey: TWELVE_DATA_API_KEY,
-                start_date: startDate,
-                ...(micCode && { mic_code: micCode }),
-            },
+        const response = await tdGet(endpoint, {
+            symbol,
+            apikey: TWELVE_DATA_API_KEY,
+            start_date: startDate,
+            ...(micCode && { mic_code: micCode }),
         });
 
         if (response.data.status === 'error') {
@@ -411,16 +434,12 @@ async function getDividends(symbol, { micCode } = {}) {
         return null;
     }
 
-    const url = `${BASE_URL}/dividends`;
+    const endpoint = 'dividends';
 
-    await acquireFundamentalsSlot();
     logger.info(`[TwelveData] Fetching dividends for ${symbol}`);
 
     try {
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: { symbol, range: 'full', apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
-        });
+        const response = await tdGet(endpoint, { symbol, range: 'full', apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) });
 
         if (response.data.status === 'error') {
             logger.warn(`[TwelveData] Dividends error for ${symbol}: ${response.data.message}`);
@@ -444,7 +463,7 @@ async function getDividends(symbol, { micCode } = {}) {
 /**
  * Fetches an ETF's composition from Twelve Data /etfs/world/composition
  * (Equity Analysis #79). Keeps sector weights, country allocation and asset
- * allocation; `top_holdings` is dropped. Uses the fundamentals throttle slot.
+ * allocation; `top_holdings` is dropped.
  *
  * Weights are returned as Twelve Data sends them; consumers normalize them
  * with `normalizeEtfComposition` from @bliss/shared/portfolio.
@@ -468,16 +487,12 @@ async function getEtfComposition(symbol, { micCode } = {}) {
         return null;
     }
 
-    const url = `${BASE_URL}/etfs/world/composition`;
+    const endpoint = 'etfs/world/composition';
 
-    await acquireFundamentalsSlot();
     logger.info(`[TwelveData] Fetching ETF composition for ${symbol}`);
 
     try {
-        const response = await axios.get(url, {
-            timeout: 10000,
-            params: { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) },
-        });
+        const response = await tdGet(endpoint, { symbol, apikey: TWELVE_DATA_API_KEY, ...(micCode && { mic_code: micCode }) });
 
         if (response.data.status === 'error') {
             const code = Number(response.data.code) || null;
@@ -505,7 +520,7 @@ async function getEtfComposition(symbol, { micCode } = {}) {
             if (n != null) assetAllocation[key] = n;
         }
 
-        // Log the credit cost so the first run confirms the ~1-credit estimate (#79 OQ3).
+        // Twelve Data's minute counter after this call (not the cost of the call, #150).
         const creditsUsed = safeParseFloat(response.headers?.['api-credits-used']);
         logger.info(`[TwelveData] ETF composition for ${symbol}: ${sectors.length} sectors, ${countries.length} countries`, {
             creditsUsed,
@@ -539,13 +554,12 @@ async function getEtfComposition(symbol, { micCode } = {}) {
  */
 async function resolveFxSymbol(symbol, dateStr, isToday) {
     // 1. /exchange_rate — direct analogue of CurrencyLayer's `historical` call.
-    await acquireValuationSlot();
     try {
         const params = { symbol, apikey: TWELVE_DATA_API_KEY };
         if (!isToday) params.date = dateStr;
         logger.info(`[TwelveData] Fetching FX rate for ${symbol}`, { date: isToday ? 'latest' : dateStr });
 
-        const response = await axios.get(`${BASE_URL}/exchange_rate`, { timeout: 10000, params });
+        const response = await tdGet('exchange_rate', params);
 
         if (response.data && response.data.status === 'error') {
             logger.warn(`[TwelveData] exchange_rate error for ${symbol}: ${response.data.message}`);
@@ -565,14 +579,10 @@ async function resolveFxSymbol(symbol, dateStr, isToday) {
     startDateObj.setUTCDate(startDateObj.getUTCDate() - 3);
     const startStr = startDateObj.toISOString().split('T')[0];
 
-    await acquireValuationSlot();
     try {
         logger.info(`[TwelveData] Falling back to time_series for ${symbol}`, { startDate: startStr, endDate: dateStr });
 
-        const response = await axios.get(`${BASE_URL}/time_series`, {
-            timeout: 10000,
-            params: { symbol, interval: '1day', start_date: startStr, end_date: dateStr, apikey: TWELVE_DATA_API_KEY },
-        });
+        const response = await tdGet('time_series', { symbol, interval: '1day', start_date: startStr, end_date: dateStr, apikey: TWELVE_DATA_API_KEY });
 
         if (response.data && response.data.status === 'error') {
             logger.warn(`[TwelveData] time_series error for ${symbol}: ${response.data.message}`);
@@ -608,9 +618,8 @@ async function resolveFxSymbol(symbol, dateStr, isToday) {
  *   3. The inverse symbol `${to}/${from}` through the same two steps, returning
  *      `1 / value`.
  *
- * Rate-limited through the shared valuation slot so a burst of FX lookups
- * during a portfolio revaluation cannot starve equity pricing or exceed the
- * Twelve Data credit budget.
+ * Every request draws from the shared credit budget (#150) at the caller's
+ * priority, so a burst of FX lookups during a revaluation can't exceed the plan.
  *
  * @param {string} currencyFrom Source currency code (e.g. 'EUR').
  * @param {string} currencyTo Target currency code (e.g. 'USD').

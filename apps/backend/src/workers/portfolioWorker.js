@@ -14,6 +14,8 @@ const simpleLiabilityProcessor = require('./portfolio-handlers/simple-liability-
 const processAmortizingLoan = require('./portfolio-handlers/amortizing-loan-processor');
 const generatePortfolioValuation = require('./portfolio-handlers/valuation/index.js');
 const { processCashHoldings } = require('./portfolio-handlers/cash-processor');
+const { withTwelveDataPriority } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 
 const processPortfolioJob = async (job, token) => {
     const { name, data } = job;
@@ -259,7 +261,7 @@ const processPortfolioJob = async (job, token) => {
 const startPortfolioWorker = () => {
     logger.info('Starting Portfolio Worker...');
     logger.info({ redisConnection: !!getRedisConnection() }, 'Checking Redis connection before starting worker');
-    const worker = new Worker(PORTFOLIO_QUEUE_NAME, processPortfolioJob, {
+    const worker = new Worker(PORTFOLIO_QUEUE_NAME, withTwelveDataPriority(PRIORITIES.VALUATION, processPortfolioJob), {
         connection: getRedisConnection(),
         concurrency: 5,
         // Long-running jobs (e.g. process-cash-holdings rebuilding 15+ years of data)

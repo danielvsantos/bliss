@@ -7,6 +7,8 @@ const { generateTieredInsights, generateAllDueTiers } = require('../services/ins
 const prisma = require('../../prisma/prisma.js');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker, startInlineActivity } = require('../utils/activityTracker');
+const { withTwelveDataPriority } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 
 /**
  * Processes insight generation jobs across 4 tiers.
@@ -189,7 +191,7 @@ const processInsightJob = async (job) => {
 const startInsightGeneratorWorker = () => {
   logger.info('Starting Insight Generator Worker (v1 — tiered architecture)...');
 
-  const worker = new Worker(INSIGHT_QUEUE_NAME, processInsightJob, {
+  const worker = new Worker(INSIGHT_QUEUE_NAME, withTwelveDataPriority(PRIORITIES.VALUATION, processInsightJob), {
     connection: getRedisConnection(),
     concurrency: 1,
     lockDuration: 600000, // 10 minutes — LLM calls can be slow

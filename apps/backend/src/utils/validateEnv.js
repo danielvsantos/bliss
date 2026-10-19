@@ -1,5 +1,6 @@
 const logger = require('./logger');
 const { retiredEnvVars } = require('@bliss/shared/enablebanking');
+const { parseCreditsPerMinute, DEFAULT_CREDITS_PER_MINUTE } = require('../config/twelveDataCredits');
 
 const UNSAFE_DEFAULTS = ['your-default-api-key', 'your-secret-key', 'changeme'];
 
@@ -172,6 +173,12 @@ function validateEnv() {
   // ─── Optional integrations ───────────────────────────────────────────────
   if (!process.env.TWELVE_DATA_API_KEY) {
     warnings.push('TWELVE_DATA_API_KEY not set — stock price fetching will be unavailable');
+  }
+  if (Number.isNaN(parseCreditsPerMinute(process.env.TWELVE_DATA_CREDITS_PER_MINUTE))) {
+    warnings.push(
+      `TWELVE_DATA_CREDITS_PER_MINUTE="${process.env.TWELVE_DATA_CREDITS_PER_MINUTE}" is not a positive integer — ` +
+      `using the default of ${DEFAULT_CREDITS_PER_MINUTE} credits/min`,
+    );
   }
 
   // FX-rate provider: validate CURRENCY_PROVIDER and warn (do not error — this

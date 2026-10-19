@@ -356,7 +356,7 @@ Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
 - `refresh-tenant-securities` (deduplicated per tenant) fetches missing/stale symbols when a portfolio update creates new stock/ETF items (`newSecuritySymbols` on `PORTFOLIO_CHANGES_PROCESSED`) and as a step of Maintenance "Full rebuild"; Maintenance "Refresh my securities data" (`security-data` scope) forces it for all of the tenant's symbols
 - `etfComposition` (sector weights, country allocation, asset allocation from `/etfs/world/composition`, ~1 credit) refreshed weekly for ETFs inside `refreshSymbol()`; drives the asset class and look-through below
 - Computed fields: trailing EPS, P/E ratio, annualized dividend yield
-- Separate rate limiter: `FUNDAMENTALS_THROTTLE_MS` (~30 calls/min)
+- Paced by the shared Twelve Data credit budget (#150) at FUNDAMENTALS priority (admin bulk refresh: BACKGROUND)
 - 7-day cache on profile data, checked before live API calls
 
 ## BullMQ workers reference

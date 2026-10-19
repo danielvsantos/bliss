@@ -132,6 +132,10 @@ const startWorker = () => {
 
 Every queue factory calls `trackQueue(instance)` and every worker start function calls `trackWorker(worker, QUEUE_NAME)` (from `utils/activityTracker.js`), and every tenant job name is mapped in `config/activityMap.js`. Otherwise the job never shows in the user's processing status. The tracker is fire-and-forget and never throws. Forward `_trigger` from `job.data` into any event a handler emits. See `docs/specs/backend/23-activity-tracking.md`.
 
+### Twelve Data credit budget — MANDATORY wiring (#150)
+
+Every Twelve Data call draws from one Redis-backed credits-per-minute budget (`utils/twelveDataBudget.js`, `TWELVE_DATA_CREDITS_PER_MINUTE`) shared by all backend processes, served by priority: INTERACTIVE > VALUATION > FUNDAMENTALS > BACKGROUND (`config/twelveDataCredits.js`, which also holds the per-endpoint cost table). **A new worker or route that can reach `twelveDataService` (directly or via stock/crypto/currency/price services) must run inside a priority context**: wrap the processor with `withTwelveDataPriority(PRIORITIES.X, processor)` or the router with `twelveDataRouteContext(PRIORITIES.X)` (`utils/twelveDataContext.js`). `__tests__/unit/workers/twelveDataPriorityCoverage.test.js` fails otherwise. New endpoints go in `CREDIT_COSTS`. Never add a sleep or a call throttle of your own.
+
 ### Failure reporting — MANDATORY pattern
 
 All workers **must** use `reportWorkerFailure` from `src/utils/workerFailureReporter.js`
@@ -164,7 +168,7 @@ past.
 
 | Service | Purpose |
 |---------|---------|
-| `twelveDataService.js` | Twelve Data API: stock/fund/crypto prices, profiles, earnings, dividends. 3 independent rate limiters |
+| `twelveDataService.js` | Twelve Data API: stock/fund/crypto prices, profiles, earnings, dividends, FX. Every request goes through `tdGet()` and the shared credit budget (#150) |
 | `stockService.js` | Stock/ETF price dispatch |
 | `cryptoService.js` | Crypto pair prices (e.g., `BTC/EUR`) |
 | `currencyService.js` | Exchange rate lookups |

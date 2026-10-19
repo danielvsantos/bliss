@@ -4,6 +4,11 @@ jest.mock('../../../utils/logger', () => ({
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
+  debug: jest.fn(),
+}));
+jest.mock('../../../utils/twelveDataBudget', () => ({
+  acquire: jest.fn(async ({ endpoint, credits }) => ({ reservationId: 'r', credits, waitedMs: 0, mode: 'shared', endpoint })),
+  pause: jest.fn(),
 }));
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -21,6 +26,11 @@ describe('twelveDataService', () => {
       info: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
+      debug: jest.fn(),
+    }));
+    jest.mock('../../../utils/twelveDataBudget', () => ({
+      acquire: jest.fn(async ({ endpoint, credits }) => ({ reservationId: 'r', credits, waitedMs: 5, mode: 'shared', endpoint })),
+      pause: jest.fn(),
     }));
     twelveDataService = require('../../../services/twelveDataService');
   });
@@ -695,6 +705,110 @@ describe('twelveDataService', () => {
       const result = await twelveDataService.getFxRate('USD', 'USD', PAST);
       expect(result).toBe(1);
       expect(axios.get).not.toHaveBeenCalled();
+    });
+  });
+  // ─── Shared credit budget (#150) ─────────────────────────────────────────
+
+  describe('credit budget', () => {
+    const { PRIORITIES } = require('../../../config/twelveDataCredits');
+    const okSeries = { data: { values: [{ datetime: '2026-03-02', close: '10' }] } };
+
+    it('reserves each endpoint at its table cost and the context priority', async () => {
+      const axios = require('axios');
+      const budget = require('../../../utils/twelveDataBudget');
+      const { runWithTwelveDataContext } = require('../../../utils/twelveDataContext');
+      axios.get.mockResolvedValue({ data: { status: 'error', message: 'x' } });
+
+      await runWithTwelveDataContext({ priority: PRIORITIES.FUNDAMENTALS }, async () => {
+        await twelveDataService.getEarnings('AAPL');
+        await twelveDataService.getDividends('AAPL');
+        await twelveDataService.getSymbolProfile('AAPL');
+        await twelveDataService.getLatestPrice('AAPL');
+        await twelveDataService.getEtfComposition('VWCE');
+      });
+
+      expect(budget.acquire.mock.calls.map(([r]) => [r.endpoint, r.credits, r.priority])).toEqual([
+        ['earnings', 20, PRIORITIES.FUNDAMENTALS],
+        ['dividends', 20, PRIORITIES.FUNDAMENTALS],
+        ['profile', 10, PRIORITIES.FUNDAMENTALS],
+        ['quote', 1, PRIORITIES.FUNDAMENTALS],
+        ['etfs/world/composition', 20, PRIORITIES.FUNDAMENTALS],
+      ]);
+    });
+
+    it('uses the default priority outside a context', async () => {
+      const axios = require('axios');
+      const budget = require('../../../utils/twelveDataBudget');
+      axios.get.mockResolvedValue(okSeries);
+
+      await twelveDataService.getHistoricalPrice('AAPL', new Date('2026-03-02'));
+
+      expect(budget.acquire).toHaveBeenCalledWith({ endpoint: 'time_series', credits: 1, priority: PRIORITIES.VALUATION });
+    });
+
+    it('records credits, calls and wait time on the context', async () => {
+      const axios = require('axios');
+      const { runWithTwelveDataContext, getTwelveDataContext } = require('../../../utils/twelveDataContext');
+      axios.get.mockResolvedValue(okSeries);
+      let usage;
+
+      await runWithTwelveDataContext({ priority: PRIORITIES.VALUATION }, async () => {
+        await twelveDataService.getHistoricalPrice('AAPL', new Date('2026-03-02'));
+        await twelveDataService.getSymbolProfile('AAPL');
+        usage = { ...getTwelveDataContext().usage };
+      });
+
+      expect(usage).toMatchObject({ credits: 11, calls: 2, waitedMs: 10, rateLimited: 0, mode: 'shared' });
+    });
+
+    it('pauses the budget for Retry-After seconds on HTTP 429 and retries', async () => {
+      const axios = require('axios');
+      const budget = require('../../../utils/twelveDataBudget');
+      const { runWithTwelveDataContext, getTwelveDataContext } = require('../../../utils/twelveDataContext');
+      const tooMany = Object.assign(new Error('Request failed with status code 429'), {
+        response: { status: 429, headers: { 'retry-after': '2' }, data: { code: 429, status: 'error' } },
+      });
+      axios.get.mockRejectedValueOnce(tooMany).mockResolvedValueOnce(okSeries);
+      let result;
+      let usage;
+
+      await runWithTwelveDataContext({ priority: PRIORITIES.VALUATION }, async () => {
+        result = await twelveDataService.getHistoricalPrice('AAPL', new Date('2026-03-02'));
+        usage = { ...getTwelveDataContext().usage };
+      });
+
+      expect(result.price.toNumber()).toBe(10);
+      expect(budget.pause).toHaveBeenCalledWith(2000);
+      expect(budget.acquire).toHaveBeenCalledTimes(2);
+      expect(usage.rateLimited).toBe(1);
+    });
+
+    it('treats a 429 error body on HTTP 200 the same way, pausing until the next minute without Retry-After', async () => {
+      const axios = require('axios');
+      const budget = require('../../../utils/twelveDataBudget');
+      axios.get
+        .mockResolvedValueOnce({ status: 200, headers: {}, data: { status: 'error', code: 429, message: 'run out of credits' } })
+        .mockResolvedValueOnce({ data: { rate: '1.1' } });
+
+      const rate = await twelveDataService.getFxRate('EUR', 'USD');
+
+      expect(rate).toBe(1.1);
+      expect(budget.pause).toHaveBeenCalledTimes(1);
+      const ms = budget.pause.mock.calls[0][0];
+      expect(ms).toBeGreaterThan(1000);
+      expect(ms).toBeLessThanOrEqual(61_000);
+    });
+
+    it('gives up after repeated 429s with the existing null result instead of throwing', async () => {
+      const axios = require('axios');
+      const budget = require('../../../utils/twelveDataBudget');
+      axios.get.mockResolvedValue({ status: 429, headers: { 'retry-after': '1' }, data: { status: 'error', code: 429 } });
+
+      const result = await twelveDataService.getLatestPrice('AAPL');
+
+      expect(result).toBeNull();
+      expect(budget.acquire).toHaveBeenCalledTimes(4);
+      expect(budget.pause).toHaveBeenCalledTimes(4);
     });
   });
 });
