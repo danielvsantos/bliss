@@ -1,0 +1,72 @@
+{
+  "rsa2048-pkcs8.pem": {
+    "ok": true,
+    "bits": 2048,
+    "key": "k2048"
+  },
+  "rsa2048-pkcs1.pem": {
+    "ok": true,
+    "bits": 2048,
+    "key": "k2048"
+  },
+  "rsa4096-pkcs8.pem": {
+    "ok": true,
+    "bits": 4096,
+    "key": "k4096"
+  },
+  "rsa4096-pkcs1.pem": {
+    "ok": true,
+    "bits": 4096,
+    "key": "k4096"
+  },
+  "rsa4096-crlf.pem": {
+    "ok": true,
+    "bits": 4096,
+    "key": "k4096"
+  },
+  "rsa4096-escaped.txt": {
+    "ok": true,
+    "bits": 4096,
+    "key": "k4096"
+  },
+  "rsa1024-pkcs8.pem": {
+    "ok": false,
+    "code": "KEY_TOO_SMALL"
+  },
+  "truncated.pem": {
+    "ok": false,
+    "code": "KEY_TRUNCATED"
+  },
+  "public.pem": {
+    "ok": false,
+    "code": "KEY_PUBLIC"
+  },
+  "certificate.pem": {
+    "ok": false,
+    "code": "KEY_CERTIFICATE"
+  },
+  "encrypted-pkcs8.pem": {
+    "ok": false,
+    "code": "KEY_ENCRYPTED"
+  },
+  "encrypted-pkcs1.pem": {
+    "ok": false,
+    "code": "KEY_ENCRYPTED"
+  },
+  "ec-pkcs8.pem": {
+    "ok": false,
+    "code": "KEY_NOT_RSA"
+  },
+  "ec-sec1.pem": {
+    "ok": false,
+    "code": "KEY_NOT_RSA"
+  },
+  "not-pem.txt": {
+    "ok": false,
+    "code": "KEY_NOT_PEM"
+  },
+  "oversize.pem": {
+    "ok": false,
+    "code": "KEY_TOO_LARGE"
+  }
+}

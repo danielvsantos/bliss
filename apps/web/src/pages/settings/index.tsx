@@ -51,6 +51,7 @@ import {
   Lock,
   Wrench,
   KeyRound,
+  Landmark,
   Activity,
 } from "lucide-react";
 import { useTenantSettings, useUpdateTenantSettings } from "@/hooks/use-tenant-settings";
@@ -61,6 +62,7 @@ import { SettingsSelect } from "@/components/settings/settings-select";
 import { MaintenanceTab } from "@/components/settings/maintenance-tab";
 import { IntegrationsTab } from "@/components/settings/integrations-tab";
 import { ProcessingTab } from "@/components/settings/processing-tab";
+import { BankSyncTab } from "@/components/settings/bank-sync-tab";
 import {
   MultiSelectCombobox,
   type ComboboxOption,
@@ -114,6 +116,8 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
       // Processing status (#100): live work, last 24 h, rebuild history.
       { value: "processing", labelKey: "pages.settings.tabs.processing", icon: Activity },
       { value: "integrations", labelKey: "pages.settings.tabs.integrations", icon: KeyRound },
+      // Per-tenant Enable Banking app (#148); deliberately not part of Integrations (AI agent keys).
+      { value: "bank-sync", labelKey: "pages.settings.tabs.bank_sync", icon: Landmark },
     ],
   },
 ];
@@ -1043,6 +1047,13 @@ export default function SettingsPage() {
           {user?.role === 'admin' && (
             <TabsContent value="processing" className="mt-0 space-y-5">
               <ProcessingTab />
+            </TabsContent>
+          )}
+
+          {/* ═══════ BANK SYNC TAB (admin only, #148) ═══════ */}
+          {user?.role === 'admin' && (
+            <TabsContent value="bank-sync" className="mt-0 space-y-5">
+              <BankSyncTab />
             </TabsContent>
           )}
 

@@ -425,3 +425,38 @@ describe('validateEnv()', () => {
     });
   });
 });
+
+describe('validateEnv() — retired Enable Banking env vars (#148)', () => {
+  const RETIRED = ['ENABLE_BANKING_APP_ID', 'ENABLE_BANKING_PRIVATE_KEY', 'ENABLE_BANKING_PRIVATE_KEY_PATH'];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    clearCriticalEnv();
+    setMinimalValidEnv();
+    process.env.NODE_ENV = 'development';
+    for (const k of RETIRED) delete process.env[k];
+  });
+
+  afterEach(() => {
+    clearCriticalEnv();
+    for (const k of RETIRED) delete process.env[k];
+  });
+
+  const warnings = () => logger.warn.mock.calls.map((args) => args[0]);
+
+  it('warns that the retired variables are ignored, naming Settings → Bank sync', () => {
+    process.env.ENABLE_BANKING_APP_ID = 'app';
+    process.env.ENABLE_BANKING_PRIVATE_KEY = 'pem-value-xyz';
+    validateEnv();
+    const msg = warnings().find((m) => m.includes('ENABLE_BANKING_APP_ID'));
+    expect(msg).toContain('ENABLE_BANKING_PRIVATE_KEY');
+    expect(msg).toContain('ignored');
+    expect(msg).toContain('Settings → Bank sync');
+    expect(msg).not.toContain('pem-value-xyz'); // the value is never echoed
+  });
+
+  it('says nothing when none is set', () => {
+    validateEnv();
+    expect(warnings().some((m) => m.includes('ENABLE_BANKING'))).toBe(false);
+  });
+});

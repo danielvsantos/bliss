@@ -19,6 +19,7 @@ import {
   Check,
   ChevronRight,
   CalendarClock,
+  KeyRound,
 } from "lucide-react";
 
 const SIGNAL_ICONS: Record<string, React.ReactNode> = {
@@ -30,6 +31,8 @@ const SIGNAL_ICONS: Record<string, React.ReactNode> = {
   PROCESSING_FAILED: <AlertTriangle className="h-4 w-4" />,
   // Enable Banking (#132): bank access (PSD2 consent) ending soon.
   BANK_CONSENT_EXPIRING: <CalendarClock className="h-4 w-4" />,
+  // Enable Banking (#148): the tenant's app credentials were rejected (admins only).
+  ENABLE_BANKING_CREDENTIALS_INVALID: <KeyRound className="h-4 w-4" />,
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -110,9 +113,12 @@ export function NotificationCenter() {
               const href = signal.href;
               // PROCESSING_FAILED (#100) is translated here; it links to
               // Settings → Processing for admins and is a plain label otherwise.
+              // ENABLE_BANKING_CREDENTIALS_INVALID (#148) links to Bank sync.
               const label = signal.type === 'PROCESSING_FAILED'
                 ? t('activity.notification.failed', { count: signal.count ?? 1 })
-                : signal.label;
+                : signal.type === 'ENABLE_BANKING_CREDENTIALS_INVALID'
+                  ? t('enableBanking.credentials.notification')
+                  : signal.label;
               const Row = href ? 'button' : 'div';
               return (
                 <Row

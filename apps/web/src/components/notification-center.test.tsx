@@ -85,6 +85,26 @@ describe('NotificationCenter', () => {
     });
   });
 
+  describe('ENABLE_BANKING_CREDENTIALS_INVALID (#148)', () => {
+    it('shows the translated label and links to Settings → Bank sync', () => {
+      mockUseNotificationSummary.mockReturnValue(
+        mockQueryResult({
+          totalUnseen: 1,
+          lastSeenAt: null,
+          signals: [{
+            type: 'ENABLE_BANKING_CREDENTIALS_INVALID', count: 1, severity: 'warning',
+            label: 'Enable Banking credentials need attention', href: '/settings?tab=bank-sync', isNew: true,
+          }],
+        }),
+      );
+      renderCenter();
+      fireEvent.click(screen.getAllByRole('button')[0]);
+      const row = screen.getByTestId('signal-ENABLE_BANKING_CREDENTIALS_INVALID');
+      expect(row.tagName).toBe('BUTTON');
+      expect(row).toHaveTextContent('enableBanking.credentials.notification');
+    });
+  });
+
   describe('BANK_CONSENT_EXPIRING (#132)', () => {
     const consentSignal = (severity: 'info' | 'warning') => ({
       type: 'BANK_CONSENT_EXPIRING',

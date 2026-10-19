@@ -1,8 +1,10 @@
 /**
  * Enable Banking helpers for the API routes (#132).
  *
- * - `isEnableBankingEnabled()` / `getEnableBankingClient()`: env-driven; the
- *   feature is hidden (404 NOT_ENABLED) when the app id or key is absent.
+ * - `getTenantEnableBanking(tenantId)`: the tenant's own Enable Banking app
+ *   (#148), read from EnableBankingCredential on every call and cached per
+ *   (tenant, version). Null when the tenant has no credentials: routes then
+ *   answer 404 NOT_ENABLED and the tenant's connections are "paused".
  * - `signState()` / `consumeState()`: the callback's only authority (D6). A
  *   base64url JSON payload `{ t, u, r?, n, exp }` + HMAC-SHA256 under a key
  *   HKDF-derived from NEXTAUTH_SECRET, valid 15 minutes, single use through a
@@ -15,14 +17,13 @@
 
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
-  createClient,
-  loadPrivateKey,
-  getEnableBankingConfig,
+  createTenantClientCache,
   budgetKey,
   budgetDay,
   budgetResetsAt,
   getDailyBudget,
 } from '@bliss/shared/enablebanking';
+import prisma from '../prisma/prisma.js';
 import { getRedisClient } from './redisClient.js';
 import { rateLimiters } from './rateLimit.js';
 
@@ -43,23 +44,42 @@ export function applyRateLimit(req, res) {
   });
 }
 
-export function isEnableBankingEnabled() {
-  return getEnableBankingConfig().enabled;
+// One client per (tenant, credential version), shared by every request of
+// this process; a credential change bumps the version (#148, D2).
+const clientCache = createTenantClientCache({ max: 200 });
+let testClient = null;
+
+/**
+ * The tenant's Enable Banking client and credential metadata, or null when the
+ * tenant has no credentials (#148, R3). The private key never leaves this
+ * function: `credential` carries metadata only.
+ *
+ * @param {string} tenantId
+ * @returns {Promise<{ client: ReturnType<import('@bliss/shared/enablebanking').createClient>, credential: { id: string, tenantId: string, version: number, status: string, appIdHash: string } } | null>}
+ */
+export async function getTenantEnableBanking(tenantId) {
+  if (!tenantId) return null;
+  const row = await prisma.enableBankingCredential.findUnique({ where: { tenantId } });
+  if (!row) return null;
+  const credential = {
+    id: row.id,
+    tenantId: row.tenantId,
+    version: row.version,
+    status: row.status,
+    appIdHash: row.appIdHash,
+  };
+  return { client: testClient ?? clientCache.get(row), credential };
 }
 
-let client = null;
-
-export function getEnableBankingClient() {
-  if (client) return client;
-  const config = getEnableBankingConfig();
-  if (!config.enabled) return null;
-  client = createClient({ appId: config.appId, privateKey: loadPrivateKey(), baseUrl: config.baseUrl });
-  return client;
-}
-
-/** Tests only. */
+/** Tests only: every tenant with credentials gets this client (null restores the real one). */
 export function __setEnableBankingClientForTests(c) {
-  client = c;
+  testClient = c;
+  clientCache.clear();
+}
+
+/** Uniform 404 for a tenant without Enable Banking credentials. */
+export function notEnabled(res) {
+  return res.status(404).json({ error: 'Enable Banking is not set up for this workspace', code: 'NOT_ENABLED' });
 }
 
 /** The redirect URL registered on the Enable Banking app. */

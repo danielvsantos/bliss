@@ -10,6 +10,9 @@
  * DELETE calls DELETE /sessions/{id} (best effort) and sets the connection to
  * REVOKED; Bliss accounts, their mapping and all ingested data are kept, like
  * a Plaid disconnect, so a reconnect re-attaches without a mapping step.
+ *
+ * Per-tenant credentials (#148): GET works without them and reports
+ * `paused: true`; DELETE needs them (404 NOT_ENABLED) to end the session.
  */
 
 import { StatusCodes } from 'http-status-codes';
@@ -19,9 +22,9 @@ import { withAuth } from '../../../../utils/withAuth.js';
 import {
   PROVIDER,
   applyRateLimit,
-  getEnableBankingClient,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
   lastFour,
+  notEnabled,
   suggestAccountId,
 } from '../../../../utils/enableBanking.js';
 import { syncCutoffDate, syncDateFrom, isoDate } from '@bliss/shared/enablebanking';
@@ -36,9 +39,6 @@ export default withAuth(async function handler(req, res) {
   if (req.user.role === 'viewer') {
     return res.status(StatusCodes.FORBIDDEN).json({ error: 'Viewers cannot manage bank connections' });
   }
-  if (!isEnableBankingEnabled()) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'Enable Banking is not configured', code: 'NOT_ENABLED' });
-  }
 
   try {
     const item = await prisma.plaidItem.findFirst({
@@ -50,8 +50,12 @@ export default withAuth(async function handler(req, res) {
     });
     if (!item) return res.status(StatusCodes.NOT_FOUND).json({ error: 'Connection not found' });
 
-    if (req.method === 'DELETE') return handleDelete(req, res, item);
-    return handleGet(req, res, item);
+    const eb = await getTenantEnableBanking(req.user.tenantId);
+    if (req.method === 'DELETE') {
+      if (!eb) return notEnabled(res);
+      return handleDelete(req, res, item, eb.client);
+    }
+    return handleGet(req, res, item, { paused: !eb && item.status !== 'REVOKED' });
   } catch (error) {
     Sentry.captureException(error);
     console.error('[enablebanking/connections] failed:', error.message);
@@ -59,7 +63,7 @@ export default withAuth(async function handler(req, res) {
   }
 });
 
-async function handleGet(req, res, item) {
+async function handleGet(req, res, item, { paused }) {
   const tenantId = req.user.tenantId;
   const [blissAccounts, otherMappings] = await Promise.all([
     prisma.account.findMany({
@@ -94,6 +98,7 @@ async function handleGet(req, res, item) {
       lastSync: item.lastSync,
       createdAt: item.createdAt,
       authorizedByMe: item.userId === req.user.id,
+      paused,
     },
     startDate: isoDate(item.lastSync
       ? syncDateFrom({ createdAt: item.createdAt, historyDays, lastSync: item.lastSync })
@@ -121,7 +126,7 @@ async function handleGet(req, res, item) {
   });
 }
 
-async function handleDelete(req, res, item) {
+async function handleDelete(req, res, item, client) {
   if (req.user.role !== 'admin' && item.userId !== req.user.id) {
     return res.status(StatusCodes.FORBIDDEN).json({ error: 'Only an admin or the authorising user can disconnect' });
   }
@@ -129,7 +134,7 @@ async function handleDelete(req, res, item) {
     return res.status(StatusCodes.CONFLICT).json({ error: 'Connection already disconnected' });
   }
   try {
-    await getEnableBankingClient().deleteSession(item.accessToken);
+    await client.deleteSession(item.accessToken);
   } catch (err) {
     // Best effort: an already-expired or unknown session must not block the disconnect.
     if (err?.status !== 404) console.warn('[enablebanking/disconnect] DELETE /sessions failed:', err.message);

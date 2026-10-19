@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/msw/server';
 import { useAuth } from '@/hooks/use-auth';
@@ -195,5 +196,58 @@ describe('BankConnectionCard (#132) — actions', () => {
 
     expect(await screen.findByTestId('eb-balance-eb-1')).toHaveTextContent('€1,234.50');
     expect(screen.getByText('Cuenta •••• 0123')).toBeInTheDocument();
+  });
+});
+
+describe('BankConnectionCard (#148) — paused (no tenant credentials)', () => {
+  beforeEach(noDetails);
+
+  function renderPaused(item: PlaidItem) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <BankConnectionCard item={item} onOpenMapping={vi.fn()} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('shows Paused with a Bank sync link for admins and offers no action', () => {
+    setUser('u1', 'admin');
+    renderPaused(makeItem({ paused: true }));
+    const badge = screen.getByTestId('eb-status-badge');
+    expect(badge).toHaveAttribute('data-state', 'paused');
+    expect(badge.className).toContain('text-warning');
+    expect(screen.getByTestId('eb-paused')).toHaveTextContent('enableBanking.card.pausedDesc');
+    expect(screen.getByRole('link', { name: 'enableBanking.card.pausedAdminLink' })).toHaveAttribute('href', '/settings?tab=bank-sync');
+    for (const label of ['syncNow', 'reconnect', 'manageAccounts', 'disconnect']) {
+      expect(screen.queryByRole('button', { name: `enableBanking.card.${label}` })).not.toBeInTheDocument();
+    }
+  });
+
+  it('tells other users to ask an admin', () => {
+    setUser('u1', 'member');
+    renderPaused(makeItem({ paused: true }));
+    expect(screen.getByTestId('eb-paused')).toHaveTextContent('enableBanking.card.pausedAskAdmin');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('uses the connection read when the item list has no flag', async () => {
+    server.use(http.get('/api/enablebanking/connections/item-1', () => HttpResponse.json({
+      connection: {
+        id: 'item-1', institutionName: 'Banco Uno', aspspCountry: 'ES', status: 'ACTIVE',
+        consentExpiration: inDays(100), lastSync: null, createdAt: '2026-10-01T00:00:00.000Z',
+        authorizedByMe: true, paused: true,
+      },
+      startDate: '2026-10-01', accounts: [], blissAccounts: [],
+    })));
+    renderPaused(makeItem());
+    await waitFor(() => expect(screen.getByTestId('eb-status-badge')).toHaveAttribute('data-state', 'paused'));
+  });
+
+  it('a disconnected connection stays Disconnected', () => {
+    renderPaused(makeItem({ status: 'REVOKED', paused: true }));
+    expect(screen.getByTestId('eb-status-badge')).toHaveAttribute('data-state', 'disconnected');
   });
 });

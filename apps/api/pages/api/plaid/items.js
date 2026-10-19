@@ -85,7 +85,15 @@ async function handleGet(req, res, user) {
         orderBy: { createdAt: 'desc' },
     });
 
-    res.status(StatusCodes.OK).json(items);
+    // Enable Banking connections of a tenant without credentials are paused (#148, D4).
+    const hasEnableBanking = items.some((i) => i.provider === 'ENABLE_BANKING');
+    const credential = hasEnableBanking
+        ? await prisma.enableBankingCredential.findUnique({ where: { tenantId: user.tenantId }, select: { id: true } })
+        : null;
+
+    res.status(StatusCodes.OK).json(items.map((i) => (i.provider === 'ENABLE_BANKING'
+        ? { ...i, paused: !credential && i.status !== 'REVOKED' }
+        : i)));
 }
 
 /**

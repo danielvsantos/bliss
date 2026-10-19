@@ -25,9 +25,9 @@ describe('use-enable-banking (#132)', () => {
     const { wrapper } = setup();
     const { result } = renderHook(() => useEnableBankingStatus(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ enabled: false });
+    expect(result.current.data).toEqual({ enabled: false, configurable: false, pausedConnections: 0 });
 
-    server.use(http.get('/api/enablebanking/status', () => HttpResponse.json({ enabled: true })));
+    server.use(http.get('/api/enablebanking/status', () => HttpResponse.json({ enabled: true, configurable: true, pausedConnections: 0 })));
     const { wrapper: w2 } = setup();
     const { result: r2 } = renderHook(() => useEnableBankingEnabled(), { wrapper: w2 });
     await waitFor(() => expect(r2.current).toBe(true));

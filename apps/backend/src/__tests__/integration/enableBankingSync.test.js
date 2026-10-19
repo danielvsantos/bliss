@@ -3,6 +3,9 @@
  *
  * - Running the same sync twice inserts nothing the second time (R10).
  * - A reconnect (new session, new uids, same identification_hash) inserts nothing.
+ * - Per-tenant credentials (#148): a tenant without credentials is paused (no
+ *   log, no status change) and resumes with the 7-day overlap once they are
+ *   saved; the real client cache signs with the tenant's own app id.
  *
  * The Enable Banking client, the budget counter and the processing queue are
  * mocked; Postgres is real. Requires: bliss_test with migrations applied.
@@ -17,10 +20,33 @@ jest.mock('../../services/enableBanking/budget', () => ({
 }));
 jest.mock('../../utils/redis', () => ({ getRedisConnection: jest.fn(() => ({})) }));
 
+const fs = require('fs');
+const path = require('path');
 const prisma = require('../../../prisma/prisma');
 const { createIsolatedTenant, teardownTenant } = require('../helpers/tenant');
 const { ensureReferenceData } = require('../helpers/referenceData');
-const { __setEnableBankingClientForTests } = require('../../services/enableBanking/client');
+const {
+  __setEnableBankingClientForTests,
+  getTenantEnableBanking,
+  markCredentialInvalid,
+} = require('../../services/enableBanking/client');
+const { parsePrivateKey, appIdHash, syncDateFrom, isoDate } = require('@bliss/shared/enablebanking');
+
+const KEY = parsePrivateKey(fs.readFileSync(
+  path.join(__dirname, '../../../../../packages/shared/test-fixtures/enablebanking-keys/rsa2048-pkcs8.pem'), 'utf8',
+));
+const APP_ID = '0b9c1f9e-1d2a-4c55-9c3e-5a1b2c3d4e5f';
+const saveCredential = () => prisma.enableBankingCredential.create({
+  data: {
+    tenantId,
+    appId: APP_ID,
+    appIdHash: appIdHash(APP_ID),
+    privateKey: KEY.pem,
+    keyFingerprint: KEY.fingerprint,
+    keyBits: KEY.bits,
+    status: 'VERIFIED',
+  },
+});
 const { syncConnection } = require('../../workers/handlers/enableBankingSync');
 
 const HASH = `idhash-${Date.now()}`;
@@ -86,6 +112,7 @@ beforeAll(async () => {
       accountId: account.id,
     },
   });
+  await saveCredential();
   __setEnableBankingClientForTests(fakeClient);
 });
 
@@ -141,6 +168,65 @@ it('a reconnect (new session id, new uid, same identification_hash) adds zero ro
   expect(fakeClient.getTransactions).toHaveBeenLastCalledWith('uid-session-2', expect.any(Object));
   expect(result.added).toBe(0);
   expect(await prisma.plaidTransaction.count({ where: { plaidItemId: item.id } })).toBe(2);
+});
+
+describe('per-tenant credentials (#148)', () => {
+  it('paused: without credentials a sync is skipped with no log and no status change', async () => {
+    await prisma.enableBankingCredential.deleteMany({ where: { tenantId } });
+    const lastSync = new Date('2026-10-25T06:15:00Z'); // overlap (10-18) is after the history cutoff (10-10)
+    await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSync } });
+    const logsBefore = await prisma.plaidSyncLog.count({ where: { plaidItemId: item.id } });
+    fakeClient.getTransactions.mockClear();
+
+    await expect(syncConnection(job())).resolves.toEqual({ skipped: 'paused' });
+    expect(await prisma.plaidSyncLog.count({ where: { plaidItemId: item.id } })).toBe(logsBefore);
+    expect((await prisma.plaidItem.findUnique({ where: { id: item.id } })).status).toBe('ACTIVE');
+    expect(fakeClient.getTransactions).not.toHaveBeenCalled();
+  });
+
+  it('resumes once credentials are saved, re-reading from lastSync − 7 days with no duplicates', async () => {
+    await saveCredential();
+    const { lastSync, createdAt } = await prisma.plaidItem.findUnique({ where: { id: item.id } });
+    const result = await syncConnection(job());
+    expect(result).toMatchObject({ status: 'SUCCESS', added: 0 });
+    expect(fakeClient.getTransactions.mock.calls[0][1].dateFrom).toBe('2026-10-18');
+    expect(isoDate(syncDateFrom({ createdAt, historyDays: 1, lastSync }))).toBe('2026-10-18');
+    expect(await prisma.plaidTransaction.count({ where: { plaidItemId: item.id } })).toBe(2);
+  });
+
+  it('the real resolver signs with the tenant\'s own app and never exposes the key', async () => {
+    __setEnableBankingClientForTests(null);
+    try {
+      const seen = [];
+      const realFetch = global.fetch;
+      global.fetch = async (_url, init) => {
+        seen.push(init.headers.Authorization);
+        return { ok: true, status: 200, text: async () => '{}' };
+      };
+      try {
+        const eb = await getTenantEnableBanking(tenantId);
+        expect(eb.credential).toEqual(expect.objectContaining({ tenantId, status: 'VERIFIED' }));
+        expect(JSON.stringify(eb.credential)).not.toContain('PRIVATE KEY');
+        await eb.client.getApplication();
+      } finally {
+        global.fetch = realFetch;
+      }
+      const header = JSON.parse(Buffer.from(seen[0].slice(7).split('.')[0], 'base64url').toString());
+      expect(header.kid).toBe(APP_ID);
+      expect(await getTenantEnableBanking('no-such-tenant')).toBeNull();
+    } finally {
+      __setEnableBankingClientForTests(fakeClient);
+    }
+  });
+
+  it('markCredentialInvalid is conditional on the credential version', async () => {
+    const { version } = await prisma.enableBankingCredential.findUnique({ where: { tenantId } });
+    expect(await markCredentialInvalid(tenantId, version + 1)).toBe(false);
+    expect(await markCredentialInvalid(tenantId, version)).toBe(true);
+    const row = await prisma.enableBankingCredential.findUnique({ where: { tenantId } });
+    expect(row).toMatchObject({ status: 'INVALID', invalidatedAt: expect.any(Date) });
+    expect(await markCredentialInvalid(tenantId, version)).toBe(false); // already INVALID
+  });
 });
 
 // The R6 partial unique index is SQL-only (migration). Backend CI builds its

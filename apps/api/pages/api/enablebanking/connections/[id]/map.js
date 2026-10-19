@@ -26,7 +26,8 @@ import { produceEvent } from '../../../../../utils/produceEvent.js';
 import {
   PROVIDER,
   applyRateLimit,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
+  notEnabled,
 } from '../../../../../utils/enableBanking.js';
 import { ebAccountKey } from '@bliss/shared/enablebanking';
 
@@ -80,14 +81,12 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
-  if (!isEnableBankingEnabled()) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'Enable Banking is not configured', code: 'NOT_ENABLED' });
-  }
 
   const tenantId = req.user.tenantId;
   const itemId = String(req.query.id);
 
   try {
+    if (!(await getTenantEnableBanking(tenantId))) return notEnabled(res);
     const mappings = validateMappings(req.body);
     const confirm = req.body?.confirmProviderSwitch === true;
 

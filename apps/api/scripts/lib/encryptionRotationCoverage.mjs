@@ -16,6 +16,7 @@
 
 const nonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
 const isEmail = (value) => nonEmptyString(value) && value.includes('@');
+const isPkcs8Pem = (value) => nonEmptyString(value) && value.startsWith('-----BEGIN PRIVATE KEY-----');
 const isJsonParseable = (value) => {
   if (!nonEmptyString(value)) return false;
   try {
@@ -77,6 +78,25 @@ export const ROTATION_COVERAGE = [
     idField: 'id',
     orderBy: { id: 'asc' },
     fields: [{ name: 'iban', searchable: false, sanity: nonEmptyString }],
+  },
+  {
+    label: 'EnableBankingCredential.appId/privateKey',
+    model: 'EnableBankingCredential',
+    prismaModel: 'enableBankingCredential',
+    idField: 'id',
+    orderBy: { id: 'asc' },
+    fields: [
+      { name: 'appId', searchable: false, sanity: nonEmptyString },
+      { name: 'privateKey', searchable: false, sanity: isPkcs8Pem },
+    ],
+  },
+  {
+    label: 'EnableBankingCredentialEvent.appId',
+    model: 'EnableBankingCredentialEvent',
+    prismaModel: 'enableBankingCredentialEvent',
+    idField: 'id',
+    orderBy: { id: 'asc' },
+    fields: [{ name: 'appId', searchable: false, sanity: nonEmptyString }],
   },
   {
     label: 'SignupInvite.email',

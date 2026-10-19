@@ -94,6 +94,12 @@ In Google Cloud Console, set the Authorized Redirect URI to `<NEXTAUTH_URL>/api/
 
 `PLAID_WEBHOOK_URL` points at the **API's** public URL: `https://<api-domain>/api/plaid/webhook`. The handler lives in [`apps/api/pages/api/plaid/webhook.js`](../../apps/api/pages/api/plaid/webhook.js) and is intentionally unauthenticated -- Plaid signs every call with an ES256 JWT, which the handler verifies in production. The backend needs no public exposure for this. Changing the env var only affects newly linked Items -- call Plaid's `/item/webhook/update` for existing `PlaidItem` rows after a domain change.
 
+### Enable Banking (EU bank sync)
+
+Enable Banking credentials are **per workspace** (#148): each workspace admin creates their own free Enable Banking application (5 accounts in restricted mode) and enters it in **Settings → Bank sync**, so hosted friends never share your application or its quota. The operator only sets the server-wide schedule (`ENABLE_BANKING_SYNC_TIMES`, `ENABLE_BANKING_DAILY_BUDGET`) and, if needed, `ENABLE_BANKING_REDIRECT_URL`, on both the API and the backend. The callback URL (`https://<api-domain>/api/enablebanking/callback`) is the same for every workspace and each admin registers it on their own application.
+
+**Upgrading from the server-wide app:** `ENABLE_BANKING_APP_ID` / `ENABLE_BANKING_PRIVATE_KEY(_PATH)` are no longer read. Right after deploying, save the same application id and key in Settings → Bank sync of the workspace that owns the existing connections; they resume without a reconnect. Then remove the variables (both services warn at startup while they are set). Details: [EU Bank Sync with Enable Banking](/docs/guides/enable-banking#upgrading-from-the-server-wide-setup).
+
 ### Sentry
 
 Bliss has built-in Sentry integration. Every worker failure is reported with structured context:

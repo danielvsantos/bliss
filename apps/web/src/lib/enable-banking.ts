@@ -14,17 +14,20 @@ export type EnableBankingConnectionState =
   | 'expired'
   | 'error'
   | 'disconnected'
-  | 'needsMapping';
+  | 'needsMapping'
+  | 'paused';
 
 /**
  * Derive the user-facing state of an Enable Banking connection from its
  * PlaidItem status and consent expiry. LOGIN_REQUIRED means the consent
- * expired or was revoked at the bank.
+ * expired or was revoked at the bank. `paused` (#148): the tenant has no
+ * Enable Banking credentials, so nothing syncs until an admin adds them.
  */
 export function getConnectionState(
-  item: { status: string; consentExpiration?: string | null },
+  item: { status: string; consentExpiration?: string | null; paused?: boolean },
   now: Date = new Date(),
 ): { state: EnableBankingConnectionState; daysLeft: number | null } {
+  if (item.paused && item.status !== 'REVOKED') return { state: 'paused', daysLeft: null };
   const expiry = item.consentExpiration ? new Date(item.consentExpiration) : null;
   const daysLeft = expiry && !Number.isNaN(expiry.getTime())
     ? Math.ceil((expiry.getTime() - now.getTime()) / DAY_MS)

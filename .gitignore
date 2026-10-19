@@ -101,6 +101,9 @@ apps/api/tmp/
 
 # Misc
 *.pem
+# Test-only RSA keys shared by the server and browser key-parser tests (#148).
+# They sign nothing real; regenerate with generate.mjs in the same folder.
+!packages/shared/test-fixtures/enablebanking-keys/*.pem
 *.local
 
 # Generated at build time by apps/web/scripts/write-version.mjs

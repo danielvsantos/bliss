@@ -12,8 +12,8 @@ import prisma from '../../../prisma/prisma';
 import { withAuth } from '../../../utils/withAuth.js';
 import {
   applyRateLimit,
-  getEnableBankingClient,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
+  notEnabled,
 } from '../../../utils/enableBanking.js';
 import { syncCutoffDate, isoDate } from '@bliss/shared/enablebanking';
 
@@ -27,11 +27,11 @@ export default withAuth(async function handler(req, res) {
   if (req.user.role === 'viewer') {
     return res.status(StatusCodes.FORBIDDEN).json({ error: 'Viewers cannot connect banks' });
   }
-  if (!isEnableBankingEnabled()) {
-    return res.status(StatusCodes.NOT_FOUND).json({ error: 'Enable Banking is not configured', code: 'NOT_ENABLED' });
-  }
 
   try {
+    const eb = await getTenantEnableBanking(req.user.tenantId);
+    if (!eb) return notEnabled(res);
+
     const [countries, tenant] = await Promise.all([
       prisma.tenantCountry.findMany({
         where: { tenantId: req.user.tenantId },
@@ -41,8 +41,7 @@ export default withAuth(async function handler(req, res) {
     ]);
     const isoCodes = [...new Set(countries.map((c) => c.country?.iso2).filter(Boolean))];
 
-    const client = getEnableBankingClient();
-    const lists = await Promise.all(isoCodes.map((code) => client.getAspsps(code)));
+    const lists = await Promise.all(isoCodes.map((code) => eb.client.getAspsps(code)));
     const aspsps = lists.flat().map((a) => ({
       name: a.name,
       country: a.country,

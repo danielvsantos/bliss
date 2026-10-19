@@ -11,7 +11,10 @@
  *
  *   /accounts?eb=map&connection=<id>         new accounts to map
  *   /accounts?eb=reconnected&connection=<id> reconnect, every account re-linked
- *   /accounts?eb_error=invalid_state|denied|exchange_failed
+ *   /accounts?eb_error=invalid_state|denied|exchange_failed|not_enabled
+ *
+ * The code is exchanged with the credentials of the tenant named in the
+ * signed state (#148, R5): one callback URL serves every tenant.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -23,9 +26,8 @@ import {
   PROVIDER,
   applyRateLimit,
   consumeState,
-  getEnableBankingClient,
   getFrontendUrl,
-  isEnableBankingEnabled,
+  getTenantEnableBanking,
   lastFour,
 } from '../../../utils/enableBanking.js';
 import { ebAccountKey, EB_ITEM_PREFIX } from '@bliss/shared/enablebanking';
@@ -46,8 +48,6 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['GET']);
     return res.status(405).end();
   }
-  if (!isEnableBankingEnabled()) return redirect(res, { eb_error: 'not_enabled' });
-
   const { code, state, error } = req.query;
   const parsed = await consumeState(Array.isArray(state) ? state[0] : state);
   if (!parsed) return redirect(res, { eb_error: 'invalid_state' });
@@ -64,6 +64,9 @@ export default withAuth(async function handler(req, res) {
 
   if (error || !code) return redirect(res, { eb_error: 'denied' });
 
+  const eb = await getTenantEnableBanking(user.tenantId);
+  if (!eb) return redirect(res, { eb_error: 'not_enabled' });
+
   let reconnectItem = null;
   if (parsed.reconnectItemId) {
     reconnectItem = await prisma.plaidItem.findFirst({
@@ -75,7 +78,7 @@ export default withAuth(async function handler(req, res) {
 
   let session;
   try {
-    session = await getEnableBankingClient().createSession(String(code));
+    session = await eb.client.createSession(String(code));
   } catch (err) {
     Sentry.captureException(err);
     console.error('[enablebanking/callback] session exchange failed:', err.message);

@@ -32,19 +32,21 @@ function invalidateConnectionQueries(queryClient: QueryClient, id?: string) {
   queryClient.invalidateQueries({ queryKey: metadataKeys.all });
 }
 
-// --- Is Enable Banking configured? (hidden everywhere when not) ---
+// --- Is Enable Banking set up for this tenant? (hidden everywhere when not) ---
 
 export function useEnableBankingStatus(enabled = true) {
   return useQuery({
     queryKey: enableBankingKeys.status(),
     queryFn: () => api.getEnableBankingStatus(),
     enabled,
-    staleTime: 1000 * 60 * 30, // configuration only changes on a redeploy
+    // Tenant admins change credentials in Settings → Bank sync (#148); saving
+    // invalidates this key, the stale time only bounds other tabs and users.
+    staleTime: 1000 * 60 * 5,
     retry: false,
   });
 }
 
-/** True only when the API confirmed Enable Banking is configured. */
+/** True only when the API confirmed the tenant has Enable Banking credentials. */
 export function useEnableBankingEnabled(enabled = true): boolean {
   const { data } = useEnableBankingStatus(enabled);
   return enabled && data?.enabled === true;

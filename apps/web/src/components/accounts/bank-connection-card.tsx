@@ -11,7 +11,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { AlertTriangle, Globe, Link as LinkIcon, ListChecks, RefreshCw, Unlink } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, Globe, Link as LinkIcon, ListChecks, PauseCircle, RefreshCw, Unlink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -45,6 +46,7 @@ const STATUS_BADGE: Record<EnableBankingConnectionState, { className: string; ke
   expired: { className: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10', key: 'enableBanking.card.statusExpired' },
   error: { className: 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10', key: 'enableBanking.card.statusError' },
   disconnected: { className: 'bg-muted text-muted-foreground border-transparent hover:bg-muted', key: 'enableBanking.card.statusDisconnected' },
+  paused: { className: 'bg-warning/10 text-warning border-warning/20 hover:bg-warning/10', key: 'enableBanking.card.statusPaused' },
 };
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -59,7 +61,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 /**
  * Status and actions for an Enable Banking connection (#132). Never offers a
  * Plaid action: Sync now, Reconnect (authorising user only), Map accounts and
- * Disconnect (admin or authorising user).
+ * Disconnect (admin or authorising user). A paused connection (#148: no
+ * tenant credentials) offers no action: admins get a link to Bank sync.
  */
 export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConnectionCardProps) {
   const { t, i18n } = useTranslation();
@@ -77,7 +80,9 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
   const { state, daysLeft } = getConnectionState({
     status: details?.connection.status ?? item.status,
     consentExpiration: details?.connection.consentExpiration ?? item.consentExpiration,
+    paused: details?.connection.paused ?? item.paused,
   });
+  const paused = state === 'paused';
   const badge = STATUS_BADGE[state];
 
   const isAuthoriser = details?.connection.authorizedByMe ?? (!!user?.id && item.userId === user.id);
@@ -90,7 +95,7 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
   const balances = (details?.accounts ?? []).filter((a) => a.lastBalance !== null && a.accountId !== null);
 
   const canSync = state === 'active' || state === 'expiring';
-  const canReconnect = state !== 'needsMapping';
+  const canReconnect = state !== 'needsMapping' && !paused;
 
   const handleSync = () => {
     sync.mutate(item.id, {
@@ -167,6 +172,22 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
             {t(badge.key)}
           </Badge>
         </div>
+
+        {paused && (
+          <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs" data-testid="eb-paused">
+            <PauseCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-warning" />
+            <span className="text-muted-foreground">
+              {t('enableBanking.card.pausedDesc')}{' '}
+              {isAdmin ? (
+                <Link to="/settings?tab=bank-sync" className="font-medium text-brand-primary hover:underline">
+                  {t('enableBanking.card.pausedAdminLink')}
+                </Link>
+              ) : (
+                t('enableBanking.card.pausedAskAdmin')
+              )}
+            </span>
+          </div>
+        )}
 
         {(state === 'expiring' || state === 'expired' || state === 'needsMapping' || state === 'error') && (
           <div
@@ -247,14 +268,14 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
             </Button>
           )}
 
-          {state !== 'needsMapping' && state !== 'disconnected' && onOpenMapping && (
+          {state !== 'needsMapping' && state !== 'disconnected' && !paused && onOpenMapping && (
             <Button variant="outline" size="sm" className="justify-start" onClick={() => onOpenMapping(item.id)}>
               <ListChecks className="h-3.5 w-3.5 mr-2" />
               {t('enableBanking.card.manageAccounts')}
             </Button>
           )}
 
-          {state !== 'disconnected' && (
+          {state !== 'disconnected' && !paused && (
             <Button
               variant="outline"
               size="sm"
@@ -271,7 +292,7 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
         {canReconnect && !isAuthoriser && (
           <p className="text-xs text-muted-foreground">{t('enableBanking.card.reconnectOnlyAuthoriser')}</p>
         )}
-        {state !== 'disconnected' && !canDisconnect && (
+        {state !== 'disconnected' && !paused && !canDisconnect && (
           <p className="text-xs text-muted-foreground">{t('enableBanking.card.disconnectOnlyAdmin')}</p>
         )}
       </CardContent>

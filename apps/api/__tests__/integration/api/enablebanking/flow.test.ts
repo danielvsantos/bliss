@@ -6,7 +6,9 @@
  *   replayed, denied) → connection GET (R5 suggestions) → map (R5a provider
  *   switch keeps the same Account rows; R6 joint guard) → sync budget (R12)
  *   → reconnect re-attachment (R7) → disconnect, plus the WRONG_PROVIDER
- *   guards on the Plaid-only routes and promotion under the remittance label.
+ *   guards on the Plaid-only routes and promotion under the remittance label;
+ *   per-tenant credentials (#148): NOT_ENABLED without them and paused
+ *   connections, resumed once they are saved again.
  *
  * withAuth is real (JWT cookie). Mocked: rate limiter, produceEvent, Sentry,
  * the Enable Banking HTTP client and Redis (in-memory fake).
@@ -35,6 +37,7 @@ import { createFakeRedis } from '../../../helpers/fakeRedis';
 import { __setRedisClientForTests } from '../../../../utils/redisClient.js';
 import { __setEnableBankingClientForTests } from '../../../../utils/enableBanking.js';
 import { budgetKey, budgetDay } from '@bliss/shared/enablebanking';
+import { saveTestCredential, removeTestCredential } from '../../../helpers/enableBanking';
 
 import statusHandler from '../../../../pages/api/enablebanking/status.js';
 import aspspsHandler from '../../../../pages/api/enablebanking/aspsps.js';
@@ -143,8 +146,6 @@ async function startFlow(token: string, body: Record<string, unknown> = { aspspN
 }
 
 beforeAll(async () => {
-  process.env.ENABLE_BANKING_APP_ID = 'app-test';
-  process.env.ENABLE_BANKING_PRIVATE_KEY = 'unused-the-client-is-faked';
   process.env.NEXTAUTH_SECRET = 'eb-test-secret';
   process.env.NEXTAUTH_URL = 'https://api.example.test';
   process.env.FRONTEND_URL = FRONTEND;
@@ -154,6 +155,7 @@ beforeAll(async () => {
   tenantId = t.tenantId;
   danielId = t.userId;
   danielToken = t.token;
+  await saveTestCredential(tenantId); // the client itself is faked below
   const patricia = await prisma.user.create({
     data: { email: `patricia-${Date.now()}@test.bliss`, tenantId, role: 'member' },
   });
@@ -220,18 +222,27 @@ afterAll(async () => {
 // Tests (ordered: each step builds on the previous)
 // ---------------------------------------------------------------------------
 
-describe('feature flag', () => {
-  it('reports enabled, and hides everything when the secrets are absent', async () => {
-    expect((await call(statusHandler, makeReq(danielToken)))._body).toEqual({ enabled: true });
+describe('feature flag (per-tenant credentials, #148)', () => {
+  it('reports enabled for every role, configurable for admins only', async () => {
+    expect((await call(statusHandler, makeReq(danielToken)))._body).toEqual({ enabled: true, configurable: true, pausedConnections: 0 });
+    expect((await call(statusHandler, makeReq(patriciaToken)))._body).toEqual({ enabled: true, configurable: false, pausedConnections: 0 });
+  });
 
-    const saved = process.env.ENABLE_BANKING_APP_ID;
-    delete process.env.ENABLE_BANKING_APP_ID;
+  it('hides everything for a tenant without credentials, whatever the env says', async () => {
+    process.env.ENABLE_BANKING_APP_ID = 'retired-app';
+    process.env.ENABLE_BANKING_PRIVATE_KEY = 'retired-key';
+    await removeTestCredential(tenantId);
     try {
-      expect((await call(statusHandler, makeReq(danielToken)))._body).toEqual({ enabled: false });
-      expect((await call(aspspsHandler, makeReq(danielToken)))._status).toBe(404);
+      expect((await call(statusHandler, makeReq(danielToken)))._body).toEqual({ enabled: false, configurable: true, pausedConnections: 0 });
+      const aspsps = await call(aspspsHandler, makeReq(danielToken));
+      expect(aspsps._status).toBe(404);
+      expect(aspsps._body.code).toBe('NOT_ENABLED');
       expect((await call(connectHandler, makeReq(danielToken, { method: 'POST', body: { aspspName: 'Revolut', aspspCountry: 'ES' } })))._status).toBe(404);
+      expect(fakeClient.getAspsps).not.toHaveBeenCalled();
     } finally {
-      process.env.ENABLE_BANKING_APP_ID = saved;
+      delete process.env.ENABLE_BANKING_APP_ID;
+      delete process.env.ENABLE_BANKING_PRIVATE_KEY;
+      await saveTestCredential(tenantId);
     }
   });
 });
@@ -606,5 +617,57 @@ describe('reconnect (R7) and disconnect', () => {
     }));
     expect(res._status).toBe(200);
     expect((await prisma.account.findUnique({ where: { id: accJoint.id } }))!.plaidItemId).toBe(patriciaItemId);
+  });
+});
+
+describe('paused connections (#148, R6/R8)', () => {
+  it('without credentials: connections read as paused, every other route answers NOT_ENABLED', async () => {
+    const { res: start, state } = await startFlow(danielToken); // state signed while still enabled
+    expect(start._status).toBe(200);
+    await removeTestCredential(tenantId);
+    try {
+      const status = (await call(statusHandler, makeReq(patriciaToken)))._body;
+      expect(status).toMatchObject({ enabled: false, configurable: false });
+      expect(status.pausedConnections).toBeGreaterThan(0);
+
+      const conn = await call(connectionHandler, makeReq(patriciaToken, { query: { id: patriciaItemId } }));
+      expect(conn._status).toBe(200);
+      expect(conn._body.connection).toMatchObject({ paused: true, status: 'ACTIVE' });
+
+      const items = (await call(itemsHandler, makeReq(danielToken)))._body;
+      const eb = items.filter((i: any) => i.provider === 'ENABLE_BANKING');
+      expect(eb.find((i: any) => i.id === patriciaItemId)).toMatchObject({ paused: true });
+      expect(eb.find((i: any) => i.id === ebItemId)).toMatchObject({ status: 'REVOKED', paused: false });
+      expect(items.find((i: any) => i.provider === 'PLAID')).not.toHaveProperty('paused');
+
+      const id = { id: patriciaItemId };
+      for (const res of [
+        await call(aspspsHandler, makeReq(danielToken)),
+        await call(connectHandler, makeReq(danielToken, { method: 'POST', body: { aspspName: 'Revolut', aspspCountry: 'ES' } })),
+        await call(connectionHandler, makeReq(patriciaToken, { method: 'DELETE', query: id })),
+        await call(mapHandler, makeReq(patriciaToken, { method: 'POST', query: id, body: { mappings: [] } })),
+        await call(syncHandler, makeReq(patriciaToken, { method: 'POST', query: id })),
+      ]) {
+        expect(res._status).toBe(404);
+        expect(res._body.code).toBe('NOT_ENABLED');
+      }
+
+      fakeClient.createSession.mockClear();
+      const cb = await call(callbackHandler, makeReq(danielToken, { query: { code: 'code-daniel', state } }));
+      expect(redirectQuery(cb)).toEqual({ eb_error: 'not_enabled' });
+      expect(fakeClient.createSession).not.toHaveBeenCalled();
+
+      // Nothing was written to the paused connection.
+      expect((await prisma.plaidItem.findUnique({ where: { id: patriciaItemId } }))!.status).toBe('ACTIVE');
+    } finally {
+      await saveTestCredential(tenantId);
+    }
+  });
+
+  it('resumes as soon as credentials exist again', async () => {
+    const conn = await call(connectionHandler, makeReq(patriciaToken, { query: { id: patriciaItemId } }));
+    expect(conn._body.connection.paused).toBe(false);
+    const sync = await call(syncHandler, makeReq(patriciaToken, { method: 'POST', query: { id: patriciaItemId } }));
+    expect(sync._status).toBe(202);
   });
 });

@@ -45,6 +45,9 @@ import type {
   SubscriptionsView,
   RecurringCadence,
   EnableBankingAspspsResponse,
+  EnableBankingCredentialsRequest,
+  EnableBankingCredentialsView,
+  EnableBankingStatus,
   EnableBankingConnectRequest,
   EnableBankingConnectResponse,
   EnableBankingConnectionResponse,
@@ -771,10 +774,34 @@ class APIClient {
 
   // --- Enable Banking (#132) ---
 
-  /** Whether Enable Banking credentials are configured. When false, no Enable Banking UI renders. */
-  async getEnableBankingStatus(): Promise<{ enabled: boolean }> {
+  /** Whether the tenant has Enable Banking credentials (#148). When false, no Enable Banking UI renders. */
+  async getEnableBankingStatus(): Promise<EnableBankingStatus> {
     const response = await this.client.get('/api/enablebanking/status');
-    return { enabled: response.data?.enabled === true };
+    return {
+      enabled: response.data?.enabled === true,
+      configurable: response.data?.configurable === true,
+      pausedConnections: Number(response.data?.pausedConnections) || 0,
+    };
+  }
+
+  /** The tenant's Enable Banking credentials (admins only, #148). Never contains the private key. */
+  async getEnableBankingCredentials(): Promise<EnableBankingCredentialsView> {
+    const response = await this.client.get('/api/enablebanking/credentials', { transformResponse: rawJsonResponse });
+    return response.data;
+  }
+
+  async saveEnableBankingCredentials(data: EnableBankingCredentialsRequest): Promise<EnableBankingCredentialsView> {
+    const response = await this.client.put('/api/enablebanking/credentials', data, { transformResponse: rawJsonResponse });
+    return response.data;
+  }
+
+  async removeEnableBankingCredentials(confirm: boolean): Promise<void> {
+    await this.client.delete('/api/enablebanking/credentials', { params: confirm ? { confirm: 'true' } : undefined });
+  }
+
+  async verifyEnableBankingCredentials(): Promise<EnableBankingCredentialsView> {
+    const response = await this.client.post('/api/enablebanking/credentials/verify', null, { transformResponse: rawJsonResponse });
+    return response.data;
   }
 
   async getEnableBankingAspsps(): Promise<EnableBankingAspspsResponse> {

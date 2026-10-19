@@ -69,8 +69,17 @@ export const handlers = [
     })
   ),
 
-  // Enable Banking (#132) — not configured by default, so no Enable Banking UI renders
+  // Enable Banking (#132) — no tenant credentials by default (#148), so no Enable Banking UI renders
   http.get('/api/enablebanking/status', () =>
-    HttpResponse.json({ enabled: false })
+    HttpResponse.json({ enabled: false, configurable: false, pausedConnections: 0 })
+  ),
+  http.get('/api/enablebanking/credentials', () =>
+    HttpResponse.json({
+      configured: false,
+      callbackUrl: 'http://localhost:3000/api/enablebanking/callback',
+      credential: null,
+      usage: { activeConnections: 0, pausedConnections: 0, linkedAccounts: 0, limit: 5 },
+      history: [],
+    })
   ),
 ];

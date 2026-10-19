@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -26,7 +27,7 @@ import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 import { EnableBankingConnect } from '@/components/enable-banking/connect-dialog';
 import { EnableBankingMappingDialog } from '@/components/enable-banking/mapping-dialog';
 import { PendingEnableBankingConnections } from '@/components/enable-banking/pending-connections';
-import { useEnableBankingEnabled } from '@/hooks/use-enable-banking';
+import { useEnableBankingStatus } from '@/hooks/use-enable-banking';
 import { useEnableBankingCallback } from '@/hooks/use-enable-banking-callback';
 
 export default function AccountsPage() {
@@ -34,8 +35,11 @@ export default function AccountsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { accounts, plaidItems, isLoading, refetch } = useAccountList();
-  // Enable Banking (#132): hidden entirely unless the API reports it configured.
-  const enableBankingEnabled = useEnableBankingEnabled();
+  // Enable Banking (#132): hidden entirely unless the tenant has credentials
+  // (#148). Admins of a tenant without them get a link to set it up instead.
+  const { data: enableBankingStatus } = useEnableBankingStatus();
+  const enableBankingEnabled = enableBankingStatus?.enabled === true;
+  const showEnableBankingSetup = enableBankingStatus?.enabled === false && enableBankingStatus.configurable;
   const { mappingConnectionId, openMapping, closeMapping } = useEnableBankingCallback();
 
   // Selection & modal state
@@ -143,6 +147,14 @@ export default function AccountsPage() {
               <Globe className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">{t('enableBanking.connect.button')}</span>
             </EnableBankingConnect>
+            {showEnableBankingSetup && (
+              <Button variant="outline" asChild>
+                <Link to="/settings?tab=bank-sync" data-testid="eb-setup-link">
+                  <Globe className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">{t('enableBanking.credentials.setupLink')}</span>
+                </Link>
+              </Button>
+            )}
             <Button onClick={handleAddManual}>
               <PlusIcon className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">{t('accountsPage.addManual')}</span>
