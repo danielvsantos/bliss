@@ -84,6 +84,7 @@ It then emits `PORTFOLIO_CHANGES_PROCESSED` with the deleted row's `{ year, mont
 - **Rent**: net monthly rent, × (1 + indexation) per full year since `startDate`/anchor, stopping at `leaseEndDate`. **Cash interest**: `value × APY / 12` monthly. **Streams**: `amountPerPayment` at frequency (weekly…annual) from the anchor/`startDate` to `endDate`, indexed on `startDate` anniversaries, bucket `other`.
 - **Statuses**: `MATURED_UNREDEEMED` (bond past maturity with quantity), `ENDED` (lease/stream/end date passed), `STALE_RATE` (floating/inflation terms not updated in 180 days).
 - **Frequency label** for automatic dividends: 11–13 → MONTHLY, 4 → QUARTERLY, 2 → SEMIANNUAL, 1 → ANNUAL, 0 → NONE, else IRREGULAR.
+- `classifyIncomeAsset()` returns `null` for eToro **Copy Trading** holdings (`COPY_TRADING` hint, #143): dividends are paid inside the copy, so a copy projects no cash income and is never flagged missing terms.
 - Also exports `classifyIncomeAsset`, `validateIncomeTerms`, `isStreamEligibleCategory`, `frequencyFromDividendCount`, `resolveIncomeSource` (#83) and the constants used by the API.
 
 **Grouped view (#83).** Assets may carry `accountId`, `accountName`, `currency` and `securityName`; item rows echo them plus `quantity` and `currentValue`. `project()` then returns:

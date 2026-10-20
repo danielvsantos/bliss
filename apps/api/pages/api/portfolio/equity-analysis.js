@@ -7,6 +7,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { withAuth } from '../../../utils/withAuth.js';
 import { calculateAssetCurrentValue } from '../../../services/valuation.service.js';
 import { createCurrencyConverter } from '../../../utils/currencyConversion.js';
+import { copyTradeStatus, loadCopyLookThrough } from '../../../services/etoro.service.js';
 import {
   classifyAssetClass,
   normalizeEtfComposition,
@@ -26,9 +27,11 @@ const isEtf = (sm) => typeof sm?.assetType === 'string' && sm.assetType.trim().t
 // Classes the shared look-through places by the holding's own sector/country
 // or splits; anything else in the equity list (e.g. a stock overridden to a
 // bond) is placed by its own attributes like OTHER.
-const LOOK_THROUGH_CLASSES = new Set(['STOCK', 'REIT', 'FUND', 'OTHER', 'INDEX_ETF', 'SECTOR_ETF', 'BOND_ETF']);
+const LOOK_THROUGH_CLASSES = new Set(['STOCK', 'REIT', 'FUND', 'OTHER', 'INDEX_ETF', 'SECTOR_ETF', 'BOND_ETF', 'COPY_TRADE']);
 
 const EQUITY_HINTS = ['API_STOCK', 'API_FUND'];
+// eToro copy trades (#143): looked through like an ETF, from the user's own copy holdings.
+const COPY_TRADING_HINT = 'COPY_TRADING';
 const round2 = (n) => Math.round(n * 100) / 100;
 
 /** Asset class input for the shared classifier. */
@@ -48,11 +51,26 @@ function groupHoldings(holdings, dimension, totalEquityValue, enabled) {
   let raw;
   if (dimension === 'assetClass') {
     const map = new Map();
+    const add = (name, index, value) => {
+      if (!(value > 0)) return;
+      const g = map.get(name) || { name, value: 0, holdings: [] };
+      g.value += value;
+      g.holdings.push({ index, value });
+      map.set(name, g);
+    };
     holdings.forEach((h, index) => {
-      const g = map.get(h.assetClass) || { name: h.assetClass, value: 0, holdings: [] };
-      g.value += h.currentValue;
-      g.holdings.push({ index, value: h.currentValue });
-      map.set(h.assetClass, g);
+      // A linked copy shows its own mix (stocks, ETFs, crypto, cash, …) when
+      // looking through; otherwise it is one COPY_TRADE row (R15).
+      if (enabled && h.assetClass === 'COPY_TRADE' && h.assetClassMix?.length) {
+        let assigned = 0;
+        for (const part of h.assetClassMix) {
+          add(part.assetClass, index, h.currentValue * part.weight);
+          assigned += part.weight;
+        }
+        if (1 - assigned > 1e-6) add('OTHER', index, h.currentValue * (1 - assigned));
+        return;
+      }
+      add(h.assetClass, index, h.currentValue);
     });
     raw = [...map.values()].sort((a, b) => b.value - a.value);
   } else {
@@ -113,19 +131,21 @@ export default withAuth(async function handler(req, res) {
 
     // 1. Fetch stock and fund holdings (API_STOCK / API_FUND with positive
     //    quantity). API_FUND items are kept below only when SecurityMaster
-    //    identifies them as ETFs.
+    //    identifies them as ETFs. Copy Trading holdings (#143) come along and
+    //    are handled separately.
     const candidateItems = await prisma.portfolioItem.findMany({
       where: {
         tenantId: req.user.tenantId,
         quantity: { gt: 0 },
         ...(accountId && { accountId: parseInt(accountId, 10) }),
         category: {
-          processingHint: { in: EQUITY_HINTS },
+          processingHint: { in: [...EQUITY_HINTS, COPY_TRADING_HINT] },
         },
       },
       select: {
         id: true,
         symbol: true,
+        accountId: true,
         currency: true,
         assetCurrency: true,
         quantity: true,
@@ -156,8 +176,11 @@ export default withAuth(async function handler(req, res) {
       orderBy: { symbol: 'asc' },
     });
 
+    const copyItems = candidateItems.filter((item) => item.category?.processingHint === COPY_TRADING_HINT);
+    const securityItems = candidateItems.filter((item) => item.category?.processingHint !== COPY_TRADING_HINT);
+
     // 2. Fetch SecurityMaster data for all stock/fund symbols
-    const candidateSymbols = [...new Set(candidateItems.map((item) => item.symbol))];
+    const candidateSymbols = [...new Set(securityItems.map((item) => item.symbol))];
     const securityMasterRecords = candidateSymbols.length
       ? await prisma.securityMaster.findMany({ where: { symbol: { in: candidateSymbols } } })
       : [];
@@ -165,7 +188,7 @@ export default withAuth(async function handler(req, res) {
 
     // API_FUND items are kept in the equity views only when SecurityMaster
     // identifies them as ETFs.
-    const stockItems = candidateItems.filter(
+    const stockItems = securityItems.filter(
       (item) => item.category?.processingHint === 'API_STOCK' || isEtf(smMap[item.symbol]),
     );
 
@@ -175,7 +198,7 @@ export default withAuth(async function handler(req, res) {
     // it so the page and agents can explain the gap. Ticker-less MANUAL funds
     // never get SecurityMaster data and aren't pending.
     const pendingSecurityData = [...new Set(
-      candidateItems
+      securityItems
         .filter((item) => item.category?.processingHint === 'API_FUND'
           && item.source !== 'MANUAL'
           && !smMap[item.symbol]?.assetType)
@@ -285,14 +308,72 @@ export default withAuth(async function handler(req, res) {
       })
     );
 
+    // 3a. Copy Trading holdings (#143): valued by the eToro sync (stored
+    //     value, no live price), split by the user's own copy holdings.
+    const copyLookThrough = copyItems.length > 0
+      ? await loadCopyLookThrough(req.user.tenantId, copyItems)
+      : new Map();
+    const copyHoldings = await Promise.all(copyItems.map(async (item) => {
+      const { copy, composition } = copyLookThrough.get(item.id) || {};
+      const valueUSD = parseFloat(new Decimal(item.currentValueInUSD || 0).toString());
+      let currentValue = valueUSD;
+      if (portfolioCurrency !== 'USD') {
+        const converted = await convertCurrency(new Decimal(valueUSD), 'USD', portfolioCurrency);
+        if (converted) currentValue = parseFloat(converted.toString());
+      }
+      const classInput = classifierInput(item, null);
+      const { assetClass, source: assetClassSource } = classifyAssetClass(classInput);
+      const autoAssetClass = classifyAssetClass({ ...classInput, override: null }).assetClass;
+      const dividendYield = composition?.dividendYield ?? null;
+      return {
+        id: item.id,
+        // Never merged with another holding: every copy has its own holdings.
+        mergeKey: `copy:${item.id}`,
+        symbol: item.symbol,
+        name: `@${item.symbol}`,
+        assetType: 'COPY_TRADE',
+        assetClass,
+        assetClassSource,
+        autoAssetClass,
+        composition: composition ? { sectors: composition.sectors, countries: composition.countries } : null,
+        assetClassMix: composition?.assetClassMix || null,
+        quantity: parseFloat(new Decimal(item.quantity || 0).toString()),
+        currentValue,
+        currentValueUSD: valueUSD,
+        sector: DIVERSIFIED,
+        industry: DIVERSIFIED,
+        country: DIVERSIFIED,
+        // Value-weighted over the copy's holdings with data (R17).
+        peRatio: composition?.peRatio ?? null,
+        dividendYield,
+        peCoverage: composition?.peCoverage ?? null,
+        yieldCoverage: composition?.yieldCoverage ?? null,
+        sectorCoveragePct: composition?.sectorCoveragePct ?? null,
+        countryCoveragePct: composition?.countryCoveragePct ?? null,
+        unmappedPct: composition?.unmappedPct ?? null,
+        copyTrade: copyTradeStatus(copy),
+        trailingEps: null,
+        latestEpsActual: null,
+        latestEpsSurprise: null,
+        week52High: null,
+        week52Low: null,
+        averageVolume: null,
+        logoUrl: null,
+        annualDividendUSD: dividendYield != null ? dividendYield * valueUSD : null,
+        weight: 0,
+      };
+    }));
+    enrichedHoldings.push(...copyHoldings);
+
     // 3b. Merge entries for the same symbol held across multiple accounts.
     //     SecurityMaster data (sector, P/E, etc.) is per-symbol so it is
     //     identical across accounts — we just sum the financial values. The
     //     asset class override is set per symbol, so an OVERRIDE wins the merge.
     const symbolMap = new Map();
-    for (const { id, ...h } of enrichedHoldings) {
-      if (symbolMap.has(h.symbol)) {
-        const existing = symbolMap.get(h.symbol);
+    for (const { id, mergeKey, ...h } of enrichedHoldings) {
+      const key = mergeKey || h.symbol;
+      if (symbolMap.has(key)) {
+        const existing = symbolMap.get(key);
         existing.itemIds.push(id);
         existing.quantity += h.quantity;
         existing.currentValue += h.currentValue;
@@ -308,7 +389,7 @@ export default withAuth(async function handler(req, res) {
             : null;
         }
       } else {
-        symbolMap.set(h.symbol, { ...h, itemIds: [id] });
+        symbolMap.set(key, { ...h, itemIds: [id] });
       }
     }
     const mergedHoldings = [...symbolMap.values()].map(({ annualDividendUSD, ...h }) => ({
@@ -323,24 +404,27 @@ export default withAuth(async function handler(req, res) {
       h.weight = totalEquityValue > 0 ? h.currentValue / totalEquityValue : 0;
     }
 
-    // 5. Compute weighted P/E and dividend yield (unchanged by look-through)
+    // 5. Compute weighted P/E and dividend yield (unchanged by look-through).
+    //    A copy counts only with the share of its value its P/E / yield is
+    //    based on (#143).
     let weightedPeRatio = null;
     let weightedDividendYield = null;
+    const covered = (h, coverage) => h.weight * (coverage == null ? 1 : coverage / 100);
 
     const holdingsWithPe = mergedHoldings.filter((h) => h.peRatio != null && h.peRatio > 0);
     if (holdingsWithPe.length > 0) {
-      const peWeightSum = holdingsWithPe.reduce((sum, h) => sum + h.weight, 0);
+      const peWeightSum = holdingsWithPe.reduce((sum, h) => sum + covered(h, h.peCoverage), 0);
       if (peWeightSum > 0) {
-        weightedPeRatio = holdingsWithPe.reduce((sum, h) => sum + h.peRatio * (h.weight / peWeightSum), 0);
+        weightedPeRatio = holdingsWithPe.reduce((sum, h) => sum + h.peRatio * (covered(h, h.peCoverage) / peWeightSum), 0);
         weightedPeRatio = Math.round(weightedPeRatio * 100) / 100;
       }
     }
 
     const holdingsWithYield = mergedHoldings.filter((h) => h.dividendYield != null && h.dividendYield > 0);
     if (holdingsWithYield.length > 0) {
-      const yieldWeightSum = holdingsWithYield.reduce((sum, h) => sum + h.weight, 0);
+      const yieldWeightSum = holdingsWithYield.reduce((sum, h) => sum + covered(h, h.yieldCoverage), 0);
       if (yieldWeightSum > 0) {
-        weightedDividendYield = holdingsWithYield.reduce((sum, h) => sum + h.dividendYield * (h.weight / yieldWeightSum), 0);
+        weightedDividendYield = holdingsWithYield.reduce((sum, h) => sum + h.dividendYield * (covered(h, h.yieldCoverage) / yieldWeightSum), 0);
         weightedDividendYield = Math.round(weightedDividendYield * 1000000) / 1000000;
       }
     }
@@ -365,6 +449,7 @@ export default withAuth(async function handler(req, res) {
       summary: {
         totalEquityValue: round2(totalEquityValue),
         holdingsCount: mergedHoldings.length,
+        copyTradeCount: mergedHoldings.filter((h) => h.assetType === 'COPY_TRADE').length,
         weightedPeRatio,
         weightedDividendYield,
         pendingSecurityDataCount: pendingSecurityData.length,

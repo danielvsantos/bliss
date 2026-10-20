@@ -76,6 +76,12 @@ jest.mock('../../../../prisma/prisma.js', () => ({
 }));
 
 const mockGenerateInsightContent = jest.fn();
+const mockLoadCopyCompositions = jest.fn().mockResolvedValue(new Map());
+jest.mock('../../../services/etoroLookThrough', () => ({
+  loadCopyCompositions: (...args) => mockLoadCopyCompositions(...args),
+  COPY_TRADING_HINT: 'COPY_TRADING',
+}));
+
 jest.mock('../../../services/llm', () => ({
   generateInsightContent: (...args) => mockGenerateInsightContent(...args),
 }));
@@ -838,6 +844,40 @@ describe('insightService (v1)', () => {
       // …but the asset-class mix covers everything
       expect(result.assetClassAllocation.map((a) => a.assetClass)).toEqual(['REAL_ESTATE', 'INDEX_ETF', 'CRYPTO']);
       expect(result.unclassifiedEquityValue).toBe(5000);
+    });
+
+    // #143: a linked eToro copy is split by sector from its own holdings,
+    // like an ETF; its ticker (an eToro username) is never looked up.
+    it('splits a linked Copy Trading holding by sector from the copy\'s holdings', async () => {
+      mockPortfolioItemFindMany.mockResolvedValue([
+        {
+          id: 7, symbol: 'topinvestor', accountId: 3, currency: 'USD',
+          currentValue: 1000, costBasis: 800, quantity: 1, realizedPnL: 0,
+          category: { name: 'Copy Trading', processingHint: 'COPY_TRADING', defaultCategoryCode: 'COPY_TRADING', group: 'Funds' },
+        },
+        {
+          id: 8, symbol: 'KO', currency: 'USD',
+          currentValue: 1000, costBasis: 900, quantity: 10, realizedPnL: 0,
+          category: { name: 'Stocks', processingHint: 'API_STOCK' },
+        },
+      ]);
+      mockSecurityMasterFindMany.mockResolvedValue([
+        { symbol: 'KO', name: 'Coca-Cola', sector: 'Consumer Defensive', assetType: 'Common Stock' },
+      ]);
+      mockLoadCopyCompositions.mockResolvedValueOnce(new Map([[7, {
+        sectors: [{ sector: 'Technology', weight: 0.6 }, { sector: 'Healthcare', weight: 0.3 }],
+        countries: [],
+      }]]));
+
+      const result = await gatherEquityFundamentals('tenant-1', 'USD', {});
+
+      expect(mockLoadCopyCompositions).toHaveBeenCalledWith('tenant-1', [expect.objectContaining({ id: 7, accountId: 3 })]);
+      expect(mockSecurityMasterFindMany.mock.calls[0][0].where.symbol.in).toEqual(['KO']);
+      expect(result.holdings.find((h) => h.symbol === 'topinvestor').assetClass).toBe('COPY_TRADE');
+      expect(result.sectorAllocation.Technology).toMatchObject({ value: 600, viaEtfs: [{ symbol: 'topinvestor', weightPct: 60 }] });
+      expect(result.sectorAllocation.Healthcare.value).toBe(300);
+      expect(result.sectorAllocation['Consumer Defensive'].value).toBe(1000);
+      expect(result.unclassifiedEquityValue).toBe(100); // the copy's unsplit 10%
     });
 
     // Passive Income #77 regression: once ETFs are refreshed nightly they have

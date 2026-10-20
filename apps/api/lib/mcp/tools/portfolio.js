@@ -183,6 +183,9 @@ const getEquityAnalysis = defineTool({
   description:
     'Stock and ETF holdings grouped by sector, industry, country or asset class, with weights, weighted P/E and '
     + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false. '
+    + 'eToro copy trades (assetClass COPY_TRADE, symbol = the copied investor) are looked through the same way from '
+    + 'the copy\'s own holdings; `lookThroughCoveragePct` is the share of the copy split into sectors, and a copy\'s '
+    + 'P/E and yield are based on `peCoveragePct` / `yieldCoveragePct` of its value. '
     + '`pendingSecurityData` lists fund symbols left out until their security data is fetched.',
   input: {
     groupBy: z.enum(['sector', 'industry', 'country', 'assetClass']).optional(),
@@ -207,6 +210,17 @@ const getEquityAnalysis = defineTool({
       weight: h.weight == null ? null : Math.round(h.weight * 10000) / 100,
       peRatio: h.peRatio ?? null,
       dividendYieldPct: h.dividendYield == null ? null : Math.round(h.dividendYield * 10000) / 100,
+      // eToro copy trades (#143) only.
+      ...(h.assetType === 'COPY_TRADE' && {
+        copyTrade: {
+          linked: Boolean(h.copyTrade?.linked),
+          status: h.copyTrade?.status ?? null,
+          lookThroughCoveragePct: h.sectorCoveragePct ?? null,
+          peCoveragePct: h.peCoverage ?? null,
+          yieldCoveragePct: h.yieldCoverage ?? null,
+          unmappedPct: h.unmappedPct ?? null,
+        },
+      }),
     }));
     return {
       currency: data.portfolioCurrency,

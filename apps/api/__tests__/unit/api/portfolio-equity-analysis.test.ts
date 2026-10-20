@@ -466,7 +466,7 @@ describe('GET /api/portfolio/equity-analysis — asset classes & look-through (#
   it('queries only stock/fund holdings', async () => {
     await run();
     const { where, select } = mockPrisma.portfolioItem.findMany.mock.calls[0][0];
-    expect(where.category).toEqual({ processingHint: { in: ['API_STOCK', 'API_FUND'] } });
+    expect(where.category).toEqual({ processingHint: { in: ['API_STOCK', 'API_FUND', 'COPY_TRADING'] } });
     expect(where.tenantId).toBe('test-tenant-123');
     expect(select.assetClassOverride).toBe(true);
     expect(select.incomeTerms.select.issuerType).toBe(true);

@@ -57,6 +57,8 @@ export const INTEGRATION_DENYLIST = Object.freeze([
   // sync and disconnect act on a person's own PSD2 consent. A prefix is fine
   // on the denylist (the no-prefix rule is for INTEGRATION_WRITE_ALLOWED).
   { prefix: '/api/enablebanking', methods: 'ALL' },
+  // eToro copy trading connections and the convert action (#143): session only.
+  { prefix: '/api/etoro', methods: 'ALL' },
   // No account/category/tenant writes for tokens (account create excepted,
   // see INTEGRATION_WRITE_ALLOWED).
   { prefix: '/api/accounts', methods: 'NON_GET' },

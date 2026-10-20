@@ -640,6 +640,30 @@ describe('portfolio tools', () => {
     expect(eq.result.topHoldings[0]).toMatchObject({ weight: 70, dividendYieldPct: 0.5 });
   });
 
+  it('get_equity_analysis returns the same split for an eToro copy, with its coverage (#143)', async () => {
+    const groups = [
+      { name: 'Technology', totalValue: 600, weight: 0.6, holdingsCount: 1 },
+      { name: 'Other', totalValue: 400, weight: 0.4, holdingsCount: 1 },
+    ];
+    const eq = await run('get_equity_analysis', { groupBy: 'sector' }, {
+      'GET /api/portfolio/equity-analysis': {
+        portfolioCurrency: 'USD', lookThrough: true, summary: { holdingsCount: 1, copyTradeCount: 1 }, groups,
+        holdings: [{
+          symbol: 'topinvestor', name: '@topinvestor', assetType: 'COPY_TRADE', assetClass: 'COPY_TRADE',
+          currentValue: 1000, weight: 1, peRatio: 25, dividendYield: 0.01, peCoverage: 40, yieldCoverage: 55,
+          sectorCoveragePct: 60, unmappedPct: 2, copyTrade: { linked: true, status: 'ACTIVE' },
+        }],
+      },
+    });
+    expect(eq.result.groups.map((g: { name: string; value: { value: number } }) => [g.name, g.value.value]))
+      .toEqual(groups.map((g) => [g.name, g.totalValue]));
+    expect(eq.result.topHoldings[0]).toMatchObject({
+      symbol: 'topinvestor', assetClass: 'COPY_TRADE', peRatio: 25, dividendYieldPct: 1,
+      copyTrade: { linked: true, status: 'ACTIVE', lookThroughCoveragePct: 60, peCoveragePct: 40, yieldCoveragePct: 55, unmappedPct: 2 },
+    });
+    expect(eq.result.summary.copyTradeCount).toBe(1);
+  });
+
   it('get_portfolio_history forwards the holding scope (#131)', async () => {
     const routes = { 'GET /api/portfolio/history': { portfolioCurrency: 'USD', resolution: 'daily', history: [] } };
     const bySymbol = await run('get_portfolio_history', { symbol: 'AAPL', accountId: 3 }, routes);

@@ -90,6 +90,7 @@ describe('resolveActivity', () => {
     expect(resolveActivity('events', job('ENABLE_BANKING_SYNC'))).toMatchObject({ type: 'BANK_SYNC', ephemeral: true });
     expect(resolveActivity('plaid-sync', { name: 'ENABLE_BANKING_SYNC_ALL', data: {} })).toBeNull();
     expect(resolveActivity('plaid-sync', { name: 'ETORO_SYNC_ALL', data: {} })).toBeNull();
+    expect(resolveActivity('events', job('ETORO_SYNC'))).toMatchObject({ type: 'PORTFOLIO_UPDATE', ephemeral: true });
   });
 
   it('maps admin rebuild scopes', () => {

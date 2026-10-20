@@ -251,6 +251,18 @@ Second bank-feed provider for EU banks (Revolut ES first), feeding the **same** 
 - **Per-tenant credentials (#148):** each tenant brings its own Enable Banking app (5 accounts in restricted mode). `EnableBankingCredential` (1:1 with Tenant; `appId` + `privateKey` encrypted and in `ROTATION_COVERAGE`; the key is **write-only**, never selected for a response) and the append-only `EnableBankingCredentialEvent` history, managed by tenant admins at `GET|PUT|DELETE /api/enablebanking/credentials` + `POST …/verify` (Settings → Bank sync). Always resolve the client with `getTenantEnableBanking(tenantId)` (API `utils/enableBanking.js`, backend `services/enableBanking/client.js`): per call from the DB, cached per `tenantId:credentialId:version`; null → `404 NOT_ENABLED` (status and the connection GET excepted). No credential = connections **paused** (derived, never stored: skipped with no log and no status change). Save probes `GET /application`; a confirmed app change moves live connections to `LOGIN_REQUIRED` / `APP_CHANGED`. A sync 401/403 that the probe confirms marks the credential `INVALID` (admin-only `ENABLE_BANKING_CREDENTIALS_INVALID` signal), never the connection. The env vars `ENABLE_BANKING_APP_ID` / `_PRIVATE_KEY(_PATH)` are retired (boot warning only). Key parsing: `parsePrivateKey()` (server, authority) and `apps/web/src/lib/pem.ts` (browser pre-check), both tested against `packages/shared/test-fixtures/enablebanking-keys/`.
 - Both migrations are hand-written (partial unique index for the joint-account guard): **`migrate deploy` only.**
 
+### eToro copy trading (#143)
+
+A tenant admin connects an eToro account with a **Read** key pair; Bliss follows the value and composition of the user's own **copies** (CopyTrader) and looks through them like ETFs. See [`docs/specs/backend/25-etoro-copy-trading.md`](docs/specs/backend/25-etoro-copy-trading.md), [`docs/specs/api/28-etoro-api.md`](docs/specs/api/28-etoro-api.md).
+
+- **Never transactions.** Nothing from eToro creates, changes or suggests a transaction. The user's own recorded deposits stay the cost basis.
+- **Own tables, not Plaid's:** `EtoroConnection` (keys encrypted, in `encryptedFields` + `ROTATION_COVERAGE`, never returned: `keyLast4` only), `EtoroCopy` (per mirror: value, mapped holdings), `EtoroCopyValue` (tenant-scoped daily value, not `AssetPrice`). Hand-written migration: **`migrate deploy` only.** Per-account keys only (no operator key); a tenant's data serves that tenant only.
+- **Copy Trading category** (`COPY_TRADING` hint, group Funds): the ticker is the copied investor's eToro username, never a market symbol (never sent to Twelve Data). **Link rule, never stored:** same tenant + the connection's account + `lower(symbol) = parentUsername`.
+- **Sync:** `ETORO_SYNC` / `ETORO_SYNC_ALL` on the `plaid-sync` queue (03:30 UTC), via `@bliss/shared/etoro` (read-only client, `RateLimit-*` pacer). Must never reach `twelveDataService` (static test). A 401/403 is probed with `GET /me` before `NEEDS_RECONNECT`.
+- **Valuation:** `COPY_TRADING` strategy. eToro's value is a **total** (not × quantity), via USD, forward-filled; MANUAL behaviour before the first eToro day, so history before the connection never changes.
+- **Look-through:** `deriveCopyComposition()` / `mapEtoroInstrument()` in `@bliss/shared` (computed on read, fixed eToro exchange table, US variants like `AMZN.RTH` fold into the plain listing). Asset class `COPY_TRADE` (never a user override: `OVERRIDE_ASSET_CLASSES`). Passive income projects zero for copies.
+- `/api/etoro` is on `INTEGRATION_DENYLIST`; agents see copies through `get_equity_analysis` only.
+
 ### Analytics pipeline
 
 Event-driven aggregation into `AnalyticsCacheMonthly` and `TagAnalyticsCacheMonthly`:
@@ -387,6 +399,7 @@ All services read from a single `.env` file at the repo root. Run `./scripts/set
 - Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — enables Google Sign-In; email/password auth works without it
 - Sign-up: `SIGNUP_MODE` (`open` default | `invite_only`; unknown values fail closed to `invite_only`). Invites are managed with `ADMIN_API_KEY` (see "Invite-only sign-up")
 - Plaid: `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, `PLAID_WEBHOOK_URL`, `PLAID_HISTORY_DAYS`
+- eToro copy trading (#143): no env vars — each tenant admin adds their own eToro Read key in Settings
 - Enable Banking (#132): credentials are per tenant (Settings → Bank sync, #148), no env vars; optional server-wide `ENABLE_BANKING_REDIRECT_URL`, `ENABLE_BANKING_SYNC_TIMES`, `ENABLE_BANKING_DAILY_BUDGET` — on both API and backend. `ENABLE_BANKING_APP_ID` / `ENABLE_BANKING_PRIVATE_KEY(_PATH)` are retired and ignored
 - AI (required): `LLM_PROVIDER` (gemini|openai|anthropic), `EMBEDDING_PROVIDER` (required when `LLM_PROVIDER=anthropic`), `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (matching your provider), optional overrides `EMBEDDING_MODEL` / `CLASSIFICATION_MODEL` / `INSIGHT_MODEL`
 - Market data: `TWELVE_DATA_API_KEY` (also the default FX-rate source — see below)
