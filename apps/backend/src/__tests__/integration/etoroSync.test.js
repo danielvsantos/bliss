@@ -25,6 +25,10 @@ jest.mock('../../queues/plaidSyncQueue', () => ({
   etoroSyncOpts: (id) => ({ deduplication: { id: `etoro-sync:${id}` } }),
 }));
 jest.mock('../../utils/redis', () => ({ getRedisConnection: jest.fn(() => ({})) }));
+const mockWatchlist = jest.fn().mockResolvedValue({});
+jest.mock('../../queues/securityMasterQueue', () => ({
+  enqueueLookThroughWatchlistRefresh: (...args) => mockWatchlist(...args),
+}));
 
 const { UnrecoverableError } = require('bullmq');
 const prisma = require('../../../prisma/prisma');
@@ -174,6 +178,27 @@ describe('syncConnection', () => {
     }));
     const conn = await prisma.etoroConnection.findUnique({ where: { id: a.connection.id } });
     expect(conn).toMatchObject({ lastSyncStatus: 'SUCCESS', status: 'ACTIVE' });
+  });
+
+  it('asks the security master for the look-through watchlist only when copy symbols have no data (R20)', async () => {
+    const known = await prisma.securityMaster.count({ where: { symbol: { in: ['AMZN', 'AIR'] } } });
+    if (known < 2) expect(mockWatchlist).toHaveBeenCalledWith({ reason: 'ETORO_SYNC' });
+
+    // Once every copy symbol is known, a sync asks for nothing.
+    const created = [];
+    for (const symbol of ['AMZN', 'AIR']) {
+      if (!(await prisma.securityMaster.findUnique({ where: { symbol } }))) {
+        await prisma.securityMaster.create({ data: { symbol } });
+        created.push(symbol);
+      }
+    }
+    try {
+      mockWatchlist.mockClear();
+      await syncConnection(job(b));
+      expect(mockWatchlist).not.toHaveBeenCalled();
+    } finally {
+      await prisma.securityMaster.deleteMany({ where: { symbol: { in: created } } });
+    }
   });
 
   it('a second sync the same day updates today\'s value instead of adding a row', async () => {

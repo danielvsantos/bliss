@@ -63,10 +63,20 @@ async function enqueueTenantSecuritiesRefresh(tenantId, data = {}, opts = {}) {
     );
 }
 
+// eToro copy look-through (#143): one pending watchlist refresh at a time. An
+// eToro sync that finds symbols with no data asks for one; repeated syncs
+// collapse into it. Not a fixed jobId (completed jobs are kept for 24h).
+const LOOKTHROUGH_WATCHLIST_DEDUP = { deduplication: { id: 'lookthrough-watchlist' } };
+
+async function enqueueLookThroughWatchlistRefresh(data = {}) {
+    return getSecurityMasterQueue().add('refresh-lookthrough-watchlist', data, LOOKTHROUGH_WATCHLIST_DEDUP);
+}
+
 module.exports = {
     getSecurityMasterQueue,
     SECURITY_MASTER_QUEUE_NAME,
     enqueueSecurityMasterJob,
     enqueueTenantSecuritiesRefresh,
     tenantSecuritiesDedupOpts,
+    enqueueLookThroughWatchlistRefresh,
 };

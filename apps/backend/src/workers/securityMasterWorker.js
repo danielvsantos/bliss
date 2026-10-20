@@ -330,6 +330,33 @@ const processSecurityMasterJob = async (job) => {
                 return { success: true, totalSymbols: holdings.length, refreshed, profilesRefreshed, errors, profileErrors, fundamentalsErrors, duration };
             }
 
+            case 'refresh-lookthrough-watchlist': {
+                // eToro copy look-through (#143, R20): symbols held only inside
+                // copies, missing or stale. Weekly (Sun 02:00 UTC) and after an
+                // eToro sync that found symbols with no data. BACKGROUND priority
+                // in the shared Twelve Data budget (#150): no pacing of its own.
+                const holdings = await securityMasterService.getLookThroughWatchlistSymbols();
+                logger.info(`[SecurityMaster] Look-through watchlist: ${holdings.length} symbol(s) to refresh`, {
+                    reason: data?.reason || 'scheduled',
+                });
+
+                let refreshed = 0;
+                let errors = 0;
+                for (let i = 0; i < holdings.length; i++) {
+                    const { symbol, exchange } = holdings[i];
+                    const result = await refreshSymbol(symbol, { exchange });
+                    if (result.fundamentals) refreshed++;
+                    if (result.error) errors++;
+                    await job.updateProgress(Math.round(((i + 1) / holdings.length) * 100));
+                }
+
+                const duration = Date.now() - startTime;
+                logger.info('[SecurityMaster] Look-through watchlist refresh complete', {
+                    jobId: job.id, totalSymbols: holdings.length, refreshed, errors, duration: `${duration}ms`,
+                });
+                return { success: true, totalSymbols: holdings.length, refreshed, errors, duration };
+            }
+
             case 'refresh-all-from-table': {
                 // Refresh all symbols in the SecurityMaster table (not just active portfolio items).
                 // Useful for fixing stale data, correcting exchange MIC codes, etc.
@@ -385,8 +412,12 @@ const processSecurityMasterJob = async (job) => {
     }
 };
 
-/** Twelve Data priority (#150): the admin bulk refresh yields to the nightly run. */
-const securityMasterPriority = (job) => (job?.name === 'refresh-all-from-table'
+/**
+ * Twelve Data priority (#150): the admin bulk refresh and the eToro
+ * look-through watchlist (#143) only use credits nothing else needs.
+ */
+const BACKGROUND_JOBS = new Set(['refresh-all-from-table', 'refresh-lookthrough-watchlist']);
+const securityMasterPriority = (job) => (BACKGROUND_JOBS.has(job?.name)
     ? PRIORITIES.BACKGROUND
     : PRIORITIES.FUNDAMENTALS);
 
@@ -406,6 +437,17 @@ const startSecurityMasterWorker = () => {
         {
             repeat: { pattern: '0 3 * * *' },
             jobId: 'daily-security-master-refresh',
+        }
+    );
+
+    // eToro copy look-through watchlist (#143): weekly, Sunday 2 AM UTC, so it
+    // runs ahead of the 3 AM nightly refresh.
+    getSecurityMasterQueue().add(
+        'refresh-lookthrough-watchlist',
+        {},
+        {
+            repeat: { pattern: '0 2 * * 0' },
+            jobId: 'weekly-lookthrough-watchlist',
         }
     );
 

@@ -18,7 +18,7 @@ The work ships in five PRs. This spec describes the whole feature; each PR updat
 | B | Schema + migration, eToro HTTP client, sync handler, valuation (§25.2, §25.3, §25.7, §25.10) | done |
 | C | API connection routes, convert action, Equity Analysis copy rows, #80 insights, MCP (§25.8, [API spec 28](../api/28-etoro-api.md)) | done |
 | D | Web: connect dialog, connection management, holdings badges, Equity Analysis labels ([frontend spec 28](../frontend/28-etoro-copy-trading.md)), guide | done |
-| E | Security master look-through watchlist (§25.9) | planned |
+| E | Security master look-through watchlist (§25.9) | done |
 
 ## 25.2 Data model
 
@@ -164,12 +164,20 @@ Strategy `COPY_TRADING` (`portfolio-handlers/valuation/strategies/COPY_TRADING.j
 - Agents see copies only through `get_equity_analysis`, which returns the same split as the web page (`assetClass: 'COPY_TRADE'`, plus a `copyTrade` block with the look-through, P/E and yield coverage).
 - Only Bliss-derived numbers reach the LLM; no eToro market content does.
 
-## 25.9 Look-through watchlist (PR-E)
+## 25.9 Look-through watchlist
 
-Holdings inside linked copies that no tenant holds directly form a watchlist that the security master refreshes weekly: profile, fundamentals and ETF composition.
-- **Job:** `refresh-lookthrough-watchlist` on the `security-master` queue, Sunday 02:00 UTC. It runs at `PRIORITIES.BACKGROUND` in the #150 Twelve Data budget and has no pacing of its own.
-- **Symbols:** distinct mapped symbols of `ACTIVE` copies, minus symbols held directly, limited to symbols that are missing or more than 7 days stale. Only symbols leave the query: no tenant id, no value.
-- **Cost:** about 51 credits per stale symbol. On a small plan, coverage builds up over several weeks, and missing data shows as "Other" in the meantime.
+Holdings inside copies that no tenant holds directly form a watchlist that the security master refreshes: profile, fundamentals and ETF composition (`refreshSymbol()`, exactly as the nightly run).
+- **Job:** `refresh-lookthrough-watchlist` on the `security-master` queue. It runs at `PRIORITIES.BACKGROUND` in the #150 Twelve Data budget (`securityMasterPriority`) and has no pacing of its own. It has no tenant, so it never shows in processing status.
+- **When:**
+  - **Weekly:** Sunday 02:00 UTC (`jobId: weekly-lookthrough-watchlist`), ahead of the 03:00 nightly refresh.
+  - **After a sync (plan amendment):** whenever an eToro sync finds stock/ETF symbols in the connection's copies with no SecurityMaster row, it enqueues the job right away (`enqueueLookThroughWatchlistRefresh({ reason: 'ETORO_SYNC' })`, deduplicated `lookthrough-watchlist`). Without this, a newly connected copy would stay unsplit until the next Sunday; the PRD asks for a copy to be split within one sync.
+  - The sync handler only enqueues and never calls Twelve Data itself.
+- **Symbols** (`getLookThroughWatchlistSymbols()`):
+  - distinct mapped symbols of `ACTIVE` copies on connections that weren't removed;
+  - minus the symbols held directly;
+  - limited to symbols that are missing or more than 7 days stale.
+  - Crypto, commodities and unresolved instruments are skipped. Only symbols leave the query: no tenant id, no value.
+- **Cost:** about 51 credits per stale symbol. For example, 300 copy-only symbols ≈ 15.3k credits/week, about 41 minutes of an otherwise idle 377/min budget. On a small plan, coverage builds up over several runs, and missing data shows as "Other" in the meantime. The `twelve_data_usage` log line (label `security-master:refresh-lookthrough-watchlist`) shows the real cost.
 
 ## 25.10 Failure modes
 

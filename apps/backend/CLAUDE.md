@@ -80,12 +80,12 @@ The API layer dispatches events via `POST /api/events`. The `eventSchedulerWorke
 |--------|-------|-------------|---------------|---------------|
 | `eventSchedulerWorker` | event-scheduler | 1 | default | Routes events to queues |
 | `smartImportWorker` | smart-import | 1 | 600s | `process-smart-import`, `commit-smart-import` (commit logic in `commitWorker.js`, loaded lazily) |
-| `plaidSyncWorker` | plaid-sync | default | default | `plaid-sync-job` |
+| `plaidSyncWorker` | plaid-sync | default | default | `plaid-sync-job`, `ENABLE_BANKING_SYNC(_ALL)`, `ETORO_SYNC` / `ETORO_SYNC_ALL` (eToro copies, #143, cron 3:30 AM UTC; `workers/handlers/etoroSync.js`) |
 | `plaidProcessorWorker` | plaid-processor | 1 | 600s | `process-plaid-transactions` |
 | `portfolioWorker` | portfolio | 5 | 300s | `process-portfolio-changes`, `process-cash-holdings`, `recalculate-portfolio-item`, `recalculate-portfolio-items`, `process-simple-liability`, `process-amortizing-loan`, `value-portfolio-items`, `value-all-assets`, `generate-portfolio-valuation`, `revalue-all-tenants` (cron 4AM UTC) |
 | `analyticsWorker` | analytics | 1 | 300s | `full-rebuild-analytics`, `scoped-update-analytics` |
 | `insightGeneratorWorker` | insights | 1 | 600s | `generate-all-insights` (cron 6AM UTC), `generate-tenant-insights` |
-| `securityMasterWorker` | security-master | 1 | 1800s | `refresh-all-fundamentals` (cron 3AM UTC, stocks + ETFs), `refresh-single-symbol`, `refresh-all-from-table`, `refresh-tenant-securities` (deduplicated per tenant) |
+| `securityMasterWorker` | security-master | 1 | 1800s | `refresh-all-fundamentals` (cron 3AM UTC, stocks + ETFs), `refresh-single-symbol`, `refresh-all-from-table`, `refresh-tenant-securities` (deduplicated per tenant), `refresh-lookthrough-watchlist` (eToro copy symbols, #143, Sun 2AM UTC + after a sync, BACKGROUND) |
 
 ## Worker implementation pattern
 

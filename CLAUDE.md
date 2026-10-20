@@ -369,6 +369,7 @@ Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
 - `etfComposition` (sector weights, country allocation, asset allocation from `/etfs/world/composition`, ~1 credit) refreshed weekly for ETFs inside `refreshSymbol()`; drives the asset class and look-through below
 - Computed fields: trailing EPS, P/E ratio, annualized dividend yield
 - Paced by the shared Twelve Data credit budget (#150) at FUNDAMENTALS priority (admin bulk refresh: BACKGROUND)
+- `refresh-lookthrough-watchlist` (#143, BACKGROUND, Sun 2 AM UTC + after an eToro sync that finds unknown symbols) refreshes symbols held only inside eToro copies, so their look-through has sector/country data
 - 7-day cache on profile data, checked before live API calls
 
 ## BullMQ workers reference
@@ -382,7 +383,7 @@ Nightly refresh (3 AM UTC) of stock **and ETF** fundamentals from Twelve Data:
 | `portfolioWorker` | portfolio | 5 | FIFO lots, PnL, valuation, cash holdings, **nightly revaluation (4 AM UTC)** |
 | `analyticsWorker` | analytics | 1 | Spending/tag analytics aggregation |
 | `insightGeneratorWorker` | insights | 1 | Tiered AI insights: 6 AM UTC scheduling heartbeat that auto-triggers monthly/quarterly/annual on their calendar windows, portfolio intel (Mon 5 AM) |
-| `securityMasterWorker` | security-master | 1 | Nightly stock + ETF fundamentals refresh (cron 3 AM UTC); tenant-scoped `refresh-tenant-securities` |
+| `securityMasterWorker` | security-master | 1 | Nightly stock + ETF fundamentals refresh (cron 3 AM UTC); tenant-scoped `refresh-tenant-securities`; eToro look-through watchlist (Sun 2 AM UTC) |
 | `subscriptionDetectionWorker` | subscription-detection | 1 | Recurring-charge detection: nightly `detect-all-tenants` (cron 5 AM UTC) fans out one incremental `detect-tenant` per tenant; on-demand `detect-tenant` (incremental/full) from the Subscriptions page + Settings → Maintenance |
 
 **Schedule chain:** securityMaster (3 AM, prices) -> portfolioWorker (4 AM, revaluation) -> portfolioIntel (Mon 5 AM, equity insights) + subscriptionDetection (5 AM, recurring charges — read-only over `Transaction`, no cascade) -> insightGenerator (6 AM, auto-triggers monthly/quarterly/annual when their calendar window is open).
