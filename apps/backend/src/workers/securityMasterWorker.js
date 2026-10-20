@@ -8,6 +8,8 @@ const securityMasterService = require('../services/securityMasterService');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker } = require('../utils/activityTracker');
 const { maybeReleaseRebuildLock } = require('../utils/rebuildLock');
+const { withTwelveDataPriority } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 const {
     getSymbolProfile,
     getEarnings,
@@ -21,24 +23,13 @@ const PROFILE_STALE_DAYS = 7;
 const COMPOSITION_STALE_DAYS = 7;
 
 /**
- * Credit budget math (Twelve Data Grow plan):
- *   377 credits/min shared across ALL API calls.
- *   Per symbol (with profile): 10 + 1 + 10 + 20 = 41 credits
- *   Per symbol (no profile):   1 + 10 + 20 = 31 credits
- *   Per ETF: /earnings is skipped (meaningless EPS for funds) → 21 credits (+10 profile)
- *            + /etfs/world/composition weekly (~1 credit, logged on each fetch — #79)
- *   Safe throughput: ~9 symbols/min → ~6.7s per symbol
- *
- * We enforce this by:
- *   1. Running all API calls SEQUENTIALLY (no Promise.all) so they don't
- *      blast through independent throttle queues simultaneously.
- *   2. Adding a per-symbol delay to ensure we stay under budget even when
- *      the individual throttle queues have stale slot times.
+ * Pacing: every Twelve Data call draws from the shared credit budget (#150,
+ * `utils/twelveDataBudget.js`) at FUNDAMENTALS priority (BACKGROUND for the
+ * admin bulk refresh), so this worker never sleeps on its own. Per symbol:
+ * profile 10 (weekly) + quote 1 + earnings 20 (stocks only) + dividends 20,
+ * plus the weekly ETF composition. Calls stay SEQUENTIAL (no Promise.all) so one
+ * job can't fill the window between higher-priority waiters' heartbeats.
  */
-const MIN_MS_PER_SYMBOL = 10000; // ~6 symbols/min × 41 credits = ~246 credits/min (safe margin under 377)
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 /**
  * Twelve Data expects ISO-10383 MIC codes (e.g. XNYS, BVMF, XNAS).
  * Display names like "NYSE", "NASDAQ", "BOVESPA" are NOT valid mic_code values
@@ -101,7 +92,7 @@ async function refreshEtfComposition(symbol, existing, micOpts) {
 
 /**
  * Refresh fundamentals (and optionally profile) for a single symbol.
- * All API calls run SEQUENTIALLY to respect the shared credit budget.
+ * All API calls run SEQUENTIALLY (see the pacing note above).
  * @param {string} symbol Ticker symbol
  * @param {Object} [options]
  * @param {boolean} [options.forceProfile] Force profile refresh even if fresh
@@ -116,7 +107,6 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
         logger.warn(`[SecurityMaster] Skipping invalid mic_code "${exchange}" for ${symbol} — looks like a display name`);
     }
     const micOpts = validMic ? { micCode: validMic } : {};
-    const symbolStart = Date.now();
 
     // Check if profile needs refreshing
     let needsProfile = forceProfile;
@@ -235,13 +225,6 @@ async function refreshSymbol(symbol, { forceProfile = false, exchange = null } =
     // Combines both phase errors into a single message.
     if (result.profileError || result.fundamentalsError) {
         result.error = [result.profileError, result.fundamentalsError].filter(Boolean).join(' | ');
-    }
-
-    // Enforce minimum time per symbol to stay within the global credit budget.
-    // This acts as a safety net on top of the per-domain throttle queues.
-    const elapsed = Date.now() - symbolStart;
-    if (elapsed < MIN_MS_PER_SYMBOL) {
-        await sleep(MIN_MS_PER_SYMBOL - elapsed);
     }
 
     return result;
@@ -402,10 +385,15 @@ const processSecurityMasterJob = async (job) => {
     }
 };
 
+/** Twelve Data priority (#150): the admin bulk refresh yields to the nightly run. */
+const securityMasterPriority = (job) => (job?.name === 'refresh-all-from-table'
+    ? PRIORITIES.BACKGROUND
+    : PRIORITIES.FUNDAMENTALS);
+
 const startSecurityMasterWorker = () => {
     logger.info('Starting SecurityMaster Worker...');
 
-    const worker = new Worker(SECURITY_MASTER_QUEUE_NAME, processSecurityMasterJob, {
+    const worker = new Worker(SECURITY_MASTER_QUEUE_NAME, withTwelveDataPriority(securityMasterPriority, processSecurityMasterJob), {
         connection: getRedisConnection(),
         concurrency: 1,
         lockDuration: 1800000, // 30 minutes — large portfolios with rate limiting
@@ -447,4 +435,4 @@ const startSecurityMasterWorker = () => {
     return worker;
 };
 
-module.exports = { startSecurityMasterWorker, processSecurityMasterJob, refreshSymbol, COMPOSITION_STALE_DAYS };
+module.exports = { startSecurityMasterWorker, processSecurityMasterJob, refreshSymbol, securityMasterPriority, COMPOSITION_STALE_DAYS };

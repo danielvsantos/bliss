@@ -14,6 +14,8 @@ const { parseFile } = require('../services/adapterEngine');
 const twelveDataService = require('../services/twelveDataService');
 const cryptoService = require('../services/cryptoService');
 const securityMasterService = require('../services/securityMasterService');
+const { withTwelveDataPriority } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 const categorizationService = require('../services/categorizationService');
 const { warmDescriptionCache } = require('../utils/descriptionCache');
 const { getCategoriesForTenant } = require('../utils/categoryCache');
@@ -984,7 +986,7 @@ const startSmartImportWorker = () => {
         return processSmartImportJob(job);
     };
 
-    const worker = new Worker(SMART_IMPORT_QUEUE_NAME, dispatchJob, {
+    const worker = new Worker(SMART_IMPORT_QUEUE_NAME, withTwelveDataPriority(PRIORITIES.INTERACTIVE, dispatchJob), {
         connection: getRedisConnection(),
         concurrency: 1,
         lockDuration: 600_000,      // 10 min — large imports with ticker API calls need time

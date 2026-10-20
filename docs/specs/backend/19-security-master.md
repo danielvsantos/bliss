@@ -10,7 +10,7 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 
 **Data sources (available on our Grow plan):**
 - Twelve Data `/profile` (10 credits) — sector, industry, country, CEO, employees, description, website, exchange, ISIN
-- Twelve Data `/earnings` (10 credits) — historical EPS (eps_estimate, eps_actual, surprise_prc)
+- Twelve Data `/earnings` (20 credits) — historical EPS (eps_estimate, eps_actual, surprise_prc)
 - Twelve Data `/dividends` (20 credits) — historical dividend payments (ex_date, amount)
 - Twelve Data `/quote` (1 credit, already used) — 52-week high/low, average volume
 
@@ -60,17 +60,28 @@ Fix: filter with a 24-hour forward grace window — `e.date <= tomorrowStr`. Thi
 
 - **File**: `src/services/twelveDataService.js`
 
-### New Rate Limiter
+### Credit budget (#150)
 
-A third rate limiter for nightly fundamentals batch:
-- `FUNDAMENTALS_THROTTLE_MS = Math.ceil(60_000 / 30)` (~2000ms, ~30 calls/min)
-- `acquireFundamentalsSlot()` follows the existing `acquireImportSlot()` pattern
+Every request goes through `tdGet()`, which reserves the endpoint's credits from the shared, Redis-backed credit budget (`utils/twelveDataBudget.js`, limit `TWELVE_DATA_CREDITS_PER_MINUTE`, default 377) at the priority of the job it runs in (`utils/twelveDataContext.js`). This replaces the three per-process call throttles and the worker's former `MIN_MS_PER_SYMBOL` sleep.
+
+Cost table (`config/twelveDataCredits.js`):
+
+| Endpoint | Credits |
+|---|---|
+| `/time_series`, `/quote`, `/exchange_rate`, `/symbol_search` | 1 |
+| `/profile` | 10 |
+| `/earnings`, `/dividends` | 20 |
+| `/etfs/world/composition` | 20 (unconfirmed — reserved conservatively) |
+
+The `api-credits-used` / `api-credits-left` headers are Twelve Data's running totals for the key's current minute (`used + left = plan limit`), not the cost of one call; they are logged at `debug` per call for calibration.
+
+Priority per job: `refresh-all-fundamentals`, `refresh-tenant-securities` and `refresh-single-symbol` run at **FUNDAMENTALS**; `refresh-all-from-table` (admin bulk) at **BACKGROUND**. Interactive calls (ticker routes, smart import) and valuation are served first. A 429 pauses every process for `Retry-After` (or until the next minute) and retries; after 4 consecutive 429s the function returns its usual `null`.
 
 ### New Functions
 
 | Function | Endpoint | Credits | Returns |
 |----------|----------|---------|---------|
-| `getEarnings(symbol)` | `/earnings` | 10 | `{ meta, earnings: [{ date, epsEstimate, epsActual, difference, surprisePrc }] }` — sorted newest-first, sanity-bounded |
+| `getEarnings(symbol)` | `/earnings` | 20 | `{ meta, earnings: [{ date, epsEstimate, epsActual, difference, surprisePrc }] }` — sorted newest-first, sanity-bounded |
 | `getDividends(symbol)` | `/dividends` | 20 | `{ meta, dividends: [{ exDate, amount }] }` |
 
 ### `getEarnings` Sanity Bounds + Sort
@@ -169,7 +180,7 @@ Fundamentals data is NOT fetched eagerly; the nightly job handles it.
 
 ### Cost Math
 
-200 stocks x 41 credits = 8,200 credits. At ~30 fundamentals calls/min + quote reuse, total runtime is approximately 20-30 minutes overnight.
+200 stocks x 51 credits (profile 10 + quote 1 + earnings 20 + dividends 20; the profile only weekly) = up to 10,200 credits. With the whole 377-credit window free that is ~27 minutes; the run takes longer when interactive or valuation work needs the window, and simply waits — run time is not bounded.
 
 ## 19.7. Exchange Disambiguation
 
@@ -274,7 +285,7 @@ A new admin endpoint, `POST /api/admin/refresh-fundamentals`, proxies to the exi
 
 ## 19.13. ETF composition (#79)
 
-- **Fetch**: `twelveDataService.getEtfComposition(symbol, { micCode })` → `GET /etfs/world/composition`, on the fundamentals throttle slot. Maps `major_market_sectors` → `sectors: [{ sector, weight }]`, `country_allocation` → `countries: [{ country, weight }]`, `asset_allocation` → `assetAllocation`, plus `creditsUsed` from the response header (logged, not stored). Returns `null` on an error payload, an empty payload, a network error or a missing API key.
+- **Fetch**: `twelveDataService.getEtfComposition(symbol, { micCode })` → `GET /etfs/world/composition`, through the shared credit budget. Maps `major_market_sectors` → `sectors: [{ sector, weight }]`, `country_allocation` → `countries: [{ country, weight }]`, `asset_allocation` → `assetAllocation`, plus `creditsUsed` from the `api-credits-used` header (Twelve Data's minute total after the call; logged, not stored). Returns `null` on an error payload, an empty payload, a network error or a missing API key.
 - **When**: inside `refreshSymbol()`, after fundamentals, only when the symbol is an ETF and `lastCompositionUpdate` is missing or older than `COMPOSITION_STALE_DAYS` (7, same cadence as the profile). The stored row is read for the staleness check even on a forced profile refresh. Both `refresh-all-fundamentals` and `refresh-tenant-securities` pick it up; no new job or cron.
 - **Failure isolation**: a fetch or storage failure is logged and skipped (`result.composition = false`); the previous composition is kept and the symbol's fundamentals result is unaffected.
 - **Refused requests**: when Twelve Data refuses the call outright (HTTP or body code 401 / 403 / 404 — typically `/etfs/world/composition` not being included in the API plan, or an uncovered symbol), `getEtfComposition` returns `{ unavailable: true, status, message }` and logs Twelve Data's own message. The worker then calls `markEtfCompositionAttempt()`, which stamps `lastCompositionUpdate` without touching `etfComposition`, so the symbol is retried after 7 days instead of every night. Transient failures (5xx, timeouts) don't stamp and are retried on the next run. Without composition, ETFs are classified by name (bond-like → `BOND_ETF`, otherwise `INDEX_ETF`) and stay "Diversified" in the look-through views.

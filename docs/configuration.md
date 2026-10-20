@@ -180,7 +180,21 @@ Stock price fetching is provided by [Twelve Data](https://twelvedata.com) by def
 |---|---|---|---|
 | `STOCK_PROVIDER` | No | `TWELVE_DATA` | Stock data provider. Supported values: `TWELVE_DATA` (recommended), `FINNHUB`. |
 | `TWELVE_DATA_API_KEY` | No | -- | API key for Twelve Data. Enables real-time and historical pricing for stocks, ETFs, and funds (10,000+ symbols across 27+ markets). **Also powers FX (exchange) rates by default** — see *Currency / FX Rates* below. |
+| `TWELVE_DATA_CREDITS_PER_MINUTE` | No | `377` | Your Twelve Data plan's limit in credits per minute (377 = Grow plan; the free plan is 8). One budget shared by every backend process — see *Twelve Data credit budget* below. Set the same value on every backend service. An invalid value logs a warning and uses the default. |
 | `FINNHUB_API_KEY` | No | -- | API key for Finnhub. Alternative stock data provider. |
+
+### Twelve Data credit budget
+
+Twelve Data limits use in **credits per minute**, and endpoints cost different amounts (a price or FX rate is 1 credit, a profile 10, earnings and dividends 20). The backend paces every Twelve Data call against one sliding one-minute window of `TWELVE_DATA_CREDITS_PER_MINUTE` credits:
+
+- **Shared across processes.** The window lives in Redis (`td:budget:v1:*` keys, no tenant data), so a split deployment (`START_MODE=web` + `START_MODE=worker`) counts every call once.
+- **By priority.** Waiting calls are served in this order: (1) interactive — ticker search/profile, pricing, smart import; (2) valuation — portfolio pricing and FX, analytics, insights; (3) nightly fundamentals — the security master refresh; (4) background — admin bulk refreshes. Lower priorities wait while higher ones are pending.
+- **Waiting is never a failure.** A job waits as long as it needs to; no job fails because the budget is full.
+- **429s.** If Twelve Data still answers 429 (e.g. another app uses the same key), every process pauses for `Retry-After` (or until the next minute) and the call is retried.
+- **Redis unavailable.** Each process falls back to an in-process window at 25% of the limit and retries Redis after 30 s (`twelve_data_budget_fallback` warning).
+- **Logs.** Each job or request that called Twelve Data logs one `twelve_data_usage` line with `credits`, `calls`, `waitedMs`, `rateLimited` and `priority`. Use it to size your plan.
+
+The cost table is `apps/backend/src/config/twelveDataCredits.js`. See [`docs/specs/backend/19-security-master.md`](specs/backend/19-security-master.md).
 
 ## Currency / FX Rates (optional)
 

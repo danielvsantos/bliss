@@ -3,11 +3,15 @@ const { getLatestPrice } = require('../services/priceService');
 const logger = require('../utils/logger');
 const { StatusCodes } = require('http-status-codes');
 const apiKeyAuth = require('../middleware/apiKeyAuth');
+const { twelveDataRouteContext } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 
 const router = express.Router();
 
 // Secure all routes in this file with API key authentication
 router.use(apiKeyAuth);
+// Twelve Data calls from this route are served first (#150).
+router.use(twelveDataRouteContext(PRIORITIES.INTERACTIVE));
 
 /**
  * GET /prices

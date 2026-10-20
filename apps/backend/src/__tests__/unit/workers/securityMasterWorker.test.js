@@ -87,7 +87,8 @@ jest.mock('../../../../prisma/prisma.js', () => ({
 // ─── Import ─────────────────────────────────────────────────────────────────
 
 const Sentry = require('@sentry/node');
-const { startSecurityMasterWorker } = require('../../../workers/securityMasterWorker');
+const { startSecurityMasterWorker, securityMasterPriority } = require('../../../workers/securityMasterWorker');
+const { PRIORITIES } = require('../../../config/twelveDataCredits');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -403,5 +404,12 @@ describe('securityMasterWorker', () => {
     await expect(
       workerCallback(makeJob('unknown-job', {}))
     ).rejects.toThrow('Unknown SecurityMaster job name: unknown-job');
+  });
+
+  it('runs the nightly refresh at FUNDAMENTALS and the admin bulk refresh at BACKGROUND priority (#150)', () => {
+    expect(securityMasterPriority({ name: 'refresh-all-fundamentals' })).toBe(PRIORITIES.FUNDAMENTALS);
+    expect(securityMasterPriority({ name: 'refresh-tenant-securities' })).toBe(PRIORITIES.FUNDAMENTALS);
+    expect(securityMasterPriority({ name: 'refresh-single-symbol' })).toBe(PRIORITIES.FUNDAMENTALS);
+    expect(securityMasterPriority({ name: 'refresh-all-from-table' })).toBe(PRIORITIES.BACKGROUND);
   });
 });

@@ -4,6 +4,8 @@ const logger = require('../utils/logger');
 const { getRedisConnection } = require('../utils/redis');
 const { ANALYTICS_QUEUE_NAME } = require('../queues/analyticsQueue');
 const { getOrCreateCurrencyRate, getRatesForDateRange } = require('../services/currencyService');
+const { withTwelveDataPriority } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 const { enqueueEvent } = require('../queues/eventsQueue');
 const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker, createProgressReporter, carryOrigin } = require('../utils/activityTracker');
@@ -658,7 +660,7 @@ const processAnalyticsJob = async (job, token) => {
 const startAnalyticsWorker = () => {
     logger.info(`Starting Analytics Worker...`);
     // The worker now processes jobs based on their name, not a single function.
-    const worker = new Worker(ANALYTICS_QUEUE_NAME, processAnalyticsJob, {
+    const worker = new Worker(ANALYTICS_QUEUE_NAME, withTwelveDataPriority(PRIORITIES.VALUATION, processAnalyticsJob), {
         connection: getRedisConnection(),
         concurrency: 1,
         lockDuration: 300000, // 5 minutes

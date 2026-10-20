@@ -192,14 +192,7 @@ A dedicated API client providing four methods:
 
 **Exchange disambiguation**: All price-fetching methods accept an optional `{ micCode }` parameter (ISO-10383 MIC code, e.g. `XPAR`, `XETR`). When provided, it is passed as `mic_code` to the Twelve Data API, ensuring the correct exchange's price is returned for multi-listed symbols like `AIR` (Airbus on Euronext vs. NYSE). When omitted, Twelve Data's default resolution applies (backward compatible).
 
-**Rate limiting**: Two independent rate-limit slot queues prevent import bursts from blocking valuation and vice versa:
-
-| Queue | Functions | Budget | Slot interval |
-|-------|-----------|--------|--------------|
-| `acquireImportSlot` | `searchSymbol()`, `getSymbolProfile()` | 150 calls/min | ~400ms |
-| `acquireValuationSlot` | `getHistoricalPrice()`, `getLatestPrice()` | 200 calls/min | ~300ms |
-
-Combined worst-case: 350 calls/min — safely below the Grow plan's 377 credit/min cap.
+**Rate limiting (#150)**: every Twelve Data call reserves its endpoint's credits from one Redis-backed sliding window of `TWELVE_DATA_CREDITS_PER_MINUTE` credits (default 377), shared by the web and worker processes. `portfolioWorker`, `analyticsWorker` and `insightGeneratorWorker` run at **VALUATION** priority (`withTwelveDataPriority` around the processor): served after interactive calls and imports, before the nightly fundamentals refresh. Waiting never fails a job. See `docs/configuration.md` → *Twelve Data credit budget*.
 
 **Error handling**: All methods return `null` (or `[]` for search) on API errors. Errors are logged but do not throw.
 

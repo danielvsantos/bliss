@@ -5,8 +5,13 @@ const twelveDataService = require('../services/twelveDataService');
 const securityMasterService = require('../services/securityMasterService');
 const { searchCrypto } = require('../services/cryptoService');
 const logger = require('../utils/logger');
+const { twelveDataRouteContext } = require('../utils/twelveDataContext');
+const { PRIORITIES } = require('../config/twelveDataCredits');
 
 const PROFILE_CACHE_TTL_DAYS = 7;
+
+// Ticker search and profile are interactive: their Twelve Data calls are served first (#150).
+router.use(twelveDataRouteContext(PRIORITIES.INTERACTIVE));
 
 /**
  * GET /api/ticker/search

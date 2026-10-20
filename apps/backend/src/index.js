@@ -18,6 +18,7 @@ const { validateEnv } = require('./utils/validateEnv');
 const { keyFingerprint } = require('./utils/encryption');
 const { startWorkerHeartbeat, stopWorkerHeartbeat } = require('./utils/workerHeartbeat');
 const { closeActivityTracker } = require('./utils/activityTracker');
+const { closeTwelveDataBudget } = require('./utils/twelveDataBudget');
 
 const PORT = process.env.PORT || 3001;
 
@@ -111,6 +112,7 @@ const gracefulShutdown = async () => {
     // 2. Now safe to disconnect Redis (and the processing-status connection, #100)
     try {
         await closeActivityTracker();
+        await closeTwelveDataBudget();
         await disconnectRedis();
     } catch (err) {
         logger.warn('Error disconnecting Redis during shutdown:', err.message);

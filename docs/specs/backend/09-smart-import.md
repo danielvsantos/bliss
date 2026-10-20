@@ -102,7 +102,7 @@ BullMQ singleton, registered in `src/index.js` via `startSmartImportWorker()`. T
      - **`API_STOCK` / `API_FUND`**: Calls `searchSymbol()` and `getSymbolProfile()` **concurrently** via `Promise.all()` (2 API credits). Disambiguates using currencies present on the rows (currency match → exact symbol match → first result). Writes `exchange` (MIC code), `assetCurrency`, and `isin` back to all matching `rowData` objects.
    - Existing values from the CSV are preserved — API results are only written when non-null.
    - This step is **best-effort**: any lookup failure is caught per-ticker and logged as a warning without affecting the import.
-   - **Rate limiting**: Uses `acquireImportSlot()` (150 calls/min, ~400ms/slot), separate from the valuation slot queue — see § TwelveData Rate Limiting.
+   - **Rate limiting**: Draws from the shared Twelve Data credit budget at **INTERACTIVE** priority (#150), so import lookups are served ahead of valuation and nightly fundamentals — see `docs/configuration.md` → *Twelve Data credit budget*.
 
 7. **Batch insert** — Inserts all `rowData` objects into `StagedImportRow` in batches of 20 via `prisma.stagedImportRow.createMany()`. Progress → 90% → 100%.
 8. **Finalise** — Sets `StagedImport.status = 'READY'`, `totalRows`, `errorCount`, and `autoConfirmedCount`.
