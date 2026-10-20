@@ -15,6 +15,8 @@ import {
   EQUITY_ASSET_CLASSES,
   classifyAssetClass,
   isValidAssetClass,
+  OVERRIDE_ASSET_CLASSES,
+  isValidOverrideAssetClass,
   normalizeEtfComposition,
   lookThrough,
   buildComposition,
@@ -75,9 +77,9 @@ const cls = (input: Record<string, unknown>) => classifyAssetClass(input).assetC
 // ─── classifyAssetClass ──────────────────────────────────────────────────────
 
 describe('classifyAssetClass', () => {
-  it('exposes the 12 asset classes', () => {
-    expect(ASSET_CLASSES).toHaveLength(12);
-    expect(EQUITY_ASSET_CLASSES).toEqual(['STOCK', 'REIT', 'INDEX_ETF', 'SECTOR_ETF']);
+  it('exposes the 13 asset classes', () => {
+    expect(ASSET_CLASSES).toHaveLength(13);
+    expect(EQUITY_ASSET_CLASSES).toEqual(['STOCK', 'REIT', 'INDEX_ETF', 'SECTOR_ETF', 'COPY_TRADE']);
     expect(isValidAssetClass('REIT')).toBe(true);
     expect(isValidAssetClass('reit')).toBe(false);
     expect(isValidAssetClass(null)).toBe(false);
@@ -98,6 +100,7 @@ describe('classifyAssetClass', () => {
     expect(cls({ processingHint: 'MANUAL', defaultCategoryCode: 'REAL_ESTATE' })).toBe('REAL_ESTATE');
     expect(cls({ processingHint: 'API_CRYPTO', defaultCategoryCode: 'CRYPTO' })).toBe('CRYPTO');
     expect(cls({ processingHint: 'CASH' })).toBe('CASH');
+    expect(cls({ processingHint: 'COPY_TRADING', defaultCategoryCode: 'COPY_TRADING', categoryGroup: 'Funds' })).toBe('COPY_TRADE'); // #143
   });
 
   it('lets a valid override win over every rule', () => {
@@ -105,6 +108,13 @@ describe('classifyAssetClass', () => {
       .toEqual({ assetClass: 'FUND', source: 'OVERRIDE' });
     expect(classifyAssetClass({ processingHint: 'CASH', override: 'OTHER' }).assetClass).toBe('OTHER');
     expect(classifyAssetClass({ defaultCategoryCode: 'GOVERNMENT_BONDS', override: 'CORP_BOND' }).source).toBe('OVERRIDE');
+  });
+
+  it('never offers COPY_TRADE as an override (#143)', () => {
+    expect(OVERRIDE_ASSET_CLASSES).toEqual(ASSET_CLASSES.filter((c: string) => c !== 'COPY_TRADE'));
+    expect(isValidOverrideAssetClass('COPY_TRADE')).toBe(false);
+    expect(isValidOverrideAssetClass('FUND')).toBe(true);
+    expect(isValidOverrideAssetClass(null)).toBe(false);
   });
 
   it('ignores an invalid override', () => {
@@ -190,6 +200,7 @@ describe('classifyAssetClass', () => {
       cls({ defaultCategoryCode: 'REAL_ESTATE' }),
       cls({ processingHint: 'API_CRYPTO' }),
       cls({ processingHint: 'CASH' }),
+      cls({ processingHint: 'COPY_TRADING' }),
       cls({}),
     ]);
     expect([...reached].sort()).toEqual([...ASSET_CLASSES].sort());

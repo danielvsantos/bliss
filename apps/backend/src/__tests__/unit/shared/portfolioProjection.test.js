@@ -74,7 +74,7 @@ const LOOK_THROUGH_FIXTURE = [
 
 describe('@bliss/shared/portfolio asset class helpers (CJS build)', () => {
   it('exports the classifier, look-through and aggregation helpers', () => {
-    expect(shared.ASSET_CLASSES).toHaveLength(12);
+    expect(shared.ASSET_CLASSES).toHaveLength(13);
     for (const fn of ['classifyAssetClass', 'lookThrough', 'buildComposition', 'buildFixedIncome', 'normalizeEtfComposition']) {
       expect(typeof shared[fn]).toBe('function');
     }

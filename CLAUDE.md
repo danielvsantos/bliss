@@ -343,7 +343,7 @@ to 48 months and stamps `Tenant.subscriptionsFullScanAt`. See
 
 `/reports/equity-analysis` groups stock + ETF holdings by sector, industry, country or **asset class**. The page is equity-only (it matches its KPI cards); the whole-portfolio breakdown lives on the Portfolio page and bond details on Passive Income. See [`docs/specs/api/06-portfolio-api.md`](docs/specs/api/06-portfolio-api.md#67-equity-analysis).
 
-- **One classifier**: `classifyAssetClass()` in **`@bliss/shared/portfolio`** (12 classes: STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER). The API uses it now and backend insights (#80) must `require` the same function — never re-derive classes locally.
+- **One classifier**: `classifyAssetClass()` in **`@bliss/shared/portfolio`** (13 classes: STOCK, INDEX_ETF, SECTOR_ETF, BOND_ETF, REIT, FUND, COPY_TRADE, GOV_BOND, CORP_BOND, REAL_ESTATE, CRYPTO, CASH, OTHER; `COPY_TRADE` is automatic for eToro Copy Trading holdings and never a user override — `OVERRIDE_ASSET_CLASSES`). The API uses it now and backend insights (#80) must `require` the same function — never re-derive classes locally.
 - **Override**: `PortfolioItem.assetClassOverride` (String, validated against `ASSET_CLASSES`, not an enum), set via `PUT /api/portfolio/items/:assetId/asset-class`; carried to the replacement item by `income-terms-preserver.js` on a re-keying rebuild.
 - **Look-through**: `lookThrough()` (shared) spreads each ETF across its sectors / countries by weight for the sector and country views (remainder → "Other", no data → "Diversified", bond ETFs → "Fixed Income"); industry is never looked through. `?lookThrough=false` restores the #77 buckets. Computed on read — no stored aggregates.
 

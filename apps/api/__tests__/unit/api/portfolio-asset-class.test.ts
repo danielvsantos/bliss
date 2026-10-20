@@ -85,6 +85,8 @@ describe('PUT /api/portfolio/items/:assetId/asset-class', () => {
 
   it('rejects an unknown asset class and a missing value', async () => {
     expect((await call(makeReq({ body: { assetClass: 'BANANA' } })))._status).toBe(400);
+    // COPY_TRADE (#143) is automatic for linked eToro copies, never an override.
+    expect((await call(makeReq({ body: { assetClass: 'COPY_TRADE' } })))._status).toBe(400);
     expect((await call(makeReq({ body: {} })))._status).toBe(400);
     expect((await call(makeReq({ body: undefined })))._status).toBe(400);
     expect(mockPrisma.portfolioItem.updateMany).not.toHaveBeenCalled();

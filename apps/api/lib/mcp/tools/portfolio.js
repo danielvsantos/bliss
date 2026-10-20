@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  ASSET_CLASSES,
+  OVERRIDE_ASSET_CLASSES,
   BOND_ISSUER_TYPES,
   INCOME_FREQUENCIES,
   INCOME_TYPES,
@@ -374,7 +374,7 @@ const setAssetClass = defineTool({
     + 'it to every holding of the same symbol across accounts.',
   input: {
     assetId,
-    assetClass: z.enum(ASSET_CLASSES).nullable(),
+    assetClass: z.enum(OVERRIDE_ASSET_CLASSES).nullable(),
     applyToSymbol: z.boolean().optional(),
   },
   wraps: [{ method: 'PUT', route: '/api/portfolio/items/[assetId]/asset-class' }],
