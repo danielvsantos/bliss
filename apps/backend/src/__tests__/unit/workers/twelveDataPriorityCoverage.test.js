@@ -70,6 +70,11 @@ describe('Twelve Data priority coverage (#150)', () => {
     ]));
   });
 
+  it('the bank and eToro syncs (plaid-sync queue) never reach Twelve Data', () => {
+    // eToro copy values are stored in eToro's currency; FX happens in valuation (#143).
+    expect(entries).not.toContain('workers/plaidSyncWorker.js');
+  });
+
   it.each(entries)('%s runs its Twelve Data calls inside a priority context', (rel) => {
     if (EXEMPT[rel]) return;
     const src = fs.readFileSync(path.join(SRC, rel), 'utf8');

@@ -69,6 +69,7 @@ export const STAGES = Object.freeze({
     UPDATING_DEBTS: 'updating_debts',
     UPDATING_ANALYTICS: 'updating_analytics',
     FETCHING_BANK: 'fetching_bank',
+    SYNCING_COPIES: 'syncing_copies',
     CLASSIFYING: 'classifying',
     PROCESSING_FILE: 'processing_file',
     COMMITTING: 'committing',

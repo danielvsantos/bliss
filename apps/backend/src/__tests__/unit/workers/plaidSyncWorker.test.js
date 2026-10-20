@@ -84,6 +84,11 @@ jest.mock('../../../workers/handlers/enableBankingSync', () => ({
   syncConnection: (...args) => mockSyncConnection(...args),
 }));
 
+const mockEtoroDispatch = jest.fn();
+jest.mock('../../../workers/handlers/etoroSync', () => ({
+  etoroDispatch: (...args) => mockEtoroDispatch(...args),
+}));
+
 // ─── Import ─────────────────────────────────────────────────────────────────
 
 const { getPlaidProcessingQueue } = require('../../../queues/plaidProcessingQueue');
@@ -245,6 +250,17 @@ describe('plaidSyncWorker', () => {
           data: expect.objectContaining({ status: 'LOGIN_REQUIRED', errorCode: 'ITEM_LOGIN_REQUIRED' }),
         })
       );
+    });
+  });
+
+  describe('eToro copy trading (#143)', () => {
+    it('dispatches ETORO_* jobs to the eToro handler without touching Plaid', async () => {
+      mockEtoroDispatch.mockResolvedValue({ status: 'SUCCESS' });
+      const job = makeJob('ETORO_SYNC', { connectionId: 'c-1', tenantId: 't-1' });
+      await expect(workerCallback(job)).resolves.toEqual({ status: 'SUCCESS' });
+      expect(mockEtoroDispatch).toHaveBeenCalledWith(job);
+      expect(mockTransactionsSync).not.toHaveBeenCalled();
+      expect(mockPlaidItemFindUnique).not.toHaveBeenCalled();
     });
   });
 

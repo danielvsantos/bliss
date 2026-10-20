@@ -76,6 +76,9 @@ model Tenant {
   enableBankingAccounts EnableBankingAccount[]
   enableBankingCredential       EnableBankingCredential?
   enableBankingCredentialEvents EnableBankingCredentialEvent[]
+  etoroConnections    EtoroConnection[]
+  etoroCopies         EtoroCopy[]
+  etoroCopyValues     EtoroCopyValue[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -134,6 +137,7 @@ model User {
   enableBankingAccounts EnableBankingAccount[]
   enableBankingCredentialsUpdated EnableBankingCredential[]
   enableBankingCredentialEvents   EnableBankingCredentialEvent[]
+  etoroConnections  EtoroConnection[]
 
   // Notification center
   lastNotificationSeenAt DateTime?  // When user last opened notification center
@@ -166,6 +170,7 @@ model Account {
 
   plaidItem      PlaidItem? @relation(fields: [plaidItemId], references: [id])
   enableBankingAccounts EnableBankingAccount[]
+  etoroConnections EtoroConnection[]
 
   bank           Bank           @relation(fields: [bankId], references: [id])
   country        Country        @relation(fields: [countryId], references: [id])
@@ -300,6 +305,91 @@ model EnableBankingCredentialEvent {
   user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
+}
+
+/// eToro copy trading (#143): one eToro login connected by a tenant admin with
+/// a Read key pair. Not a PlaidItem: eToro feeds no review pipeline (decision
+/// D1). `apiKey` / `userKey` are encrypted and never returned by any API
+/// (`keyLast4` only). Values of the login's copies start at `connectedAt`.
+/// See docs/specs/backend/25-etoro-copy-trading.md.
+model EtoroConnection {
+  id              String    @id @default(cuid())
+  tenantId        String
+  createdByUserId String
+  accountId       Int?      // the one Bliss account this login maps to
+  etoroCid        String    // eToro customer id (stable identity)
+  etoroUsername   String
+  apiKey          String    // [ENCRYPTED] x-api-key
+  userKey         String    // [ENCRYPTED] x-user-key
+  keyLast4        String
+  scopes          String[]
+  status          String    @default("ACTIVE") // ACTIVE | NEEDS_RECONNECT | REMOVED
+  errorCode       String?
+  connectedAt     DateTime  @default(now())
+  lastSyncAt      DateTime?
+  lastSyncStatus  String?   // SUCCESS | FAILED
+  lastSyncError   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User        @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  account   Account?    @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  copies    EtoroCopy[]
+
+  @@unique([tenantId, etoroCid])
+  @@index([tenantId])
+  @@index([status])
+}
+
+/// eToro copy trading (#143): one copy (eToro "mirror") of a connection.
+/// Linked to a Copy Trading holding on read (tenant + connection account +
+/// lower(symbol) = parentUsername), never by portfolioItemId, so portfolio
+/// rebuilds can't orphan it. `holdings` are the mapped instruments
+/// (`valuePct` 0–100); the look-through is derived on read.
+model EtoroCopy {
+  id                String    @id @default(cuid())
+  tenantId          String
+  connectionId      String
+  mirrorId          String
+  parentUsername    String    // copied investor, lower-cased
+  parentCid         String?
+  startedAt         DateTime?
+  status            String    @default("ACTIVE") // ACTIVE | CLOSED
+  closedAt          DateTime?
+  lastValue         Decimal?  @db.Decimal(18, 8)
+  lastValueCurrency String    @default("USD")
+  lastValueAt       DateTime?
+  holdings          Json?
+  cashPct           Decimal?  @db.Decimal(9, 6)
+  unmappedPct       Decimal?  @db.Decimal(9, 6)
+  holdingsAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection EtoroConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  values     EtoroCopyValue[]
+
+  @@unique([connectionId, mirrorId])
+  @@index([tenantId, parentUsername])
+}
+
+/// eToro copy trading (#143): eToro's value of a copy, one row per UTC day,
+/// from the connection date on. Tenant-scoped, not AssetPrice (decision D2).
+model EtoroCopyValue {
+  id       Int      @id @default(autoincrement())
+  tenantId String
+  copyId   String
+  day      DateTime @db.Date
+  value    Decimal  @db.Decimal(18, 8)
+  currency String
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  copy   EtoroCopy @relation(fields: [copyId], references: [id], onDelete: Cascade)
+
+  @@unique([copyId, day])
+  @@index([tenantId])
 }
 
 model PlaidSyncLog {

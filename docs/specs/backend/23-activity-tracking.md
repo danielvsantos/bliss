@@ -72,6 +72,7 @@ New queues and workers **must** call `trackQueue` / `trackWorker` (and map their
 | portfolio: `value-all-assets` (long), `value-portfolio-items`, `recalculate-portfolio-items` | PORTFOLIO_UPDATE | valuing_assets | PORTFOLIO |
 | portfolio: `process-simple-liability`, `process-amortizing-loan` | PORTFOLIO_UPDATE | updating_debts | PORTFOLIO |
 | analytics: all (full rebuild = long) | ANALYTICS_UPDATE | updating_analytics | ANALYTICS (+ PORTFOLIO when it chains into valuation; never for `analyticsOnly`) |
+| plaid-sync: `ETORO_SYNC` (eToro copy sync, #143) | PORTFOLIO_UPDATE | syncing_copies | PORTFOLIO |
 | plaid-sync / plaid-processing | BANK_SYNC | fetching_bank / classifying | BANK_SYNC, PORTFOLIO, ANALYTICS |
 | smart-import: `process-smart-import` / `commit-smart-import` | IMPORT | processing_file / committing | IMPORT (+ PORTFOLIO, ANALYTICS on commit) |
 | security-master: `refresh-tenant-securities`, `refresh-single-symbol` with tenantId (long) | SECURITY_DATA | refreshing_market_data | SECURITY_DATA, PORTFOLIO |

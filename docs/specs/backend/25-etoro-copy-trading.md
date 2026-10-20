@@ -14,8 +14,8 @@ The work ships in five PRs. This spec describes the whole feature; each PR updat
 
 | PR | Scope | Status |
 |---|---|---|
-| **A** | Pure shared layer: instrument mapper, scope check, copy composition, `COPY_TRADE` asset class, passive income exclusion (§25.4–§25.6) | **this PR** |
-| B | Schema + migration, eToro HTTP client, sync handler, valuation (§25.2, §25.3, §25.7) | planned |
+| A | Pure shared layer: instrument mapper, scope check, copy composition, `COPY_TRADE` asset class, passive income exclusion (§25.4–§25.6) | #247 |
+| B | Schema + migration, eToro HTTP client, sync handler, valuation (§25.2, §25.3, §25.7, §25.10) | done |
 | C | API connection routes, convert action, Equity Analysis copy rows, #80 insights, MCP (§25.8) | planned |
 | D | Web: connect dialog, connection management, holdings badges, Equity Analysis labels | planned |
 | E | Security master look-through watchlist (§25.9) | planned |
@@ -27,8 +27,10 @@ All three tables are new and are created by a hand-written migration (`migrate d
 | Table | Purpose |
 |---|---|
 | `EtoroConnection` | One row per eToro login per tenant (`@@unique([tenantId, etoroCid])`). `accountId` → the one Bliss account the login maps to. `apiKey` and `userKey` are encrypted (`encryptedFields` + `ROTATION_COVERAGE`) and never returned; `keyLast4` only. `scopes` from `/api/v1/me`. `status`: `ACTIVE` \| `NEEDS_RECONNECT` \| `REMOVED`. `connectedAt` is the boundary before which values never change. |
-| `EtoroCopy` | One row per copy (`@@unique([connectionId, mirrorId])`): copied investor's `parentUsername` (lower-cased), `startedAt`, `status` (`ACTIVE` \| `CLOSED`), `closedAt`, `lastValue` + `lastValueCurrency` (USD) + `lastValueAt`, and `holdings` (JSON, mapped at sync, §25.4) + `unmappedPct` + `holdingsAt`. |
-| `EtoroCopyValue` | One row per copy per UTC day (`@@unique([copyId, day])`): eToro's copy value in USD. |
+| `EtoroCopy` | One row per copy (`@@unique([connectionId, mirrorId])`): copied investor's `parentUsername` (lower-cased), `startedAt`, `status` (`ACTIVE` \| `CLOSED`), `closedAt`, `lastValue` + `lastValueCurrency` (the eToro account currency, normally USD) + `lastValueAt`, and `holdings` (JSON, mapped at sync, §25.4) + `cashPct` + `unmappedPct` + `holdingsAt`. |
+| `EtoroCopyValue` | One row per copy per UTC day (`@@unique([copyId, day])`): eToro's copy value in the account currency. A second sync on the same day updates the row. |
+
+Connection sync state: `lastSyncAt`, `lastSyncStatus` (`SUCCESS` \| `FAILED`), `lastSyncError` (an error code, never a message from eToro) and `errorCode` (why the connection needs a reconnect). Migration: `20261021120000_add_etoro_copy_trading`.
 
 **Why not `PlaidItem` / `AssetPrice` (approved PRD amendment, 2026-10-20).**
 - `PlaidItem` means "bank feed into the review pipeline". At least ten readers treat any provider other than `ENABLE_BANKING` as Plaid, so an `ETORO` row would risk reaching the Plaid SDK or raising a phantom re-login notification.
@@ -43,10 +45,18 @@ All three tables are new and are created by a hand-written migration (`migrate d
 - **Queue:** the existing `plaid-sync` queue, like Enable Banking. No new queue or worker.
 - **Jobs:** `ETORO_SYNC` (one connection, deduplicated per connection) and `ETORO_SYNC_ALL` (job scheduler at **03:30 UTC**, fans out one `ETORO_SYNC` per `ACTIVE` connection). 03:30 is after the security master (03:00) and before the nightly revaluation (04:00), which picks up the new values.
 - **Sync now:** `POST /api/etoro/connections/:id/sync`, 15-minute Redis cooldown. After writing, it enqueues `value-portfolio-items` for the linked items.
-- **Calls per connection:** about 3 (`GET /api/v1/me`, `POST` aggregate-portfolio with `mirrorLevel: details` + `instrumentLevel: details`, one instrument-metadata batch for unseen instruments). eToro allows 60 reads/min per key and returns `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`; the client sleeps until reset when `Remaining ≤ 1`, and on 429 waits `Retry-After` and retries once.
+- **Calls per connection:** 3 + one per 50 instruments: `POST /api/v1/trading/info/aggregate-portfolio` with `{ mirrorLevel: 'details', instrumentLevel: 'details' }` (each copy's value, cash and per-instrument liquidation value), `GET /api/v1/trading/info/portfolio` (who each copy follows and since when), and `GET /api/v1/market-data/instruments?instrumentIds=…` in batches of 50. `GET /api/v1/me` is called only by the connect check and the key probe. eToro allows 60 reads/min per key and returns `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`; the client sleeps until reset when `Remaining ≤ 1`, and on 429 waits `Retry-After` and retries once.
 - **Key revoked:** on a 401/403 the handler probes `GET /me` once before changing anything (the #148 rule). Confirmed → `NEEDS_RECONNECT`, no value written, the job resolves so other connections continue. Probe succeeds → retryable failure, status unchanged.
-- **No Twelve Data from the sync.** The handler must not `require` anything that reaches `services/twelveDataService.js`; values are stored in USD and converted during valuation. `twelveDataPriorityCoverage.test.js` enforces it.
-- **Processing status (#100):** both jobs mapped in `config/activityMap.js` (stage "Syncing eToro copies", trigger `bank_sync` / `nightly`). Final failures raise `PROCESSING_FAILED`.
+- **No Twelve Data from the sync.** `workers/handlers/etoroSync.js` must not `require` anything that reaches `services/twelveDataService.js`; values are stored in eToro's account currency and converted during valuation. `twelveDataPriorityCoverage.test.js` asserts `plaidSyncWorker.js` never reaches it.
+- **Processing status (#100):** `ETORO_SYNC` is a `PORTFOLIO_UPDATE` with stage `syncing_copies` ("Syncing eToro copies"), affecting the portfolio; `ETORO_SYNC_ALL` has no tenant and is not tracked. Scheduled syncs carry `_trigger: 'nightly'`. Final failures raise `PROCESSING_FAILED`.
+
+**One run, in order.** Everything is read before anything is written, so a bad response never leaves partial rows:
+1. Load the connection; skip unless `ACTIVE`.
+2. Read the aggregate portfolio, the raw portfolio and the instrument metadata; parse with `parseCopies()` (mirror id 0, the user's direct holdings, is ignored).
+3. Upsert each copy (`connectionId` + `mirrorId`) with its value, cash and mapped holdings (`buildCopyHoldings()`), and upsert today's `EtoroCopyValue`.
+4. Mark the connection's `ACTIVE` copies missing from the response `CLOSED` (`closedAt = now`).
+5. Record `lastSyncStatus = SUCCESS`.
+6. Enqueue `value-portfolio-items` for the linked Copy Trading holdings (closed copies included, so they keep their last value).
 
 ## 25.4 Instrument mapping — `@bliss/shared/etoro` `mapEtoroInstrument()`
 
@@ -138,13 +148,15 @@ Holdings are merged first (`mergeCopyHoldings()`): same `symbol|exchange` lines 
 - **`lookThrough()`** splits a `COPY_TRADE` holding by its `composition` exactly like an ETF: weights → groups, `1 − Σweights` → "Other". Look-through off, the industry view, or an unlinked copy (no composition) → one "Diversified" bucket.
 - **Passive income (R19).** `classifyIncomeAsset()` returns `null` for the `COPY_TRADING` hint. A Copy Trading holding projects **no cash income** and is never flagged "missing terms": the spike showed dividends are paid inside the copy (the copy is accumulating).
 
-## 25.7 Valuation (PR-B)
+## 25.7 Valuation
 
-New strategy `COPY_TRADING` in `portfolio-handlers/valuation/strategies/`:
-- Before the first `EtoroCopyValue` row (before the connection), the holding behaves like today's ticker-less Fund: manual values, otherwise cost basis.
-- From the first row on, the day's **total** value is eToro's copy value (not multiplied by quantity), converted from USD on the existing USD-intermediary FX path and forward-filled to today. `PortfolioValueHistory.source = 'ETORO'` / `'ETORO:FORWARD'`.
-- A `ManualAssetValue` on the same day still wins (R11).
-- A restarted copy of the same investor (old mirror `CLOSED`, new `ACTIVE`) matches the same holding: the `ACTIVE` copy wins per day, and a closed copy only contributes days before its `closedAt`.
+Strategy `COPY_TRADING` (`portfolio-handlers/valuation/strategies/COPY_TRADING.js`), fed by `loadCopyValueMap()` in `price-fetcher.js`:
+- **Which values.** The copies of the holding's account's connections whose `parentUsername` is the holding's ticker, lower-cased. A Copy Trading holding never reads `AssetPrice` (its ticker is a username, not a market symbol).
+- **Before the first eToro day** (before the connection, or never linked): exactly the MANUAL behaviour, manual values forward-filled, otherwise cost basis (`COST_BASIS_FALLBACK`). History before the connection is never changed.
+- **From the first eToro day on**, the day's **total** value is eToro's copy value (not multiplied by quantity), forward-filled to today on days without a value. `PortfolioValueHistory.source` is `ETORO` or `ETORO:FORWARD`. It is converted to the holding's currency through USD (`convertCopyValue()`), and `valueInUSD` is the USD leg. A missing FX rate stores 0 for that day and logs a warning, like the other strategies.
+- **A manual value on the exact day still wins** (R11), per unit as for MANUAL. A forward-filled manual value does not override eToro.
+- **Restarted copies.** When a copy of the same investor was stopped and started again, both match the holding; on a day both have, the most recently started copy wins. A closed copy gets no new values, so the active one takes over.
+- **Stopped copy or broken connection (R12).** No new values arrive, and the last one is carried forward.
 
 ## 25.8 Integration tokens and MCP
 
@@ -158,3 +170,16 @@ Holdings inside linked copies that no tenant holds directly form a watchlist tha
 - **Job:** `refresh-lookthrough-watchlist` on the `security-master` queue, Sunday 02:00 UTC. It runs at `PRIORITIES.BACKGROUND` in the #150 Twelve Data budget and has no pacing of its own.
 - **Symbols:** distinct mapped symbols of `ACTIVE` copies, minus symbols held directly, limited to symbols that are missing or more than 7 days stale. Only symbols leave the query: no tenant id, no value.
 - **Cost:** about 51 credits per stale symbol. On a small plan, coverage builds up over several weeks, and missing data shows as "Other" in the meantime.
+
+## 25.10 Failure modes
+
+| Failure | Connection | Job | Data |
+|---|---|---|---|
+| 401/403 confirmed by the `GET /me` probe | `NEEDS_RECONNECT`, `errorCode = KEY_INVALID`, `lastSyncStatus = FAILED` | resolves (no retry); later runs skip it until the key is replaced | nothing written; holdings keep their last value |
+| 401/403 the probe does not confirm | stays `ACTIVE`, `lastSyncStatus = FAILED` | throws `UNAVAILABLE`, retried (3 attempts, 60 s backoff) | nothing written |
+| 5xx, network error, timeout, 429 after one retry | stays `ACTIVE`, `lastSyncStatus = FAILED` | retried; final failure → `PROCESSING_FAILED` | nothing written |
+| Response shape changed (`SHAPE_CHANGED`) | stays `ACTIVE`, `lastSyncError = SHAPE_CHANGED` | `UnrecoverableError`: fails once, no retries, `PROCESSING_FAILED` | nothing written |
+| Copy missing from eToro's response | unchanged | succeeds | copy `CLOSED`, last value kept |
+| Instrument on an unknown exchange or without metadata | unchanged | succeeds | stored `unresolved`, counted in `unmappedPct`, logged `etoro_unmapped_instrument` |
+
+Keys and eToro response bodies never appear in logs or error messages.

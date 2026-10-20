@@ -159,6 +159,12 @@ export const encryptedFields = {
   EnableBankingCredentialEvent: {
     appId: { searchable: false },
   },
+  EtoroConnection: {
+    // eToro Read key pair (#143). Never returned by any API (keyLast4 only);
+    // wiped to '' when the connection is removed.
+    apiKey: { searchable: false },
+    userKey: { searchable: false },
+  },
   SignupInvite: {
     // Invite-only sign-up allowlist (#99). Searchable (deterministic) like
     // User.email so the gate can look an invite up by normalized address.
