@@ -11,9 +11,9 @@ const { deriveCopyComposition, classifyAssetClass, lookThrough } = require('@bli
 describe('@bliss/shared/etoro (CJS build)', () => {
   it('maps eToro instruments to Twelve Data listings', () => {
     expect(mapEtoroInstrument({ symbolFull: 'AIR.PA', exchangeID: 9 })).toEqual({
-      symbol: 'AIR', exchange: 'XPAR', type: null, rthVariant: false,
+      symbol: 'AIR', exchange: 'XPAR', type: null, usVariant: false, nonEquity: null,
     });
-    expect(mapEtoroInstrument({ symbolFull: 'AMZN.RTH', exchangeID: 33 })).toMatchObject({ symbol: 'AMZN', rthVariant: true });
+    expect(mapEtoroInstrument({ symbolFull: 'AMZN.RTH', exchangeID: 33 })).toMatchObject({ symbol: 'AMZN', usVariant: true });
     expect(mapEtoroInstrument({ symbolFull: 'X', exchangeID: 99 })).toMatchObject({ unresolved: true });
   });
 

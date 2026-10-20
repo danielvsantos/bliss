@@ -18,8 +18,11 @@
 import { classifyAssetClass, normalizeEtfComposition } from './assetClass.js';
 import { FIXED_INCOME_BUCKET } from './lookThrough.js';
 
-/** MICs a Regular Trading Hours variant (eToro exchange 33) folds into. */
+/** MICs a US variant (eToro Regular Trading Hours, Texas) folds into. */
 const US_MICS = ['XNAS', 'XNYS', 'BATS'];
+
+/** Asset class of each non-equity eToro instrument kind (see @bliss/shared/etoro). */
+const NON_EQUITY_CLASS = { CRYPTO: 'CRYPTO', CURRENCY: 'OTHER', COMMODITY: 'OTHER', INDEX: 'OTHER', FUTURE: 'OTHER' };
 
 function toNumber(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -37,18 +40,20 @@ function isType(value, expected) {
 /**
  * Merge holdings that are the same listing. eToro can hold one company twice
  * (`AMZN` on Nasdaq and the `AMZN.RTH` variant); both become one line.
- * A Regular Trading Hours variant (`rthVariant`, no MIC) folds into the US
- * listing with the same symbol, or stays on its own when the copy has none.
- * Unresolved holdings (no symbol) are summed into `unmappedPct`.
+ * A US variant (`usVariant`, no MIC) folds into the US listing with the same
+ * symbol, or stays on its own when the copy has none. Non-equity holdings
+ * (`nonEquity`: crypto, commodities, currencies, index CFDs, futures) merge by
+ * kind + symbol. Unresolved holdings (no symbol) are summed into `unmappedPct`.
  *
  * @param {Array<{symbol?: string, exchange?: string|null, valuePct: number, type?: string|null,
- *                rthVariant?: boolean, unresolved?: boolean, instrumentId?: number|string}>} holdings
+ *                usVariant?: boolean, nonEquity?: string|null, unresolved?: boolean,
+ *                instrumentId?: number|string}>} holdings
  * @returns {{ holdings: Array<{symbol: string, exchange: string|null, type: string|null,
- *             valuePct: number, instrumentIds: Array}>, unmappedPct: number }} largest first
+ *             nonEquity: string|null, valuePct: number, instrumentIds: Array}>, unmappedPct: number }} largest first
  */
 export function mergeCopyHoldings(holdings = []) {
   const byKey = new Map();
-  const rth = [];
+  const usVariants = [];
   let unmappedPct = 0;
 
   for (const h of Array.isArray(holdings) ? holdings : []) {
@@ -59,14 +64,18 @@ export function mergeCopyHoldings(holdings = []) {
       unmappedPct += valuePct;
       continue;
     }
-    if (h.rthVariant && !h.exchange) {
-      rth.push({ ...h, symbol, valuePct });
+    if (h.nonEquity) {
+      addTo(byKey, `${h.nonEquity}:${symbol}`, { ...h, symbol, valuePct, exchange: null });
+      continue;
+    }
+    if (h.usVariant && !h.exchange) {
+      usVariants.push({ ...h, symbol, valuePct });
       continue;
     }
     addTo(byKey, `${symbol}|${h.exchange || ''}`, { ...h, symbol, valuePct });
   }
 
-  for (const h of rth) {
+  for (const h of usVariants) {
     const sibling = US_MICS.map((mic) => `${h.symbol}|${mic}`).find((key) => byKey.has(key));
     addTo(byKey, sibling || `${h.symbol}|`, h);
   }
@@ -90,6 +99,7 @@ function addTo(map, key, h) {
     symbol: h.symbol,
     exchange: h.exchange || null,
     type: h.type || null,
+    nonEquity: h.nonEquity || null,
     valuePct: h.valuePct,
     instrumentIds: id != null ? [id] : [],
   });
@@ -102,6 +112,7 @@ function lookupSecurity(securities, symbol) {
 }
 
 function classifyHolding(h, sm) {
+  if (h.nonEquity) return NON_EQUITY_CLASS[h.nonEquity] || 'OTHER';
   const etf = h.type === 'ETF' || isType(sm?.assetType, 'ETF');
   return classifyAssetClass({
     processingHint: etf ? 'API_FUND' : 'API_STOCK',
@@ -127,6 +138,8 @@ const toList = (map, key) =>
  *   - BOND_ETF: "Fixed Income" in both views, like a directly held bond ETF.
  *   - ETFs without composition, funds, other and unknown data: left out, so
  *     `lookThrough()` puts them in the copy's "Other" remainder.
+ *   - Non-equity instruments: `CRYPTO` (crypto) or `OTHER` (currencies,
+ *     commodities, index CFDs, futures) in `assetClassMix`; never enriched.
  *   - Copy cash: `CASH` in `assetClassMix` only.
  *   - Unresolved instruments: `OTHER` in `assetClassMix`, counted in `unmappedPct`.
  *
@@ -168,7 +181,7 @@ export function deriveCopyComposition(copy = {}, securities = null) {
 
   for (const h of merged.holdings) {
     const w = (h.valuePct * scale) / 100;
-    const sm = lookupSecurity(securities, h.symbol);
+    const sm = h.nonEquity ? null : lookupSecurity(securities, h.symbol);
     const cls = classifyHolding(h, sm);
     add(classes, cls, w);
 

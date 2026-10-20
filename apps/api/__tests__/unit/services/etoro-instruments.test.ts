@@ -30,7 +30,16 @@ describe('mapEtoroInstrument', () => {
     ['1810.HK', 21, '1810', 'XHKG'],
     ['ASML', 4, 'ASML', 'XNAS'],
     ['ASML.NV', 30, 'ASML', 'XAMS'],
-    ['SAP.DE', 6, 'SAP', 'XETR'],
+    ['SAP.DE', 6, 'SAP', 'XFRA'],
+    ['VWCE.DE', 38, 'VWCE', 'XETR'],
+    ['SAN.MC', 10, 'SAN', 'XMAD'],
+    ['ENI.MI', 11, 'ENI', 'XMIL'],
+    ['7203.T', 56, '7203', 'XJPX'],
+    ['SHOP.TO', 18, 'SHOP', 'XTSE'],
+    ['ABI.BR', 23, 'ABI', 'XBRU'],
+    ['BHP.ASX', 31, 'BHP', 'XASX'],
+    ['BOO.L', 42, 'BOO', 'XLON'],
+    ['TEVA.TA', 58, 'TEVA', 'XTAE'],
     ['ULVR.L', 7, 'ULVR', 'XLON'],
     ['NESN.ZU', 12, 'NESN', 'XSWX'],
     ['EQNR.OL', 14, 'EQNR', 'XOSL'],
@@ -40,7 +49,7 @@ describe('mapEtoroInstrument', () => {
     ['JMT.LSB', 22, 'JMT', 'XLIS'],
     ['EMAAR.AE', 39, 'EMAAR', 'XDFM'],
   ])('maps %s (exchange %i) to %s/%s', (symbolFull, exchangeID, symbol, mic) => {
-    expect(map(symbolFull, exchangeID)).toEqual({ symbol, exchange: mic, type: null, rthVariant: false });
+    expect(map(symbolFull, exchangeID)).toEqual({ symbol, exchange: mic, type: null, usVariant: false, nonEquity: null });
   });
 
   it('keeps ASML on Nasdaq and ASML.NV on Amsterdam as two listings', () => {
@@ -50,7 +59,17 @@ describe('mapEtoroInstrument', () => {
   });
 
   it('maps the Regular Trading Hours variant to the plain US symbol with no venue', () => {
-    expect(map('AMZN.RTH', 33)).toEqual({ symbol: 'AMZN', exchange: null, type: null, rthVariant: true });
+    expect(map('AMZN.RTH', 33)).toEqual({ symbol: 'AMZN', exchange: null, type: null, usVariant: true, nonEquity: null });
+  });
+
+  it('maps crypto, commodities, currencies, index CFDs and futures as non-equity', () => {
+    expect(map('BTC', 8, 10)).toEqual({ symbol: 'BTC', exchange: null, type: 'CRYPTO', usVariant: false, nonEquity: 'CRYPTO' });
+    expect(map('GOLD', 2, 2)).toMatchObject({ nonEquity: 'COMMODITY', exchange: null });
+    expect(map('EURUSD', 1, 1)).toMatchObject({ nonEquity: 'CURRENCY' });
+    expect(map('SPX500', 3, 4)).toMatchObject({ nonEquity: 'INDEX' });
+    expect(map('ES', 40)).toMatchObject({ nonEquity: 'FUTURE' });
+    // The instrument type wins over an unknown or venue exchange id.
+    expect(map('ETH', 99, 10)).toMatchObject({ nonEquity: 'CRYPTO' });
   });
 
   it('strips a suffix only when it belongs to the instrument\'s own exchange', () => {
@@ -69,7 +88,7 @@ describe('mapEtoroInstrument', () => {
   it('reports the eToro instrument type (5 stock, 6 ETF)', () => {
     expect(map('AAPL', 4, 5)).toMatchObject({ type: 'STOCK' });
     expect(map('SPY', 5, 6)).toMatchObject({ type: 'ETF' });
-    expect(map('BTC', 4, 10)).toMatchObject({ type: null });
+    expect(map('XYZ', 4, 99)).toMatchObject({ type: null });
   });
 
   it('returns "unresolved" for an unknown exchange and logs it', () => {
@@ -98,9 +117,16 @@ describe('mapEtoroInstrument', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('covers every exchange in the spike table', () => {
-    expect(Object.keys(ETORO_EXCHANGES).map(Number).sort((a, b) => a - b))
-      .toEqual([4, 5, 6, 7, 9, 12, 14, 15, 16, 17, 20, 21, 22, 30, 33, 39]);
+  it('covers every exchange eToro lists (1–24, 30–58)', () => {
+    const ids = [...Array.from({ length: 24 }, (_, i) => i + 1), ...Array.from({ length: 29 }, (_, i) => i + 30)];
+    expect(Object.keys(ETORO_EXCHANGES).map(Number).sort((a, b) => a - b)).toEqual(ids);
+  });
+
+  it('marks the venues seen live in the spike as verified', () => {
+    const verifiedIds = Object.entries(ETORO_EXCHANGES)
+      .filter(([, e]) => (e as { verified: boolean }).verified)
+      .map(([id]) => Number(id));
+    expect(verifiedIds).toEqual([4, 5, 6, 7, 9, 12, 14, 15, 16, 17, 20, 21, 22, 30, 33, 39]);
   });
 });
 

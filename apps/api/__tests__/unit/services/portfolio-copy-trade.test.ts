@@ -78,13 +78,19 @@ describe('mergeCopyHoldings', () => {
 
   it('keeps an RTH variant on its own when the copy has no US sibling', () => {
     const { holdings } = mergeCopyHoldings([holding('TSLA.RTH', 33, 7)]);
-    expect(holdings).toEqual([{ symbol: 'TSLA', exchange: null, type: 'STOCK', valuePct: 7, instrumentIds: [] }]);
+    expect(holdings).toEqual([{ symbol: 'TSLA', exchange: null, type: 'STOCK', nonEquity: null, valuePct: 7, instrumentIds: [] }]);
   });
 
   it('merges two RTH variants of the same symbol', () => {
     const { holdings } = mergeCopyHoldings([holding('TSLA.RTH', 33, 7), holding('TSLA.RTH', 33, 3)]);
     expect(holdings).toHaveLength(1);
     expect(holdings[0].valuePct).toBe(10);
+  });
+
+  it('merges non-equity holdings by kind and symbol, never with a listing', () => {
+    const { holdings } = mergeCopyHoldings([holding('BTC', 8, 3, 10), holding('BTC', 8, 2, 10), holding('GOLD', 2, 4, 2)]);
+    expect(holdings.map((h: { symbol: string; nonEquity: string; valuePct: number }) => [h.symbol, h.nonEquity, h.valuePct]))
+      .toEqual([['BTC', 'CRYPTO', 5], ['GOLD', 'COMMODITY', 4]]);
   });
 
   it('keeps ASML and ASML.NV as two listings', () => {
@@ -100,7 +106,7 @@ describe('mergeCopyHoldings', () => {
       { symbol: 'X', exchange: 'XNAS', valuePct: 0 },
       { symbol: '', exchange: 'XNAS', valuePct: 1 },
     ]);
-    expect(result.holdings).toEqual([{ symbol: 'MSFT', exchange: 'XNAS', type: null, valuePct: 10, instrumentIds: [1, 2] }]);
+    expect(result.holdings).toEqual([{ symbol: 'MSFT', exchange: 'XNAS', type: null, nonEquity: null, valuePct: 10, instrumentIds: [1, 2] }]);
     expect(result.unmappedPct).toBe(4);
   });
 
@@ -166,6 +172,17 @@ describe('deriveCopyComposition', () => {
     const expectedYield = (0.2 * 0 + 0.2 * 0.008 + 0.1 * 0.012 + 0.05 * 0.055 + 0.2 * 0.006) / 0.75;
     expect(c.dividendYield).toBeCloseTo(expectedYield, 6);
     expect(c.yieldCoverage).toBe(75);
+  });
+
+  it('puts crypto and commodities in the asset-class mix only', () => {
+    const c = deriveCopyComposition(
+      { holdings: [holding('MSFT', 4, 50), holding('BTC', 8, 30, 10), holding('GOLD', 2, 20, 2)] },
+      // A SecurityMaster row that happens to share a crypto ticker is never used.
+      new Map([...SECURITIES, ['BTC', { assetType: 'Common Stock', sector: 'Financial Services', country: 'United States' }]]),
+    );
+    expect(byName(c.assetClassMix, 'assetClass')).toEqual({ STOCK: 0.5, CRYPTO: 0.3, OTHER: 0.2 });
+    expect(c.sectors).toEqual([{ sector: 'Technology', weight: 0.5 }]);
+    expect(c.unmappedPct).toBe(0);
   });
 
   it('leaves holdings without SecurityMaster data out of the split', () => {

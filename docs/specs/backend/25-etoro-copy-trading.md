@@ -50,39 +50,66 @@ All three tables are new and are created by a hand-written migration (`migrate d
 
 ## 25.4 Instrument mapping — `@bliss/shared/etoro` `mapEtoroInstrument()`
 
-Pure: a fixed exchange table and suffix rules, no database, no network, no alias cache. eToro instrument metadata has `symbolFull` and `exchangeID` but no ISIN, country or sector, and `priceSource` is the data vendor, not the venue. The venue always comes from `exchangeID`.
+Pure: a fixed exchange table and suffix rules, no database, no network, no alias cache. eToro instrument metadata has `symbolFull`, `exchangeID` and `instrumentTypeID` (1 currencies, 2 commodities, 4 indices, 5 stocks, 6 ETFs, 10 crypto) but no ISIN, country or sector, and `priceSource` is the data vendor, not the venue. The venue always comes from `exchangeID`.
 
-| `exchangeID` | MIC | eToro suffix |
-|---|---|---|
-| 4 | XNAS | – |
-| 5 | XNYS | – |
-| 6 | XETR | `.DE` |
-| 7 | XLON | `.L` |
-| 9 | XPAR | `.PA` |
-| 12 | XSWX | `.ZU` |
-| 14 | XOSL | `.OL` |
-| 15 | XSTO | `.ST` |
-| 16 | XCSE | `.CO` |
-| 17 | XHEL | `.HE` |
-| 20 | BATS | – |
-| 21 | XHKG | `.HK` |
-| 22 | XLIS | `.LSB` |
-| 30 | XAMS | `.NV` |
-| 33 | — (Regular Trading Hours variant) | `.RTH` |
-| 39 | XDFM | `.AE` |
+`ETORO_EXCHANGES` holds **every exchange eToro lists** (ids 1–24 and 30–58, from eToro's exchanges endpoint). **Verified** means the suffix was seen on live instruments in the spike. The other suffixes follow eToro's convention but haven't been confirmed. A suffix is only ever stripped on an exact match, so a wrong guess leaves the symbol intact; it then fails enrichment and lands in "Other", never under a wrong company.
+
+| `exchangeID` | eToro description | MIC | Suffix(es) | Verified |
+|---|---|---|---|---|
+| 1 / 2 / 3 / 40 | FX / Commodity / CFD / CME | — (non-equity: currency, commodity, index, future) | – | – |
+| 4 | Nasdaq | XNAS | – | ✓ |
+| 5 | NYSE | XNYS | – | ✓ |
+| 6 | FRA | XFRA | `.DE` | ✓ |
+| 7 | LSE | XLON | `.L` | ✓ |
+| 8 | Digital Currency | — (non-equity: crypto) | – | – |
+| 9 | Euronext Paris | XPAR | `.PA` | ✓ |
+| 10 | Bolsa De Madrid | XMAD | `.MC` | |
+| 11 | Borsa Italiana | XMIL | `.MI` | |
+| 12 | SIX | XSWX | `.ZU` | ✓ |
+| 13 / 56 | TYO / Tokyo Stock Exchange | XJPX | `.T` | |
+| 14 | Oslo | XOSL | `.OL` | ✓ |
+| 15 | Stockholm | XSTO | `.ST` | ✓ |
+| 16 | Copenhagen | XCSE | `.CO` | ✓ |
+| 17 | Helsinki | XHEL | `.HE` | ✓ |
+| 18 | Toronto | XTSE | `.TO` | |
+| 19 | OTC Markets | OTCM | – | |
+| 20 | Chicago Board Options Exchange | BATS | – | ✓ |
+| 21 | Hong Kong Exchanges | XHKG | `.HK` | ✓ |
+| 22 | Euronext Lisbon | XLIS | `.LSB` | ✓ |
+| 23 | Euronext Brussels | XBRU | `.BR` | |
+| 24 | Tadawul | XSAU | `.SR` | |
+| 30 | Euronext Amsterdam | XAMS | `.NV` | ✓ |
+| 31 | Sydney | XASX | `.ASX`, `.AX` | |
+| 32 | Vienna | XWBO | `.VI` | |
+| 33 | Regular Trading Hours - RTH | — (US variant) | `.RTH` | ✓ |
+| 34 | Dublin EN | XMSM | `.ISE`, `.IR` | |
+| 35 / 36 / 37 | Prague / Warsaw / Budapest | XPRA / XWAR / XBUD | `.PR` / `.WA` / `.BD` | |
+| 38 | Xetra ETFs | XETR | `.DE` | |
+| 39 | Dubai Financial Market | XDFM | `.AE` | ✓ |
+| 41 | Abu Dhabi | XADS | `.AD` | |
+| 42 / 43 / 44 | LSE AIM / AIM Auction / LSE Auction | XLON | `.L` | |
+| 45 / 46 | Shenzhen / Shanghai | XSHE / XSHG | `.SZ` / `.SS`, `.SH` | |
+| 47 | National Stock Exchange of India | XNSE | `.NS` | |
+| 48 | TSX Venture | XTSX | `.V` | |
+| 49 | Singapore | XSES | `.SI` | |
+| 50–53 | Nasdaq Iceland / Tallinn / Vilnius / Riga | XICE / XTAL / XLIT / XRIS | `.IC` / `.TL` / `.VS` / `.RG` | |
+| 54 / 55 | Korea / Taiwan | XKRX / XTAI | `.KS` / `.TW` | |
+| 57 | Texas Stock Exchange | — (US variant) | `.TXSE` | |
+| 58 | Tel Aviv | XTAE | `.TA` | |
 
 Rules:
-- A suffix is stripped only when it is the suffix of the instrument's own exchange, so share classes (`BRK.B`, `NOVO-B`) stay intact: `AIR.PA` → `AIR`/XPAR, `BRK.B` → `BRK.B`/XNYS, `NOVO-B.CO` → `NOVO-B`/XCSE, `1810.HK` → `1810`/XHKG; `ASML` and `ASML.NV` are two listings (XNAS, XAMS).
-- Exchange 33 is not a venue: `AMZN.RTH` → `{ symbol: 'AMZN', exchange: null, rthVariant: true }`. `mergeCopyHoldings()` folds it into the copy's US listing of the same symbol (XNAS, XNYS or BATS), so a copy holding both shows one Amazon line.
-- `instrumentTypeID` 5 → `type: 'STOCK'`, 6 → `'ETF'`, anything else → `null`.
-- An unknown exchange or a missing symbol → `{ unresolved: true, reason, exchangeId }`, and `etoro_unmapped_instrument { reason, exchangeId, instrumentId }` is logged through the optional `logger`. Unresolved holdings count as "Other" and in `unmappedPct`.
-- **Exchange 6 (D9).** eToro labels it "FRA" while its metadata says Xetra; Twelve Data lists the `.DE` primaries on XETR, so the table uses XETR. The live check against Twelve Data (two exchange-6 symbols on XETR vs XFRA) needs a Twelve Data key and is still pending. If they resolve only on XFRA, it is a one-line table change.
+- Share classes (`BRK.B`, `NOVO-B`) stay intact: `AIR.PA` → `AIR`/XPAR, `BRK.B` → `BRK.B`/XNYS, `NOVO-B.CO` → `NOVO-B`/XCSE, `1810.HK` → `1810`/XHKG. `ASML` and `ASML.NV` are two listings (XNAS, XAMS).
+- **US variants** (33 RTH, 57 Texas) aren't venues: `AMZN.RTH` → `{ symbol: 'AMZN', exchange: null, usVariant: true }`. `mergeCopyHoldings()` folds it into the copy's US listing of the same symbol (XNAS, XNYS or BATS), so a copy holding both shows one Amazon line.
+- **Non-equity instruments** (by `instrumentTypeID` 1/2/4/10, or exchange 1/2/3/8/40) → `{ symbol, exchange: null, nonEquity: 'CURRENCY'|'COMMODITY'|'INDEX'|'FUTURE'|'CRYPTO' }`. Copies often hold crypto and commodities. These holdings count in the asset-class mix (`CRYPTO`, otherwise `OTHER`), are never enriched from SecurityMaster, and are not "unmapped".
+- `instrumentTypeID` 5 → `type: 'STOCK'`, 6 → `'ETF'`.
+- An unknown exchange (for a stock or ETF) or a missing symbol → `{ unresolved: true, reason, exchangeId }`, logged as `etoro_unmapped_instrument { reason, exchangeId, instrumentId }` through the optional `logger`. These count as "Other" and in `unmappedPct`.
+- **Exchange 6 (D9).** eToro's own list names 6 "FRA" and gives Xetra its own id (38, "Xetra ETFs"), so 6 maps to XFRA and 38 to XETR. Because SecurityMaster is keyed by symbol only, the MIC affects only the watchlist refresh (§25.9): Frankfurt and Xetra quote the same German companies.
 
 **Scope check.** `assertReadOnlyScopes(scopes)` throws `EtoroScopeError` (`code: 'ETORO_WRITE_SCOPE'`, `writeScopes`) unless every scope ends in `:read`. An empty list is refused too, because a key that reports no scopes can't be proven read-only.
 
 ## 25.5 Copy composition — `@bliss/shared/portfolio` `deriveCopyComposition()`
 
-Computed on read, never stored: the sync keeps only the mapped holdings (`[{ instrumentId, etoroSymbol, symbol, exchange, type, rthVariant, valuePct }]` with `valuePct` 0–100, plus `cashPct`). New SecurityMaster data shows up without another eToro sync.
+Computed on read, never stored: the sync keeps only the mapped holdings (`[{ instrumentId, etoroSymbol, symbol, exchange, type, usVariant, nonEquity, valuePct }]` with `valuePct` 0–100, plus `cashPct`). New SecurityMaster data shows up without another eToro sync.
 
 `deriveCopyComposition({ holdings, cashPct }, securities)` takes SecurityMaster rows by symbol (a `Map` or a plain object) and returns:
 
@@ -100,8 +127,9 @@ Per holding, by its #79 asset class (`classifyAssetClass` with eToro's instrumen
 - **INDEX_ETF / SECTOR_ETF with `etfComposition`:** spread across that ETF's sectors and countries by weight (two-level look-through: copy → ETF → sector/country).
 - **BOND_ETF:** "Fixed Income" in both views, like a directly held bond ETF.
 - **ETFs without composition, funds, holdings without SecurityMaster data:** left out, so they fall into the copy's "Other" remainder. The §25.9 watchlist is what fills them in.
+- **Non-equity holdings** (crypto, commodities, currencies, index CFDs, futures): `CRYPTO` or `OTHER` in `assetClassMix` only.
 
-Holdings are merged first (`mergeCopyHoldings()`): same `symbol|exchange` lines are summed and RTH variants folded (§25.4). If eToro's shares add up past 100%, they are scaled back to 100% so a copy never inflates.
+Holdings are merged first (`mergeCopyHoldings()`): same `symbol|exchange` lines are summed, US variants are folded in, and non-equity holdings merge by kind + symbol (§25.4). If eToro's shares add up past 100%, they are scaled back to 100% so a copy never inflates.
 
 ## 25.6 Asset class and passive income
 
