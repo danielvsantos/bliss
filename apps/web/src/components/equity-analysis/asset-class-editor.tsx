@@ -15,7 +15,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { useSetAssetClass } from '@/hooks/use-equity-analysis';
-import { ASSET_CLASSES, type AssetClass, type EquityHolding } from '@/types/equity-analysis';
+import { OVERRIDE_ASSET_CLASSES, type AssetClass, type EquityHolding } from '@/types/equity-analysis';
 import { ASSET_CLASS_COLORS } from './asset-class-colors';
 
 const AUTO = 'AUTO';
@@ -133,7 +133,7 @@ function EditorBody({ holding, onDone }: { holding: EquityHolding; onDone: () =>
         <option value={AUTO}>
           {t('equityAnalysis.automatic', { assetClass: auto ? t(`equityAnalysis.assetClasses.${auto}`) : '—' })}
         </option>
-        {ASSET_CLASSES.map((c) => (
+        {OVERRIDE_ASSET_CLASSES.map((c) => (
           <option key={c} value={c}>{t(`equityAnalysis.assetClasses.${c}`)}</option>
         ))}
       </select>

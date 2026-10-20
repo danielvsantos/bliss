@@ -55,5 +55,9 @@ describe('manage-assets helpers', () => {
       .toEqual(['price', 'history', 'income', 'assetClass']);
     expect(availableModals(asset({ processingHint: 'API_CRYPTO', incomeAssetClass: null }))).toEqual(['assetClass']);
     expect(availableModals(asset({ categoryType: 'Debt', processingHint: 'AMORTIZING_LOAN', incomeAssetClass: null }))).toEqual(['debt']);
+    // #143: holdings in the Funds group can be switched to Copy Trading.
+    expect(availableModals(asset({ processingHint: 'API_FUND', group: 'Funds', incomeAssetClass: 'FUND' }))).toEqual(['income', 'assetClass', 'copyTrading']);
+    expect(availableModals(asset({ processingHint: 'MANUAL', group: 'Funds', incomeAssetClass: null }))).toEqual(['price', 'history', 'assetClass', 'copyTrading']);
+    expect(availableModals(asset({ processingHint: 'COPY_TRADING', group: 'Funds', incomeAssetClass: null }))).toEqual(['assetClass']);
   });
 });

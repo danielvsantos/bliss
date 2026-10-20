@@ -54,6 +54,7 @@ const FEATURE_MAP = {
   'mcp-server':               { title: 'MCP Server for AI Agents',   order: 24, description: 'Stateless Streamable HTTP MCP endpoint (/api/mcp) with 41 agent-oriented tools over the REST API, role-filtered by integration key' },
   'processing-status':        { title: 'Processing Status',          order: 26, description: 'Per-tenant "what is updating" status in Redis: activity tracker on every queue and worker, GET /api/activity, header chip, page banners, Settings → Processing' },
   'mcp-oauth':                { title: 'OAuth for MCP Connectors',   order: 25, description: 'OAuth 2.1 authorization server (PKCE, dynamic client registration, refresh rotation) so Claude custom connectors can connect to /api/mcp; access tokens are integration keys' },
+  'etoro-copy-trading':       { title: 'eToro Copy Trading',         order: 28, description: 'Read-only eToro key per account: nightly copy values on Copy Trading holdings and ETF-style look-through of each copy\'s holdings in Equity Analysis' },
   'enable-banking':           { title: 'Enable Banking (EU PSD2)',   order: 27, description: 'EU bank sync through Enable Banking: PSD2 consent, account mapping and provider switch, scheduled polling within the bank budget, feeding the existing review queue' },
 };
 
@@ -86,6 +87,7 @@ const LAYER_FILES = {
   'mcp-oauth':                { api: '25-oauth.md' },
   'processing-status':        { api: '26-activity-api.md', backend: '23-activity-tracking.md', frontend: '26-processing-status.md' },
   'enable-banking':           { api: '27-enable-banking-api.md', backend: '24-enable-banking.md', frontend: '27-enable-banking.md' },
+  'etoro-copy-trading':       { api: '28-etoro-api.md', backend: '25-etoro-copy-trading.md', frontend: '28-etoro-copy-trading.md' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────

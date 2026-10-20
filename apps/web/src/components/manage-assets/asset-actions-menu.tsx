@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Coins, FileText, History, MoreHorizontal, Pencil, Shapes } from 'lucide-react';
+import { Coins, FileText, History, MoreHorizontal, Pencil, Repeat, Shapes } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ const ICONS: Record<AssetModal, typeof Pencil> = {
   debt: FileText,
   income: Coins,
   assetClass: Shapes,
+  copyTrading: Repeat,
 };
 
 /** Row actions in an overflow menu (desktop rows and mobile cards). */

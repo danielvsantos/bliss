@@ -53,6 +53,11 @@ import type {
   EnableBankingConnectionResponse,
   EnableBankingMapRequest,
   EnableBankingMapResponse,
+  EtoroConnection,
+  EtoroConnectRequest,
+  EtoroConnectResponse,
+  EtoroUpdateRequest,
+  ConvertToCopyTradingResponse,
 } from '../types/api';
 import type {
   AssetIncomeTermsResponse,
@@ -837,6 +842,45 @@ class APIClient {
 
   async disconnectEnableBankingConnection(id: string): Promise<void> {
     await this.client.delete(`/api/enablebanking/connections/${encodeURIComponent(id)}`);
+  }
+
+  // --- eToro copy trading (#143) ---
+
+  async getEtoroConnections(): Promise<EtoroConnection[]> {
+    const response = await this.client.get('/api/etoro/connections', { transformResponse: rawJsonResponse });
+    return response.data?.connections ?? [];
+  }
+
+  /** Connect an eToro account. The keys travel in this request only and are never returned. */
+  async connectEtoro(data: EtoroConnectRequest): Promise<EtoroConnectResponse> {
+    const response = await this.client.post('/api/etoro/connections', data, { transformResponse: rawJsonResponse });
+    return response.data;
+  }
+
+  async updateEtoroConnection(id: string, data: EtoroUpdateRequest): Promise<EtoroConnection> {
+    const response = await this.client.put(`/api/etoro/connections/${encodeURIComponent(id)}`, data, {
+      transformResponse: rawJsonResponse,
+    });
+    return response.data.connection;
+  }
+
+  async removeEtoroConnection(id: string): Promise<void> {
+    await this.client.delete(`/api/etoro/connections/${encodeURIComponent(id)}`);
+  }
+
+  async syncEtoroConnection(id: string): Promise<{ message: string }> {
+    const response = await this.client.post(`/api/etoro/connections/${encodeURIComponent(id)}/sync`, null, {
+      transformResponse: rawJsonResponse,
+    });
+    return response.data;
+  }
+
+  /** Switch a holding to Copy Trading in place (#143, R8). */
+  async convertToCopyTrading(portfolioItemId: number, etoroUsername: string): Promise<ConvertToCopyTradingResponse> {
+    const response = await this.client.post('/api/etoro/convert-holding', { portfolioItemId, etoroUsername }, {
+      transformResponse: rawJsonResponse,
+    });
+    return response.data;
   }
 
   // --- Smart Import ---

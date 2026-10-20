@@ -50,6 +50,11 @@ export function primaryAction(asset: ManagedAsset): AssetModal | null {
   return null;
 }
 
+/** Holdings in the Funds group, where copies are recorded today (#143); the server accepts any investment. */
+export function canSwitchToCopyTrading(asset: Pick<ManagedAsset, 'categoryType' | 'processingHint' | 'group'>): boolean {
+  return asset.categoryType === 'Investments' && asset.processingHint !== 'COPY_TRADING' && asset.group === 'Funds';
+}
+
 /** Which modals apply to a row, in overflow-menu order. */
 export function availableModals(asset: ManagedAsset): AssetModal[] {
   const out: AssetModal[] = [];
@@ -58,6 +63,9 @@ export function availableModals(asset: ManagedAsset): AssetModal[] {
   if (isDebt) out.push('debt');
   if (asset.incomeAssetClass) out.push('income');
   if (!isDebt) out.push('assetClass');
+  // eToro copy trading (#143): a copy recorded as a Fund can be switched to
+  // Copy Trading in place.
+  if (canSwitchToCopyTrading(asset)) out.push('copyTrading');
   return out;
 }
 

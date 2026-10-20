@@ -172,3 +172,35 @@ describe('EquityAnalysisPage — asset classes & look-through (#79)', () => {
     expect(screen.getByText('equityAnalysis.loadFailed')).toBeInTheDocument();
   });
 });
+
+describe('EquityAnalysisPage — eToro copy trades (#143)', () => {
+  const COPY = holding({
+    symbol: 'topinvestor', name: '@topinvestor', assetType: 'COPY_TRADE', assetClass: 'COPY_TRADE', autoAssetClass: 'COPY_TRADE',
+    itemIds: [9], sector: 'Diversified', industry: 'Diversified', country: 'Diversified',
+    peRatio: 26.7, peCoverage: 60, dividendYield: 0.01, yieldCoverage: 100, unmappedPct: 4, trailingEps: null,
+    copyTrade: { linked: true, copyId: 'p1', status: 'ACTIVE', connectionStatus: 'ACTIVE', lastValueAt: null, unmappedPct: 4 },
+  });
+
+  it('shows a copy row with its link badge, coverage label and unmapped share', () => {
+    setup(response({ holdings: [KO, COPY] }));
+    expect(screen.getByText('topinvestor')).toBeInTheDocument();
+    expect(screen.getByTestId('copy-trade-badge')).toHaveTextContent('etoro.badge.linked');
+    // P/E is based on 60% of the copy; the yield covers it fully, so no label.
+    expect(screen.getAllByText('equityAnalysis.basedOn:60')).toHaveLength(1);
+    expect(screen.getByTestId('copy-unmapped')).toHaveTextContent('equityAnalysis.unmapped:4');
+  });
+
+  it('flags a copy whose eToro key needs replacing', () => {
+    const stale = { ...COPY, copyTrade: { ...COPY.copyTrade!, connectionStatus: 'NEEDS_RECONNECT' as const } };
+    setup(response({ holdings: [stale] }));
+    expect(screen.getByTestId('copy-trade-badge')).toHaveAttribute('data-state', 'needsReconnect');
+  });
+
+  it('never offers COPY_TRADE as an override', () => {
+    setup(response({ holdings: [KO] }));
+    fireEvent.click(screen.getByRole('button', { name: 'equityAnalysis.editAssetClass:KO' }));
+    const options = within(screen.getByLabelText('equityAnalysis.assetClass')).getAllByRole('option').map((o) => o.getAttribute('value'));
+    expect(options).not.toContain('COPY_TRADE');
+    expect(options).toContain('FUND');
+  });
+});

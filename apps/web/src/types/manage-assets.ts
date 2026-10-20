@@ -82,5 +82,5 @@ export interface AssetClassInfo {
 }
 
 /** Modals the page opens via `?item=<id>&modal=<name>`. */
-export const ASSET_MODALS = ['income', 'price', 'history', 'debt', 'assetClass'] as const;
+export const ASSET_MODALS = ['income', 'price', 'history', 'debt', 'assetClass', 'copyTrading'] as const;
 export type AssetModal = (typeof ASSET_MODALS)[number];

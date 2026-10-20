@@ -20,6 +20,7 @@ import { buildGroupColorMap, getGroupColor } from '@/lib/portfolio-utils';
 import { formatCurrency, formatPercentage } from '@/lib/utils';
 import { ASSET_CLASSES, type EquityHolding } from '@/types/equity-analysis';
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
+import { CopyTradeBadge } from '@/components/etoro/copy-trade-badge';
 
 /** Buckets the API uses for ETFs that can't be looked through, and for the look-through remainder (#79). */
 const DIVERSIFIED = 'Diversified';
@@ -36,6 +37,13 @@ const fadeUp = {
 const GROUPING_KEYS = ['sector', 'industry', 'country', 'assetClass'] as const;
 
 type SortField = 'symbol' | 'name' | 'currentValue' | 'weight' | 'peRatio' | 'dividendYield' | 'trailingEps' | 'week52High' | 'week52Low';
+
+/** "based on N% of value" under a copy's P/E or yield (#143, R17); nothing when fully covered or not a copy. */
+function CoverageNote({ pct }: { pct: number | null | undefined }) {
+  const { t } = useTranslation();
+  if (pct == null || pct >= 99.5) return null;
+  return <span className="block text-[10px] text-muted-foreground">{t('equityAnalysis.basedOn', { pct: Math.round(pct) })}</span>;
+}
 
 function SortChevron({ dir }: { dir: 'asc' | 'desc' | null }) {
   if (!dir) return <span className="ml-1 w-3" />;
@@ -433,10 +441,11 @@ export default function EquityAnalysisPage() {
                     </thead>
                     <tbody>
                       {sortedHoldings.map((h: EquityHolding) => (
-                        <tr key={h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
+                        <tr key={h.itemIds?.join('-') ?? h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
                           <td className="px-3 py-2.5 font-medium text-brand-deep whitespace-nowrap">
                             <span className="inline-flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
                             {h.symbol}
+                            {h.assetType === 'COPY_TRADE' && <CopyTradeBadge copyTrade={h.copyTrade} />}
                             {h.assetClass ? (
                               <AssetClassEditor holding={h} />
                             ) : h.assetType === 'ETF' && (
@@ -446,14 +455,23 @@ export default function EquityAnalysisPage() {
                             )}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">{h.name}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">
+                            {h.name}
+                            {h.unmappedPct != null && h.unmappedPct >= 0.5 && (
+                              <span className="block text-[10px] text-warning" data-testid="copy-unmapped">
+                                {t('equityAnalysis.unmapped', { pct: Math.round(h.unmappedPct) })}
+                              </span>
+                            )}
+                          </td>
                           <td className="hidden md:table-cell px-3 py-2.5 text-muted-foreground text-xs">{groupLabel(h.sector)}</td>
                           <td className="hidden lg:table-cell px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">{groupLabel(h.industry)}</td>
                           <td className="hidden sm:table-cell px-3 py-2.5 tabular-nums">
                             {h.peRatio != null ? h.peRatio.toFixed(1) : '—'}
+                            {h.peRatio != null && <CoverageNote pct={h.peCoverage} />}
                           </td>
                           <td className="hidden md:table-cell px-3 py-2.5 tabular-nums">
                             {h.dividendYield != null ? `${(h.dividendYield * 100).toFixed(2)}%` : '—'}
+                            {h.dividendYield != null && <CoverageNote pct={h.yieldCoverage} />}
                           </td>
                           <td className="hidden lg:table-cell px-3 py-2.5 tabular-nums">
                             <span className={h.trailingEps != null && h.trailingEps > 0 ? 'text-positive' : h.trailingEps != null && h.trailingEps < 0 ? 'text-negative' : ''}>

@@ -8,6 +8,7 @@ export default {
   'passive-income': 'Passive Income',
   'plaid-bank-sync': 'Bank Sync with Plaid',
   'enable-banking': 'EU Bank Sync with Enable Banking',
+  'etoro-copy-trading': 'eToro Copy Trading',
   'ai-classification': 'AI Classification',
   'choosing-categories': 'Choosing the Right Category',
   'tracking-subscriptions': 'Tracking Subscriptions',

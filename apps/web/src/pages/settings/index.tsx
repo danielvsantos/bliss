@@ -63,6 +63,7 @@ import { MaintenanceTab } from "@/components/settings/maintenance-tab";
 import { IntegrationsTab } from "@/components/settings/integrations-tab";
 import { ProcessingTab } from "@/components/settings/processing-tab";
 import { BankSyncTab } from "@/components/settings/bank-sync-tab";
+import { EtoroSection } from "@/components/settings/etoro-section";
 import {
   MultiSelectCombobox,
   type ComboboxOption,
@@ -1054,6 +1055,8 @@ export default function SettingsPage() {
           {user?.role === 'admin' && (
             <TabsContent value="bank-sync" className="mt-0 space-y-5">
               <BankSyncTab />
+              {/* eToro copy trading (#143) */}
+              <EtoroSection />
             </TabsContent>
           )}
 

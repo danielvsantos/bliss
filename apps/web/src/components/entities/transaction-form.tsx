@@ -148,7 +148,10 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
   const isDebt = selectedCategory?.type === 'Debt';
   // Route crypto ticker searches to Twelve Data with crypto type filter
   const tickerSearchType = selectedCategory?.processingHint === 'API_CRYPTO' ? 'crypto' : undefined;
-  const { data: tickerResults = [] } = useTickerSearch(tickerSearchInput, tickerSearchType);
+  // eToro Copy Trading (#143): the "ticker" is the copied investor's eToro
+  // username, never a market symbol, so there is nothing to search.
+  const isCopyTrade = selectedCategory?.processingHint === 'COPY_TRADING';
+  const { data: tickerResults = [] } = useTickerSearch(isCopyTrade ? '' : tickerSearchInput, tickerSearchType);
 
   // Auto-open investment accordion when an investment category is selected
   useEffect(() => {
@@ -535,11 +538,11 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     name="ticker"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>{t('transactionFormPage.tickerLabel')}</FormLabel>
+                        <FormLabel>{isCopyTrade ? t('transactionFormPage.etoroUsernameLabel') : t('transactionFormPage.tickerLabel')}</FormLabel>
                         <div className="relative" ref={tickerDropdownRef}>
                           <FormControl>
                             <Input
-                              placeholder={t('transactionFormPage.tickerPlaceholder')}
+                              placeholder={isCopyTrade ? t('transactionFormPage.etoroUsernamePlaceholder') : t('transactionFormPage.tickerPlaceholder')}
                               value={tickerSearchInput}
                               autoComplete="off"
                               onChange={e => {

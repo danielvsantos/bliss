@@ -188,6 +188,72 @@ export type PortfolioItem = {
   /** Passive Income (#77): present when the holding has income terms. */
   incomeTerms?: { id: number; incomeType: string; isDistributing: boolean } | null;
   manualValues?: ManualAssetValue[];
+  /** eToro copy trading (#143): link status of a Copy Trading holding. */
+  copyTrade?: CopyTradeStatus;
+};
+
+// ─── eToro copy trading (#143) ─────────────────────────────────────────────────
+
+/** Link status of a Copy Trading holding to an eToro copy. */
+export type CopyTradeStatus =
+  | { linked: false }
+  | {
+      linked: true;
+      copyId: string;
+      status: 'ACTIVE' | 'CLOSED';
+      connectionStatus: EtoroConnectionStatus | 'REMOVED' | null;
+      lastValueAt: string | null;
+      unmappedPct: number | null;
+    };
+
+export type EtoroConnectionStatus = 'ACTIVE' | 'NEEDS_RECONNECT';
+
+export type EtoroCopy = {
+  id: string;
+  parentUsername: string;
+  startedAt: string | null;
+  status: 'ACTIVE' | 'CLOSED';
+  closedAt: string | null;
+  lastValue: number | null;
+  lastValueCurrency: string;
+  lastValueAt: string | null;
+  cashPct: number | null;
+  unmappedPct: number | null;
+  holdingsCount: number;
+  linkedHolding: { id: number; symbol: string } | null;
+};
+
+/** GET /api/etoro/connections. Keys are never returned (`keyLast4` only). */
+export type EtoroConnection = {
+  id: string;
+  etoroUsername: string;
+  accountId: number | null;
+  account: { id: number; name: string } | null;
+  keyLast4: string;
+  scopes: string[];
+  status: EtoroConnectionStatus;
+  errorCode: string | null;
+  connectedAt: string;
+  lastSyncAt: string | null;
+  lastSyncStatus: 'SUCCESS' | 'FAILED' | null;
+  lastSyncError: string | null;
+  copies: EtoroCopy[];
+};
+
+export type EtoroConnectRequest = { apiKey: string; userKey: string; accountId: number };
+
+export type EtoroConnectResponse = {
+  connection: EtoroConnection;
+  copies: Array<{ parentUsername: string; startedAt: string | null; value: number; currency: string }>;
+};
+
+export type EtoroUpdateRequest = { apiKey?: string; userKey?: string; accountId?: number };
+
+export type ConvertToCopyTradingResponse = {
+  portfolioItemId: number;
+  symbol: string;
+  categoryId: number;
+  transactionsMoved: number;
 };
 
 /**
