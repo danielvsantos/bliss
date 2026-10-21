@@ -13,6 +13,7 @@ import {
   normalizeEtfComposition,
   lookThrough,
   DIVERSIFIED,
+  LOOK_THROUGH_OTHER,
 } from '@bliss/shared/portfolio';
 
 const VALID_GROUP_BY = ['sector', 'industry', 'country', 'assetClass'];
@@ -58,20 +59,9 @@ function groupHoldings(holdings, dimension, totalEquityValue, enabled) {
       g.holdings.push({ index, value });
       map.set(name, g);
     };
-    holdings.forEach((h, index) => {
-      // A linked copy shows its own mix (stocks, ETFs, crypto, cash, …) when
-      // looking through; otherwise it is one COPY_TRADE row (R15).
-      if (enabled && h.assetClass === 'COPY_TRADE' && h.assetClassMix?.length) {
-        let assigned = 0;
-        for (const part of h.assetClassMix) {
-          add(part.assetClass, index, h.currentValue * part.weight);
-          assigned += part.weight;
-        }
-        if (1 - assigned > 1e-6) add('OTHER', index, h.currentValue * (1 - assigned));
-        return;
-      }
-      add(h.assetClass, index, h.currentValue);
-    });
+    // Looking through, a linked copy is already split into its positions
+    // (`copyPositionRows`), each with its own class (R15).
+    holdings.forEach((h, index) => add(h.assetClass, index, h.currentValue));
     raw = [...map.values()].sort((a, b) => b.value - a.value);
   } else {
     raw = lookThrough(
@@ -95,6 +85,58 @@ function groupHoldings(holdings, dimension, totalEquityValue, enabled) {
     holdingsCount: g.holdings.length,
     holdings: g.holdings.map(({ index }) => holdings[index]),
   }));
+}
+
+const toNum = (v) => (v == null ? null : parseFloat(v.toString()));
+
+/**
+ * The rows a linked copy is shown as when looking through (#143): one per
+ * position of the copy (`explodeCopyHoldings`), valued at its share of the
+ * copy's eToro value and described like a directly held stock or ETF, plus
+ * the copy's cash and its unidentified share. They are never merged with a
+ * direct holding of the same symbol, and carry `viaCopy` instead of item ids
+ * (nothing to override: the asset class is automatic).
+ */
+function copyPositionRows(copyRow, positions) {
+  return positions.map((p) => {
+    const sm = p.security || {};
+    const security = p.kind === 'SECURITY';
+    const stockLike = security && !p.isEtf;
+    // Stocks: their own sector/country ("Unknown" without data, like a direct
+    // holding); ETFs: "Diversified", looked through by their composition;
+    // crypto, other instruments, cash and unidentified: the "Other" remainder.
+    const own = (v) => (security ? (p.isEtf ? DIVERSIFIED : (v || 'Unknown')) : LOOK_THROUGH_OTHER);
+    const fallbackSymbol = p.kind === 'CASH' ? 'CASH' : 'OTHER';
+    return {
+      key: `copy:${copyRow.itemIds[0]}:${p.kind}:${p.nonEquity || ''}:${p.symbol || ''}:${p.exchange || ''}`,
+      itemIds: [],
+      viaCopy: { itemIds: copyRow.itemIds, username: copyRow.symbol, kind: p.kind },
+      symbol: p.symbol || fallbackSymbol,
+      exchange: p.exchange,
+      name: sm.name || p.symbol || fallbackSymbol,
+      assetType: security ? (p.isEtf ? 'ETF' : 'STOCK') : 'OTHER',
+      assetClass: p.assetClass,
+      assetClassSource: 'AUTO',
+      autoAssetClass: p.assetClass,
+      composition: p.isEtf ? normalizeEtfComposition(sm.etfComposition) : null,
+      quantity: null,
+      currentValue: copyRow.currentValue * p.weight,
+      currentValueUSD: copyRow.currentValueUSD * p.weight,
+      sector: own(sm.sector),
+      industry: own(sm.industry),
+      country: own(sm.country),
+      peRatio: stockLike && sm.earningsTrusted && sm.peRatio ? toNum(sm.peRatio) : null,
+      dividendYield: security && sm.dividendTrusted && sm.dividendYield != null ? toNum(sm.dividendYield) : null,
+      trailingEps: stockLike && sm.earningsTrusted && sm.trailingEps ? toNum(sm.trailingEps) : null,
+      latestEpsActual: stockLike && sm.earningsTrusted && sm.latestEpsActual ? toNum(sm.latestEpsActual) : null,
+      latestEpsSurprise: stockLike && sm.earningsTrusted && sm.latestEpsSurprise ? toNum(sm.latestEpsSurprise) : null,
+      week52High: sm.week52High ? toNum(sm.week52High) : null,
+      week52Low: sm.week52Low ? toNum(sm.week52Low) : null,
+      averageVolume: sm.averageVolume ? toNum(sm.averageVolume) : null,
+      logoUrl: sm.logoUrl || null,
+      weight: 0,
+    };
+  });
 }
 
 export default withAuth(async function handler(req, res) {
@@ -397,10 +439,23 @@ export default withAuth(async function handler(req, res) {
       dividendYield: h.dividendYield != null ? Math.round(h.dividendYield * 1e6) / 1e6 : null,
     }));
 
+    // 3c. Looking through, a linked copy is replaced by its own positions
+    //     (#143), so the groups, the Top 10 and the table show the equities
+    //     the money is in. A copy with nothing but unidentified holdings stays
+    //     one row. The copies themselves are returned in `copies`.
+    const copies = mergedHoldings.filter((h) => h.assetType === 'COPY_TRADE');
+    const rows = lookThroughEnabled
+      ? mergedHoldings.flatMap((h) => {
+        if (h.assetType !== 'COPY_TRADE') return [h];
+        const positions = copyLookThrough.get(h.itemIds[0])?.positions || [];
+        return positions.some((p) => p.kind !== 'UNMAPPED') ? copyPositionRows(h, positions) : [h];
+      })
+      : mergedHoldings;
+
     // 4. Compute total equity value and weights
     const totalEquityValue = mergedHoldings.reduce((sum, h) => sum + h.currentValue, 0);
 
-    for (const h of mergedHoldings) {
+    for (const h of [...rows, ...copies]) {
       h.weight = totalEquityValue > 0 ? h.currentValue / totalEquityValue : 0;
     }
 
@@ -411,7 +466,7 @@ export default withAuth(async function handler(req, res) {
     let weightedDividendYield = null;
     const covered = (h, coverage) => h.weight * (coverage == null ? 1 : coverage / 100);
 
-    const holdingsWithPe = mergedHoldings.filter((h) => h.peRatio != null && h.peRatio > 0);
+    const holdingsWithPe = rows.filter((h) => h.peRatio != null && h.peRatio > 0);
     if (holdingsWithPe.length > 0) {
       const peWeightSum = holdingsWithPe.reduce((sum, h) => sum + covered(h, h.peCoverage), 0);
       if (peWeightSum > 0) {
@@ -420,7 +475,7 @@ export default withAuth(async function handler(req, res) {
       }
     }
 
-    const holdingsWithYield = mergedHoldings.filter((h) => h.dividendYield != null && h.dividendYield > 0);
+    const holdingsWithYield = rows.filter((h) => h.dividendYield != null && h.dividendYield > 0);
     if (holdingsWithYield.length > 0) {
       const yieldWeightSum = holdingsWithYield.reduce((sum, h) => sum + covered(h, h.yieldCoverage), 0);
       if (yieldWeightSum > 0) {
@@ -433,9 +488,9 @@ export default withAuth(async function handler(req, res) {
     //    (unless lookThrough=false); an ETF can then sit in several groups, so
     //    the flat `holdings` list is the one to render rows from.
     const groupings = Object.fromEntries(
-      GROUPINGS.map((dim) => [dim, groupHoldings(mergedHoldings, dim, totalEquityValue, lookThroughEnabled)]),
+      GROUPINGS.map((dim) => [dim, groupHoldings(rows, dim, totalEquityValue, lookThroughEnabled)]),
     );
-    const holdings = [...mergedHoldings].sort((a, b) => b.currentValue - a.currentValue);
+    const holdings = [...rows].sort((a, b) => b.currentValue - a.currentValue);
 
     res.status(StatusCodes.OK).json({
       portfolioCurrency,
@@ -448,8 +503,8 @@ export default withAuth(async function handler(req, res) {
       ),
       summary: {
         totalEquityValue: round2(totalEquityValue),
-        holdingsCount: mergedHoldings.length,
-        copyTradeCount: mergedHoldings.filter((h) => h.assetType === 'COPY_TRADE').length,
+        holdingsCount: holdings.length,
+        copyTradeCount: copies.length,
         weightedPeRatio,
         weightedDividendYield,
         pendingSecurityDataCount: pendingSecurityData.length,
@@ -459,6 +514,9 @@ export default withAuth(async function handler(req, res) {
       groups: groupings[groupBy],
       groupings,
       holdings,
+      // eToro copies (#143), also when they are split into `holdings` rows:
+      // link status, coverage and the unidentified share live here.
+      copies,
     });
   } catch (error) {
     Sentry.captureException(error);
