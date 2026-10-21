@@ -40,10 +40,10 @@ Bliss puts a copy's value on a **Copy Trading** holding. It matches the copy to 
 - the holding's **ticker is the copied investor's eToro username** (for example `topinvestor`). Capital letters and a leading `@` don't matter.
 
 There are two ways to set this up.
-- **New copy:** add a transaction in the **Copy Trading** category in that account, with the investor's username in the **eToro username** field, the amount you put into the copy, quantity 1 and price = the amount.
+- **New copy:** add a transaction in the **Copy Trading** category in that account, with the investor's username in the **eToro username** field and the amount you put into the copy. There is no price or quantity to fill in: each deposit is your cost, and eToro supplies the value.
 - **Copy you already track as a Fund:** in **Manage Assets**, open the holding's menu and choose **Switch to Copy Trading**, then enter the investor's username. The holding keeps all its transactions, income terms and history.
 
-Keep recording your own deposits into (and withdrawals from) a copy as you do today. Bliss uses them as the cost basis, and eToro's value as the market value.
+Keep recording your own deposits into (and withdrawals from) a copy as you do today. Bliss uses them as the cost basis, and eToro's value as the market value. A withdrawal reduces the cost basis in proportion to the amount taken out.
 
 Each copy in **Settings → Bank sync** shows whether it is **linked** to a holding.
 

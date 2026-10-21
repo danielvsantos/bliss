@@ -59,7 +59,13 @@ Shown next to the symbol of every Copy Trading holding on **Portfolio** (`AssetR
 
 ## 28.7. Transaction form
 
-For a category with the `COPY_TRADING` hint, the ticker field is labelled **eToro username**, with its own placeholder, and the ticker search is off (a username is not a market symbol).
+For a category with the `COPY_TRADING` hint:
+- the ticker field is labelled **eToro username**, with its own placeholder, and the ticker search is off (a username is not a market symbol);
+- price and quantity are hidden and cleared, replaced by a hint (`copyTradeAmountHint`). A copy has no unit price: the portfolio calculator counts a buy without a quantity as one unit at its amount and sells a withdrawal without a quantity pro rata to cost, and the market value is eToro's total. A fixed quantity of 1 on a withdrawal would close the whole position, which is why the field isn't offered.
+
+## 28.7a. Categories page
+
+`PROCESSING_HINT_STYLE` gives `COPY_TRADING` the same positive badge as the price-API hints (it is backed by a live feed), labelled `defaultCategories.processingHints.COPY_TRADING` ("eToro Copy Trading").
 
 ## 28.8. i18n
 
@@ -67,8 +73,8 @@ New keys in all 5 locales:
 - `etoro.*`: section, status, connection, copy, dialog, errors, badge and convert strings;
 - `equityAnalysis.assetClasses.COPY_TRADE`, `equityAnalysis.basedOn`, `equityAnalysis.unmapped`, `equityAnalysis.copyBadge`;
 - `manageAssets.actions.copyTrading`;
-- `transactionFormPage.etoroUsernameLabel` / `etoroUsernamePlaceholder`;
-- `defaultCategories.names.COPY_TRADING`;
+- `transactionFormPage.etoroUsernameLabel` / `etoroUsernamePlaceholder` / `copyTradeAmountHint`;
+- `defaultCategories.names.COPY_TRADING`, `defaultCategories.processingHints.COPY_TRADING`;
 - `activity.stages.syncing_copies`.
 
 ## 28.9. Tests
@@ -79,3 +85,5 @@ New keys in all 5 locales:
 - **`components/etoro/*.test.tsx`:** badge states; the convert modal (validation, normalized payload, clash error).
 - **`pages/reports/equity-analysis.test.tsx`:** the copy row (badge, coverage label, unmapped share, needs-reconnect state); `COPY_TRADE` never offered as an override.
 - **`lib/manage-assets.test.ts`:** which holdings get `copyTrading`.
+- **`components/entities/transaction-form.test.tsx`:** a Copy Trading transaction shows the username label and the hint, and saves with no price or quantity.
+- **`i18n/i18n-parity.test.ts`:** the form and hint keys exist at their full path in every locale.
