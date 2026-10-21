@@ -196,6 +196,34 @@ describe('EquityAnalysisPage — eToro copy trades (#143)', () => {
     expect(screen.getByTestId('copy-trade-badge')).toHaveAttribute('data-state', 'needsReconnect');
   });
 
+  it('shows a looked-through copy as its positions, tagged "via @investor", with the copy listed above', () => {
+    const via = (kind: 'SECURITY' | 'CASH') => ({ username: 'topinvestor', kind, itemIds: [9] });
+    const NVDA = holding({
+      symbol: 'NVDA', name: 'NVIDIA', itemIds: [], key: 'copy:9:SECURITY::NVDA:XNAS', quantity: null, currentValue: 600,
+      sector: 'Technology', viaCopy: via('SECURITY'),
+    });
+    const CASH = holding({
+      symbol: 'CASH', name: 'CASH', assetType: 'OTHER', assetClass: 'CASH', itemIds: [], key: 'copy:9:CASH:::', quantity: null,
+      currentValue: 50, sector: 'Other', peRatio: null, dividendYield: null, viaCopy: via('CASH'),
+    });
+    // KO is also held directly: both rows stay, under their own keys.
+    const KO_VIA = holding({ itemIds: [], key: 'copy:9:SECURITY::KO:XNYS', quantity: null, currentValue: 350, viaCopy: via('SECURITY') });
+    setup(response({ holdings: [KO, NVDA, KO_VIA, CASH], copies: [COPY] }));
+
+    expect(screen.getAllByTestId('via-copy')).toHaveLength(3);
+    expect(screen.getAllByText('equityAnalysis.viaCopy:topinvestor')).toHaveLength(3);
+    expect(screen.getAllByText('equityAnalysis.copyCash').length).toBeGreaterThan(0);
+    // The copy itself: link badge, value and number of positions, unmapped share.
+    const strip = screen.getByTestId('split-copies');
+    expect(within(strip).getByText('@topinvestor')).toBeInTheDocument();
+    expect(within(strip).getByTestId('copy-trade-badge')).toHaveTextContent('etoro.badge.linked');
+    expect(within(strip).getByText(/equityAnalysis\.copySplit:.*,3$/)).toBeInTheDocument();
+    expect(within(strip).getByTestId('copy-unmapped')).toHaveTextContent('equityAnalysis.unmapped:4');
+    // A copy's positions have no override editor; direct holdings keep theirs.
+    expect(screen.queryByRole('button', { name: 'equityAnalysis.editAssetClass:NVDA' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'equityAnalysis.editAssetClass:KO' })).toHaveLength(1);
+  });
+
   it('never offers COPY_TRADE as an override', () => {
     setup(response({ holdings: [KO] }));
     fireEvent.click(screen.getByRole('button', { name: 'equityAnalysis.editAssetClass:KO' }));

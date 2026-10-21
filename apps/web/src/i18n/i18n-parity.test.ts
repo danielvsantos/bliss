@@ -532,6 +532,10 @@ const ETORO_FORM_KEYS = [
   'transactionFormPage.copyTradeAmountHint',
   'defaultCategories.processingHints.COPY_TRADING',
   'defaultCategories.names.COPY_TRADING',
+  'equityAnalysis.viaCopy',
+  'equityAnalysis.copyCash',
+  'equityAnalysis.copyUnmapped',
+  'equityAnalysis.copySplit',
 ];
 
 describe('i18n parity — task #143 eToro copy trading keys', () => {

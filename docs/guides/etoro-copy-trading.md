@@ -55,11 +55,12 @@ Each copy in **Settings → Bank sync** shows whether it is **linked** to a hold
   - **Copy closed on eToro**: you stopped the copy. The holding keeps its last eToro value.
   - **Not linked to eToro**: no copy matches the holding yet. It behaves as a manual fund.
 - **History.** Values start on the day you connect. History before that stays as Bliss already had it.
-- **Equity Analysis:**
-  - **Sector and country views:** each linked copy is split across sectors and countries using the copy's own holdings. An ETF inside a copy is split further by its own sectors and countries.
+- **Equity Analysis** with **Look through** on:
+  - **Holdings and Top 10:** each linked copy is replaced by the stocks, ETFs, crypto and cash it holds, each marked "via @investor" and valued at its share of the copy. They are listed next to (not merged with) shares you hold directly. Above the table, each copy shows its value and how many positions it was split into.
+  - **Sector and country views:** the copy's holdings go to their own sectors and countries. An ETF inside a copy is split further by its own sectors and countries.
   - **Asset-class view:** the copy is split into stocks, ETFs, crypto, cash and so on.
-  - **Look-through off:** the copy is one "Diversified" row.
-- **P/E and dividend yield** of a copy are averages over the holdings Bliss has data for, labelled "based on N% of value". Holdings Bliss can't identify (for example some Gulf listings) are counted as "Other", and the copy shows the unidentified share.
+  - With **Look through** off, the copy is one "Diversified" row.
+- **P/E and dividend yield** of a copy are averages over the holdings Bliss has data for, labelled "based on N% of value". A stock Bliss has no company data for yet is listed with sector "Unknown". Holdings Bliss can't identify at all (for example some Gulf listings) are one "Unidentified" row, and the copy shows the unidentified share.
 - **Passive Income** projects no cash income for copies: eToro pays dividends inside the copy, where they raise its value.
 - AI agents connected through MCP see the same split in `get_equity_analysis`.
 

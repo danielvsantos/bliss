@@ -45,6 +45,9 @@ function CoverageNote({ pct }: { pct: number | null | undefined }) {
   return <span className="block text-[10px] text-muted-foreground">{t('equityAnalysis.basedOn', { pct: Math.round(pct) })}</span>;
 }
 
+/** Row key: a copy position has its own key; merged rows use their item ids. */
+const rowKey = (h: EquityHolding) => h.key ?? (h.itemIds?.length ? h.itemIds.join('-') : h.symbol);
+
 function SortChevron({ dir }: { dir: 'asc' | 'desc' | null }) {
   if (!dir) return <span className="ml-1 w-3" />;
   return dir === 'asc'
@@ -121,6 +124,27 @@ export default function EquityAnalysisPage() {
     [data?.holdings, groups],
   );
 
+  // eToro copies (#143) shown as their own positions: how many rows each became.
+  const splitCopies = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const h of allHoldings) {
+      if (h.viaCopy) counts.set(h.viaCopy.username, (counts.get(h.viaCopy.username) ?? 0) + 1);
+    }
+    return (data?.copies ?? [])
+      .filter((c) => counts.has(c.symbol))
+      .map((c) => ({ copy: c, positions: counts.get(c.symbol) ?? 0 }));
+  }, [allHoldings, data?.copies]);
+
+  // A copy's cash and unidentified share have no ticker of their own.
+  const displaySymbol = useCallback(
+    (h: EquityHolding) => {
+      if (h.viaCopy?.kind === 'CASH') return t('equityAnalysis.copyCash');
+      if (h.viaCopy?.kind === 'UNMAPPED') return t('equityAnalysis.copyUnmapped');
+      return h.symbol;
+    },
+    [t],
+  );
+
   // Sorted holdings
   const sortedHoldings = useMemo(() => {
     return [...allHoldings].sort((a, b) => {
@@ -160,22 +184,25 @@ export default function EquityAnalysisPage() {
     }));
   }, [groups, groupLabel, groupBy]);
 
-  // Top 10 bar chart data
+  // Top 10 bar chart data. Keyed by row: a symbol can be held directly and
+  // through an eToro copy.
   const topHoldings = useMemo(() => {
     return [...allHoldings]
       .sort((a, b) => b.weight - a.weight)
       .slice(0, 10)
       .map((h) => ({
-        symbol: h.symbol,
-        name: h.name,
+        key: rowKey(h),
+        symbol: displaySymbol(h),
+        name: h.viaCopy && h.viaCopy.kind !== 'SECURITY' ? displaySymbol(h) : h.name,
+        via: h.viaCopy?.username ?? null,
         weight: h.weight * 100,
         value: h.currentValue,
       }));
-  }, [allHoldings]);
+  }, [allHoldings, displaySymbol]);
 
-  // O(1) lookup map for the bar chart tooltip (symbol → holding)
+  // O(1) lookup map for the bar chart axis and tooltip (row key → holding)
   const topHoldingsMap = useMemo(
-    () => new Map(topHoldings.map((h) => [h.symbol, h])),
+    () => new Map(topHoldings.map((h) => [h.key, h])),
     [topHoldings],
   );
 
@@ -373,17 +400,25 @@ export default function EquityAnalysisPage() {
                   <BarChart data={topHoldings} layout="vertical" margin={{ left: 50, right: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" tickFormatter={(v) => `${v.toFixed(0)}%`} />
-                    <YAxis type="category" dataKey="symbol" width={50} tick={{ fontSize: 12 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="key"
+                      width={50}
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(key: string) => topHoldingsMap.get(key)?.symbol ?? key}
+                    />
                     <Tooltip
                       formatter={(value: number) => [`${value.toFixed(1)}%`, t('equityAnalysis.weight')]}
                       labelFormatter={(label) => {
                         const h = topHoldingsMap.get(label);
-                        return h ? `${h.name} (${h.symbol})` : label;
+                        if (!h) return label;
+                        const base = h.name === h.symbol ? h.name : `${h.name} (${h.symbol})`;
+                        return h.via ? `${base} · ${t('equityAnalysis.viaCopy', { username: h.via })}` : base;
                       }}
                     />
                     <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
                       {topHoldings.map((h, idx) => (
-                        <Cell key={h.symbol} fill={getGroupColor(h.symbol, false, idx)} />
+                        <Cell key={h.key} fill={getGroupColor(h.symbol, false, idx)} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -398,6 +433,22 @@ export default function EquityAnalysisPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">{t('equityAnalysis.allHoldings')}</CardTitle>
+              {splitCopies.length > 0 && (
+                <ul className="mt-2 space-y-1" data-testid="split-copies">
+                  {splitCopies.map(({ copy, positions }) => (
+                    <li key={rowKey(copy)} className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="font-medium text-brand-deep">@{copy.symbol}</span>
+                      <CopyTradeBadge copyTrade={copy.copyTrade} />
+                      <span>{t('equityAnalysis.copySplit', { value: formatCurrency(copy.currentValue, portfolioCurrency), count: positions })}</span>
+                      {copy.unmappedPct != null && copy.unmappedPct >= 0.5 && (
+                        <span className="text-warning" data-testid="copy-unmapped">
+                          {t('equityAnalysis.unmapped', { pct: Math.round(copy.unmappedPct) })}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardHeader>
             <CardContent className="px-0">
               {isLoading ? (
@@ -441,12 +492,22 @@ export default function EquityAnalysisPage() {
                     </thead>
                     <tbody>
                       {sortedHoldings.map((h: EquityHolding) => (
-                        <tr key={h.itemIds?.join('-') ?? h.symbol} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
+                        <tr key={rowKey(h)} className="border-b border-gray-50 hover:bg-accent/40 transition-colors">
                           <td className="px-3 py-2.5 font-medium text-brand-deep whitespace-nowrap">
                             <span className="inline-flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
-                            {h.symbol}
+                            {displaySymbol(h)}
                             {h.assetType === 'COPY_TRADE' && <CopyTradeBadge copyTrade={h.copyTrade} />}
-                            {h.assetClass ? (
+                            {h.viaCopy && (
+                              <Badge variant="outline" className="px-1.5 py-0 text-[10px] bg-muted text-muted-foreground border-border" data-testid="via-copy">
+                                {t('equityAnalysis.viaCopy', { username: h.viaCopy.username })}
+                              </Badge>
+                            )}
+                            {h.viaCopy && h.assetClass ? (
+                              // Automatic for a copy's positions: nothing to override.
+                              <Badge variant="outline" className="px-1.5 py-0 text-[10px] bg-brand-primary/10 text-brand-primary border-brand-primary/20">
+                                {t(`equityAnalysis.assetClasses.${h.assetClass}`)}
+                              </Badge>
+                            ) : h.assetClass ? (
                               <AssetClassEditor holding={h} />
                             ) : h.assetType === 'ETF' && (
                               <Badge variant="outline" className="ml-1.5 px-1.5 py-0 text-[10px] bg-brand-primary/10 text-brand-primary border-brand-primary/20">
@@ -456,7 +517,7 @@ export default function EquityAnalysisPage() {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">
-                            {h.name}
+                            {h.viaCopy && h.viaCopy.kind !== 'SECURITY' && h.viaCopy.kind !== 'INSTRUMENT' ? displaySymbol(h) : h.name}
                             {h.unmappedPct != null && h.unmappedPct >= 0.5 && (
                               <span className="block text-[10px] text-warning" data-testid="copy-unmapped">
                                 {t('equityAnalysis.unmapped', { pct: Math.round(h.unmappedPct) })}
