@@ -376,7 +376,7 @@ describe('Equity Analysis with a linked copy', () => {
   it('splits the copy across sectors from its own holdings; the parts add up to its value', async () => {
     const res = await equity({ groupBy: 'sector' });
     expect(res._status).toBe(200);
-    const copy = res._body.holdings.find((h: any) => h.symbol === INVESTOR);
+    const copy = res._body.copies.find((h: any) => h.symbol === INVESTOR);
     expect(copy).toMatchObject({
       assetType: 'COPY_TRADE', assetClass: 'COPY_TRADE', currentValue: 1000,
       copyTrade: { linked: true, status: 'ACTIVE', connectionStatus: 'ACTIVE' },
@@ -391,6 +391,26 @@ describe('Equity Analysis with a linked copy', () => {
     expect(total).toBeCloseTo(1000, 0);
     const unknown = ['Unknown', 'Diversified', 'Other'].reduce((s, n) => s + groupValue(res._body, n), 0);
     expect(unknown / 1000).toBeLessThanOrEqual(0.10); // PRD outcome metric
+  });
+
+  it('shows the copy as its own positions when looking through, and as one row otherwise', async () => {
+    const on = await equity({ groupBy: 'sector' });
+    expect(on._body.holdings.some((h: any) => h.assetType === 'COPY_TRADE')).toBe(false);
+    const via = on._body.holdings.filter((h: any) => h.viaCopy?.username === INVESTOR);
+    // tech (30 + 10 RTH merged), health, fr, etf, cash
+    expect(via).toHaveLength(5);
+    const tech = via.find((h: any) => h.symbol === SYM.tech);
+    expect(tech).toMatchObject({ assetType: 'STOCK', assetClass: 'STOCK', sector: 'Technology', peRatio: 30, itemIds: [] });
+    expect(tech.currentValue).toBeCloseTo(400);
+    expect(via.find((h: any) => h.symbol === SYM.etf)).toMatchObject({ assetType: 'ETF', sector: 'Diversified' });
+    expect(via.find((h: any) => h.viaCopy.kind === 'CASH')).toMatchObject({ symbol: 'CASH', assetClass: 'CASH', sector: 'Other' });
+    expect(via.reduce((s: number, h: any) => s + h.currentValue, 0)).toBeCloseTo(1000);
+    expect(new Set(via.map((h: any) => h.key)).size).toBe(5);
+
+    const off = await equity({ groupBy: 'sector', lookThrough: 'false' });
+    expect(off._body.holdings.filter((h: any) => h.viaCopy)).toHaveLength(0);
+    expect(off._body.holdings.find((h: any) => h.symbol === INVESTOR)).toMatchObject({ assetType: 'COPY_TRADE' });
+    expect(off._body.copies).toHaveLength(1);
   });
 
   it('splits it across countries too', async () => {
@@ -416,13 +436,17 @@ describe('Equity Analysis with a linked copy', () => {
 
   it('labels P/E and yield with the share of value they are based on (R17)', async () => {
     const res = await equity({ groupBy: 'sector' });
-    const copy = res._body.holdings.find((h: any) => h.symbol === INVESTOR);
+    const copy = res._body.copies.find((h: any) => h.symbol === INVESTOR);
     // Tech 40% @30, Health 20% @20 → 26.67 over 60% of the copy.
     expect(copy.peRatio).toBeCloseTo(26.67, 1);
     expect(copy.peCoverage).toBe(60);
     expect(copy.dividendYield).toBeCloseTo(0.01);
     expect(copy.yieldCoverage).toBe(40);
     expect(res._body.summary.copyTradeCount).toBe(1);
+    // The split rows give the same portfolio P/E as the copy's coverage-weighted one.
+    const off = await equity({ groupBy: 'sector', lookThrough: 'false' });
+    expect(res._body.summary.weightedPeRatio).toBeCloseTo(off._body.summary.weightedPeRatio, 1);
+    expect(res._body.summary.weightedDividendYield).toBeCloseTo(off._body.summary.weightedDividendYield, 4);
   });
 
   it('portfolio items carry the link status for badges', async () => {
