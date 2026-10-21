@@ -229,3 +229,53 @@ export function deriveCopyComposition(copy = {}, securities = null) {
     unmappedPct: round2(merged.unmappedPct * scale),
   };
 }
+
+/**
+ * Split a copy into its own positions, for the Equity Analysis rows and the
+ * Top 10 when looking through (#143). The weights add up to the whole copy:
+ *   - one SECURITY per merged listing (stock, ETF, fund), with its
+ *     SecurityMaster row (or null) and the asset class `deriveCopyComposition`
+ *     gives it;
+ *   - one INSTRUMENT per non-equity holding (crypto, commodity, currency,
+ *     index CFD, future);
+ *   - CASH for the copy's cash;
+ *   - UNMAPPED for unresolved instruments plus whatever eToro's percentages
+ *     leave unaccounted for.
+ * Splitting into positions and `deriveCopyComposition` give the same sector,
+ * country and asset-class totals.
+ *
+ * @param {{ holdings: Array, cashPct?: number|null }} copy  the stored EtoroCopy holdings
+ * @param {Map<string, Object>|Object<string, Object>} securities  SecurityMaster rows by symbol
+ * @returns {Array<{ kind: 'SECURITY'|'INSTRUMENT'|'CASH'|'UNMAPPED', symbol: string|null,
+ *            exchange: string|null, nonEquity: string|null, isEtf: boolean, assetClass: string,
+ *            weight: number, security: Object|null }>} largest first, weights are fractions
+ */
+export function explodeCopyHoldings(copy = {}, securities = null) {
+  const merged = mergeCopyHoldings(copy?.holdings);
+  const cashPct = Math.max(toNumber(copy?.cashPct) ?? 0, 0);
+  const total = merged.holdings.reduce((s, h) => s + h.valuePct, 0) + merged.unmappedPct + cashPct;
+  const scale = total > 100 ? 100 / total : 1;
+
+  const positions = merged.holdings.map((h) => {
+    const sm = h.nonEquity ? null : lookupSecurity(securities, h.symbol);
+    return {
+      kind: h.nonEquity ? 'INSTRUMENT' : 'SECURITY',
+      symbol: h.symbol,
+      exchange: h.exchange,
+      nonEquity: h.nonEquity,
+      isEtf: !h.nonEquity && (h.type === 'ETF' || isType(sm?.assetType, 'ETF')),
+      assetClass: classifyHolding(h, sm),
+      weight: round6((h.valuePct * scale) / 100),
+      security: sm,
+    };
+  });
+  const cash = round6((cashPct * scale) / 100);
+  if (cash > 0) {
+    positions.push({ kind: 'CASH', symbol: null, exchange: null, nonEquity: null, isEtf: false, assetClass: 'CASH', weight: cash, security: null });
+  }
+  const unmapped = round6(Math.max(1 - positions.reduce((s, p) => s + p.weight, 0), 0));
+  if (unmapped > 1e-6) {
+    positions.push({ kind: 'UNMAPPED', symbol: null, exchange: null, nonEquity: null, isEtf: false, assetClass: 'OTHER', weight: unmapped, security: null });
+  }
+  return positions.sort((a, b) => b.weight - a.weight);
+}

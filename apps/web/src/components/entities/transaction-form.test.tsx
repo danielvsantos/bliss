@@ -175,3 +175,40 @@ describe('TransactionForm — stock / ETF / crypto enrichment is mandatory', () 
     await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('TransactionForm — eToro Copy Trading (#143)', () => {
+  const copyTrading = { id: 24, name: 'Copy Trading', type: 'Investments', group: 'Funds', processingHint: 'COPY_TRADING' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useAccounts).mockReturnValue(mockQueryResult([account]) as ReturnType<typeof useAccounts>);
+    vi.mocked(useCategories).mockReturnValue(mockQueryResult([category, copyTrading]) as ReturnType<typeof useCategories>);
+    vi.mocked(useTickerSearch).mockReturnValue(mockQueryResult([]) as ReturnType<typeof useTickerSearch>);
+    vi.mocked(usePortfolioItems).mockReturnValue(mockQueryResult([]) as ReturnType<typeof usePortfolioItems>);
+    vi.mocked(api.updateTransaction).mockResolvedValue({} as Awaited<ReturnType<typeof api.updateTransaction>>);
+  });
+
+  it('asks for the eToro username and saves the amount with no price or quantity', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransactionForm
+          transaction={{ ...editTransaction, categoryId: copyTrading.id, category: copyTrading, ticker: 'topinvestor', assetPrice: 1000, assetQuantity: 1 } as unknown as ApiTransaction}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('transactionFormPage.etoroUsernameLabel')).toBeInTheDocument();
+    expect(screen.getByText('transactionFormPage.copyTradeAmountHint')).toBeInTheDocument();
+    expect(screen.queryByText('transactionFormPage.pricePerShare')).not.toBeInTheDocument();
+    expect(screen.queryByText('transactionFormPage.quantity')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.save_changes' }));
+
+    await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(api.updateTransaction).mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.assetPrice ?? null).toBeNull();
+    expect(payload.assetQuantity ?? null).toBeNull();
+  });
+});

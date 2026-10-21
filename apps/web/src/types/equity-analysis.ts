@@ -35,8 +35,11 @@ export interface EtfComposition {
 export interface EquityHolding {
   symbol: string;
   name: string;
-  /** 'ETF' holdings are bucketed as "Diversified" and never carry P/E or EPS; 'COPY_TRADE' is an eToro copy (#143). */
-  assetType?: 'STOCK' | 'ETF' | 'COPY_TRADE';
+  /**
+   * 'ETF' holdings are bucketed as "Diversified" and never carry P/E or EPS; 'COPY_TRADE' is an eToro
+   * copy kept whole (#143); 'OTHER' is crypto, cash or an unidentified position held through a copy.
+   */
+  assetType?: 'STOCK' | 'ETF' | 'COPY_TRADE' | 'OTHER';
   assetClass?: AssetClass;
   assetClassSource?: 'OVERRIDE' | 'AUTO';
   /** What the classifier picks without the override. */
@@ -44,7 +47,12 @@ export interface EquityHolding {
   /** Portfolio item ids merged into this row (same symbol across accounts). */
   itemIds?: number[];
   composition?: EtfComposition | null;
-  quantity: number;
+  /** null for a position held through an eToro copy. */
+  quantity: number | null;
+  /** Unique row key of a position held through a copy (its itemIds are empty). */
+  key?: string;
+  /** A position of an eToro copy, shown instead of the copy when looking through (#143). */
+  viaCopy?: { username: string; kind: 'SECURITY' | 'INSTRUMENT' | 'CASH' | 'UNMAPPED'; itemIds: number[] } | null;
   currentValue: number;
   currentValueUSD: number;
   sector: string;
@@ -103,6 +111,8 @@ export interface EquityAnalysisResponse {
   groupings?: Partial<Record<EquityGroupBy, EquityGroup[]>>;
   /** Every holding once (#79) — render rows from this, not from the groups. */
   holdings?: EquityHolding[];
+  /** Every eToro copy as one row (#143), also when `holdings` shows its positions instead. */
+  copies?: EquityHolding[];
   /** Fund symbols left out until their SecurityMaster data arrives (#93). */
   pendingSecurityData?: string[];
 }

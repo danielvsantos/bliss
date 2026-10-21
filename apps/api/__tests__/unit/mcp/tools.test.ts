@@ -664,6 +664,29 @@ describe('portfolio tools', () => {
     expect(eq.result.summary.copyTradeCount).toBe(1);
   });
 
+  it('get_equity_analysis lists the copies and tags positions held through one (#143)', async () => {
+    const copy = {
+      symbol: 'topinvestor', assetType: 'COPY_TRADE', currentValue: 1000, weight: 0.5, peRatio: 25, dividendYield: 0.01,
+      peCoverage: 40, yieldCoverage: 55, sectorCoveragePct: 60, unmappedPct: 2, copyTrade: { linked: true, status: 'ACTIVE' },
+    };
+    const eq = await run('get_equity_analysis', {}, {
+      'GET /api/portfolio/equity-analysis': {
+        portfolioCurrency: 'USD', lookThrough: true, summary: { holdingsCount: 2, copyTradeCount: 1 }, groups: [],
+        holdings: [
+          { symbol: 'NVDA', assetType: 'STOCK', assetClass: 'STOCK', currentValue: 1000, weight: 0.5 },
+          { symbol: 'MSFT', assetType: 'STOCK', assetClass: 'STOCK', currentValue: 400, weight: 0.2, viaCopy: { username: 'topinvestor', kind: 'SECURITY', itemIds: [7] } },
+        ],
+        copies: [copy],
+      },
+    });
+    expect(eq.result.topHoldings[0]).not.toHaveProperty('viaCopy');
+    expect(eq.result.topHoldings[1]).toMatchObject({ symbol: 'MSFT', viaCopy: 'topinvestor' });
+    expect(eq.result.copies).toEqual([{
+      username: 'topinvestor', value: { value: 1000, currency: 'USD' }, weight: 50, peRatio: 25, dividendYieldPct: 1,
+      copyTrade: { linked: true, status: 'ACTIVE', lookThroughCoveragePct: 60, peCoveragePct: 40, yieldCoveragePct: 55, unmappedPct: 2 },
+    }]);
+  });
+
   it('get_portfolio_history forwards the holding scope (#131)', async () => {
     const routes = { 'GET /api/portfolio/history': { portfolioCurrency: 'USD', resolution: 'daily', history: [] } };
     const bySymbol = await run('get_portfolio_history', { symbol: 'AAPL', accountId: 3 }, routes);

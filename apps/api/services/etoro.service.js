@@ -16,7 +16,7 @@
 import { StatusCodes } from 'http-status-codes';
 import prisma from '../prisma/prisma.js';
 import { assertReadOnlyScopes, EtoroError, EtoroScopeError, parseCopies } from '@bliss/shared/etoro';
-import { deriveCopyComposition } from '@bliss/shared/portfolio';
+import { deriveCopyComposition, explodeCopyHoldings } from '@bliss/shared/portfolio';
 import { etoroClient } from '../utils/etoro.js';
 import { produceEvent } from '../utils/produceEvent.js';
 
@@ -463,11 +463,14 @@ export async function convertHolding({ tenantId, body }) {
 /**
  * The derived look-through of each linked Copy Trading holding, computed on
  * read from the copy's stored holdings and SecurityMaster (one query for all
- * copies). Unlinked holdings get `{ copy: null, composition: null }`.
+ * copies), plus the copy split into its own positions (`explodeCopyHoldings`)
+ * for the rows shown when looking through. Unlinked holdings get
+ * `{ copy: null, composition: null, positions: [] }`.
  *
  * @param {string} tenantId
  * @param {Array<{ id: number, symbol: string, accountId: number|null }>} items
- * @returns {Promise<Map<number, { copy: Object|null, composition: ReturnType<typeof deriveCopyComposition>|null }>>}
+ * @returns {Promise<Map<number, { copy: Object|null, composition: ReturnType<typeof deriveCopyComposition>|null,
+ *   positions: ReturnType<typeof explodeCopyHoldings> }>>}
  */
 export async function loadCopyLookThrough(tenantId, items) {
   const copies = await findCopiesForItems(tenantId, items);
@@ -480,10 +483,6 @@ export async function loadCopyLookThrough(tenantId, items) {
   const securities = symbols.size
     ? await prisma.securityMaster.findMany({
       where: { symbol: { in: [...symbols] } },
-      select: {
-        symbol: true, name: true, assetType: true, sector: true, country: true,
-        peRatio: true, earningsTrusted: true, dividendYield: true, dividendTrusted: true, etfComposition: true,
-      },
     })
     : [];
   const bySymbol = new Map(securities.map((s) => [s.symbol, s]));
@@ -491,11 +490,11 @@ export async function loadCopyLookThrough(tenantId, items) {
   const result = new Map();
   for (const item of items) {
     const copy = copies.get(item.id) || null;
+    const stored = copy ? { holdings: copy.holdings, cashPct: copy.cashPct == null ? 0 : Number(copy.cashPct) } : null;
     result.set(item.id, {
       copy,
-      composition: copy
-        ? deriveCopyComposition({ holdings: copy.holdings, cashPct: copy.cashPct == null ? 0 : Number(copy.cashPct) }, bySymbol)
-        : null,
+      composition: stored ? deriveCopyComposition(stored, bySymbol) : null,
+      positions: stored ? explodeCopyHoldings(stored, bySymbol) : [],
     });
   }
   return result;

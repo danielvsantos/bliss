@@ -523,3 +523,29 @@ describe('i18n parity — task #142 smart import hold-back keys', () => {
     }
   });
 });
+
+// Task #143 (eToro copy trading). Full paths, so a key added under the wrong
+// namespace fails here instead of rendering as a raw key.
+const ETORO_FORM_KEYS = [
+  'transactionFormPage.etoroUsernameLabel',
+  'transactionFormPage.etoroUsernamePlaceholder',
+  'transactionFormPage.copyTradeAmountHint',
+  'defaultCategories.processingHints.COPY_TRADING',
+  'defaultCategories.names.COPY_TRADING',
+  'equityAnalysis.viaCopy',
+  'equityAnalysis.copyCash',
+  'equityAnalysis.copyUnmapped',
+  'equityAnalysis.copySplit',
+];
+
+describe('i18n parity — task #143 eToro copy trading keys', () => {
+  for (const key of ETORO_FORM_KEYS) {
+    it(`"${key}" is a non-empty string in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+      }
+    });
+  }
+});
