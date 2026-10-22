@@ -103,8 +103,8 @@ Defined in `baseAdapter.js` and applied uniformly by all adapters via `withRetry
 | Max retries | 5 | Survives one full quota window for providers with minute-scale limits |
 | Rate-limit backoff | 60s × attempt (60 → 120 → 180) | Aligns with Gemini/OpenAI/Anthropic quota-reset cadences |
 | Other errors | 1000 × 2^(attempt-1) ms (1s → 2s → 4s → 8s → 16s) | Exponential backoff for transient failures |
-| Call timeout (classification / embedding) | 12 s | Fast calls normally finish in <5s; 12s is headroom for jitter without stalling a batch on one stuck call. The retry loop absorbs the aborted attempt. |
-| Insight timeout | 60 s | Longer prompts + longer outputs |
+| Call timeout (classification / embedding) | 20 s (`LLM_CALL_TIMEOUT_MS`) | Healthy calls finish in 1-4s, but thinking classification models (`gemini-3-flash-preview`) can run well past 5s; a tighter cap aborts calls that were about to succeed and pays for them again on retry (#153). 20s only cuts genuinely stuck calls. |
+| Insight timeout | 120 s (`LLM_INSIGHT_TIMEOUT_MS`) | Long system prompts, structured output and pro-tier thinking models |
 
 ### Rate-limit detection
 

@@ -169,6 +169,8 @@ See the [Choosing Your External Services](/docs/guides/external-services) guide 
 | `EMBEDDING_MODEL` | No | `gemini-embedding-001` / `text-embedding-3-small` / *(n/a)* | Override the embedding model for the active embedding provider. Output is projected to 768 dimensions. |
 | `CLASSIFICATION_MODEL` | No | `gemini-3-flash-preview` / `gpt-4.1-mini` / `claude-sonnet-4-6` | Override the classification model for the active LLM provider. |
 | `INSIGHT_MODEL` | No | `gemini-3.1-pro-preview` / `gpt-4.1` / `claude-sonnet-4-6` | Override the insights model for the active LLM provider. |
+| `LLM_CALL_TIMEOUT_MS` | No | `20000` | Per-attempt timeout (ms) for classification and embedding calls. Invalid values fall back to the default with a warning. |
+| `LLM_INSIGHT_TIMEOUT_MS` | No | `120000` | Per-attempt timeout (ms) for insight generation calls. |
 
 **Graceful degradation:** Missing the primary LLM provider key produces a warning and disables AI classification + insights (the rest of the app keeps working). Missing the secondary `EMBEDDING_PROVIDER` key when you opted in explicitly is a hard startup error.
 

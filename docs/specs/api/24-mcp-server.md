@@ -35,7 +35,7 @@ MCP client ──POST /api/mcp (JSON-RPC, Bearer bliss_…)──▶ pages/api/m
                                                 existing REST handlers (unchanged)
 ```
 
-- **Transport:** official `@modelcontextprotocol/sdk` (pinned `1.31.0`)
+- **Transport:** official `@modelcontextprotocol/sdk` (pinned `1.32.1`)
   Streamable HTTP in **stateless JSON mode** (`sessionIdGenerator: undefined`,
   `enableJsonResponse: true`). A new server and transport are built for every
   request and closed when the response closes. No `Mcp-Session-Id`, no SSE, so
