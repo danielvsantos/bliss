@@ -15,10 +15,10 @@ The work ships in five PRs. This spec describes the whole feature; each PR updat
 | PR | Scope | Status |
 |---|---|---|
 | A | Pure shared layer: instrument mapper, scope check, copy composition, `COPY_TRADE` asset class, passive income exclusion (§25.4–§25.6) | #247 |
-| B | Schema + migration, eToro HTTP client, sync handler, valuation (§25.2, §25.3, §25.7, §25.10) | done |
-| C | API connection routes, convert action, Equity Analysis copy rows, #80 insights, MCP (§25.8, [API spec 28](../api/28-etoro-api.md)) | done |
-| D | Web: connect dialog, connection management, holdings badges, Equity Analysis labels ([frontend spec 28](../frontend/28-etoro-copy-trading.md)), guide | done |
-| E | Security master look-through watchlist (§25.9) | done |
+| B | Schema + migration, eToro HTTP client, sync handler, valuation (§25.2, §25.3, §25.7, §25.10) | #248 |
+| C | API connection routes, convert action, Equity Analysis copy rows and copy positions when looking through, #80 insights, MCP (§25.8, [API spec 28](../api/28-etoro-api.md)) | #249 |
+| D | Web: connect dialog, connection management, holdings badges, Equity Analysis labels ([frontend spec 28](../frontend/28-etoro-copy-trading.md)), guide | #250 |
+| E | Security master look-through watchlist (§25.9) | #251 |
 
 ## 25.2 Data model
 
