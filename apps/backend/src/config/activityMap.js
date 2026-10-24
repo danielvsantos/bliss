@@ -71,6 +71,8 @@ function resolveEvent(name, data) {
         case 'PLAID_TRANSACTION_RETRY':
         case 'ENABLE_BANKING_SYNC':
             return event(T.BANK_SYNC, [T.BANK_SYNC, P, A]);
+        case 'ETORO_SYNC':
+            return event(P, [P]);
         case 'SMART_IMPORT_REQUESTED':
             return event(T.IMPORT, [T.IMPORT]);
         case 'SMART_IMPORT_COMMIT':

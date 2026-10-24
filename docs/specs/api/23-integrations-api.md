@@ -150,6 +150,7 @@ match `/api/usersettings`). A token request whose path is unknown is refused
 | `/api/plaid/create-link-token`, `exchange-public-token`, `disconnect`, `rotate-token`, `items/hard-delete`, `resync`, `sync-accounts`, `fetch-historical` | all | Plaid connection lifecycle |
 | `/api/plaid/items` | non-GET | `PATCH` resets connection status after re-auth (lifecycle) |
 | `/api/enablebanking` | all | Enable Banking connection lifecycle (#132): connect, callback, mapping, sync, disconnect act on a person's own PSD2 consent ([27-enable-banking-api.md](./27-enable-banking-api.md)) |
+| `/api/etoro` | all | eToro copy trading (#143): connecting, replacing or removing a person's own eToro key, "Sync now", and the switch-to-Copy-Trading action ([28-etoro-api.md](./28-etoro-api.md)) |
 | `/api/accounts` | non-GET (except `POST`, see below) | No account updates or deletes for tokens |
 | `/api/categories` | non-GET | No category writes for tokens |
 | `/api/tenants` | non-GET | No tenant writes for tokens |

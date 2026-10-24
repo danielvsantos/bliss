@@ -1,0 +1,253 @@
+openapi: 3.0.0
+info:
+  title: Bliss API Layer - eToro copy trading
+  version: 1.0.0
+  description: |
+    Connect an eToro account with a Read key pair so Bliss can follow the value
+    and the composition of the user's copy trades (#143). A connected copy's
+    value lands on the matching Copy Trading holding every night, and Equity
+    Analysis looks through it like an ETF.
+
+    Every route is refused for integration tokens (403
+    NOT_AVAILABLE_TO_INTEGRATIONS). Keys are encrypted at rest and never part
+    of any response (`keyLast4` only). Bliss never creates, changes or
+    suggests a transaction from eToro data.
+
+    See docs/specs/api/28-etoro-api.md.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: HttpOnly session cookie set by the API at sign-in/sign-up.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+
+    Copy:
+      type: object
+      properties:
+        id: { type: string }
+        parentUsername: { type: string, example: topinvestor, description: Copied investor, lower-cased }
+        startedAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [ACTIVE, CLOSED] }
+        closedAt: { type: string, format: date-time, nullable: true }
+        lastValue: { type: number, nullable: true }
+        lastValueCurrency: { type: string, example: USD }
+        lastValueAt: { type: string, format: date-time, nullable: true }
+        cashPct: { type: number, nullable: true, description: 0–100 of the copy's value }
+        unmappedPct: { type: number, nullable: true, description: 0–100 of the copy's value in instruments Bliss can't map }
+        holdingsCount: { type: integer }
+        linkedHolding:
+          type: object
+          nullable: true
+          description: The Copy Trading holding this copy feeds (same account, ticker = copied investor); null when none.
+          properties:
+            id: { type: integer }
+            symbol: { type: string }
+
+    Connection:
+      type: object
+      properties:
+        id: { type: string }
+        etoroUsername: { type: string }
+        accountId: { type: integer, nullable: true, description: The Bliss account this eToro login maps to }
+        account:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        keyLast4: { type: string, example: '1a2b' }
+        scopes: { type: array, items: { type: string }, example: ['trade.real:read'] }
+        status: { type: string, enum: [ACTIVE, NEEDS_RECONNECT] }
+        errorCode: { type: string, nullable: true, example: KEY_INVALID }
+        connectedAt: { type: string, format: date-time, description: Copy values start here; history before it never changes }
+        lastSyncAt: { type: string, format: date-time, nullable: true }
+        lastSyncStatus: { type: string, nullable: true, enum: [SUCCESS, FAILED, null] }
+        lastSyncError: { type: string, nullable: true, description: An error code (KEY_INVALID, UNAVAILABLE, RATE_LIMITED, SHAPE_CHANGED, …) }
+        copies:
+          type: array
+          items: { $ref: '#/components/schemas/Copy' }
+
+    CopyPreview:
+      type: object
+      properties:
+        parentUsername: { type: string }
+        startedAt: { type: string, format: date-time, nullable: true }
+        value: { type: number }
+        currency: { type: string }
+
+    KeyPair:
+      type: object
+      required: [apiKey, userKey]
+      properties:
+        apiKey: { type: string, maxLength: 1024, description: eToro public API key (x-api-key) }
+        userKey: { type: string, maxLength: 1024, description: eToro user key (x-user-key). Write-only. }
+
+security:
+  - cookieAuth: []
+
+paths:
+  /api/etoro/connections:
+    get:
+      summary: List eToro connections
+      description: Every role. Removed connections are not listed.
+      responses:
+        '200':
+          description: Connections with their copies and linked holdings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items: { $ref: '#/components/schemas/Connection' }
+        '403': { description: Integration token, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    post:
+      summary: Connect an eToro account (admin)
+      description: |
+        Checks the key with eToro (`GET /api/v1/me`), refuses any scope that is
+        not `:read`, reads the copies for the preview, stores the connection and
+        starts a sync. Nothing is stored unless every check passes. Connecting a
+        login that was removed reactivates it (200) with its history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/KeyPair'
+                - type: object
+                  required: [accountId]
+                  properties:
+                    accountId: { type: integer }
+      responses:
+        '201':
+          description: Connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection: { $ref: '#/components/schemas/Connection' }
+                  copies:
+                    type: array
+                    items: { $ref: '#/components/schemas/CopyPreview' }
+        '200': { description: A removed connection of the same login was reactivated }
+        '400':
+          description: KEYS_REQUIRED, KEYS_INVALID_FORMAT, ACCOUNT_REQUIRED, ACCOUNT_NOT_FOUND, or ETORO_WRITE_SCOPE (with `writeScopes`)
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '403': { description: Not an admin, or an integration token }
+        '409': { description: ETORO_ALREADY_CONNECTED (with `connectionId`) }
+        '422': { description: ETORO_KEY_INVALID — eToro refused the key }
+        '429': { description: ETORO_RATE_LIMITED }
+        '502': { description: ETORO_UNAVAILABLE — eToro could not be reached; nothing stored }
+
+  /api/etoro/connections/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      summary: Replace the key and/or change the account (admin)
+      description: |
+        A new key must belong to the same eToro login. Replacing the key sets
+        the connection ACTIVE again without losing data and starts a sync.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apiKey: { type: string }
+                userKey: { type: string }
+                accountId: { type: integer }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection: { $ref: '#/components/schemas/Connection' }
+        '400': { description: NOTHING_TO_UPDATE, CONNECTION_REMOVED, KEYS_REQUIRED, ACCOUNT_NOT_FOUND, ETORO_WRITE_SCOPE }
+        '403': { description: Not an admin, or an integration token }
+        '404': { description: NOT_FOUND }
+        '409': { description: ETORO_DIFFERENT_LOGIN }
+        '422': { description: ETORO_KEY_INVALID }
+        '502': { description: ETORO_UNAVAILABLE }
+    delete:
+      summary: Remove a connection (admin)
+      description: Stops updates and wipes the keys. Copies, values and the holdings' history are kept.
+      responses:
+        '204': { description: Removed }
+        '403': { description: Not an admin, or an integration token }
+        '404': { description: NOT_FOUND }
+
+  /api/etoro/connections/{id}/sync:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Sync now (admin)
+      description: One manual sync per connection every 15 minutes. The nightly sync runs at 03:30 UTC.
+      responses:
+        '202': { description: Sync triggered }
+        '400': { description: CONNECTION_NOT_ACTIVE }
+        '403': { description: Not an admin, or an integration token }
+        '404': { description: NOT_FOUND }
+        '429':
+          description: COOLDOWN
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    properties:
+                      retryAfter: { type: integer, description: Seconds }
+
+  /api/etoro/convert-holding:
+    post:
+      summary: Switch a holding to Copy Trading (admin, member)
+      description: |
+        Moves an investment holding (e.g. a manual Fund "copy of @x") to the
+        Copy Trading category in place: its transactions get the category and
+        the investor as ticker; the holding keeps its id, transactions (amounts,
+        dates), income terms and manual values. It is then revalued, and linked
+        when the account's eToro connection has a copy of that investor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [portfolioItemId, etoroUsername]
+              properties:
+                portfolioItemId: { type: integer }
+                etoroUsername: { type: string, example: '@topinvestor' }
+      responses:
+        '200':
+          description: Switched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolioItemId: { type: integer }
+                  symbol: { type: string, example: topinvestor }
+                  categoryId: { type: integer }
+                  transactionsMoved: { type: integer }
+        '400': { description: PORTFOLIO_ITEM_REQUIRED, INVALID_USERNAME, ALREADY_COPY_TRADING, NOT_AN_INVESTMENT }
+        '403': { description: Viewer, or an integration token }
+        '404': { description: NOT_FOUND }
+        '409': { description: COPY_HOLDING_EXISTS (with `portfolioItemId`), COPY_TRADING_CATEGORY_MISSING }

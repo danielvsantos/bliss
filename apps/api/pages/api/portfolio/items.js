@@ -7,6 +7,7 @@ import { calculateAssetCurrentValue } from '../../../services/valuation.service.
 import { Decimal } from '@prisma/client/runtime/library';
 import { withAuth } from '../../../utils/withAuth.js';
 import { createCurrencyConverter } from '../../../utils/currencyConversion.js';
+import { copyTradeStatus, findCopiesForItems } from '../../../services/etoro.service.js';
 
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
@@ -144,6 +145,13 @@ export default withAuth(async function handler(req, res) {
     );
     // ─────────────────────────────────────────────────────────────────────────
 
+    // eToro copy trades (#143): link status of each Copy Trading holding, for
+    // the "Linked to eToro" / "needs reconnect" / "copy closed" badges.
+    const copyItems = assetsFromDb.filter((asset) => asset.category?.processingHint === 'COPY_TRADING');
+    const copiesByItem = copyItems.length > 0
+      ? await findCopiesForItems(req.user.tenantId, copyItems)
+      : new Map();
+
     // One FX lookup per currency pair per request, shared by every holding
     // (unbounded per-holding lookups exhausted the DB pool — #135).
     const convertCurrency = createCurrencyConverter();
@@ -274,6 +282,10 @@ export default withAuth(async function handler(req, res) {
 
         if (asset.incomeTerms) {
           response.incomeTerms = asset.incomeTerms;
+        }
+
+        if (hint === 'COPY_TRADING') {
+          response.copyTrade = copyTradeStatus(copiesByItem.get(asset.id));
         }
 
         return response;

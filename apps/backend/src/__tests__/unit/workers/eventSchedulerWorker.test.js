@@ -17,6 +17,7 @@ jest.mock('../../../queues/analyticsQueue', () => ({
 jest.mock('../../../queues/plaidSyncQueue', () => ({
   getPlaidSyncQueue: jest.fn(),
   enableBankingSyncOpts: jest.requireActual('../../../queues/plaidSyncQueue').enableBankingSyncOpts,
+  etoroSyncOpts: jest.requireActual('../../../queues/plaidSyncQueue').etoroSyncOpts,
 }));
 
 jest.mock('../../../queues/plaidProcessingQueue', () => ({
@@ -255,6 +256,26 @@ describe('eventSchedulerWorker — processEventJob', () => {
   it('warns for ENABLE_BANKING_SYNC without plaidItemId', async () => {
     await processEventJob(makeJob('ENABLE_BANKING_SYNC', { tenantId: 't1' }));
     expect(logger.warn).toHaveBeenCalledWith('ENABLE_BANKING_SYNC event is missing plaidItemId.');
+    expect(mockPlaidSyncQueue.add).not.toHaveBeenCalled();
+  });
+
+  // ─── ETORO_SYNC (#143) ───────────────────────────────────────────────────
+
+  it('enqueues a deduplicated, retried ETORO_SYNC on the plaid-sync queue', async () => {
+    const job = makeJob('ETORO_SYNC', { connectionId: 'c1', tenantId: 't1', source: 'MANUAL' });
+
+    await processEventJob(job);
+
+    expect(mockPlaidSyncQueue.add).toHaveBeenCalledWith(
+      'ETORO_SYNC',
+      expect.objectContaining({ connectionId: 'c1', tenantId: 't1', source: 'MANUAL' }),
+      expect.objectContaining({ deduplication: { id: 'etoro-sync:c1' }, attempts: 3 }),
+    );
+  });
+
+  it('warns for ETORO_SYNC without connectionId', async () => {
+    await processEventJob(makeJob('ETORO_SYNC', { tenantId: 't1' }));
+    expect(logger.warn).toHaveBeenCalledWith('ETORO_SYNC event is missing connectionId.');
     expect(mockPlaidSyncQueue.add).not.toHaveBeenCalled();
   });
 

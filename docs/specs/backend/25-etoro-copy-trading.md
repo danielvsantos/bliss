@@ -16,7 +16,7 @@ The work ships in five PRs. This spec describes the whole feature; each PR updat
 |---|---|---|
 | A | Pure shared layer: instrument mapper, scope check, copy composition, `COPY_TRADE` asset class, passive income exclusion (§25.4–§25.6) | #247 |
 | B | Schema + migration, eToro HTTP client, sync handler, valuation (§25.2, §25.3, §25.7, §25.10) | done |
-| C | API connection routes, convert action, Equity Analysis copy rows, #80 insights, MCP (§25.8) | planned |
+| C | API connection routes, convert action, Equity Analysis copy rows, #80 insights, MCP (§25.8, [API spec 28](../api/28-etoro-api.md)) | done |
 | D | Web: connect dialog, connection management, holdings badges, Equity Analysis labels | planned |
 | E | Security master look-through watchlist (§25.9) | planned |
 
@@ -160,8 +160,8 @@ Strategy `COPY_TRADING` (`portfolio-handlers/valuation/strategies/COPY_TRADING.j
 
 ## 25.8 Integration tokens and MCP
 
-- Every `/api/etoro/*` route is **session-only**: one `INTEGRATION_DENYLIST` entry `{ prefix: '/api/etoro', methods: 'ALL' }`, each route `DENY_ALL` in `integrationRouteMatrix.data.ts`, and each operation listed in `lib/mcp/exclusions.js` with the reason "eToro connection lifecycle (session-only)". The R8 convert action (`POST /api/etoro/convert-holding`) is under the same prefix.
-- Agents see copies only through `get_equity_analysis`, which returns the same split as the web page (`assetClass: 'COPY_TRADE'`, per-holding look-through coverage).
+- Every `/api/etoro/*` route is **session-only**: one `INTEGRATION_DENYLIST` entry `{ prefix: '/api/etoro', methods: 'ALL' }` and each route `DENY_ALL` in `integrationRouteMatrix.data.ts`. The R8 convert action (`POST /api/etoro/convert-holding`) is under the same prefix. Since no token can reach them, they need no MCP exclusion entry (the coverage test counts token-reachable operations only).
+- Agents see copies only through `get_equity_analysis`, which returns the same split as the web page (`assetClass: 'COPY_TRADE'`, plus a `copyTrade` block with the look-through, P/E and yield coverage).
 - Only Bliss-derived numbers reach the LLM; no eToro market content does.
 
 ## 25.9 Look-through watchlist (PR-E)

@@ -4,7 +4,7 @@ const { getRedisConnection } = require('../utils/redis');
 const { EVENTS_QUEUE_NAME, enqueueEvent } = require('../queues/eventsQueue');
 const { getPortfolioQueue, fullValuationDedupOpts } = require('../queues/portfolioQueue');
 const { getAnalyticsQueue } = require('../queues/analyticsQueue');
-const { getPlaidSyncQueue, enableBankingSyncOpts } = require('../queues/plaidSyncQueue');
+const { getPlaidSyncQueue, enableBankingSyncOpts, etoroSyncOpts } = require('../queues/plaidSyncQueue');
 const { getPlaidProcessingQueue } = require('../queues/plaidProcessingQueue');
 const { getSmartImportQueue } = require('../queues/smartImportQueue');
 const { getSubscriptionDetectionQueue } = require('../queues/subscriptionDetectionQueue');
@@ -183,6 +183,23 @@ const processEventJob = async (job) => {
                     'ENABLE_BANKING_SYNC',
                     { plaidItemId, tenantId, source, ...carry },
                     enableBankingSyncOpts(plaidItemId),
+                );
+                break;
+            }
+
+            case 'ETORO_SYNC': {
+                // eToro copy trading (#143): after connect, a key replace, or "Sync now".
+                // Deduplicated per connection; retried on 5xx / network errors.
+                const { connectionId, tenantId, source } = data;
+                if (!connectionId) {
+                    logger.warn('ETORO_SYNC event is missing connectionId.');
+                    return;
+                }
+                logger.info(`[Event] Scheduling eToro sync for connection ${connectionId} (Source: ${source || 'N/A'})`);
+                await getPlaidSyncQueue().add(
+                    'ETORO_SYNC',
+                    { connectionId, tenantId, source, ...carry },
+                    etoroSyncOpts(connectionId),
                 );
                 break;
             }

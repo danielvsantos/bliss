@@ -17,6 +17,7 @@ apps/api/
     imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
     portfolio/          # items, holdings, history, equity-analysis, passive-income, items/[assetId]/manual-values, manual-values/[valueId], items/[assetId]/debt-terms, items/[assetId]/income-terms, income-terms/detached, income-terms/[id], income-terms/[id]/attach
     passive-income/     # streams (index, [id]) — Allowance / Government Welfare income streams
+    etoro/              # connections (index, [id], [id]/sync), convert-holding — eToro copy trading (#143), session only
     plaid/              # create-link-token, exchange-public-token, accounts, sync-accounts, sync-logs, fetch-historical, resync, disconnect, rotate-token, items, items/hard-delete, webhook, transactions/ (index, [id], bulk-promote, bulk-requeue, seeds, confirm-seeds)
     notifications/      # summary
     onboarding/         # progress

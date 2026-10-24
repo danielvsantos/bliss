@@ -183,6 +183,10 @@ const getEquityAnalysis = defineTool({
   description:
     'Stock and ETF holdings grouped by sector, industry, country or asset class, with weights, weighted P/E and '
     + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false. '
+    + 'eToro copy trades are listed in `copies` (symbol = the copied investor): `lookThroughCoveragePct` is the share '
+    + 'of the copy split into sectors, and its P/E and yield are based on `peCoveragePct` / `yieldCoveragePct` of its '
+    + 'value. With lookThrough a copy is replaced in `topHoldings` and the groups by its own positions (`viaCopy` = the '
+    + 'copied investor); without it, it is one holding with assetClass COPY_TRADE. '
     + '`pendingSecurityData` lists fund symbols left out until their security data is fetched.',
   input: {
     groupBy: z.enum(['sector', 'industry', 'country', 'assetClass']).optional(),
@@ -197,6 +201,14 @@ const getEquityAnalysis = defineTool({
       accountId: args.accountId,
       lookThrough: args.lookThrough === false ? 'false' : undefined,
     });
+    const copyTrade = (h) => ({
+      linked: Boolean(h.copyTrade?.linked),
+      status: h.copyTrade?.status ?? null,
+      lookThroughCoveragePct: h.sectorCoveragePct ?? null,
+      peCoveragePct: h.peCoverage ?? null,
+      yieldCoveragePct: h.yieldCoverage ?? null,
+      unmappedPct: h.unmappedPct ?? null,
+    });
     const holdings = (data.holdings || []).slice(0, args.topHoldings ?? 20).map((h) => ({
       symbol: h.symbol,
       name: h.name ?? null,
@@ -207,6 +219,9 @@ const getEquityAnalysis = defineTool({
       weight: h.weight == null ? null : Math.round(h.weight * 10000) / 100,
       peRatio: h.peRatio ?? null,
       dividendYieldPct: h.dividendYield == null ? null : Math.round(h.dividendYield * 10000) / 100,
+      // eToro copy trades (#143): a copy kept whole, or a position held through one.
+      ...(h.assetType === 'COPY_TRADE' && { copyTrade: copyTrade(h) }),
+      ...(h.viaCopy && { viaCopy: h.viaCopy.username }),
     }));
     return {
       currency: data.portfolioCurrency,
@@ -221,6 +236,14 @@ const getEquityAnalysis = defineTool({
       })),
       topHoldings: holdings,
       holdingsCount: (data.holdings || []).length,
+      copies: (data.copies || []).map((c) => ({
+        username: c.symbol,
+        value: money(c.currentValue, data.portfolioCurrency),
+        weight: c.weight == null ? null : Math.round(c.weight * 10000) / 100,
+        peRatio: c.peRatio ?? null,
+        dividendYieldPct: c.dividendYield == null ? null : Math.round(c.dividendYield * 10000) / 100,
+        copyTrade: copyTrade(c),
+      })),
       // Funds left out until their security data is fetched (#93).
       pendingSecurityData: data.pendingSecurityData || [],
     };

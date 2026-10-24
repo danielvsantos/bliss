@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mergeCopyHoldings,
   deriveCopyComposition,
+  explodeCopyHoldings,
   lookThrough,
   classifyIncomeAsset,
   DIVERSIFIED,
@@ -264,5 +265,55 @@ describe('classifyIncomeAsset for Copy Trading', () => {
       processingHint: 'COPY_TRADING',
       defaultCategoryCode: 'COPY_TRADING',
     })).toBeNull();
+  });
+});
+
+describe('explodeCopyHoldings', () => {
+  it('splits a copy into its positions, cash and the unidentified rest; weights add up to 1', () => {
+    const positions = explodeCopyHoldings({
+      holdings: [
+        { symbol: 'MSFT', exchange: 'XNAS', type: 'STOCK', valuePct: 40 },
+        { symbol: 'MSFT', exchange: null, usVariant: true, type: 'STOCK', valuePct: 10 },
+        { symbol: 'BTC', nonEquity: 'CRYPTO', valuePct: 15 },
+        { unresolved: true, valuePct: 5 },
+      ],
+      cashPct: 20,
+    }, SECURITIES);
+    expect(positions.map((p) => [p.kind, p.symbol, p.assetClass, p.weight])).toEqual([
+      ['SECURITY', 'MSFT', 'STOCK', 0.5],
+      ['CASH', null, 'CASH', 0.2],
+      ['INSTRUMENT', 'BTC', 'CRYPTO', 0.15],
+      // 5% unresolved + 10% eToro left unaccounted for
+      ['UNMAPPED', null, 'OTHER', 0.15],
+    ]);
+    expect(positions[0].security).toBe(SECURITIES.get('MSFT'));
+  });
+
+  it('scales a copy that adds up past 100% and marks ETFs', () => {
+    const positions = explodeCopyHoldings({
+      holdings: [{ symbol: 'VWCE', exchange: 'XETR', type: 'ETF', valuePct: 60 }, { symbol: 'AMZN', exchange: 'XNAS', type: 'STOCK', valuePct: 60 }],
+      cashPct: 0,
+    }, SECURITIES);
+    expect(positions.map((p) => p.weight)).toEqual([0.5, 0.5]);
+    expect(positions.find((p) => p.symbol === 'VWCE')?.isEtf).toBe(true);
+    expect(positions.some((p) => p.kind === 'UNMAPPED')).toBe(false);
+  });
+
+  it('gives the same sector totals as deriveCopyComposition', () => {
+    const copy = {
+      holdings: [
+        { symbol: 'MSFT', exchange: 'XNAS', type: 'STOCK', valuePct: 50 },
+        { symbol: 'AMZN', exchange: 'XNAS', type: 'STOCK', valuePct: 30 },
+      ],
+      cashPct: 20,
+    };
+    const composition = deriveCopyComposition(copy, SECURITIES);
+    const positions = explodeCopyHoldings(copy, SECURITIES);
+    for (const { sector, weight } of composition.sectors) {
+      const fromPositions = positions
+        .filter((p) => p.security && (p.security as { sector?: string }).sector === sector)
+        .reduce((s, p) => s + p.weight, 0);
+      expect(fromPositions).toBeCloseTo(weight);
+    }
   });
 });

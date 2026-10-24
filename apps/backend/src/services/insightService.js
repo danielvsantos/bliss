@@ -28,6 +28,7 @@ const {
   bondCouponPct,
   EQUITY_ASSET_CLASSES,
 } = require('@bliss/shared/portfolio');
+const { loadCopyCompositions, COPY_TRADING_HINT } = require('./etoroLookThrough');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -683,6 +684,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
     select: {
       id: true,
       symbol: true,
+      accountId: true,
       currency: true,
       currentValue: true,
       costBasis: true,
@@ -709,15 +711,19 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
     },
   });
 
-  const symbols = holdings.map((h) => h.symbol).filter(Boolean);
-  if (symbols.length === 0) {
+  // A Copy Trading holding's ticker is an eToro username, never a market
+  // symbol (#143): it is looked through from the copy's own holdings instead.
+  const isCopy = (h) => h.category?.processingHint === COPY_TRADING_HINT;
+  const symbols = holdings.filter((h) => !isCopy(h)).map((h) => h.symbol).filter(Boolean);
+  if (symbols.length === 0 && !holdings.some(isCopy)) {
     return {
       holdings: [], sectorAllocation: {}, industryAllocation: {}, totalValue: 0, equityValue: 0,
       assetClassAllocation: [], fixedIncome: null,
     };
   }
 
-  const fundamentals = await prisma.securityMaster.findMany({
+  const copyCompositions = await loadCopyCompositions(tenantId, holdings.filter(isCopy));
+  const fundamentals = symbols.length === 0 ? [] : await prisma.securityMaster.findMany({
     where: { symbol: { in: symbols } },
     select: {
       symbol: true,
@@ -764,7 +770,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
   const today = new Date();
   const compositionBySymbol = new Map();
   const enrichedHoldings = holdings.map((h) => {
-    const f = fundamentalsMap.get(h.symbol) || {};
+    const f = isCopy(h) ? {} : fundamentalsMap.get(h.symbol) || {};
     const nativeCurrency = h.currency || portfolioCurrency;
     const rawCurrentValue = Number(h.currentValue || 0);
     const rawCostBasis = Number(h.costBasis || 0);
@@ -811,6 +817,13 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
     };
   });
 
+  // Linked eToro copies (#143) carry their derived look-through, keyed by the
+  // enriched row (never sent to the LLM itself).
+  const copyCompositionByHolding = new Map();
+  enrichedHoldings.forEach((e, i) => {
+    if (isCopy(holdings[i])) copyCompositionByHolding.set(e, copyCompositions.get(holdings[i].id) || null);
+  });
+
   const totalValue = enrichedHoldings.reduce((sum, h) => sum + Math.abs(h.currentValue), 0);
 
   // Sector allocation (#80, using #79's `lookThrough`) over the equity book:
@@ -830,7 +843,9 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
       value: Math.abs(h.currentValue),
       assetClass: h.assetClass,
       sector: h.sector,
-      composition: compositionBySymbol.get(h.symbol) || null,
+      composition: h.assetClass === 'COPY_TRADE'
+        ? copyCompositionByHolding.get(h) || null
+        : compositionBySymbol.get(h.symbol) || null,
     }));
   const EXCLUDED_SECTOR_BUCKETS = new Set(['Diversified', 'Other', 'Unknown']);
   const allSectorGroups = lookThrough(equityRows, 'sector');
@@ -846,7 +861,7 @@ async function gatherEquityFundamentals(tenantId, portfolioCurrency, rateCache, 
     const viaEtfs = [];
     for (const { index, value } of g.holdings) {
       const row = equityRows[index];
-      if (row.assetClass === 'INDEX_ETF' || row.assetClass === 'SECTOR_ETF') {
+      if (row.assetClass === 'INDEX_ETF' || row.assetClass === 'SECTOR_ETF' || row.assetClass === 'COPY_TRADE') {
         viaEtfs.push({ symbol: row.symbol, weightPct: row.value > 0 ? Math.round((value / row.value) * 1000) / 10 : 0 });
       } else {
         direct.push(row.symbol);

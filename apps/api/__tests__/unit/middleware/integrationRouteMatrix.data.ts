@@ -152,6 +152,12 @@ export const ROUTE_MATRIX: Record<string, RouteSpec> = {
   // Per-tenant credentials (#148): admin only, and denylisted by the prefix above.
   'enablebanking/credentials/index.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['GET', 'PUT', 'DELETE']) },
   'enablebanking/credentials/verify.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['POST']) },
+
+  // ── eToro copy trading (#143): connection lifecycle + convert, session only ─
+  'etoro/connections/index.js': { auth: 'withAuth', inlineAdmin: ['POST'], methods: DENY_ALL(['GET', 'POST']) },
+  'etoro/connections/[id].js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['PUT', 'DELETE']) },
+  'etoro/connections/[id]/sync.js': { auth: 'withAuth', requireAdmin: true, methods: DENY_ALL(['POST']) },
+  'etoro/convert-holding.js': { auth: 'withAuth', methods: DENY_ALL(['POST']) },
   'plaid/accounts.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'plaid/sync-logs.js': { auth: 'withAuth', methods: RW_ALL(['GET']) },
   'plaid/items.js': { auth: 'withAuth', methods: WRITES_DENIED(['GET', 'PATCH']) },

@@ -36,8 +36,25 @@ components:
           example: 'Apple Inc.'
         assetType:
           type: string
-          enum: [STOCK, ETF]
-          description: ETFs have "Diversified" as their own sector/industry/country and never carry P/E or EPS.
+          enum: [STOCK, ETF, COPY_TRADE, OTHER]
+          description: >
+            ETFs have "Diversified" as their own sector/industry/country and never carry P/E or EPS.
+            COPY_TRADE is an eToro copy kept whole (#143); OTHER is a crypto, cash or unidentified
+            position held through a copy.
+        viaCopy:
+          type: object
+          nullable: true
+          description: >
+            Set on a position held through an eToro copy, shown instead of the copy when looking
+            through (#143). Its value is the copy's value × the position's weight; it is never
+            merged with a direct holding and has no item ids.
+          properties:
+            username: { type: string, example: 'topinvestor' }
+            kind: { type: string, enum: [SECURITY, INSTRUMENT, CASH, UNMAPPED] }
+            itemIds: { type: array, items: { type: integer } }
+        key:
+          type: string
+          description: Unique row key of a `viaCopy` position.
         assetClass:
           $ref: '#/components/schemas/AssetClass'
         assetClassSource:
@@ -243,7 +260,16 @@ components:
             assetClass: { type: array, items: { $ref: '#/components/schemas/EquityGroup' } }
         holdings:
           type: array
-          description: Every equity holding once, largest first. Render rows from this list.
+          description: >
+            Every equity holding once, largest first. Render rows from this list. With look-through,
+            a linked eToro copy is replaced by its positions (`viaCopy`).
+          items:
+            $ref: '#/components/schemas/EquityHolding'
+        copies:
+          type: array
+          description: >
+            Every eToro copy as one COPY_TRADE row (#143), with its link status (`copyTrade`),
+            P/E and yield coverage and unidentified share, whether or not it is split in `holdings`.
           items:
             $ref: '#/components/schemas/EquityHolding'
 
