@@ -70,6 +70,7 @@ import {
 } from "@/components/settings/multi-select-combobox";
 import { SaveConfirmation } from "@/components/settings/save-confirmation";
 import { ChangePasswordDialog } from "@/components/settings/change-password-dialog";
+import { InstallAppCard } from "@/components/pwa/install-app-card";
 
 /* ─── Types ─────────────────────────────────────────── */
 
@@ -470,6 +471,8 @@ export default function SettingsPage() {
 
           {/* ═══════ GENERAL TAB ═══════ */}
           <TabsContent value="general" className="mt-0 space-y-5">
+            {/* Installable PWA (#155): hidden once installed or when unsupported. */}
+            <InstallAppCard />
             {/* Workspace Details Card */}
             <Card className="overflow-hidden p-0 gap-0">
               <div className="px-7 pt-[22px] pb-[18px]">

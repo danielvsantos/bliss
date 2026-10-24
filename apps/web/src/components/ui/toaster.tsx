@@ -27,7 +27,8 @@ export function Toaster() {
           </Toast>
         )
       })}
-      <ToastViewport />
+      {/* Below the iOS status bar in the installed app (#155); 0 elsewhere. */}
+      <ToastViewport className="top-[env(safe-area-inset-top)] sm:top-auto" />
     </ToastProvider>
   )
 }

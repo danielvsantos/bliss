@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AppShell } from '@/components/layout/app-shell';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { useForceTheme } from "./hooks/use-force-theme";
+import { PwaUpdater } from "@/components/pwa/pwa-updater";
 
 // Pre-wrap protected components once at module load time so that withAuth()
 // is never called inside a render function. Calling withAuth() during render
@@ -55,7 +56,9 @@ function RoutedApp() {
 
 const App = () => (
   <>
+    <div className="pwa-status-bar" aria-hidden />
     <Toaster />
+    <PwaUpdater />
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ErrorBoundary>
         <RoutedApp />

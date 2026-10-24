@@ -8,6 +8,8 @@ import { useCompleteOnboardingStep } from "@/hooks/use-onboarding-progress";
 import { usePlaidTransactions } from "@/hooks/use-plaid-review";
 import { usePendingImports } from "@/hooks/use-imports";
 import { useAuth } from "@/hooks/use-auth";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { OfflineScreen } from "@/components/pwa/offline-screen";
 
 // Map page paths to checklist step keys
 const PAGE_TO_CHECKLIST: Record<string, string> = {
@@ -26,6 +28,7 @@ export function AppShell({ children }: AppShellProps) {
   const location = useLocation();
   const { user } = useAuth();
   const isViewer = user?.role === "viewer";
+  const isOnline = useOnlineStatus();
   const completeStep = useCompleteOnboardingStep();
   const trackedPaths = useRef(new Set<string>());
 
@@ -55,11 +58,14 @@ export function AppShell({ children }: AppShellProps) {
   };
 
   return (
-    <div className="flex h-dvh overflow-hidden">
+    // Installed app (#155): body is padded below the status bar, so the shell
+    // takes the rest of the height; pwa-safe-x/b keep content clear of the
+    // landscape notch and the home indicator. All insets are 0 in a browser tab.
+    <div className="flex h-[calc(100dvh-env(safe-area-inset-top))] overflow-hidden pwa-safe-x pwa-safe-b">
       {/* Sidebar - hidden on mobile unless toggled */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+          "fixed top-[env(safe-area-inset-top)] bottom-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out pb-[env(safe-area-inset-bottom)] md:relative md:top-0 md:pb-0 md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -90,7 +96,8 @@ export function AppShell({ children }: AppShellProps) {
           onSidebarToggle={toggleSidebar}
         />
         <main className="flex-1 overflow-auto p-4 md:p-5 lg:p-6 bg-gray-50 dark:bg-gray-900">
-          {children}
+          {/* Offline: no figures at all, not even the persisted cache (#155). */}
+          {isOnline ? children : <OfflineScreen />}
         </main>
       </div>
     </div>

@@ -22,6 +22,7 @@ import { subMonths, format } from 'date-fns';
 import type { AggregatedPortfolioHistory } from '@/lib/api';
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 import { netWorthFromEntry } from '@/lib/net-worth';
+import { InstallBanner } from '@/components/pwa/install-banner';
 
 /* ── Animation presets ── */
 const fadeUp = {
@@ -127,6 +128,8 @@ export default function Dashboard() {
     <div>
       {/* Processing status (#100): recalculation in progress / updated X ago. */}
       <DataUpdatingBanner watch={['ANALYTICS_UPDATE', 'PORTFOLIO_UPDATE']} invalidate={[['analytics'], ['dashboard-metrics'], ['portfolio-history'], ['portfolio-holdings'], ['portfolio-items']]} className="mb-4" />
+      {/* Installable PWA (#155): hidden once installed or dismissed. */}
+      <InstallBanner className="mb-4" />
       {/* ── Header ── */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">

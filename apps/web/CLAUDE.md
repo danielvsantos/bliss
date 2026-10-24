@@ -45,6 +45,7 @@ apps/web/src/
     manage-assets/      # Manage Assets row pieces (status chips, actions menu, detached terms banner)
     equity-analysis/    # Equity Analysis asset class badge/editor + asset class colors
     onboarding/         # Onboarding flow components
+    pwa/                # Installable PWA (#155): install button/banner/card, iOS instructions, update toast, offline screen
     plaid-connect.tsx   # Plaid connection component (top-level)
     withAuth.tsx        # Auth HOC wrapper (top-level); redirects to /auth?returnTo=
   hooks/                # 32 custom React hooks (use-*.ts/tsx)
@@ -52,6 +53,7 @@ apps/web/src/
   lib/                  # Utility modules
     portfolio-utils.ts  # parseDecimal, getGroupColor, buildGroupColorMap, getGroupIcon
     return-to.ts        # Safe post-sign-in returnTo (same-origin relative paths only)
+    pwa/                # Manifest, Workbox options, SW registration/update flow, platform detection (#155)
   types/                # TypeScript type definitions (api.ts — all API response interfaces; equity-analysis.ts)
   i18n/                 # Internationalization (i18next, multiple locales)
 ```
@@ -187,6 +189,9 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-force-theme.ts` -- Theme override
 - `use-metadata.ts` -- Page metadata
 - `use-page-visible.ts` -- Page visibility detection
+- `use-display-mode.ts` -- `useIsStandalone()`: running as an installed app (#155)
+- `use-install-prompt.ts` -- Install mode (iOS instructions / Chrome prompt) + `install()` (#155)
+- `use-online-status.ts` -- `navigator.onLine` with online/offline events (#155)
 - `use-user-signals.ts` -- User signal tracking
 - `use-toast.ts` -- Toast notification hook
 
@@ -220,6 +225,18 @@ pnpm test:web
 - Hook tests use `renderHook` from `@testing-library/react` with query client wrapper
 - Playwright e2e tests in `e2e/` directory (stubs only)
 - Full testing spec at `docs/specs/frontend/13-automated-testing-and-error-logging.md`
+
+## Installable PWA (#155)
+
+`apps/web` is an installable PWA (vite-plugin-pwa, `generateSW`). Spec: `docs/specs/frontend/28-pwa.md`.
+
+- **The service worker caches the app shell only.** `src/lib/pwa/sw-config.ts` has `runtimeCaching: []` and denies `/api/*` to the navigation fallback; `sw-policy.test.ts` enforces it. Never add runtime caching for API responses: no financial data in Cache Storage.
+- **Updates:** `src/lib/pwa/register.ts` applies a waiting build on launch (first 10 s, before any input) and otherwise shows the `<PwaUpdater />` toast. Never switch to `registerType: 'autoUpdate'` (it reloads under people mid-edit).
+- nginx serves `index.html`, `sw.js`, `manifest.webmanifest` and `version.json` with `Cache-Control: no-cache` (`docker/nginx.conf`); keep it that way.
+- Manifest colours come from the brand tokens (`src/lib/pwa/manifest.ts`, drift-tested). Icons are generated from `pwa-assets/icon-source.jpg` with `pnpm --filter @bliss/web pwa:icons` and committed.
+- No third-party scripts in `index.html` (tested).
+- Standalone-aware UI: `useIsStandalone()` (`hooks/use-display-mode.ts`), `useInstallPrompt()`, `useOnlineStatus()`. Offline, `AppShell` renders `<OfflineScreen />` instead of the page.
+- Safe areas: `env(safe-area-inset-*)` is 0 outside the installed app; use the `.pwa-safe-x` / `.pwa-safe-b` utilities in `src/index.css` for new full-height or bottom-anchored surfaces.
 
 ## Path aliases
 
