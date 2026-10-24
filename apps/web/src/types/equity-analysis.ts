@@ -1,3 +1,5 @@
+import type { CopyTradeStatus } from './api';
+
 /** Asset classes from `@bliss/shared/portfolio` (Equity Analysis #79). */
 export const ASSET_CLASSES = [
   'STOCK',
@@ -12,9 +14,14 @@ export const ASSET_CLASSES = [
   'CRYPTO',
   'CASH',
   'OTHER',
+  // eToro copy trades (#143). Last, so the other classes keep their colors.
+  'COPY_TRADE',
 ] as const;
 
 export type AssetClass = (typeof ASSET_CLASSES)[number];
+
+/** Classes a user can pick as an override: COPY_TRADE is automatic for linked eToro copies only. */
+export const OVERRIDE_ASSET_CLASSES = ASSET_CLASSES.filter((c) => c !== 'COPY_TRADE');
 
 export type EquityGroupBy = 'sector' | 'industry' | 'country' | 'assetClass';
 
@@ -28,8 +35,11 @@ export interface EtfComposition {
 export interface EquityHolding {
   symbol: string;
   name: string;
-  /** 'ETF' holdings are bucketed as "Diversified" and never carry P/E or EPS. */
-  assetType?: 'STOCK' | 'ETF';
+  /**
+   * 'ETF' holdings are bucketed as "Diversified" and never carry P/E or EPS; 'COPY_TRADE' is an eToro
+   * copy kept whole (#143); 'OTHER' is crypto, cash or an unidentified position held through a copy.
+   */
+  assetType?: 'STOCK' | 'ETF' | 'COPY_TRADE' | 'OTHER';
   assetClass?: AssetClass;
   assetClassSource?: 'OVERRIDE' | 'AUTO';
   /** What the classifier picks without the override. */
@@ -37,7 +47,12 @@ export interface EquityHolding {
   /** Portfolio item ids merged into this row (same symbol across accounts). */
   itemIds?: number[];
   composition?: EtfComposition | null;
-  quantity: number;
+  /** null for a position held through an eToro copy. */
+  quantity: number | null;
+  /** Unique row key of a position held through a copy (its itemIds are empty). */
+  key?: string;
+  /** A position of an eToro copy, shown instead of the copy when looking through (#143). */
+  viaCopy?: { username: string; kind: 'SECURITY' | 'INSTRUMENT' | 'CASH' | 'UNMAPPED'; itemIds: number[] } | null;
   currentValue: number;
   currentValueUSD: number;
   sector: string;
@@ -53,6 +68,16 @@ export interface EquityHolding {
   averageVolume: number | null;
   logoUrl: string | null;
   weight: number;
+  // ── eToro copy trades only (#143) ──
+  /** Share of the copy's value (0–100) its P/E / dividend yield are based on. */
+  peCoverage?: number | null;
+  yieldCoverage?: number | null;
+  sectorCoveragePct?: number | null;
+  countryCoveragePct?: number | null;
+  /** Share of the copy's value in instruments Bliss can't map (0–100). */
+  unmappedPct?: number | null;
+  assetClassMix?: Array<{ assetClass: AssetClass; weight: number }> | null;
+  copyTrade?: CopyTradeStatus;
 }
 
 export interface EquityGroup {
@@ -70,6 +95,8 @@ export interface EquityAnalysisSummary {
   weightedDividendYield: number | null;
   /** Funds left out until their security data is fetched (#93). */
   pendingSecurityDataCount?: number;
+  /** eToro copy trades among the holdings (#143). */
+  copyTradeCount?: number;
 }
 
 export interface EquityAnalysisResponse {
@@ -84,6 +111,8 @@ export interface EquityAnalysisResponse {
   groupings?: Partial<Record<EquityGroupBy, EquityGroup[]>>;
   /** Every holding once (#79) — render rows from this, not from the groups. */
   holdings?: EquityHolding[];
+  /** Every eToro copy as one row (#143), also when `holdings` shows its positions instead. */
+  copies?: EquityHolding[];
   /** Fund symbols left out until their SecurityMaster data arrives (#93). */
   pendingSecurityData?: string[];
 }

@@ -70,6 +70,7 @@ import { IncomeTermsModal } from "@/components/income/income-terms-modal";
 import { canHoldIncomeTerms } from "@/lib/passive-income";
 import { DataUpdatingBanner } from '@/components/processing/DataUpdatingBanner';
 import { HoldingPicker } from "@/components/portfolio/holding-picker";
+import { CopyTradeBadge } from "@/components/etoro/copy-trade-badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   buildHoldingOptions,
@@ -260,6 +261,7 @@ function AssetRow({ item, currency, onIncomeTerms, onShowInChart }: { item: Port
       <TableCell className="font-medium">
         <div className="flex items-center">
           <span>{item.symbol}</span>
+          {item.category.processingHint === "COPY_TRADING" && <CopyTradeBadge copyTrade={item.copyTrade} className="ml-1.5" />}
           <IncomeTermsButton item={item} onOpen={isClosed ? undefined : onIncomeTerms} />
           <ShowInChartButton item={item} onShow={onShowInChart} />
         </div>

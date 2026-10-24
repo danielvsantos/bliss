@@ -172,6 +172,7 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-tag-analytics.ts` -- Per-tag analytics
 - `use-equity-analysis.ts` -- Equity analysis (groupings, ETF look-through, composition) + `useSetAssetClass` override mutation
 - `use-passive-income.ts` -- Passive income projection, income terms, income streams, detached terms
+- `use-etoro.ts` -- eToro copy trading (#143): connections (Settings → Bank sync), connect / replace key / remove / sync now, "Switch to Copy Trading"
 - `use-manage-assets.ts` -- Manage Assets list (infinite, server-filtered), single row by id, debt terms + asset class for the modals
 - `use-dashboard-metrics.ts` -- Dashboard summary data
 - `use-dashboard-actions.ts` -- Dashboard quick actions

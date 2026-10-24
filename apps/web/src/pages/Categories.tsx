@@ -61,6 +61,7 @@ const PROCESSING_HINT_STYLE: Record<string, string> = {
   MANUAL:           'bg-muted text-muted-foreground border-border',
   TAX_DEDUCTIBLE:   'bg-warning/10 text-warning border-warning/20',
   DEBT:             'bg-brand-primary/10 text-brand-primary border-brand-primary/20',
+  COPY_TRADING:     'bg-positive/10 text-positive border-positive/20',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

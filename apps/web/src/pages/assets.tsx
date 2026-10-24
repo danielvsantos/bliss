@@ -33,6 +33,7 @@ import { ManualValueModal } from "@/components/entities/manual-value-modal";
 import { ManualPriceHistoryDialog } from "@/components/entities/manual-price-history-dialog";
 import { DebtTermsModal } from "@/components/entities/debt-terms-modal";
 import { AssetClassModal } from "@/components/entities/asset-class-modal";
+import { ConvertToCopyTradingModal } from "@/components/etoro/convert-to-copy-trading-modal";
 import { DetachedTermsBanner } from "@/components/manage-assets/detached-terms-banner";
 import { AssetStatusChips } from "@/components/manage-assets/asset-status-chips";
 import { AssetActionsMenu } from "@/components/manage-assets/asset-actions-menu";
@@ -478,6 +479,10 @@ export default function ManageAssetsPage() {
       <ManualPriceHistoryDialog asset={modal === "history" ? assetRef : null} {...modalProps("history")} />
       <DebtTermsModal asset={assetRef} {...modalProps("debt")} />
       <AssetClassModal asset={assetRef} {...modalProps("assetClass")} />
+      <ConvertToCopyTradingModal
+        asset={modalAsset ? { id: modalAsset.id, symbol: modalAsset.symbol, accountId: modalAsset.accountId } : null}
+        {...modalProps("copyTrading")}
+      />
     </>
   );
 }

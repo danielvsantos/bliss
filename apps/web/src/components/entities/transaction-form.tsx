@@ -148,7 +148,19 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
   const isDebt = selectedCategory?.type === 'Debt';
   // Route crypto ticker searches to Twelve Data with crypto type filter
   const tickerSearchType = selectedCategory?.processingHint === 'API_CRYPTO' ? 'crypto' : undefined;
-  const { data: tickerResults = [] } = useTickerSearch(tickerSearchInput, tickerSearchType);
+  // eToro Copy Trading (#143): the "ticker" is the copied investor's eToro
+  // username, never a market symbol, so there is nothing to search.
+  const isCopyTrade = selectedCategory?.processingHint === 'COPY_TRADING';
+  const { data: tickerResults = [] } = useTickerSearch(isCopyTrade ? '' : tickerSearchInput, tickerSearchType);
+
+  // A copy has no unit price: each deposit counts as one unit at its amount and
+  // a withdrawal sells pro rata to cost (the portfolio calculator's defaults),
+  // and its market value comes from eToro as a total. Price and quantity stay empty.
+  useEffect(() => {
+    if (!isCopyTrade) return;
+    if (form.getValues('assetPrice') != null) form.setValue('assetPrice', undefined);
+    if (form.getValues('assetQuantity') != null) form.setValue('assetQuantity', undefined);
+  }, [isCopyTrade, form]);
 
   // Auto-open investment accordion when an investment category is selected
   useEffect(() => {
@@ -162,14 +174,14 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
 
   // Normal mode: derive quantity from amount / price
   useEffect(() => {
-    if (closePositionMode) return;
+    if (closePositionMode || isCopyTrade) return;
     const amount = debitValue || creditValue;
     if (isInvestment && amount && assetPriceValue && assetPriceValue > 0) {
       const isCrypto = selectedCategory?.processingHint === 'API_CRYPTO';
       const decimals = isCrypto ? 8 : 4;
       form.setValue('assetQuantity', parseFloat((amount / assetPriceValue).toFixed(decimals)));
     }
-  }, [debitValue, creditValue, assetPriceValue, isInvestment, closePositionMode, form, selectedCategory?.processingHint]);
+  }, [debitValue, creditValue, assetPriceValue, isInvestment, isCopyTrade, closePositionMode, form, selectedCategory?.processingHint]);
 
   // Close-position mode: quantity is the anchor; credit is derived from price × exact quantity
   useEffect(() => {
@@ -535,11 +547,11 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     name="ticker"
                     render={({ field }) => (
                       <FormItem className="flex-1">
-                        <FormLabel>{t('transactionFormPage.tickerLabel')}</FormLabel>
+                        <FormLabel>{isCopyTrade ? t('transactionFormPage.etoroUsernameLabel') : t('transactionFormPage.tickerLabel')}</FormLabel>
                         <div className="relative" ref={tickerDropdownRef}>
                           <FormControl>
                             <Input
-                              placeholder={t('transactionFormPage.tickerPlaceholder')}
+                              placeholder={isCopyTrade ? t('transactionFormPage.etoroUsernamePlaceholder') : t('transactionFormPage.tickerPlaceholder')}
                               value={tickerSearchInput}
                               autoComplete="off"
                               onChange={e => {
@@ -583,6 +595,9 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     )}
                   />
                 </div>
+                {isCopyTrade ? (
+                  <p className="text-xs text-muted-foreground">{t('transactionFormPage.copyTradeAmountHint')}</p>
+                ) : (
                 <div className="flex gap-4">
                   <FormField
                     control={form.control}
@@ -626,6 +641,7 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                     )}
                   />
                 </div>
+                )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>

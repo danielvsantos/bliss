@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSetAssetClass } from '@/hooks/use-equity-analysis';
 import { useAssetClassInfo } from '@/hooks/use-manage-assets';
 import { MOBILE_SHEET_CLASSES } from '@/lib/manage-assets';
-import { ASSET_CLASSES, type AssetClass } from '@/types/equity-analysis';
+import { OVERRIDE_ASSET_CLASSES, type AssetClass } from '@/types/equity-analysis';
 
 const AUTO = 'AUTO';
 
@@ -79,7 +79,7 @@ export function AssetClassModal({ asset, open, onOpenChange }: AssetClassModalPr
               <option value={AUTO}>
                 {t('equityAnalysis.automatic', { assetClass: t(`equityAnalysis.assetClasses.${data.autoAssetClass}`) })}
               </option>
-              {ASSET_CLASSES.map((c) => (
+              {OVERRIDE_ASSET_CLASSES.map((c) => (
                 <option key={c} value={c}>{t(`equityAnalysis.assetClasses.${c}`)}</option>
               ))}
             </select>
