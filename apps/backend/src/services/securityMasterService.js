@@ -2,6 +2,7 @@ const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
 const { Decimal } = require('@prisma/client/runtime/library');
 const { normalizeEtfComposition } = require('@bliss/shared/portfolio');
+const { US_MICS } = require('@bliss/shared/etoro');
 
 /**
  * SecurityMaster service — CRUD operations and fundamental data computation.
@@ -478,6 +479,12 @@ async function getCopyHoldingSymbols() {
  * fetches them. Limited to symbols with no SecurityMaster row or with
  * fundamentals older than `staleDays`.
  *
+ * US listings go to Twelve Data without a MIC. eToro only knows the venue
+ * (XNAS / XNYS / BATS), while Twelve Data files US stocks and ETFs under
+ * segment MICs (XNGS, XNMS, XNCM, ARCX, …): `mic_code=XNAS` for AMZN returns
+ * nothing at all. A bare US ticker resolves to the US listing. Other venues
+ * keep their MIC, which tells e.g. Xetra's BMW from a US ticker BMW.
+ *
  * @param {Object} [options]
  * @param {number} [options.staleDays=7]
  * @returns {Promise<Array<{symbol: string, exchange: string|null}>>}
@@ -495,10 +502,12 @@ async function getLookThroughWatchlistSymbols({ staleDays = 7 } = {}) {
     });
     const updated = new Map(rows.map(r => [r.symbol, r.lastFundamentalsUpdate]));
     const cutoff = Date.now() - staleDays * MS_PER_DAY;
-    return candidates.filter(s => {
-        const last = updated.get(s.symbol);
-        return !last || new Date(last).getTime() < cutoff;
-    });
+    return candidates
+        .filter(s => {
+            const last = updated.get(s.symbol);
+            return !last || new Date(last).getTime() < cutoff;
+        })
+        .map(s => ({ symbol: s.symbol, exchange: US_MICS.includes(s.exchange) ? null : s.exchange }));
 }
 
 module.exports = {

@@ -177,6 +177,8 @@ Holdings inside copies that no tenant holds directly form a watchlist that the s
   - minus the symbols held directly;
   - limited to symbols that are missing or more than 7 days stale.
   - Crypto, commodities and unresolved instruments are skipped. Only symbols leave the query: no tenant id, no value.
+  - **US listings are refreshed without a MIC.** eToro gives the venue (XNAS / XNYS / BATS); Twelve Data files US stocks and ETFs under segment MICs (XNGS, XNMS, XNCM, ARCX, …), and `mic_code=XNAS` for AMZN returns nothing, without an error. A bare US ticker resolves to the US listing. Other venues keep their MIC. (Found in Railway testing: AMZN, GOOG, MSFT, NVDA, VOO and QQQ came back empty.)
+  - A refresh that finds nothing still stamps `lastFundamentalsUpdate`, so such a symbol waits the 7 days before it is tried again.
 - **Cost:** about 51 credits per stale symbol. For example, 300 copy-only symbols ≈ 15.3k credits/week, about 41 minutes of an otherwise idle 377/min budget. On a small plan, coverage builds up over several runs, and missing data shows as "Other" in the meantime. The `twelve_data_usage` log line (label `security-master:refresh-lookthrough-watchlist`) shows the real cost.
 
 ## 25.10 Failure modes

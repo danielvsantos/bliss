@@ -97,10 +97,12 @@ it('lists the stock/ETF symbols of active copies on live connections, once each,
 });
 
 it('watches only symbols held nowhere directly, with missing or stale data', async () => {
+  // US venues go without a MIC: Twelve Data files AMZN under XNGS, and
+  // mic_code=XNAS returns nothing. Other venues keep theirs.
   expect(ours(await getLookThroughWatchlistSymbols())).toEqual([
-    { symbol: S(1), exchange: 'XNAS' },
+    { symbol: S(1), exchange: null },
     { symbol: S(6), exchange: 'XPAR' },
   ]);
   // A longer staleness window keeps the 10-day-old row out.
-  expect(ours(await getLookThroughWatchlistSymbols({ staleDays: 30 }))).toEqual([{ symbol: S(1), exchange: 'XNAS' }]);
+  expect(ours(await getLookThroughWatchlistSymbols({ staleDays: 30 }))).toEqual([{ symbol: S(1), exchange: null }]);
 });
