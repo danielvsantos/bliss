@@ -555,7 +555,8 @@ export function TransactionForm({ transaction, onClose }: TransactionFormProps) 
                               value={tickerSearchInput}
                               autoComplete="off"
                               onChange={e => {
-                                const upper = e.target.value.toUpperCase();
+                                // A copy's ticker is the investor's eToro username, stored lower-case.
+                                const upper = isCopyTrade ? e.target.value.toLowerCase() : e.target.value.toUpperCase();
                                 setTickerSearchInput(upper);
                                 field.onChange(upper || undefined);
                                 setShowTickerDropdown(upper.length >= 2);

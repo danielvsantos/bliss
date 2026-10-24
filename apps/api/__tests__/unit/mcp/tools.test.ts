@@ -674,13 +674,18 @@ describe('portfolio tools', () => {
         portfolioCurrency: 'USD', lookThrough: true, summary: { holdingsCount: 2, copyTradeCount: 1 }, groups: [],
         holdings: [
           { symbol: 'NVDA', assetType: 'STOCK', assetClass: 'STOCK', currentValue: 1000, weight: 0.5 },
-          { symbol: 'MSFT', assetType: 'STOCK', assetClass: 'STOCK', currentValue: 400, weight: 0.2, viaCopy: { username: 'topinvestor', kind: 'SECURITY', itemIds: [7] } },
+          {
+            symbol: 'MSFT', assetType: 'STOCK', assetClass: 'STOCK', currentValue: 400, weight: 0.2,
+            viaCopies: [{ username: 'topinvestor', kind: 'SECURITY', itemIds: [7], currentValue: 150 }],
+          },
         ],
         copies: [copy],
       },
     });
-    expect(eq.result.topHoldings[0]).not.toHaveProperty('viaCopy');
-    expect(eq.result.topHoldings[1]).toMatchObject({ symbol: 'MSFT', viaCopy: 'topinvestor' });
+    expect(eq.result.topHoldings[0]).not.toHaveProperty('viaCopies');
+    expect(eq.result.topHoldings[1]).toMatchObject({
+      symbol: 'MSFT', viaCopies: [{ username: 'topinvestor', value: { value: 150, currency: 'USD' } }],
+    });
     expect(eq.result.copies).toEqual([{
       username: 'topinvestor', value: { value: 1000, currency: 'USD' }, weight: 50, peRatio: 25, dividendYieldPct: 1,
       copyTrade: { linked: true, status: 'ACTIVE', lookThroughCoveragePct: 60, peCoveragePct: 40, yieldCoveragePct: 55, unmappedPct: 2 },

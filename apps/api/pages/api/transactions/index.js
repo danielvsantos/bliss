@@ -12,6 +12,7 @@ import { resolveTagsByName } from '../../../utils/tagUtils.js';
 import { missingInvestmentFields, missingInvestmentFieldsError } from '../../../utils/investmentEnrichment.js';
 import { parseAmountRange } from '../../../utils/amountFilter.js';
 import { diffTransactionUpdate } from '../../../utils/transactionDiff.js';
+import { copyTradingTicker } from '../../../services/etoro.service.js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const BACKEND_API_KEY = process.env.INTERNAL_API_KEY;
@@ -378,6 +379,10 @@ async function handlePost(req, res) {
     const { category, account } = owned;
     transactionData.categoryId = category.id;
     transactionData.accountId = account.id;
+    // eToro copies (#143): one canonical username, so every deposit keys the same holding.
+    if (category.processingHint === 'COPY_TRADING' && transactionData.ticker) {
+      transactionData.ticker = copyTradingTicker(transactionData.ticker);
+    }
 
     // Stock / ETF / crypto rows need ticker, quantity and price — before any write.
     const missingEnrichment = missingInvestmentFields(category, transactionData);
@@ -624,7 +629,7 @@ async function handlePut(req, res) {
     const {
       transaction_date, categoryId, accountId,
       description, details, credit, debit, currency,
-      assetQuantity, assetPrice, ticker, tags,
+      assetQuantity, assetPrice, ticker: rawTicker, tags,
       categoryGroup, debtTerms, isin, exchange, assetCurrency
     } = req.body;
 
@@ -662,6 +667,8 @@ async function handlePut(req, res) {
       return;
     }
     const newCategory = owned.category;
+    // eToro copies (#143): one canonical username, so every deposit keys the same holding.
+    const ticker = newCategory.processingHint === 'COPY_TRADING' && rawTicker ? copyTradingTicker(rawTicker) : rawTicker;
     const missingEnrichment = missingInvestmentFields(newCategory, { ticker, assetQuantity, assetPrice });
     if (missingEnrichment.length > 0) {
       res.status(StatusCodes.BAD_REQUEST).json(missingInvestmentFieldsError(newCategory, missingEnrichment));

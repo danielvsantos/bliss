@@ -41,20 +41,24 @@ components:
             ETFs have "Diversified" as their own sector/industry/country and never carry P/E or EPS.
             COPY_TRADE is an eToro copy kept whole (#143); OTHER is a crypto, cash or unidentified
             position held through a copy.
-        viaCopy:
-          type: object
+        viaCopies:
+          type: array
           nullable: true
           description: >
-            Set on a position held through an eToro copy, shown instead of the copy when looking
-            through (#143). Its value is the copy's value × the position's weight; it is never
-            merged with a direct holding and has no item ids.
-          properties:
-            username: { type: string, example: 'topinvestor' }
-            kind: { type: string, enum: [SECURITY, INSTRUMENT, CASH, UNMAPPED] }
-            itemIds: { type: array, items: { type: integer } }
+            The eToro copies that hold part of this row when looking through (#143), each with the
+            value it holds (the copy's value × the position's weight). A copy's position in a
+            security is added to the same security held directly, so a row with `itemIds` is held
+            directly too; a row without is held only through copies.
+          items:
+            type: object
+            properties:
+              username: { type: string, example: 'topinvestor' }
+              kind: { type: string, enum: [SECURITY, INSTRUMENT, CASH, UNMAPPED] }
+              itemIds: { type: array, items: { type: integer } }
+              currentValue: { type: number }
         key:
           type: string
-          description: Unique row key of a `viaCopy` position.
+          description: Unique row key of a row held only through copies.
         assetClass:
           $ref: '#/components/schemas/AssetClass'
         assetClassSource:
@@ -262,7 +266,7 @@ components:
           type: array
           description: >
             Every equity holding once, largest first. Render rows from this list. With look-through,
-            a linked eToro copy is replaced by its positions (`viaCopy`).
+            a linked eToro copy is replaced by its positions (`viaCopies`).
           items:
             $ref: '#/components/schemas/EquityHolding'
         copies:

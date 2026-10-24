@@ -14,6 +14,13 @@ const generateAssetKey = (transaction, decryptFn) => {
     const { category, description } = transaction;
     const { portfolioItemKeyStrategy, name: categoryName } = category;
 
+    // eToro copies (#143): the key is the copied investor's username in one
+    // form (lower case, no "@"), as the API stores it, so a ticker typed
+    // "AmitKup" in an import can't start a second holding for the same copy.
+    if (category.processingHint === 'COPY_TRADING' && transaction.ticker && /[a-zA-Z]/.test(transaction.ticker)) {
+        return transaction.ticker.trim().replace(/^@/, '').toLowerCase();
+    }
+
     switch (portfolioItemKeyStrategy) {
         case 'TICKER':
             // Validate ticker is a meaningful symbol — reject pure numeric placeholders like "0"

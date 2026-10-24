@@ -51,8 +51,17 @@ export interface EquityHolding {
   quantity: number | null;
   /** Unique row key of a position held through a copy (its itemIds are empty). */
   key?: string;
-  /** A position of an eToro copy, shown instead of the copy when looking through (#143). */
-  viaCopy?: { username: string; kind: 'SECURITY' | 'INSTRUMENT' | 'CASH' | 'UNMAPPED'; itemIds: number[] } | null;
+  /**
+   * The eToro copies that hold part of this row when looking through (#143), with the value each
+   * holds. A row with no `itemIds` is held only through copies; otherwise the copies' share is
+   * added to the security held directly.
+   */
+  viaCopies?: Array<{
+    username: string;
+    kind: 'SECURITY' | 'INSTRUMENT' | 'CASH' | 'UNMAPPED';
+    itemIds: number[];
+    currentValue: number;
+  }> | null;
   currentValue: number;
   currentValueUSD: number;
   sector: string;

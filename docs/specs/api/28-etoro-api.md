@@ -72,6 +72,8 @@ A Copy Trading holding (category hint `COPY_TRADING`) is **linked** to a copy wh
 - the copy's connection maps to the holding's account;
 - the copy's `parentUsername` equals the holding's ticker, lower-cased.
 
+**One form of the username.** A holding's key is its exact ticker, so a Copy Trading ticker is always stored as the username lower-cased, without a leading `@` (`copyTradingTicker()`): `POST` / `PUT /api/transactions` normalise it, the backend's `generateAssetKey()` does the same for imports, and the web form doesn't upper-case it. Otherwise a deposit typed `AmitKup` after a switch to `amitkup` would start a second holding, and both would link to the copy and count its value twice. The switch's duplicate check compares case-insensitively.
+
 When several copies match (a stopped and restarted copy), an `ACTIVE` one wins, then the most recently started. Nothing stores the link (`findCopiesForItems()`), so portfolio rebuilds can't break it. The backend valuation and the #80 insights apply the same rule.
 
 `copyTradeStatus(copy)` → `{ linked: false }`, or `{ linked: true, copyId, status (ACTIVE | CLOSED), connectionStatus (ACTIVE | NEEDS_RECONNECT | REMOVED), lastValueAt, unmappedPct }`. It is returned as:
@@ -82,9 +84,9 @@ When several copies match (a stopped and restarted copy), an `ACTIVE` one wins, 
 
 See [Portfolio API §6.7](./06-portfolio-api.md#67-equity-analysis). In short:
 - A linked copy is one copy row (`assetType` and `assetClass` `COPY_TRADE`, in `copies`) with a composition derived on read from its own holdings and SecurityMaster (`loadCopyLookThrough()` → `deriveCopyComposition()`).
-- With look-through on, `holdings` and the groups show the copy's **positions** instead (`explodeCopyHoldings()`, each tagged `viaCopy`), so the Top 10 and the table list the equities the copy holds. With it off, the copy row is one `Diversified` / `COPY_TRADE` holding.
+- With look-through on, `holdings` and the groups show the copy's **positions** instead (`explodeCopyHoldings()`, one row per security: a position is added to the same security held directly, and `viaCopies` says what each copy holds), so the Top 10 and the table list the equities the copy holds. With it off, the copy row is one `Diversified` / `COPY_TRADE` holding.
 - Its value is the stored eToro value; there is no live price.
-- MCP `get_equity_analysis` returns the same groups. `copies` lists each copy with a `copyTrade` block: `{ linked, status, lookThroughCoveragePct, peCoveragePct, yieldCoveragePct, unmappedPct }`; positions in `topHoldings` carry `viaCopy` (the copied investor), and a copy kept whole carries the `copyTrade` block itself.
+- MCP `get_equity_analysis` returns the same groups. `copies` lists each copy with a `copyTrade` block: `{ linked, status, lookThroughCoveragePct, peCoveragePct, yieldCoveragePct, unmappedPct }`; rows in `topHoldings` that copies hold part of carry `viaCopies` (`[{ username, value }]`), and a copy kept whole carries the `copyTrade` block itself.
 
 ## Passive income
 

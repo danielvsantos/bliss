@@ -100,4 +100,14 @@ describe('asset-aggregator — generateAssetKey', () => {
     };
     expect(generateAssetKey(tx, decrypt)).toBeNull();
   });
+
+  it('keys an eToro copy by the investor username in one form (#143)', () => {
+    const category = { portfolioItemKeyStrategy: 'TICKER', name: 'Copy Trading', type: 'Investments', processingHint: 'COPY_TRADING' };
+    for (const ticker of ['AmitKup', ' @amitkup ', 'AMITKUP']) {
+      expect(generateAssetKey({ description: 'd', ticker, category }, decrypt)).toBe('amitkup');
+    }
+    // Without a ticker it falls back like any ticker-less investment.
+    decrypt.mockReturnValue('Copy of AmitKup');
+    expect(generateAssetKey({ description: 'd', ticker: null, category }, decrypt)).toBe('Copy Trading:Copy of AmitKup');
+  });
 });
