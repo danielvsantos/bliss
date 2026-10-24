@@ -93,9 +93,10 @@ const toNum = (v) => (v == null ? null : parseFloat(v.toString()));
  * The rows a linked copy is shown as when looking through (#143): one per
  * position of the copy (`explodeCopyHoldings`), valued at its share of the
  * copy's eToro value and described like a directly held stock or ETF, plus
- * the copy's cash and its unidentified share. They are never merged with a
- * direct holding of the same symbol, and carry `viaCopy` instead of item ids
- * (nothing to override: the asset class is automatic).
+ * the copy's cash and its unidentified share. Each carries `viaCopies` (one
+ * entry: the copy and how much of the row it holds) instead of item ids;
+ * `foldCopyPositions()` then joins positions with the holdings of the same
+ * symbol.
  */
 function copyPositionRows(copyRow, positions) {
   return positions.map((p) => {
@@ -110,7 +111,12 @@ function copyPositionRows(copyRow, positions) {
     return {
       key: `copy:${copyRow.itemIds[0]}:${p.kind}:${p.nonEquity || ''}:${p.symbol || ''}:${p.exchange || ''}`,
       itemIds: [],
-      viaCopy: { itemIds: copyRow.itemIds, username: copyRow.symbol, kind: p.kind },
+      viaCopies: [{
+        username: copyRow.symbol,
+        kind: p.kind,
+        itemIds: copyRow.itemIds,
+        currentValue: copyRow.currentValue * p.weight,
+      }],
       symbol: p.symbol || fallbackSymbol,
       exchange: p.exchange,
       name: sm.name || p.symbol || fallbackSymbol,
@@ -136,6 +142,47 @@ function copyPositionRows(copyRow, positions) {
       logoUrl: sm.logoUrl || null,
       weight: 0,
     };
+  });
+}
+
+// Security data a folded row takes from a copy position when it has none.
+const FILL_FROM_POSITION = [
+  'peRatio', 'dividendYield', 'trailingEps', 'latestEpsActual', 'latestEpsSurprise',
+  'week52High', 'week52Low', 'averageVolume', 'logoUrl', 'composition',
+];
+
+/**
+ * One row per security (#143), the way holdings of one symbol in several
+ * accounts are already one row. A copy's position in a security is added to
+ * the direct holding of that symbol when there is one (its item ids, asset
+ * class override and dividend terms stay in charge), otherwise to the first
+ * copy position of that symbol; `viaCopies` lists how much of the row each
+ * copy holds. Cash, unidentified shares and non-equity instruments stay one
+ * row per copy. Rows are copied, never mutated.
+ */
+function foldCopyPositions(rows) {
+  const isSecurityPosition = (r) => r.itemIds.length === 0 && r.viaCopies?.[0]?.kind === 'SECURITY';
+  const out = rows.map((r) => ({ ...r }));
+  const bySymbol = new Map();
+  for (const r of out) {
+    if (r.assetType !== 'COPY_TRADE' && !r.viaCopies) bySymbol.set(r.symbol.toUpperCase(), r);
+  }
+  return out.filter((r) => {
+    if (!isSecurityPosition(r)) return true;
+    const symbol = r.symbol.toUpperCase();
+    const target = bySymbol.get(symbol);
+    if (!target) {
+      r.key = `copy:${symbol}`;
+      bySymbol.set(symbol, r);
+      return true;
+    }
+    target.currentValue += r.currentValue;
+    target.currentValueUSD += r.currentValueUSD;
+    target.viaCopies = [...(target.viaCopies || []), ...r.viaCopies];
+    for (const field of FILL_FROM_POSITION) {
+      if (target[field] == null && r[field] != null) target[field] = r[field];
+    }
+    return false;
   });
 }
 
@@ -441,15 +488,16 @@ export default withAuth(async function handler(req, res) {
 
     // 3c. Looking through, a linked copy is replaced by its own positions
     //     (#143), so the groups, the Top 10 and the table show the equities
-    //     the money is in. A copy with nothing but unidentified holdings stays
-    //     one row. The copies themselves are returned in `copies`.
+    //     the money is in, one row per security with what each copy holds of
+    //     it. A copy with nothing but unidentified holdings stays one row. The
+    //     copies themselves are returned in `copies`.
     const copies = mergedHoldings.filter((h) => h.assetType === 'COPY_TRADE');
     const rows = lookThroughEnabled
-      ? mergedHoldings.flatMap((h) => {
+      ? foldCopyPositions(mergedHoldings.flatMap((h) => {
         if (h.assetType !== 'COPY_TRADE') return [h];
         const positions = copyLookThrough.get(h.itemIds[0])?.positions || [];
         return positions.some((p) => p.kind !== 'UNMAPPED') ? copyPositionRows(h, positions) : [h];
-      })
+      }))
       : mergedHoldings;
 
     // 4. Compute total equity value and weights

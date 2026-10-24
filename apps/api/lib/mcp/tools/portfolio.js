@@ -185,8 +185,9 @@ const getEquityAnalysis = defineTool({
     + 'dividend yield. ETFs are looked through into their sectors/countries unless lookThrough is false. '
     + 'eToro copy trades are listed in `copies` (symbol = the copied investor): `lookThroughCoveragePct` is the share '
     + 'of the copy split into sectors, and its P/E and yield are based on `peCoveragePct` / `yieldCoveragePct` of its '
-    + 'value. With lookThrough a copy is replaced in `topHoldings` and the groups by its own positions (`viaCopy` = the '
-    + 'copied investor); without it, it is one holding with assetClass COPY_TRADE. '
+    + 'value. With lookThrough a copy is replaced in `topHoldings` and the groups by its own positions, added to the same '
+    + 'security held directly (`viaCopies` = the copied investors and how much of the holding each one holds); '
+    + 'without it, a copy is one holding with assetClass COPY_TRADE. '
     + '`pendingSecurityData` lists fund symbols left out until their security data is fetched.',
   input: {
     groupBy: z.enum(['sector', 'industry', 'country', 'assetClass']).optional(),
@@ -221,7 +222,9 @@ const getEquityAnalysis = defineTool({
       dividendYieldPct: h.dividendYield == null ? null : Math.round(h.dividendYield * 10000) / 100,
       // eToro copy trades (#143): a copy kept whole, or a position held through one.
       ...(h.assetType === 'COPY_TRADE' && { copyTrade: copyTrade(h) }),
-      ...(h.viaCopy && { viaCopy: h.viaCopy.username }),
+      ...(h.viaCopies?.length && {
+        viaCopies: h.viaCopies.map((v) => ({ username: v.username, value: money(v.currentValue, data.portfolioCurrency) })),
+      }),
     }));
     return {
       currency: data.portfolioCurrency,

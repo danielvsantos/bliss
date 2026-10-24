@@ -84,9 +84,9 @@ When several copies match (a stopped and restarted copy), an `ACTIVE` one wins, 
 
 See [Portfolio API §6.7](./06-portfolio-api.md#67-equity-analysis). In short:
 - A linked copy is one copy row (`assetType` and `assetClass` `COPY_TRADE`, in `copies`) with a composition derived on read from its own holdings and SecurityMaster (`loadCopyLookThrough()` → `deriveCopyComposition()`).
-- With look-through on, `holdings` and the groups show the copy's **positions** instead (`explodeCopyHoldings()`, each tagged `viaCopy`), so the Top 10 and the table list the equities the copy holds. With it off, the copy row is one `Diversified` / `COPY_TRADE` holding.
+- With look-through on, `holdings` and the groups show the copy's **positions** instead (`explodeCopyHoldings()`, one row per security: a position is added to the same security held directly, and `viaCopies` says what each copy holds), so the Top 10 and the table list the equities the copy holds. With it off, the copy row is one `Diversified` / `COPY_TRADE` holding.
 - Its value is the stored eToro value; there is no live price.
-- MCP `get_equity_analysis` returns the same groups. `copies` lists each copy with a `copyTrade` block: `{ linked, status, lookThroughCoveragePct, peCoveragePct, yieldCoveragePct, unmappedPct }`; positions in `topHoldings` carry `viaCopy` (the copied investor), and a copy kept whole carries the `copyTrade` block itself.
+- MCP `get_equity_analysis` returns the same groups. `copies` lists each copy with a `copyTrade` block: `{ linked, status, lookThroughCoveragePct, peCoveragePct, yieldCoveragePct, unmappedPct }`; rows in `topHoldings` that copies hold part of carry `viaCopies` (`[{ username, value }]`), and a copy kept whole carries the `copyTrade` block itself.
 
 ## Passive income
 

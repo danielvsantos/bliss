@@ -1564,6 +1564,7 @@ const es = {
     unmapped: "{{pct}}% sin identificar",
     copyBadge: "Copia",
     viaCopy: "vía @{{username}}",
+    viaCopyIncluded: "incl. {{value}} vía @{{username}}",
     copyCash: "Efectivo",
     copyUnmapped: "Sin identificar",
     copySplit: "{{value}} repartido en {{count}} posiciones",

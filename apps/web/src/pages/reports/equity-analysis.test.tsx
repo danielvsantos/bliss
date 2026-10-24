@@ -196,22 +196,23 @@ describe('EquityAnalysisPage — eToro copy trades (#143)', () => {
     expect(screen.getByTestId('copy-trade-badge')).toHaveAttribute('data-state', 'needsReconnect');
   });
 
-  it('shows a looked-through copy as its positions, tagged "via @investor", with the copy listed above', () => {
-    const via = (kind: 'SECURITY' | 'CASH') => ({ username: 'topinvestor', kind, itemIds: [9] });
+  it('shows a looked-through copy as its positions, one row per security, with the copy listed above', () => {
+    const via = (kind: 'SECURITY' | 'CASH', currentValue: number) => [{ username: 'topinvestor', kind, itemIds: [9], currentValue }];
     const NVDA = holding({
-      symbol: 'NVDA', name: 'NVIDIA', itemIds: [], key: 'copy:9:SECURITY::NVDA:XNAS', quantity: null, currentValue: 600,
-      sector: 'Technology', viaCopy: via('SECURITY'),
+      symbol: 'NVDA', name: 'NVIDIA', itemIds: [], key: 'copy:NVDA', quantity: null, currentValue: 600,
+      sector: 'Technology', viaCopies: via('SECURITY', 600),
     });
     const CASH = holding({
       symbol: 'CASH', name: 'CASH', assetType: 'OTHER', assetClass: 'CASH', itemIds: [], key: 'copy:9:CASH:::', quantity: null,
-      currentValue: 50, sector: 'Other', peRatio: null, dividendYield: null, viaCopy: via('CASH'),
+      currentValue: 50, sector: 'Other', peRatio: null, dividendYield: null, viaCopies: via('CASH', 50),
     });
-    // KO is also held directly: both rows stay, under their own keys.
-    const KO_VIA = holding({ itemIds: [], key: 'copy:9:SECURITY::KO:XNYS', quantity: null, currentValue: 350, viaCopy: via('SECURITY') });
-    setup(response({ holdings: [KO, NVDA, KO_VIA, CASH], copies: [COPY] }));
+    // KO is held directly and through the copy: one row, the copy's share added.
+    const KO_BOTH = holding({ currentValue: 1850, viaCopies: via('SECURITY', 350) });
+    setup(response({ holdings: [KO_BOTH, NVDA, CASH], copies: [COPY] }));
 
     expect(screen.getAllByTestId('via-copy')).toHaveLength(3);
-    expect(screen.getAllByText('equityAnalysis.viaCopy:topinvestor')).toHaveLength(3);
+    expect(screen.getAllByText('equityAnalysis.viaCopy:topinvestor')).toHaveLength(2);
+    expect(screen.getAllByText(/^equityAnalysis\.viaCopyIncluded:.*350.*,topinvestor$/)).toHaveLength(1);
     expect(screen.getAllByText('equityAnalysis.copyCash').length).toBeGreaterThan(0);
     // The copy itself: link badge, value and number of positions, unmapped share.
     const strip = screen.getByTestId('split-copies');
@@ -219,9 +220,21 @@ describe('EquityAnalysisPage — eToro copy trades (#143)', () => {
     expect(within(strip).getByTestId('copy-trade-badge')).toHaveTextContent('etoro.badge.linked');
     expect(within(strip).getByText(/equityAnalysis\.copySplit:.*,3$/)).toBeInTheDocument();
     expect(within(strip).getByTestId('copy-unmapped')).toHaveTextContent('equityAnalysis.unmapped:4');
-    // A copy's positions have no override editor; direct holdings keep theirs.
+    // Held only through the copy: no override editor. Held directly too: the editor stays.
     expect(screen.queryByRole('button', { name: 'equityAnalysis.editAssetClass:NVDA' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'equityAnalysis.editAssetClass:KO' })).toHaveLength(1);
+  });
+
+  it('names several copies holding the same security', () => {
+    const ABC = holding({
+      symbol: 'ABC', itemIds: [], key: 'copy:ABC', quantity: null, currentValue: 300,
+      viaCopies: [
+        { username: 'first', kind: 'SECURITY', itemIds: [9], currentValue: 100 },
+        { username: 'second', kind: 'SECURITY', itemIds: [10], currentValue: 200 },
+      ],
+    });
+    setup(response({ holdings: [ABC], copies: [] }));
+    expect(screen.getByTestId('via-copy')).toHaveTextContent('equityAnalysis.viaCopy:first, @second');
   });
 
   it('names copies on the look-through switch only when there are some', () => {

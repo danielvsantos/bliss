@@ -48,6 +48,13 @@ function CoverageNote({ pct }: { pct: number | null | undefined }) {
 /** Row key: a copy position has its own key; merged rows use their item ids. */
 const rowKey = (h: EquityHolding) => h.key ?? (h.itemIds?.length ? h.itemIds.join('-') : h.symbol);
 
+/** A row held only through eToro copies (#143): nothing held directly, so nothing to override. */
+const copyOnly = (h: EquityHolding) => !!h.viaCopies?.length && !h.itemIds?.length;
+
+/** A copy's cash or unidentified share: no ticker or name of its own. */
+const isCopyRemainder = (h: EquityHolding) =>
+  copyOnly(h) && (h.viaCopies![0].kind === 'CASH' || h.viaCopies![0].kind === 'UNMAPPED');
+
 function SortChevron({ dir }: { dir: 'asc' | 'desc' | null }) {
   if (!dir) return <span className="ml-1 w-3" />;
   return dir === 'asc'
@@ -129,7 +136,7 @@ export default function EquityAnalysisPage() {
   const splitCopies = useMemo(() => {
     const counts = new Map<string, number>();
     for (const h of allHoldings) {
-      if (h.viaCopy) counts.set(h.viaCopy.username, (counts.get(h.viaCopy.username) ?? 0) + 1);
+      for (const v of h.viaCopies ?? []) counts.set(v.username, (counts.get(v.username) ?? 0) + 1);
     }
     return (data?.copies ?? [])
       .filter((c) => counts.has(c.symbol))
@@ -139,11 +146,23 @@ export default function EquityAnalysisPage() {
   // A copy's cash and unidentified share have no ticker of their own.
   const displaySymbol = useCallback(
     (h: EquityHolding) => {
-      if (h.viaCopy?.kind === 'CASH') return t('equityAnalysis.copyCash');
-      if (h.viaCopy?.kind === 'UNMAPPED') return t('equityAnalysis.copyUnmapped');
-      return h.symbol;
+      if (!isCopyRemainder(h)) return h.symbol;
+      return h.viaCopies![0].kind === 'CASH' ? t('equityAnalysis.copyCash') : t('equityAnalysis.copyUnmapped');
     },
     [t],
+  );
+
+  // "via @a, @b" for a row held only through copies; "incl. $X via @a" when
+  // the copies' share is added to a security held directly.
+  const viaLabel = useCallback(
+    (h: EquityHolding) => {
+      if (!h.viaCopies?.length) return null;
+      const username = h.viaCopies.map((v) => v.username).join(', @');
+      if (copyOnly(h)) return t('equityAnalysis.viaCopy', { username });
+      const value = h.viaCopies.reduce((sum, v) => sum + v.currentValue, 0);
+      return t('equityAnalysis.viaCopyIncluded', { value: formatCurrency(value, portfolioCurrency), username });
+    },
+    [t, portfolioCurrency],
   );
 
   // Sorted holdings
@@ -194,12 +213,12 @@ export default function EquityAnalysisPage() {
       .map((h) => ({
         key: rowKey(h),
         symbol: displaySymbol(h),
-        name: h.viaCopy && h.viaCopy.kind !== 'SECURITY' ? displaySymbol(h) : h.name,
-        via: h.viaCopy?.username ?? null,
+        name: isCopyRemainder(h) ? displaySymbol(h) : h.name,
+        via: viaLabel(h),
         weight: h.weight * 100,
         value: h.currentValue,
       }));
-  }, [allHoldings, displaySymbol]);
+  }, [allHoldings, displaySymbol, viaLabel]);
 
   // O(1) lookup map for the bar chart axis and tooltip (row key → holding)
   const topHoldingsMap = useMemo(
@@ -415,7 +434,7 @@ export default function EquityAnalysisPage() {
                         const h = topHoldingsMap.get(label);
                         if (!h) return label;
                         const base = h.name === h.symbol ? h.name : `${h.name} (${h.symbol})`;
-                        return h.via ? `${base} · ${t('equityAnalysis.viaCopy', { username: h.via })}` : base;
+                        return h.via ? `${base} · ${h.via}` : base;
                       }}
                     />
                     <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
@@ -499,12 +518,12 @@ export default function EquityAnalysisPage() {
                             <span className="inline-flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
                             {displaySymbol(h)}
                             {h.assetType === 'COPY_TRADE' && <CopyTradeBadge copyTrade={h.copyTrade} />}
-                            {h.viaCopy && (
+                            {h.viaCopies?.length ? (
                               <Badge variant="outline" className="px-1.5 py-0 text-[10px] bg-muted text-muted-foreground border-border" data-testid="via-copy">
-                                {t('equityAnalysis.viaCopy', { username: h.viaCopy.username })}
+                                {viaLabel(h)}
                               </Badge>
-                            )}
-                            {h.viaCopy && h.assetClass ? (
+                            ) : null}
+                            {copyOnly(h) && h.assetClass ? (
                               // Automatic for a copy's positions: nothing to override.
                               <Badge variant="outline" className="px-1.5 py-0 text-[10px] bg-brand-primary/10 text-brand-primary border-brand-primary/20">
                                 {t(`equityAnalysis.assetClasses.${h.assetClass}`)}
@@ -519,7 +538,7 @@ export default function EquityAnalysisPage() {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-muted-foreground max-w-[120px] sm:max-w-[160px] truncate">
-                            {h.viaCopy && h.viaCopy.kind !== 'SECURITY' && h.viaCopy.kind !== 'INSTRUMENT' ? displaySymbol(h) : h.name}
+                            {isCopyRemainder(h) ? displaySymbol(h) : h.name}
                             {h.unmappedPct != null && h.unmappedPct >= 0.5 && (
                               <span className="block text-[10px] text-warning" data-testid="copy-unmapped">
                                 {t('equityAnalysis.unmapped', { pct: Math.round(h.unmappedPct) })}

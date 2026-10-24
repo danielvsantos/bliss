@@ -55,10 +55,11 @@ Shown next to the symbol of every Copy Trading holding on **Portfolio** (`AssetR
 
 ## 28.6. Equity Analysis
 
-- **Copy positions (look-through on).** The API replaces a linked copy by its positions (`viaCopy`, [Portfolio API §6.7](../api/06-portfolio-api.md#67-equity-analysis)), so the **Top 10** and **All holdings** show the equities the copy holds:
-  - each position row shows its symbol, a muted "via @investor" badge and a read-only asset-class badge (a copy's positions have nothing to override);
+- **Copy positions (look-through on).** The API replaces a linked copy by its positions, one row per security (`viaCopies`, [Portfolio API §6.7](../api/06-portfolio-api.md#67-equity-analysis)), so the **Top 10** and **All holdings** show the equities the copy holds:
+  - a security held only through copies shows a muted "via @investor" badge ("via @a, @b" for several copies) and a read-only asset-class badge (nothing to override);
+  - a security also held directly keeps its asset-class editor and shows "incl. <value> via @investor" (`equityAnalysis.viaCopyIncluded`): the copies' share is added to the same row, like holdings across accounts;
   - the copy's cash and its unidentified share are named "Cash" and "Unidentified" (`equityAnalysis.copyCash` / `copyUnmapped`);
-  - a position is never merged with a direct holding of the same symbol, so rows and Top 10 bars are keyed by `rowKey()` (the API `key`, else the item ids), and the Top 10 axis shows the symbol;
+  - rows and Top 10 bars are keyed by `rowKey()` (the API `key`, else the item ids), and the Top 10 axis shows the symbol;
   - above the table, each split copy (from `copies`) is listed: `@investor`, its link badge, "<value> split into N positions" and the unmapped share.
 - **Switch label.** When the tenant has a copy (`summary.copyTradeCount > 0`) the look-through switch reads "Look through ETFs and copies" (`equityAnalysis.lookThroughWithCopies`, with its own hint); otherwise it stays "Look through ETFs".
 - **Copy rows** (`assetType: 'COPY_TRADE'`, look-through off or an unlinked copy) show the copy badge plus the asset-class badge `COPY_TRADE` ("Copy trade"). The name is `@investor`.
@@ -80,7 +81,7 @@ For a category with the `COPY_TRADING` hint:
 
 New keys in all 5 locales:
 - `etoro.*`: section, status, connection, copy, dialog, errors, badge and convert strings;
-- `equityAnalysis.assetClasses.COPY_TRADE`, `equityAnalysis.basedOn`, `equityAnalysis.unmapped`, `equityAnalysis.copyBadge`, `equityAnalysis.viaCopy`, `equityAnalysis.copyCash`, `equityAnalysis.copyUnmapped`, `equityAnalysis.copySplit`, `equityAnalysis.lookThroughWithCopies`, `equityAnalysis.lookThroughHintWithCopies`;
+- `equityAnalysis.assetClasses.COPY_TRADE`, `equityAnalysis.basedOn`, `equityAnalysis.unmapped`, `equityAnalysis.copyBadge`, `equityAnalysis.viaCopy`, `equityAnalysis.viaCopyIncluded`, `equityAnalysis.copyCash`, `equityAnalysis.copyUnmapped`, `equityAnalysis.copySplit`, `equityAnalysis.lookThroughWithCopies`, `equityAnalysis.lookThroughHintWithCopies`;
 - `manageAssets.actions.copyTrading`;
 - `transactionFormPage.etoroUsernameLabel` / `etoroUsernamePlaceholder` / `copyTradeAmountHint`;
 - `defaultCategories.names.COPY_TRADING`, `defaultCategories.processingHints.COPY_TRADING`;

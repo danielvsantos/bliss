@@ -56,7 +56,7 @@ Each copy in **Settings → Bank sync** shows whether it is **linked** to a hold
   - **Not linked to eToro**: no copy matches the holding yet. It behaves as a manual fund.
 - **History.** Values start on the day you connect. History before that stays as Bliss already had it.
 - **Equity Analysis** with **Look through** on:
-  - **Holdings and Top 10:** each linked copy is replaced by the stocks, ETFs, crypto and cash it holds, each marked "via @investor" and valued at its share of the copy. They are listed next to (not merged with) shares you hold directly. Above the table, each copy shows its value and how many positions it was split into.
+  - **Holdings and Top 10:** each linked copy is replaced by the stocks, ETFs, crypto and cash it holds, valued at its share of the copy. A stock you also hold directly stays one row, with "incl. … via @investor" showing the copy's part; one held only through copies is marked "via @investor". Above the table, each copy shows its value and how many positions it was split into.
   - **Sector and country views:** the copy's holdings go to their own sectors and countries. An ETF inside a copy is split further by its own sectors and countries.
   - **Asset-class view:** the copy is split into stocks, ETFs, crypto, cash and so on.
   - With **Look through** off, the copy is one "Diversified" row.

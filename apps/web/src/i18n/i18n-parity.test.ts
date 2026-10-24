@@ -533,6 +533,7 @@ const ETORO_FORM_KEYS = [
   'defaultCategories.processingHints.COPY_TRADING',
   'defaultCategories.names.COPY_TRADING',
   'equityAnalysis.viaCopy',
+  'equityAnalysis.viaCopyIncluded',
   'equityAnalysis.copyCash',
   'equityAnalysis.copyUnmapped',
   'equityAnalysis.copySplit',

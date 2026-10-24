@@ -417,19 +417,19 @@ describe('Equity Analysis with a linked copy', () => {
   it('shows the copy as its own positions when looking through, and as one row otherwise', async () => {
     const on = await equity({ groupBy: 'sector' });
     expect(on._body.holdings.some((h: any) => h.assetType === 'COPY_TRADE')).toBe(false);
-    const via = on._body.holdings.filter((h: any) => h.viaCopy?.username === INVESTOR);
+    const via = on._body.holdings.filter((h: any) => h.viaCopies?.some((v: any) => v.username === INVESTOR));
     // tech (30 + 10 RTH merged), health, fr, etf, cash
     expect(via).toHaveLength(5);
     const tech = via.find((h: any) => h.symbol === SYM.tech);
     expect(tech).toMatchObject({ assetType: 'STOCK', assetClass: 'STOCK', sector: 'Technology', peRatio: 30, itemIds: [] });
     expect(tech.currentValue).toBeCloseTo(400);
     expect(via.find((h: any) => h.symbol === SYM.etf)).toMatchObject({ assetType: 'ETF', sector: 'Diversified' });
-    expect(via.find((h: any) => h.viaCopy.kind === 'CASH')).toMatchObject({ symbol: 'CASH', assetClass: 'CASH', sector: 'Other' });
+    expect(via.find((h: any) => h.viaCopies[0].kind === 'CASH')).toMatchObject({ symbol: 'CASH', assetClass: 'CASH', sector: 'Other' });
     expect(via.reduce((s: number, h: any) => s + h.currentValue, 0)).toBeCloseTo(1000);
     expect(new Set(via.map((h: any) => h.key)).size).toBe(5);
 
     const off = await equity({ groupBy: 'sector', lookThrough: 'false' });
-    expect(off._body.holdings.filter((h: any) => h.viaCopy)).toHaveLength(0);
+    expect(off._body.holdings.filter((h: any) => h.viaCopies)).toHaveLength(0);
     expect(off._body.holdings.find((h: any) => h.symbol === INVESTOR)).toMatchObject({ assetType: 'COPY_TRADE' });
     expect(off._body.copies).toHaveLength(1);
   });
@@ -468,6 +468,29 @@ describe('Equity Analysis with a linked copy', () => {
     const off = await equity({ groupBy: 'sector', lookThrough: 'false' });
     expect(res._body.summary.weightedPeRatio).toBeCloseTo(off._body.summary.weightedPeRatio, 1);
     expect(res._body.summary.weightedDividendYield).toBeCloseTo(off._body.summary.weightedDividendYield, 4);
+  });
+
+  it('adds the copy\'s position to the same stock held directly: one row, saying what the copy holds', async () => {
+    const stocks = await prisma.category.create({
+      data: { name: 'Stocks', group: 'Stocks', type: 'Investments', tenantId: admin.tenantId, processingHint: 'API_STOCK', portfolioItemKeyStrategy: 'TICKER' },
+    });
+    const direct = await prisma.portfolioItem.create({
+      data: { tenantId: admin.tenantId, categoryId: stocks.id, accountId: etoroAccountId, symbol: SYM.tech, currency: 'USD', source: 'SYNCED', quantity: 10, currentValue: 300, currentValueInUSD: 300 },
+    });
+    try {
+      const res = await equity({ groupBy: 'sector' });
+      const rows = res._body.holdings.filter((h: any) => h.symbol === SYM.tech);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ itemIds: [direct.id], quantity: 10, sector: 'Technology' });
+      expect(rows[0].currentValue).toBeCloseTo(700);
+      expect(rows[0].viaCopies).toEqual([expect.objectContaining({ username: INVESTOR, kind: 'SECURITY', currentValue: expect.closeTo(400) })]);
+      expect(groupValue(res._body, 'Technology')).toBeCloseTo(300 + 1000 * (0.40 + 0.20 * 0.5));
+      // The copy itself is unchanged.
+      expect(res._body.copies.find((c: any) => c.symbol === INVESTOR).currentValue).toBe(1000);
+    } finally {
+      await prisma.portfolioItem.delete({ where: { id: direct.id } });
+      await prisma.category.delete({ where: { id: stocks.id } });
+    }
   });
 
   it('portfolio items carry the link status for badges', async () => {
