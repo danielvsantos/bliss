@@ -19,7 +19,7 @@ import { parseDecimal } from '@/lib/portfolio-utils';
 import { markActivityPending } from '@/lib/activity-pending';
 
 const priceSchema = z.object({
-  date: z.date({ required_error: "A date is required." }),
+  date: z.date({ error: "A date is required." }),
   value: z.coerce.number().positive({ message: "Price must be a positive number." }),
   currency: z.string().min(3, "Currency code is required.").max(3),
   notes: z.string().optional(),

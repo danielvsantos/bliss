@@ -127,7 +127,7 @@ describe('GET /api/runtime', () => {
       expect(unresolved).toEqual([]);
     });
 
-    // These four are pinned by pnpm.overrides in the root package.json because
+    // These are pinned by pnpm.overrides in the root package.json because
     // their own parents still resolve to vulnerable versions. A silently
     // unapplied override is exactly the failure this endpoint exists to catch,
     // so assert the floors rather than just "some version string".
@@ -136,7 +136,9 @@ describe('GET /api/runtime', () => {
       ['ws', 8, 21],
       ['lodash', 4, 18],
       ['form-data', 4, 0],
-    ])('reports %s at or above the pinned security floor', async (name, major, minor) => {
+      // #157: GHSA-27r3-jxmh-p828, pinned to >=1.20.9 under express 4.
+      ['body-parser', 1, 20, 9],
+    ])('reports %s at or above the pinned security floor', async (name, major, minor, patch = 0) => {
       const res = await request(makeApp())
         .get('/api/runtime')
         .set('x-api-key', API_KEY);
@@ -144,9 +146,10 @@ describe('GET /api/runtime', () => {
       const version = res.body.dependencies[name];
       expect(version).toMatch(/^\d+\.\d+\.\d+/);
 
-      const [gotMajor, gotMinor] = version.split('.').map(Number);
+      const [gotMajor, gotMinor, gotPatch] = version.split('.').map((n) => parseInt(n, 10));
       expect(gotMajor).toBeGreaterThanOrEqual(major);
       if (gotMajor === major) expect(gotMinor).toBeGreaterThanOrEqual(minor);
+      if (gotMajor === major && gotMinor === minor) expect(gotPatch).toBeGreaterThanOrEqual(patch);
     });
 
         // null has to mean "genuinely not installed", not "the lookup failed" —

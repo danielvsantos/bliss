@@ -7,6 +7,8 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+# pnpm.patchedDependencies (root package.json) must be present at install.
+COPY patches ./patches
 # All workspace package.json stubs must be present so pnpm resolves peers
 # consistently with the lockfile (e.g. typescript optional peer of prisma).
 COPY apps/api/package.json ./apps/api/

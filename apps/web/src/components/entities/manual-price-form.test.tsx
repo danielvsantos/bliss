@@ -45,4 +45,17 @@ describe('ManualPriceForm', () => {
     expect(id).toBe(7);
     expect(payload).toMatchObject({ value: Number(price), currency: 'EUR' });
   });
+
+  // #157: zod 4 + @hookform/resolvers 5. The resolver must still surface the
+  // schema's own message (resolvers 3 cannot read a zod 4 error at all).
+  it('shows the schema message and does not submit a non-positive price', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByPlaceholderText('manualPriceForm.pricePlaceholder'), '0');
+    await user.click(screen.getByRole('button', { name: 'manualPriceForm.savePrice' }));
+
+    expect(await screen.findByText('Price must be a positive number.')).toBeInTheDocument();
+    expect(api.createManualAssetValue).not.toHaveBeenCalled();
+  });
 });

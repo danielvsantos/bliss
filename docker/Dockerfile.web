@@ -4,6 +4,8 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# pnpm.patchedDependencies (root package.json) must be present at install.
+COPY patches ./patches
 COPY apps/web/package.json ./apps/web/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts

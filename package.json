@@ -32,7 +32,14 @@
       "version bump of the direct dependency cannot clear it. Remove an entry",
       "once the parent ships the patched range on its own.",
       "Audited by .github/workflows/security-audit.yml; anything here that is NOT",
-      "overridable is listed with a justification under //auditConfig below."
+      "overridable is listed with a justification under //auditConfig below.",
+      "body-parser@1/@2, dompurify, zod: GHSA-27r3-jxmh-p828, GHSA-mrv2-3pqr-j5jr,",
+      "GHSA-mrhx-c7xc-m3w5 (#157). body-parser comes in through express 4 (backend)",
+      "and express 5 under @modelcontextprotocol/sdk (api); dompurify through",
+      "monaco-editor and posthog-js under @scalar (docs). zod 3 never got the fix",
+      "(3.25.76 is the last 3.x), so every consumer moves to zod 4: the direct deps",
+      "were bumped and this entry keeps SDK and docs transitives (openai,",
+      "@anthropic-ai/sdk, zod-to-json-schema, @scalar, nextra) on the patched line."
     ],
     "//auditConfig": [
       "Audit allowlist: advisories that genuinely cannot be fixed. Read by",
@@ -83,7 +90,21 @@
       "defu": "^6.1.5",
       "deepmerge-ts": "^8.0.0",
       "effect": "^3.20.0",
-      "unplugin@1": "^1.16.1"
+      "unplugin@1": "^1.16.1",
+      "body-parser@1": "^1.20.9",
+      "body-parser@2": "^2.4.0",
+      "dompurify": "^3.4.17",
+      "zod": "^4.6.7"
+    },
+    "//patchedDependencies": [
+      "nextra-theme-docs@4.6.1: LayoutPropsSchema requires `children`, but <Layout>",
+      "strips children before parsing; zod 4.3.6 let the missing key through, the",
+      "patched zod (>=4.6.6, see //overrides) does not, so every docs page 500s.",
+      "The patch marks it optional. Drop it once nextra-theme-docs fixes the schema.",
+      "The Dockerfiles copy patches/ before `pnpm install --frozen-lockfile`."
+    ],
+    "patchedDependencies": {
+      "nextra-theme-docs@4.6.1": "patches/nextra-theme-docs@4.6.1.patch"
     }
   }
 }

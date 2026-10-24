@@ -52,6 +52,10 @@ const TRACKED_PACKAGES = [
   { name: 'postcss', via: 'next' },
   { name: 'nanoid', via: 'postcss' },
   { name: 'form-data', via: 'axios' },
+  // #157: GHSA-mchm-gjx6-7h55, and body-parser 2 pinned by pnpm.overrides
+  // (express 5 under the MCP SDK).
+  { name: '@sentry/nextjs' },
+  { name: 'body-parser', via: ['@modelcontextprotocol/sdk/server/streamableHttp.js', 'express'] },
 ];
 
 const fs = require('fs');
@@ -118,7 +122,12 @@ function resolveVersion(name, via) {
 
   if (via) {
     try {
-      bases.push(path.dirname(require.resolve(via)));
+      // `via` may be a chain of parents, resolved each from the last one.
+      let from = null;
+      for (const parent of [].concat(via)) {
+        from = path.dirname(require.resolve(parent, from ? { paths: [from] } : undefined));
+      }
+      bases.push(from);
     } catch {
       // Parent not installed; the other bases may still find the child.
     }

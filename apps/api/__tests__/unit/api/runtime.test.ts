@@ -138,6 +138,26 @@ describe('GET /api/runtime', () => {
       expect(deps.nanoid).toMatch(/^\d+\.\d+\.\d+/);
     });
 
+    // #157: the critical next / @sentry/nextjs advisories and body-parser 2,
+    // pinned by pnpm.overrides under the MCP SDK's express 5. Assert the floors
+    // so a silently unapplied bump or override shows up here, not in prod.
+    it.each([
+      ['next', [15, 5, 28]],
+      ['@sentry/nextjs', [9, 47, 2]],
+      ['body-parser', [2, 4, 0]],
+    ] as const)('reports %s at or above its security floor', async (name, floor) => {
+      stubFetch({ '/api/runtime': { body: {} }, '/version.json': { body: {} } });
+
+      const res = makeRes();
+      await handler(makeReq(), res);
+
+      const version = res._body!.services.api.dependencies[name];
+      expect(version).toMatch(/^\d+\.\d+\.\d+/);
+      const got = version.split('.').map((n: string) => parseInt(n, 10));
+      const cmp = got[0] - floor[0] || got[1] - floor[1] || got[2] - floor[2];
+      expect(cmp).toBeGreaterThanOrEqual(0);
+    });
+
     // null has to mean "genuinely not installed", not "the lookup failed" —
     // otherwise a vulnerable version and an absent one look identical, which
     // would make the report worse than useless for the packages that carried

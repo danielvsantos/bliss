@@ -19,7 +19,7 @@ const debtTermsSchema = z.object({
   initialBalance: z.coerce.number().positive({ message: "Initial balance must be a positive number." }),
   interestRate: z.coerce.number().min(0, { message: "Interest rate cannot be negative." }).max(100, { message: "Interest rate seems too high." }),
   termInMonths: z.coerce.number().int().positive({ message: "Term must be a positive number of months." }),
-  originationDate: z.date({ required_error: "An origination date is required." }),
+  originationDate: z.date({ error: "An origination date is required." }),
 });
 
 type DebtTermsFormValues = z.infer<typeof debtTermsSchema>;

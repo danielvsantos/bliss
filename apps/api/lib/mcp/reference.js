@@ -19,16 +19,17 @@ const DOMAINS = [
   ['Subscriptions', ['list_subscriptions', 'update_subscription']],
 ];
 
+// Reads zod 4 internals (`_zod.def`): enough to label every field our tools use.
 function unwrap(schema) {
   let s = schema;
   let optional = false;
   let nullable = false;
   for (;;) {
-    const t = s?._def?.typeName;
-    if (t === 'ZodOptional') { optional = true; s = s._def.innerType; continue; }
-    if (t === 'ZodNullable') { nullable = true; s = s._def.innerType; continue; }
-    if (t === 'ZodDefault') { optional = true; s = s._def.innerType; continue; }
-    if (t === 'ZodEffects') { s = s._def.schema; continue; }
+    const d = s?._zod?.def;
+    if (d?.type === 'optional') { optional = true; s = d.innerType; continue; }
+    if (d?.type === 'nullable') { nullable = true; s = d.innerType; continue; }
+    if (d?.type === 'default') { optional = true; s = d.innerType; continue; }
+    if (d?.type === 'pipe') { s = d.in; continue; }
     break;
   }
   return { inner: s, optional, nullable, description: schema.description ?? s?.description ?? '' };
@@ -36,17 +37,17 @@ function unwrap(schema) {
 
 function typeLabel(schema) {
   const { inner, nullable } = unwrap(schema);
-  const d = inner?._def;
+  const d = inner?._zod?.def;
   let label;
-  switch (d?.typeName) {
-    case 'ZodString': label = 'string'; break;
-    case 'ZodNumber': label = d.checks?.some((c) => c.kind === 'int') ? 'integer' : 'number'; break;
-    case 'ZodBoolean': label = 'boolean'; break;
-    case 'ZodEnum': label = d.values.map((v) => `\`${v}\``).join(' | '); break;
-    case 'ZodLiteral': label = `\`${d.value}\``; break;
-    case 'ZodUnion': label = d.options.map(typeLabel).join(' | '); break;
-    case 'ZodArray': label = `array of ${typeLabel(d.type)}`; break;
-    case 'ZodObject': label = `object { ${Object.keys(d.shape()).join(', ')} }`; break;
+  switch (d?.type) {
+    case 'string': label = 'string'; break;
+    case 'number': label = inner.isInt ? 'integer' : 'number'; break;
+    case 'boolean': label = 'boolean'; break;
+    case 'enum': label = inner.options.map((v) => `\`${v}\``).join(' | '); break;
+    case 'literal': label = d.values.map((v) => `\`${v}\``).join(' | '); break;
+    case 'union': label = d.options.map(typeLabel).join(' | '); break;
+    case 'array': label = `array of ${typeLabel(d.element)}`; break;
+    case 'object': label = `object { ${Object.keys(d.shape).join(', ')} }`; break;
     default: label = 'value';
   }
   return nullable ? `${label} | null` : label;
