@@ -25,6 +25,7 @@ const logger = require('../../utils/logger');
 const { carryOrigin } = require('../../utils/activityTracker');
 const { getPlaidSyncQueue, etoroSyncOpts } = require('../../queues/plaidSyncQueue');
 const { getPortfolioQueue } = require('../../queues/portfolioQueue');
+const { enqueueLookThroughWatchlistRefresh } = require('../../queues/securityMasterQueue');
 const {
     createEtoroClient,
     parseCopies,
@@ -155,7 +156,22 @@ async function syncConnection(job) {
         data: { lastSyncAt: now, lastSyncStatus: 'SUCCESS', lastSyncError: null, errorCode: null },
     });
 
-    // 3. Revalue the linked Copy Trading holdings (closed copies included: they keep their last value).
+    // 3. Symbols inside the copies with no security data yet: ask the security
+    //    master for the look-through watchlist now instead of waiting for its
+    //    weekly run (R20), so a new copy is split within one sync. The job is
+    //    deduplicated and runs at BACKGROUND priority; this handler never calls
+    //    Twelve Data itself.
+    const missing = await countSymbolsWithoutData(seenMirrorIds, connection);
+    if (missing > 0) {
+        const queued = await enqueueLookThroughWatchlistRefresh({ reason: 'ETORO_SYNC' });
+        logger.info(`[etoroSync] ${connection.id}: ${missing} copy symbol(s) without security data; look-through watchlist queued`, {
+            jobId: queued?.id ?? null,
+        });
+    } else {
+        logger.info(`[etoroSync] ${connection.id}: every copy symbol has security data; no watchlist refresh`);
+    }
+
+    // 4. Revalue the linked Copy Trading holdings (closed copies included: they keep their last value).
     const allCopies = await prisma.etoroCopy.findMany({
         where: { tenantId: connection.tenantId, connectionId: connection.id },
         select: { parentUsername: true },
@@ -174,6 +190,24 @@ async function syncConnection(job) {
         `${linked.length} linked holding(s) revalued`,
     );
     return { status: 'SUCCESS', copies: parsed.copies.length, closed: closed.count, linked: linked.length };
+}
+
+/** How many mapped stock/ETF symbols of the connection's active copies have no SecurityMaster row. */
+async function countSymbolsWithoutData(mirrorIds, connection) {
+    if (mirrorIds.length === 0) return 0;
+    const copies = await prisma.etoroCopy.findMany({
+        where: { tenantId: connection.tenantId, connectionId: connection.id, mirrorId: { in: mirrorIds } },
+        select: { holdings: true },
+    });
+    const symbols = new Set();
+    for (const copy of copies) {
+        for (const h of Array.isArray(copy.holdings) ? copy.holdings : []) {
+            if (h?.symbol && !h.unresolved && !h.nonEquity) symbols.add(String(h.symbol).toUpperCase());
+        }
+    }
+    if (symbols.size === 0) return 0;
+    const known = await prisma.securityMaster.count({ where: { symbol: { in: [...symbols] } } });
+    return symbols.size - known;
 }
 
 /** True when GET /me with the same key is refused too. */

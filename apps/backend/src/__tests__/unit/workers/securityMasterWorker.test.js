@@ -48,6 +48,7 @@ const mockGetAllSecurityMasterSymbols = jest.fn();
 const mockGetTenantSecuritySymbols = jest.fn();
 const mockUpsertEtfComposition = jest.fn();
 const mockMarkEtfCompositionAttempt = jest.fn();
+const mockGetLookThroughWatchlistSymbols = jest.fn();
 jest.mock('../../../services/securityMasterService', () => ({
   getBySymbol: (...args) => mockGetBySymbol(...args),
   upsertFromProfile: (...args) => mockUpsertFromProfile(...args),
@@ -57,6 +58,7 @@ jest.mock('../../../services/securityMasterService', () => ({
   getAllActiveSecuritySymbols: (...args) => mockGetAllActiveSecuritySymbols(...args),
   getTenantSecuritySymbols: (...args) => mockGetTenantSecuritySymbols(...args),
   getAllSecurityMasterSymbols: (...args) => mockGetAllSecurityMasterSymbols(...args),
+  getLookThroughWatchlistSymbols: (...args) => mockGetLookThroughWatchlistSymbols(...args),
   isEtfAssetType: (t) => typeof t === 'string' && t.toUpperCase() === 'ETF',
 }));
 
@@ -400,6 +402,37 @@ describe('securityMasterWorker', () => {
     });
   });
 
+  describe('refresh-lookthrough-watchlist (#143)', () => {
+    it('refreshes the symbols held only inside eToro copies, with their venue', async () => {
+      mockGetLookThroughWatchlistSymbols.mockResolvedValue([
+        { symbol: 'AIR', exchange: 'XPAR' },
+        { symbol: 'NVDA', exchange: null },
+      ]);
+      const job = makeJob('refresh-lookthrough-watchlist', { reason: 'ETORO_SYNC' });
+
+      const result = await workerCallback(job);
+
+      expect(mockGetLookThroughWatchlistSymbols).toHaveBeenCalled();
+      expect(result).toMatchObject({ success: true, totalSymbols: 2, refreshed: 2 });
+      expect(job.updateProgress).toHaveBeenLastCalledWith(100);
+    });
+
+    it('does nothing when every copy symbol is fresh or held directly', async () => {
+      mockGetLookThroughWatchlistSymbols.mockResolvedValue([]);
+      const result = await workerCallback(makeJob('refresh-lookthrough-watchlist', {}));
+      expect(result).toMatchObject({ totalSymbols: 0, refreshed: 0 });
+    });
+
+    it('is registered weekly, Sunday 2 AM UTC, ahead of the nightly refresh', () => {
+      const { getSecurityMasterQueue } = require('../../../queues/securityMasterQueue');
+      startSecurityMasterWorker();
+      const adds = getSecurityMasterQueue().add.mock.calls;
+      expect(adds).toEqual(expect.arrayContaining([
+        ['refresh-lookthrough-watchlist', {}, { repeat: { pattern: '0 2 * * 0' }, jobId: 'weekly-lookthrough-watchlist' }],
+      ]));
+    });
+  });
+
   it('throws on unknown job name', async () => {
     await expect(
       workerCallback(makeJob('unknown-job', {}))
@@ -411,5 +444,7 @@ describe('securityMasterWorker', () => {
     expect(securityMasterPriority({ name: 'refresh-tenant-securities' })).toBe(PRIORITIES.FUNDAMENTALS);
     expect(securityMasterPriority({ name: 'refresh-single-symbol' })).toBe(PRIORITIES.FUNDAMENTALS);
     expect(securityMasterPriority({ name: 'refresh-all-from-table' })).toBe(PRIORITIES.BACKGROUND);
+    // #143: the eToro look-through watchlist only uses spare credits.
+    expect(securityMasterPriority({ name: 'refresh-lookthrough-watchlist' })).toBe(PRIORITIES.BACKGROUND);
   });
 });

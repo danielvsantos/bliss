@@ -2,6 +2,7 @@ const prisma = require('../../prisma/prisma.js');
 const logger = require('../utils/logger');
 const { Decimal } = require('@prisma/client/runtime/library');
 const { normalizeEtfComposition } = require('@bliss/shared/portfolio');
+const { US_MICS } = require('@bliss/shared/etoro');
 
 /**
  * SecurityMaster service — CRUD operations and fundamental data computation.
@@ -444,6 +445,71 @@ async function getAllSecurityMasterSymbols() {
     return records.map(r => ({ symbol: r.symbol, exchange: r.exchange || null }));
 }
 
+/**
+ * Mapped listings inside eToro copies (#143), across every tenant: the
+ * stocks and ETFs of ACTIVE copies on connections that weren't removed.
+ * Symbols only — no tenant id or value ever leaves this function, and the
+ * result is public market data. Non-equity (crypto, commodities, …) and
+ * unresolved instruments are skipped.
+ *
+ * @returns {Promise<Array<{symbol: string, exchange: string|null}>>} one entry per symbol
+ */
+async function getCopyHoldingSymbols() {
+    const copies = await prisma.etoroCopy.findMany({
+        where: { status: 'ACTIVE', connection: { status: { not: 'REMOVED' } } },
+        select: { holdings: true },
+    });
+    const bySymbol = new Map();
+    for (const copy of copies) {
+        for (const h of Array.isArray(copy.holdings) ? copy.holdings : []) {
+            if (!h || h.unresolved || h.nonEquity || typeof h.symbol !== 'string' || !h.symbol.trim()) continue;
+            const symbol = h.symbol.trim().toUpperCase();
+            // Prefer an entry with a venue (a US variant has none).
+            if (!bySymbol.has(symbol) || (!bySymbol.get(symbol).exchange && h.exchange)) {
+                bySymbol.set(symbol, { symbol, exchange: h.exchange || null });
+            }
+        }
+    }
+    return [...bySymbol.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
+/**
+ * The look-through watchlist (#143, R20): symbols held only inside eToro
+ * copies, so the nightly refresh (which covers directly held symbols) never
+ * fetches them. Limited to symbols with no SecurityMaster row or with
+ * fundamentals older than `staleDays`.
+ *
+ * US listings go to Twelve Data without a MIC. eToro only knows the venue
+ * (XNAS / XNYS / BATS), while Twelve Data files US stocks and ETFs under
+ * segment MICs (XNGS, XNMS, XNCM, ARCX, …): `mic_code=XNAS` for AMZN returns
+ * nothing at all. A bare US ticker resolves to the US listing. Other venues
+ * keep their MIC, which tells e.g. Xetra's BMW from a US ticker BMW.
+ *
+ * @param {Object} [options]
+ * @param {number} [options.staleDays=7]
+ * @returns {Promise<Array<{symbol: string, exchange: string|null}>>}
+ */
+async function getLookThroughWatchlistSymbols({ staleDays = 7 } = {}) {
+    const copySymbols = await getCopyHoldingSymbols();
+    if (copySymbols.length === 0) return [];
+    const held = new Set((await getAllActiveSecuritySymbols()).map(s => s.symbol.toUpperCase()));
+    const candidates = copySymbols.filter(s => !held.has(s.symbol));
+    if (candidates.length === 0) return [];
+
+    const rows = await prisma.securityMaster.findMany({
+        where: { symbol: { in: candidates.map(s => s.symbol) } },
+        select: { symbol: true, lastFundamentalsUpdate: true },
+    });
+    const updated = new Map(rows.map(r => [r.symbol, r.lastFundamentalsUpdate]));
+    const cutoff = Date.now() - staleDays * MS_PER_DAY;
+    return candidates
+        .filter(s => {
+            const last = updated.get(s.symbol);
+            return !last || new Date(last).getTime() < cutoff;
+        })
+        .map(s => ({ symbol: s.symbol, exchange: US_MICS.includes(s.exchange) ? null : s.exchange }));
+}
+
 module.exports = {
     getBySymbol,
     getBySymbols,
@@ -454,5 +520,7 @@ module.exports = {
     getAllActiveSecuritySymbols,
     getTenantSecuritySymbols,
     getAllSecurityMasterSymbols,
+    getCopyHoldingSymbols,
+    getLookThroughWatchlistSymbols,
     isEtfAssetType,
 };

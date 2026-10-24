@@ -90,6 +90,8 @@ describe('resolveActivity', () => {
     expect(resolveActivity('events', job('ENABLE_BANKING_SYNC'))).toMatchObject({ type: 'BANK_SYNC', ephemeral: true });
     expect(resolveActivity('plaid-sync', { name: 'ENABLE_BANKING_SYNC_ALL', data: {} })).toBeNull();
     expect(resolveActivity('plaid-sync', { name: 'ETORO_SYNC_ALL', data: {} })).toBeNull();
+    // The eToro look-through watchlist (#143) is global: never shown to a tenant.
+    expect(resolveActivity('security-master', { name: 'refresh-lookthrough-watchlist', data: { reason: 'ETORO_SYNC' } })).toBeNull();
     expect(resolveActivity('events', job('ETORO_SYNC'))).toMatchObject({ type: 'PORTFOLIO_UPDATE', ephemeral: true });
   });
 

@@ -37,6 +37,8 @@ The SecurityMaster table stores global (non-tenant) stock fundamental data sourc
 | `getTenantSecuritySymbols(tenantId, { force, staleDays = 7 })` | Same selection for one tenant. `force: false` keeps only symbols with no row or `lastFundamentalsUpdate` older than `staleDays` |
 | `isEtfAssetType(type)` | `true` for the Twelve Data profile type `ETF` |
 | `getAllSecurityMasterSymbols()` | All `{ symbol, exchange }` pairs from the SecurityMaster table, ordered by symbol. Used for full-table refresh |
+| `getCopyHoldingSymbols()` | eToro copy trading (#143): distinct mapped stock/ETF `{ symbol, exchange }` inside ACTIVE `EtoroCopy` rows of connections that weren't removed, across tenants. Crypto / commodities and unresolved instruments are skipped. Returns symbols only, never a tenant id or a value. |
+| `getLookThroughWatchlistSymbols({ staleDays = 7 })` | The look-through watchlist (#143, R20): `getCopyHoldingSymbols()` minus `getAllActiveSecuritySymbols()` (held directly, so the nightly run covers them), keeping symbols with no row or `lastFundamentalsUpdate` older than `staleDays`. |
 
 ### Computation Logic (`upsertFundamentals`)
 
@@ -75,7 +77,7 @@ Cost table (`config/twelveDataCredits.js`):
 
 The `api-credits-used` / `api-credits-left` headers are Twelve Data's running totals for the key's current minute (`used + left = plan limit`), not the cost of one call; they are logged at `debug` per call for calibration.
 
-Priority per job: `refresh-all-fundamentals`, `refresh-tenant-securities` and `refresh-single-symbol` run at **FUNDAMENTALS**; `refresh-all-from-table` (admin bulk) at **BACKGROUND**. Interactive calls (ticker routes, smart import) and valuation are served first. A 429 pauses every process for `Retry-After` (or until the next minute) and retries; after 4 consecutive 429s the function returns its usual `null`.
+Priority per job: `refresh-all-fundamentals`, `refresh-tenant-securities` and `refresh-single-symbol` run at **FUNDAMENTALS**; `refresh-all-from-table` (admin bulk) and `refresh-lookthrough-watchlist` (#143) at **BACKGROUND**. Interactive calls (ticker routes, smart import) and valuation are served first. A 429 pauses every process for `Retry-After` (or until the next minute) and retries; after 4 consecutive 429s the function returns its usual `null`.
 
 ### New Functions
 
@@ -160,6 +162,7 @@ Fundamentals data is NOT fetched eagerly; the nightly job handles it.
 | `refresh-all-fundamentals` | Daily cron `0 3 * * *` (3 AM UTC) | Refreshes all active stock symbols |
 | `refresh-single-symbol` | On-demand via `POST /api/security-master/refresh` | Refreshes one symbol (profile + fundamentals) |
 | `refresh-all-from-table` | On-demand via `POST /api/security-master/refresh-table` | Refreshes ALL SecurityMaster records (forces profile refresh). Uses `getAllSecurityMasterSymbols()` instead of active portfolio items |
+| `refresh-lookthrough-watchlist` | Weekly cron `0 2 * * 0` (Sunday 2 AM UTC, `jobId: weekly-lookthrough-watchlist`), and from an eToro sync that finds copy symbols with no SecurityMaster row (`enqueueLookThroughWatchlistRefresh()`, deduplicated `lookthrough-watchlist`) | eToro copy look-through (#143, R20): `refreshSymbol()` for each `getLookThroughWatchlistSymbols()` entry, exactly as the nightly run (profile, fundamentals, weekly ETF composition). BACKGROUND priority, no tenant (not shown in processing status), no pacing of its own. About 51 credits per stale symbol; on a small plan coverage builds up over several runs. |
 
 ### `refresh-all-fundamentals` Flow
 
