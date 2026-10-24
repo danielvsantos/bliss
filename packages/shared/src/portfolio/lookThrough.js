@@ -19,7 +19,8 @@ export const FIXED_INCOME_BUCKET = 'Fixed Income';
 /** Dimensions `lookThrough` can split an ETF across. */
 export const LOOK_THROUGH_DIMENSIONS = ['sector', 'country'];
 
-const LOOKED_THROUGH_CLASSES = ['INDEX_ETF', 'SECTOR_ETF'];
+// COPY_TRADE (#143) carries a composition derived from the copy's holdings (copyTrade.js).
+const LOOKED_THROUGH_CLASSES = ['INDEX_ETF', 'SECTOR_ETF', 'COPY_TRADE'];
 const DIRECT_CLASSES = ['STOCK', 'REIT', 'FUND', 'OTHER'];
 
 const COMPOSITION_LIST = { sector: 'sectors', country: 'countries' };
@@ -28,8 +29,8 @@ const COMPOSITION_LIST = { sector: 'sectors', country: 'countries' };
  * Split each holding's value across the groups of `dimension`.
  *
  * - STOCK / REIT (and FUND / OTHER): their own `sector` / `country`, or "Unknown".
- * - INDEX_ETF / SECTOR_ETF with composition: `value × weight` to each sector or
- *   country; `1 − Σweights` to "Other". An empty list → "Diversified".
+ * - INDEX_ETF / SECTOR_ETF / COPY_TRADE with composition: `value × weight` to
+ *   each sector or country; `1 − Σweights` to "Other". An empty list → "Diversified".
  * - ETFs without composition → "Diversified".
  * - BOND_ETF → "Fixed Income", so bond funds never inflate an equity sector.
  * - Bonds, real estate, crypto and cash are not equity holdings and are skipped.

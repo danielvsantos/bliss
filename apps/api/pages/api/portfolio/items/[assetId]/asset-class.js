@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { cors } from '../../../../../utils/cors.js';
 import { rateLimiters } from '../../../../../utils/rateLimit.js';
 import { withAuth } from '../../../../../utils/withAuth.js';
-import { ASSET_CLASSES, classifyAssetClass, isValidAssetClass } from '@bliss/shared/portfolio';
+import { OVERRIDE_ASSET_CLASSES, classifyAssetClass, isValidOverrideAssetClass } from '@bliss/shared/portfolio';
 
 /**
  * Asset class override for one portfolio item (Equity Analysis, #79).
@@ -42,9 +42,9 @@ export default withAuth(async function handler(req, res) {
   if (req.method === 'GET') return handleGet(req, res, portfolioItemId);
 
   const { assetClass, applyToSymbol = false } = req.body || {};
-  if (assetClass !== null && !isValidAssetClass(assetClass)) {
+  if (assetClass !== null && !isValidOverrideAssetClass(assetClass)) {
     return res.status(StatusCodes.BAD_REQUEST).json({
-      error: `Invalid assetClass. Must be null or one of: ${ASSET_CLASSES.join(', ')}`,
+      error: `Invalid assetClass. Must be null or one of: ${OVERRIDE_ASSET_CLASSES.join(', ')}`,
     });
   }
 

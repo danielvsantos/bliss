@@ -21,6 +21,7 @@ export const ASSET_CLASSES = [
   'BOND_ETF',
   'REIT',
   'FUND',
+  'COPY_TRADE',
   'GOV_BOND',
   'CORP_BOND',
   'REAL_ESTATE',
@@ -30,7 +31,7 @@ export const ASSET_CLASSES = [
 ];
 
 /** Classes shown in the equity sector / industry / country views. */
-export const EQUITY_ASSET_CLASSES = ['STOCK', 'REIT', 'INDEX_ETF', 'SECTOR_ETF'];
+export const EQUITY_ASSET_CLASSES = ['STOCK', 'REIT', 'INDEX_ETF', 'SECTOR_ETF', 'COPY_TRADE'];
 
 /** An ETF whose largest sector is at least this share is a SECTOR_ETF (QQQ at 59% stays INDEX_ETF). */
 export const SECTOR_ETF_THRESHOLD = 0.75;
@@ -43,6 +44,17 @@ export const BOND_ETF_NAME_PATTERN = /bond|treasury|fixed income|aggregate|gilt/
 
 export function isValidAssetClass(value) {
   return typeof value === 'string' && ASSET_CLASSES.includes(value);
+}
+
+/**
+ * Classes a user can pick as an override. COPY_TRADE (#143) only means
+ * something for a Copy Trading holding linked to an eToro copy, where it is
+ * automatic, so it is never offered as an override.
+ */
+export const OVERRIDE_ASSET_CLASSES = ASSET_CLASSES.filter((c) => c !== 'COPY_TRADE');
+
+export function isValidOverrideAssetClass(value) {
+  return typeof value === 'string' && OVERRIDE_ASSET_CLASSES.includes(value);
 }
 
 function isType(value, expected) {
@@ -110,6 +122,7 @@ export function normalizeEtfComposition(raw) {
 /**
  * Classify one portfolio item. The first matching rule wins:
  *   1. a valid user override
+ *   1b. eToro copy trades (COPY_TRADING hint, #143) → COPY_TRADE
  *   2. bond issuer type from income terms, then the government / corporate
  *      bond default category codes
  *   3. real estate, crypto and cash categories
@@ -138,6 +151,9 @@ export function classifyAssetClass(i = {}) {
 
 function autoAssetClass({ processingHint, defaultCategoryCode, categoryGroup, security, incomeTerms } = {}) {
   const code = defaultCategoryCode || null;
+
+  // 1b. eToro copy trades (#143): looked through like an ETF, from the copy's holdings
+  if (processingHint === 'COPY_TRADING') return 'COPY_TRADE';
 
   // 2. Bonds
   if (incomeTerms?.issuerType === 'GOVERNMENT') return 'GOV_BOND';

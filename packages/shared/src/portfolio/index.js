@@ -29,6 +29,8 @@ export * from './lookThrough.js';
 export * from './summarize.js';
 // Investment enrichment rule for review rows (Smart Import, Plaid).
 export * from './enrichment.js';
+// eToro copy-trade look-through (#143).
+export * from './copyTrade.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -123,6 +125,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export function classifyIncomeAsset({ type, group, processingHint, defaultCategoryCode, securityAssetType } = {}) {
   const code = defaultCategoryCode || null;
   if (processingHint === 'CASH') return 'CASH';
+  // eToro copy trades (#143) reinvest dividends inside the copy: no cash income.
+  if (processingHint === 'COPY_TRADING') return null;
   if (type !== 'Investments' && type !== 'Asset') return null;
   if (processingHint === 'API_CRYPTO') return null;
   if (code === 'COMMODITIES' || group === 'Commodities') return null;
