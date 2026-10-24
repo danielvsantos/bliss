@@ -32,17 +32,17 @@ import { getMissingInvestmentFields } from '@/lib/investment-utils';
 // Form schema
 const transactionSchema = z.object({
   transaction_date: z.date({
-    required_error: "Please select a date",
+    error: "Please select a date",
   }),
   description: z.string().min(2, { message: 'Description is required' }),
   details: z.string().optional(),
   credit: z.coerce.number().optional(),
   debit: z.coerce.number().optional(),
   currency: z.string({
-    required_error: "Please select a currency",
+    error: "Please select a currency",
   }),
-  categoryId: z.coerce.number({ required_error: "Please select a category" }).positive({ message: 'Please select a category' }),
-  accountId: z.coerce.number({ required_error: "Please select an account" }).positive({ message: 'Please select an account' }),
+  categoryId: z.coerce.number({ error: "Please select a category" }).positive({ message: 'Please select a category' }),
+  accountId: z.coerce.number({ error: "Please select an account" }).positive({ message: 'Please select an account' }),
   assetQuantity: z.coerce.number().optional(),
   assetPrice: z.coerce.number().optional(),
   ticker: z.string().optional(),

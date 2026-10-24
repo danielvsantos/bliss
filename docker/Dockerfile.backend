@@ -4,6 +4,8 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+# pnpm.patchedDependencies (root package.json) must be present at install.
+COPY patches ./patches
 # All workspace package.json stubs must be present so pnpm resolves peers
 # consistently with the lockfile (e.g. typescript optional peer of prisma).
 # Without these, any pnpm command run later (e.g. triggered by prisma generate)

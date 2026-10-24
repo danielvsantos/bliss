@@ -45,6 +45,7 @@ const TRACKED_PACKAGES = [
   { name: 'ws', via: 'openai' },
   { name: 'lodash', via: 'express-validator' },
   { name: 'form-data', via: 'axios' },
+  { name: 'body-parser', via: 'express' },
 ];
 
 /**
