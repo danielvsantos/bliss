@@ -2986,6 +2986,10 @@ const en = {
       description: "Move {{symbol}} to the Copy Trading category. Its transactions, income terms and history stay as they are. Once your eToro account is connected, Bliss follows the copy's value and holdings.",
       username: "eToro username of the investor you copy",
       usernamePlaceholder: "@investor",
+      pickCopy: "Choose the copy",
+      otherInvestor: "Another investor",
+      matched: "matches the name",
+      otherAccount: "Your eToro connection uses the account {{account}}. This holding is in another account, so it won't be linked after switching: move its transactions to {{account}} first.",
       submit: "Switch",
       success: "{{symbol}} is now a Copy Trading holding",
       errors: {

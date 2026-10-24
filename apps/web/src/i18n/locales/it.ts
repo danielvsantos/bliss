@@ -2986,6 +2986,10 @@ const it = {
       description: "Sposta {{symbol}} nella categoria Copy Trading. Transazioni, condizioni di reddito e storico restano invariati. Una volta collegato l'account eToro, Bliss segue il valore e la composizione della copia.",
       username: "Username eToro dell'investitore che copi",
       usernamePlaceholder: "@investitore",
+      pickCopy: "Scegli la copia",
+      otherInvestor: "Un altro investitore",
+      matched: "corrisponde al nome",
+      otherAccount: "La tua connessione eToro usa il conto {{account}}. Questo asset è in un altro conto, quindi non verrà collegato dopo il passaggio: sposta prima le sue transazioni su {{account}}.",
       submit: "Passa",
       success: "{{symbol}} ora è una posizione Copy Trading",
       errors: {

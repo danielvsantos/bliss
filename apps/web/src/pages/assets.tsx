@@ -479,7 +479,10 @@ export default function ManageAssetsPage() {
       <ManualPriceHistoryDialog asset={modal === "history" ? assetRef : null} {...modalProps("history")} />
       <DebtTermsModal asset={assetRef} {...modalProps("debt")} />
       <AssetClassModal asset={assetRef} {...modalProps("assetClass")} />
-      <ConvertToCopyTradingModal asset={assetRef} {...modalProps("copyTrading")} />
+      <ConvertToCopyTradingModal
+        asset={modalAsset ? { id: modalAsset.id, symbol: modalAsset.symbol, accountId: modalAsset.accountId } : null}
+        {...modalProps("copyTrading")}
+      />
     </>
   );
 }
