@@ -1625,6 +1625,8 @@ const en = {
     assetClass: "Asset class",
     lookThrough: "Look through ETFs",
     lookThroughHint: "Split each ETF across the sectors and countries it holds",
+    lookThroughWithCopies: "Look through ETFs and copies",
+    lookThroughHintWithCopies: "Split each ETF across the sectors and countries it holds, and show each eToro copy as the holdings it is invested in",
     pendingSecurityData: "Waiting for security data for {{symbols}}. These funds appear here once it has been fetched.",
     lookThroughOther: "Other",
     fixedIncomeBucket: "Fixed Income",

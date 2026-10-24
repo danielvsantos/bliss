@@ -1625,6 +1625,8 @@ const pt = {
     assetClass: "Classe de ativo",
     lookThrough: "Detalhar ETFs",
     lookThroughHint: "Distribui cada ETF pelos setores e países que ele detém",
+    lookThroughWithCopies: "Detalhar ETFs e cópias",
+    lookThroughHintWithCopies: "Distribui cada ETF pelos setores e países que ele detém e mostra cada cópia do eToro como as posições em que investe",
     pendingSecurityData: "Aguardando os dados do ativo para {{symbols}}. Estes fundos aparecem aqui assim que forem obtidos.",
     lookThroughOther: "Outros",
     fixedIncomeBucket: "Renda fixa",

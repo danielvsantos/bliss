@@ -224,6 +224,16 @@ describe('EquityAnalysisPage — eToro copy trades (#143)', () => {
     expect(screen.getAllByRole('button', { name: 'equityAnalysis.editAssetClass:KO' })).toHaveLength(1);
   });
 
+  it('names copies on the look-through switch only when there are some', () => {
+    setup(response({ holdings: [KO, COPY], summary: { ...response().summary, copyTradeCount: 1 } }));
+    expect(screen.getByRole('switch', { name: 'equityAnalysis.lookThroughWithCopies' })).toBeInTheDocument();
+  });
+
+  it('keeps the ETF-only switch label without copies', () => {
+    setup(response());
+    expect(screen.getByRole('switch', { name: 'equityAnalysis.lookThrough' })).toBeInTheDocument();
+  });
+
   it('never offers COPY_TRADE as an override', () => {
     setup(response({ holdings: [KO] }));
     fireEvent.click(screen.getByRole('button', { name: 'equityAnalysis.editAssetClass:KO' }));
