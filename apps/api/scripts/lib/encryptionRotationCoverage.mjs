@@ -99,6 +99,18 @@ export const ROTATION_COVERAGE = [
     fields: [{ name: 'appId', searchable: false, sanity: nonEmptyString }],
   },
   {
+    // eToro Read key pair (#143). A removed connection holds '' (skipped).
+    label: 'EtoroConnection.apiKey/userKey',
+    model: 'EtoroConnection',
+    prismaModel: 'etoroConnection',
+    idField: 'id',
+    orderBy: { id: 'asc' },
+    fields: [
+      { name: 'apiKey', searchable: false, sanity: nonEmptyString },
+      { name: 'userKey', searchable: false, sanity: nonEmptyString },
+    ],
+  },
+  {
     label: 'SignupInvite.email',
     model: 'SignupInvite',
     prismaModel: 'signupInvite',

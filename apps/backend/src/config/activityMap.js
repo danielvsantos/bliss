@@ -139,6 +139,9 @@ function resolveActivity(queueName, job) {
         case QUEUES.ANALYTICS:
             return resolveAnalytics(name, data);
         case QUEUES.PLAID_SYNC:
+            // eToro copy sync (#143): updates copy values, then revalues holdings.
+            // ETORO_SYNC_ALL is a non-tenant fan-out, dropped above.
+            if (name === 'ETORO_SYNC') return entry(P, S.SYNCING_COPIES, [P]);
             // Plaid jobs and ENABLE_BANKING_SYNC (#132). ENABLE_BANKING_SYNC_ALL is
             // a non-tenant fan-out (no tenantId) and is dropped above.
             return entry(T.BANK_SYNC, S.FETCHING_BANK, [T.BANK_SYNC, P, A]);

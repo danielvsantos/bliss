@@ -33,8 +33,17 @@ const enableBankingSyncOpts = (plaidItemId) => ({
     backoff: { type: 'exponential', delay: 30_000 },
 });
 
+// eToro copy trading (#143): one pending sync per connection, like Enable
+// Banking. 5xx / network / rate-limit failures retry with a 60 s backoff.
+const etoroSyncOpts = (connectionId) => ({
+    deduplication: { id: `etoro-sync:${connectionId}` },
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 60_000 },
+});
+
 module.exports = {
     getPlaidSyncQueue,
     enableBankingSyncOpts,
+    etoroSyncOpts,
     PLAID_SYNC_QUEUE_NAME,
 };

@@ -9,6 +9,7 @@ const { reportWorkerFailure } = require('../utils/workerFailureReporter');
 const { trackWorker } = require('../utils/activityTracker');
 const { getPlaidSyncQueue } = require('../queues/plaidSyncQueue');
 const { enableBankingDispatch, syncConnection } = require('./handlers/enableBankingSync');
+const { etoroDispatch } = require('./handlers/etoroSync');
 const { syncCutoffDate } = require('../services/enableBanking/dateWindow');
 const { getSyncTimes, BUDGET_TIMEZONE } = require('@bliss/shared/enablebanking');
 
@@ -85,6 +86,19 @@ async function registerEnableBankingSchedule() {
     return times;
 }
 
+/** eToro copy sync (#143): nightly at 03:30 UTC, after the security master, before revaluation. */
+const ETORO_SYNC_SCHEDULER_KEY = 'etoro-sync-all';
+const ETORO_SYNC_PATTERN = '30 3 * * *';
+
+async function registerEtoroSchedule() {
+    await getPlaidSyncQueue().upsertJobScheduler(
+        ETORO_SYNC_SCHEDULER_KEY,
+        { pattern: ETORO_SYNC_PATTERN, tz: 'UTC' },
+        { name: 'ETORO_SYNC_ALL', data: {} },
+    );
+    logger.info(`[plaidSyncWorker] eToro copy sync scheduled at 03:30 UTC`);
+}
+
 let worker;
 
 const startPlaidSyncWorker = () => {
@@ -96,6 +110,10 @@ const startPlaidSyncWorker = () => {
         // Enable Banking jobs share this queue (#132, decision D4).
         if (job.name?.startsWith('ENABLE_BANKING_')) {
             return enableBankingDispatch(job);
+        }
+        // eToro copy trading jobs share it too (#143, decision D8).
+        if (job.name?.startsWith('ETORO_')) {
+            return etoroDispatch(job);
         }
 
         logger.info(`Starting job ${job.name} for Plaid Item: ${job.data.plaidItemId}`);
@@ -400,7 +418,7 @@ const startPlaidSyncWorker = () => {
             workerName: 'plaidSyncWorker',
             job,
             error: err,
-            extra: { plaidItemId: job?.data?.plaidItemId },
+            extra: { plaidItemId: job?.data?.plaidItemId, etoroConnectionId: job?.data?.connectionId },
         });
     });
 
@@ -414,9 +432,12 @@ const startPlaidSyncWorker = () => {
     registerEnableBankingSchedule().catch(err =>
         logger.error(`[plaidSyncWorker] Failed to register Enable Banking schedule: ${err.message}`)
     );
+    registerEtoroSchedule().catch(err =>
+        logger.error(`[plaidSyncWorker] Failed to register eToro schedule: ${err.message}`)
+    );
 
     // Return worker reference so index.js can close it before disconnecting Redis
     return worker;
 };
 
-module.exports = { startPlaidSyncWorker, registerEnableBankingSchedule };
+module.exports = { startPlaidSyncWorker, registerEnableBankingSchedule, registerEtoroSchedule };

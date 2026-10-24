@@ -20,6 +20,27 @@ async function batchCreateMany(model, data, options = {}, heartbeat) {
 }
 
 /**
+ * Converts an eToro copy value (#143, a total in eToro's account currency) to
+ * the holding's currency, via USD like every cross rate. Returns
+ * `{ native, usd }` as Decimals, or null when a needed rate is missing.
+ */
+async function convertCopyValue(priceData, date, assetCurrency, getRate) {
+    const value = new Decimal(priceData.totalValue);
+    const from = (priceData.totalValueCurrency || 'USD').toUpperCase();
+    let usd = value;
+    if (from !== 'USD') {
+        const rate = await getRate(date, from, 'USD');
+        if (!rate) return null;
+        usd = value.times(rate);
+    }
+    if (assetCurrency === 'USD') return { native: usd, usd };
+    if (assetCurrency === from) return { native: value, usd };
+    const rate = await getRate(date, assetCurrency, 'USD');
+    if (!rate || new Decimal(rate).isZero()) return null;
+    return { native: usd.dividedBy(rate), usd };
+}
+
+/**
  * Generates historical portfolio valuations for all assets of a tenant.
  * This is the new, optimized version that avoids N+1 query problems.
  *
@@ -300,6 +321,9 @@ const generatePortfolioValuation = async (job) => {
                 asset.category.processingHint === 'API_CRYPTO' ||
                 (asset.category.processingHint === 'API_FUND' && asset.source !== 'MANUAL');
             let lastKnownPrice = null;
+            // eToro copy trades (#143): eToro's copy value is a total in eToro's
+            // currency, used as is (not × quantity) and converted via USD.
+            const isCopyTrade = asset.category.processingHint === 'COPY_TRADING';
 
             let iterationCount = 0;
             while (dayIterator <= endOfDayUTC) {
@@ -333,8 +357,18 @@ const generatePortfolioValuation = async (job) => {
                 const priceData = await getPrice(currentDate);
                 let totalValue = new Decimal(0);
                 let priceSource = 'Unknown';
+                let copyValueInUSD = null;
 
-                if (priceData && priceData.price) {
+                if (isCopyTrade && priceData && priceData.totalValue != null) {
+                    const converted = await convertCopyValue(priceData, currentDate, asset.currency, getRateFromCache);
+                    if (converted) {
+                        totalValue = converted.native;
+                        copyValueInUSD = converted.usd;
+                        priceSource = priceData.source;
+                    } else {
+                        logger.warn(`Could not convert eToro copy value of ${asset.symbol} on ${dateStr} to ${asset.currency}. Storing 0.`, { tenantId, assetId: asset.id });
+                    }
+                } else if (priceData && priceData.price) {
                     if (isBackfillable) lastKnownPrice = priceData;
                     totalValue = quantity.times(priceData.price);
                     priceSource = priceData.source || 'Unknown';
@@ -349,6 +383,7 @@ const generatePortfolioValuation = async (job) => {
                     priceSource = 'COST_BASIS_FALLBACK';
                 } else if (
                     (asset.category.processingHint === 'MANUAL' ||
+                     isCopyTrade ||
                      (asset.category.processingHint === 'API_FUND' && asset.source === 'MANUAL'))
                     && quantity.gt(0)
                 ) {
@@ -367,7 +402,9 @@ const generatePortfolioValuation = async (job) => {
                 }
 
                 let valueInUSD = new Decimal(0);
-                if (asset.currency === 'USD') {
+                if (copyValueInUSD) {
+                    valueInUSD = copyValueInUSD;
+                } else if (asset.currency === 'USD') {
                     valueInUSD = totalValue;
                 } else if (totalValue.gt(0)) {
                     const rate = await getRateFromCache(currentDate, asset.currency, 'USD');
@@ -484,3 +521,4 @@ const generatePortfolioValuation = async (job) => {
 
 
 module.exports = generatePortfolioValuation;
+module.exports.convertCopyValue = convertCopyValue;
