@@ -163,7 +163,12 @@ async function syncConnection(job) {
     //    Twelve Data itself.
     const missing = await countSymbolsWithoutData(seenMirrorIds, connection);
     if (missing > 0) {
-        await enqueueLookThroughWatchlistRefresh({ reason: 'ETORO_SYNC' });
+        const queued = await enqueueLookThroughWatchlistRefresh({ reason: 'ETORO_SYNC' });
+        logger.info(`[etoroSync] ${connection.id}: ${missing} copy symbol(s) without security data; look-through watchlist queued`, {
+            jobId: queued?.id ?? null,
+        });
+    } else {
+        logger.info(`[etoroSync] ${connection.id}: every copy symbol has security data; no watchlist refresh`);
     }
 
     // 4. Revalue the linked Copy Trading holdings (closed copies included: they keep their last value).
