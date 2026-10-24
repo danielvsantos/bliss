@@ -46,7 +46,10 @@ Shown next to the symbol of every Copy Trading holding on **Portfolio** (`AssetR
 ## 28.5. Manage Assets — "Switch to Copy Trading"
 
 - **Where.** `availableModals()` adds `copyTrading` for investment holdings in the **Funds** group that aren't Copy Trading yet (`canSwitchToCopyTrading()`). The server accepts any investment holding; the UI narrows it to where copies are recorded today.
-- **Modal.** The `?modal=copyTrading` modal (`components/etoro/convert-to-copy-trading-modal.tsx`) asks for the investor's username. Submit stays disabled until the username is valid.
+- **Modal.** The `?modal=copyTrading` modal (`components/etoro/convert-to-copy-trading-modal.tsx`) gets the holding's `accountId`.
+  - **eToro connected for that account:** it lists the connection's copies that aren't linked to a holding yet (`copyCandidatesFor()`, active first, with their last value), plus "Another investor". The copy whose username appears in the holding's name as a whole word is preselected and marked "matches the name" (`matchCopyFromName()`: `Copy Traders:AmitKup (Amit Kupfer)` → `amitkup`), else the first copy. Nobody has to type usernames.
+  - **eToro connected for another account only:** a warning names that account: the holding wouldn't link after switching, so its transactions should move there first.
+  - **Not connected, or "Another investor":** the free-text username field. Submit stays disabled until the username is valid.
 - **Errors.** `INVALID_USERNAME`, `COPY_HOLDING_EXISTS` and `COPY_TRADING_CATEGORY_MISSING` have their own messages.
 - **Success.** It toasts and closes.
 
@@ -86,9 +89,9 @@ New keys in all 5 locales:
 ## 28.9. Tests
 
 - **`hooks/use-etoro.test.tsx`:** list; connect payload, invalidations and no cached variables; the cooldown error body; convert payload.
-- **`lib/etoro.test.ts`:** badge states; username normalization.
+- **`lib/etoro.test.ts`:** badge states; username normalization; copy candidates per account; matching a username in a holding's name.
 - **`components/settings/etoro-section.test.tsx`:** empty state; card with masked key and link states; the "Sync now" cooldown toast; the connect flow (write-scope error, then success with username and copies).
-- **`components/etoro/*.test.tsx`:** badge states; the convert modal (validation, normalized payload, clash error).
+- **`components/etoro/*.test.tsx`:** badge states; the convert modal (validation, normalized payload, clash error, copy list with the name-matched copy preselected, "Another investor", the other-account warning).
 - **`pages/reports/equity-analysis.test.tsx`:** the copy row (badge, coverage label, unmapped share, needs-reconnect state); a split copy ("via" rows next to a direct holding of the same symbol, the copy strip, no override editor on positions); `COPY_TRADE` never offered as an override.
 - **`lib/manage-assets.test.ts`:** which holdings get `copyTrading`.
 - **`components/entities/transaction-form.test.tsx`:** a Copy Trading transaction shows the username label and the hint, and saves with no price or quantity.
