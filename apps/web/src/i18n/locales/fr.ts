@@ -1595,6 +1595,8 @@ const fr = {
     assetClass: "Classe d'actifs",
     lookThrough: "Transparence des ETF",
     lookThroughHint: "Répartit chaque ETF entre les secteurs et pays qu'il détient",
+    lookThroughWithCopies: "Transparence des ETF et des copies",
+    lookThroughHintWithCopies: "Répartit chaque ETF entre les secteurs et pays qu'il détient, et affiche chaque copie eToro comme les positions dans lesquelles elle investit",
     pendingSecurityData: "En attente des données de titre pour {{symbols}}. Ces fonds apparaîtront ici une fois récupérées.",
     lookThroughOther: "Autres",
     fixedIncomeBucket: "Obligataire",

@@ -116,6 +116,7 @@ export default function EquityAnalysisPage() {
 
   const portfolioCurrency = data?.portfolioCurrency ?? 'USD';
   const summary = data?.summary;
+  const hasCopies = (summary?.copyTradeCount ?? 0) > 0;
   const groups = useMemo(() => data?.groups ?? [], [data?.groups]);
 
   // Every holding once (with look-through an ETF can sit in several groups)
@@ -330,14 +331,15 @@ export default function EquityAnalysisPage() {
             </div>
           </div>
           {/* Only when some ETF has composition data — otherwise the switch would do nothing. */}
+          {/* With eToro copies (#143) it also splits each copy into its holdings, and says so. */}
           {data?.lookThroughAvailable && (
-            <label className="flex items-center gap-2 text-sm text-muted-foreground" title={t('equityAnalysis.lookThroughHint')}>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground" title={t(hasCopies ? 'equityAnalysis.lookThroughHintWithCopies' : 'equityAnalysis.lookThroughHint')}>
               <Switch
                 checked={lookThrough}
                 onCheckedChange={setLookThrough}
-                aria-label={t('equityAnalysis.lookThrough')}
+                aria-label={t(hasCopies ? 'equityAnalysis.lookThroughWithCopies' : 'equityAnalysis.lookThrough')}
               />
-              {t('equityAnalysis.lookThrough')}
+              {t(hasCopies ? 'equityAnalysis.lookThroughWithCopies' : 'equityAnalysis.lookThrough')}
             </label>
           )}
           </div>
