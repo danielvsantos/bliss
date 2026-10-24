@@ -42,8 +42,9 @@ Bliss puts a copy's value on a **Copy Trading** holding. It matches the copy to 
 There are two ways to set this up.
 - **New copy:** add a transaction in the **Copy Trading** category in that account, with the investor's username in the **eToro username** field and the amount you put into the copy. There is no price or quantity to fill in: each deposit is your cost, and eToro supplies the value.
 - **Copy you already track as a Fund:** connect eToro first. Then in **Manage Assets**, open the holding's menu and choose **Switch to Copy Trading**, and pick the investor from the list of your copies (Bliss preselects the one whose username appears in the holding's name). The holding keeps all its transactions, income terms and history. If you haven't connected eToro, you can type the username instead.
+- **Copy you track under another category** (for example your own "Copy Traders" category): "Switch to Copy Trading" is offered for the Funds group only. First change each of the copy's deposits to the **Funds** category, entering the amount as the price so the quantity is 1, then switch it. Leave its withdrawals until after the switch, then change them to Copy Trading with the investor's username, amount only. A withdrawal with a price would count as selling a whole unit.
 
-Keep recording your own deposits into (and withdrawals from) a copy as you do today. Bliss uses them as the cost basis, and eToro's value as the market value. A withdrawal reduces the cost basis in proportion to the amount taken out.
+Keep recording your own deposits into (and withdrawals from) a copy in the **Copy Trading** category, with the investor's username and the amount only: there is no price or quantity for a copy. Bliss uses them as the cost basis, and eToro's value as the market value. A withdrawal reduces the cost basis in proportion to the amount taken out.
 
 Each copy in **Settings → Bank sync** shows whether it is **linked** to a holding.
 
@@ -74,3 +75,4 @@ Bliss refreshes company data for stocks you hold only inside copies once a week,
 
 - Only your **copies** are followed. Direct eToro positions, cash, dividends, fees and deposits are not imported: record them as today, or import an eToro statement.
 - eToro allows 60 requests per minute per key. A sync uses about four, and Bliss paces itself.
+- A single withdrawal larger than the cost you still have in a copy currently closes the holding in Bliss, even if money remains in the copy on eToro. A fix is planned.
