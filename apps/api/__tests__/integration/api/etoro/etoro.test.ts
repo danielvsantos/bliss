@@ -45,6 +45,7 @@ import syncHandler from '../../../../pages/api/etoro/connections/[id]/sync.js';
 import convertHandler from '../../../../pages/api/etoro/convert-holding.js';
 import equityHandler from '../../../../pages/api/portfolio/equity-analysis.js';
 import itemsHandler from '../../../../pages/api/portfolio/items.js';
+import transactionsHandler from '../../../../pages/api/transactions/index.js';
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -332,6 +333,26 @@ describe('POST /api/etoro/convert-holding', () => {
     expect(clash._status).toBe(409);
     expect(clash._body).toMatchObject({ code: 'COPY_HOLDING_EXISTS', portfolioItemId: fundItemId });
     await prisma.portfolioItem.delete({ where: { id: other.id } });
+  });
+
+  it('a later deposit typed in any case lands on the switched holding, never a second one', async () => {
+    const post = (ticker: string) => call(transactionsHandler, makeReq({
+      token: admin.token, method: 'POST', url: '/api/transactions',
+      body: {
+        transaction_date: '2026-04-01', categoryId: copyCategoryId, accountId: etoroAccountId,
+        description: 'Deposit to copy', debit: 500, currency: 'USD', ticker,
+      },
+    }));
+    for (const typed of [INVESTOR.toUpperCase(), `@${INVESTOR}`]) {
+      const res = await post(typed);
+      expect(res._status).toBe(201);
+      const tx = await prisma.transaction.findUniqueOrThrow({ where: { id: res._body.id } });
+      expect(tx).toMatchObject({ ticker: INVESTOR, portfolioItemId: fundItemId });
+    }
+    expect(await prisma.portfolioItem.count({
+      where: { tenantId: admin.tenantId, accountId: etoroAccountId, symbol: { equals: INVESTOR, mode: 'insensitive' } },
+    })).toBe(1);
+    await prisma.transaction.deleteMany({ where: { portfolioItemId: fundItemId, description: 'Deposit to copy' } });
   });
 });
 

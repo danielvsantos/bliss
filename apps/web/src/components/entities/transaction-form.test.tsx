@@ -211,4 +211,19 @@ describe('TransactionForm — eToro Copy Trading (#143)', () => {
     expect(payload.assetPrice ?? null).toBeNull();
     expect(payload.assetQuantity ?? null).toBeNull();
   });
+
+  it('keeps the eToro username lower-case instead of upper-casing it like a ticker', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransactionForm
+          transaction={{ ...editTransaction, categoryId: copyTrading.id, category: copyTrading, ticker: null } as unknown as ApiTransaction}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const input = screen.getByPlaceholderText('transactionFormPage.etoroUsernamePlaceholder');
+    fireEvent.change(input, { target: { value: 'TopInvestor' } });
+    expect(input).toHaveValue('topinvestor');
+  });
 });

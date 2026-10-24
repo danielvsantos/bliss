@@ -43,6 +43,17 @@ export function normalizeUsername(value) {
   return USERNAME_PATTERN.test(u) ? u : null;
 }
 
+/**
+ * The ticker a Copy Trading transaction is stored with: the copied investor's
+ * username, lower-cased, without a leading `@`. Every write path uses it, so
+ * "AmitKup", "@amitkup" and "AMITKUP" key the same holding (the holding's key
+ * is its exact ticker) and never split one copy into two linked holdings.
+ */
+export function copyTradingTicker(value) {
+  if (typeof value !== 'string') return value;
+  return value.trim().replace(/^@/, '').toLowerCase();
+}
+
 function readKeys(body) {
   const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
   const userKey = typeof body?.userKey === 'string' ? body.userKey.trim() : '';
@@ -430,7 +441,7 @@ export async function convertHolding({ tenantId, body }) {
   }
 
   const clash = await prisma.portfolioItem.findFirst({
-    where: { tenantId, symbol: username, accountId: item.accountId, id: { not: item.id } },
+    where: { tenantId, symbol: { equals: username, mode: 'insensitive' }, accountId: item.accountId, id: { not: item.id } },
     select: { id: true },
   });
   if (clash) {

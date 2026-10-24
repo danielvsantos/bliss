@@ -72,6 +72,8 @@ A Copy Trading holding (category hint `COPY_TRADING`) is **linked** to a copy wh
 - the copy's connection maps to the holding's account;
 - the copy's `parentUsername` equals the holding's ticker, lower-cased.
 
+**One form of the username.** A holding's key is its exact ticker, so a Copy Trading ticker is always stored as the username lower-cased, without a leading `@` (`copyTradingTicker()`): `POST` / `PUT /api/transactions` normalise it, the backend's `generateAssetKey()` does the same for imports, and the web form doesn't upper-case it. Otherwise a deposit typed `AmitKup` after a switch to `amitkup` would start a second holding, and both would link to the copy and count its value twice. The switch's duplicate check compares case-insensitively.
+
 When several copies match (a stopped and restarted copy), an `ACTIVE` one wins, then the most recently started. Nothing stores the link (`findCopiesForItems()`), so portfolio rebuilds can't break it. The backend valuation and the #80 insights apply the same rule.
 
 `copyTradeStatus(copy)` → `{ linked: false }`, or `{ linked: true, copyId, status (ACTIVE | CLOSED), connectionStatus (ACTIVE | NEEDS_RECONNECT | REMOVED), lastValueAt, unmappedPct }`. It is returned as:
