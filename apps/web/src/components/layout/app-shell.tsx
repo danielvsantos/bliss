@@ -58,14 +58,17 @@ export function AppShell({ children }: AppShellProps) {
   };
 
   return (
-    // Installed app (#155): body is padded below the status bar, so the shell
-    // takes the rest of the height; pwa-safe-x/b keep content clear of the
-    // landscape notch and the home indicator. All insets are 0 in a browser tab.
-    <div className="flex h-[calc(100dvh-env(safe-area-inset-top))] overflow-hidden pwa-safe-x pwa-safe-b">
+    // Installed app (#155): the shell is pinned to the screen edges rather than
+    // sized with dvh — in iOS standalone mode with the translucent status bar
+    // 100dvh already excludes the status bar, so dvh arithmetic left an empty
+    // band at the bottom. The shell pads itself below the status bar and the
+    // landscape notch; <main> pads its scroll content above the home indicator
+    // so its background runs to the bottom edge. All insets are 0 in a tab.
+    <div className="fixed inset-0 flex overflow-hidden pt-[env(safe-area-inset-top)] pwa-safe-x">
       {/* Sidebar - hidden on mobile unless toggled */}
       <div
         className={cn(
-          "fixed top-[env(safe-area-inset-top)] bottom-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out pb-[env(safe-area-inset-bottom)] md:relative md:top-0 md:pb-0 md:translate-x-0",
+          "fixed top-[env(safe-area-inset-top)] bottom-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out pb-[env(safe-area-inset-bottom)] bg-background md:relative md:top-0 md:pb-0 md:bg-transparent md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -95,7 +98,7 @@ export function AppShell({ children }: AppShellProps) {
           sidebarOpen={sidebarOpen}
           onSidebarToggle={toggleSidebar}
         />
-        <main className="flex-1 overflow-auto p-4 md:p-5 lg:p-6 bg-gray-50 dark:bg-gray-900">
+        <main className="flex-1 overflow-auto px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:px-5 md:pt-5 md:pb-[calc(1.25rem+env(safe-area-inset-bottom))] lg:px-6 lg:pt-6 lg:pb-[calc(1.5rem+env(safe-area-inset-bottom))] bg-gray-50 dark:bg-gray-900">
           {/* Offline: no figures at all, not even the persisted cache (#155). */}
           {isOnline ? children : <OfflineScreen />}
         </main>
