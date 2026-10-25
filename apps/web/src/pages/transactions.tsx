@@ -233,7 +233,7 @@ export default function TransactionsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="md:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{t('pages.transactions.title')}</h1>
@@ -262,17 +262,17 @@ export default function TransactionsPage() {
       {/* ── Filter Bar ─────────────────────────────────────────────── */}
       <MobileFilterDrawer activeFilterCount={activeFilterCount}>
         <div className="flex flex-col gap-3 mb-6">
-          <div className="flex flex-col md:flex-row gap-3 items-end">
+          <div className="flex flex-col md:flex-row gap-3 md:items-end">
             {/* Date range */}
             <div className="flex gap-2 items-end">
-              <div className="space-y-1">
+              <div className="space-y-1 flex-1 md:flex-none">
                 <Label className="text-xs text-muted-foreground">{t('time.startMonth')}</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       className={cn(
-                        'w-[150px] pl-3 text-left font-normal h-9 text-sm',
+                        'w-full md:w-[150px] pl-3 text-left font-normal h-9 text-sm',
                         !filters.startDate && 'text-muted-foreground',
                       )}
                     >
@@ -297,14 +297,14 @@ export default function TransactionsPage() {
                   </PopoverContent>
                 </Popover>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 flex-1 md:flex-none">
                 <Label className="text-xs text-muted-foreground">{t('time.endMonth')}</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       className={cn(
-                        'w-[150px] pl-3 text-left font-normal h-9 text-sm',
+                        'w-full md:w-[150px] pl-3 text-left font-normal h-9 text-sm',
                         !filters.endDate && 'text-muted-foreground',
                       )}
                     >
@@ -338,7 +338,7 @@ export default function TransactionsPage() {
                 value={filters.accountId?.toString() ?? 'all'}
                 onValueChange={(value) => handleFilterChange('accountId', value === 'all' ? undefined : Number(value))}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder={t('pages.transactions.allAccounts')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -357,7 +357,7 @@ export default function TransactionsPage() {
                 value={filters.group ?? 'all'}
                 onValueChange={(value) => handleFilterChange('group', value === 'all' ? undefined : value)}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder={t('pages.transactions.allGroups')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -376,7 +376,7 @@ export default function TransactionsPage() {
                 value={filters.categoryId?.toString() ?? 'all'}
                 onValueChange={(value) => handleFilterChange('categoryId', value === 'all' ? undefined : Number(value))}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder={t('pages.transactions.allCategories')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -424,7 +424,8 @@ export default function TransactionsPage() {
         ) : (
           <>
             {/* Column headers — matches recent-transactions-card pattern */}
-            <div className="flex items-center px-4 pt-2.5 pb-0 gap-3">
+            {/* Phones show date · category · account under the description instead (#155). */}
+            <div className="hidden sm:flex items-center px-4 pt-2.5 pb-0 gap-3">
               {/* Spacer matching the category emoji icon */}
               <div className="w-9 shrink-0" />
               <span className="text-[0.6875rem] font-semibold text-muted-foreground/70 tracking-widest uppercase w-[88px] shrink-0 hidden sm:block">
@@ -446,7 +447,7 @@ export default function TransactionsPage() {
               <span className="w-7 shrink-0 hidden sm:block" />
             </div>
 
-            <CardDivider />
+            <CardDivider className="hidden sm:block" />
 
             {/* Transaction rows */}
             <div className="flex flex-col">
@@ -473,7 +474,7 @@ export default function TransactionsPage() {
                 return (
                   <div key={transaction.id}>
                     <div
-                      className="flex items-center gap-3 py-3 px-4 cursor-pointer hover:bg-accent/50 transition-colors"
+                      className="flex items-center gap-3 py-3 px-3 sm:px-4 cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleEditTransaction(transaction)}
                     >
                       {/* Category emoji */}
@@ -505,7 +506,7 @@ export default function TransactionsPage() {
                       </div>
 
                       {/* Amount */}
-                      <span className={`text-sm font-semibold shrink-0 w-24 text-right tabular-nums tracking-tight ${isPositive ? 'text-positive' : 'text-negative'}`}>
+                      <span className={`text-sm font-semibold shrink-0 sm:w-24 text-right tabular-nums tracking-tight ${isPositive ? 'text-positive' : 'text-negative'}`}>
                         {isPositive ? '+' : ''}{formatCurrency(amount, transaction.currency)}
                       </span>
 

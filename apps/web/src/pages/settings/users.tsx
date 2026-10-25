@@ -332,7 +332,8 @@ export default function UserManagementPage() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-8">
-        <div className="flex items-center justify-between">
+        {/* Phones (#155): title block, then Create User below it. */}
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center mb-2">
               <Link to="/settings">
@@ -340,7 +341,7 @@ export default function UserManagementPage() {
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
-              <h2 className="text-3xl font-bold tracking-tight">{t('userManagement.title')}</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('userManagement.title')}</h2>
             </div>
             <p className="text-muted-foreground">
               {t('userManagement.subtitle')}
@@ -660,8 +661,8 @@ export default function UserManagementPage() {
                   <TableRow>
                     <TableHead>{t('userManagement.user')}</TableHead>
                     <TableHead>{t('userManagement.role')}</TableHead>
-                    <TableHead>{t('userManagement.statusFilter')}</TableHead>
-                    <TableHead>{t('userManagement.lastLogin')}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t('userManagement.statusFilter')}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t('userManagement.lastLogin')}</TableHead>
                     <TableHead className="text-right">{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -688,6 +689,10 @@ export default function UserManagementPage() {
                                   {user.preferredLocale}
                                 </span>
                               )}
+                              {/* Phones (#155): the last-login column is desktop-only. */}
+                              <span className="text-xs font-normal text-muted-foreground mt-0.5 sm:hidden">
+                                {t('userManagement.lastLogin')}: {user.lastLogin ? formatDate(user.lastLogin) : t('userManagement.never')}
+                              </span>
                             </div>
                           </div>
                         </TableCell>
@@ -699,14 +704,14 @@ export default function UserManagementPage() {
                             {user.role || 'member'}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Badge
                             className={`capitalize ${getStatusBadgeStyle(user.status)}`}
                           >
                             {user.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           {user.lastLogin ? (
                             formatDate(user.lastLogin)
                           ) : (

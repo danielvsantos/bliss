@@ -1179,9 +1179,10 @@ export default function TransactionReviewPage() {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="md:p-6 max-w-6xl mx-auto">
       {/* ── Page Header ────────────────────────────────────────────── */}
-      <div className="flex justify-between items-start mb-6">
+      {/* Phones (#155): title, then the status badge and actions on their own row. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <ClipboardCheck className="h-6 w-6 text-primary" />
@@ -1191,7 +1192,7 @@ export default function TransactionReviewPage() {
             {t('review.pageSubtitle')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(plaidSummary?.failed ?? 0) > 0 && (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20">
               {t('review.failedTransactionsBanner', {
@@ -1241,8 +1242,9 @@ export default function TransactionReviewPage() {
 
       {/* ── Tabs ───────────────────────────────────────────────────── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="flex items-center justify-between mb-4">
-          <TabsList>
+        {/* Phones (#155): the tab strip scrolls on its own, the view toggle wraps below. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <TabsList className="max-w-full overflow-x-auto justify-start">
             <TabsTrigger value="all">
               {t('review.allPending')}
               {totalCount > 0 && (

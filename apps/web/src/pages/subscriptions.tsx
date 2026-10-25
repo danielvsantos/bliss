@@ -315,15 +315,16 @@ function SubscriptionRow({
                 aria-label={t('subscriptions.rename.label')}
               />
             ) : (
-              <div className="font-medium truncate flex items-center gap-1.5 group">
-                <span className="truncate">{item.merchantLabel}</span>
+              <div className="font-medium sm:truncate flex items-center gap-1.5 group">
+                {/* Phones (#155): up to two lines instead of a dozen characters. */}
+                <span className="line-clamp-2 [overflow-wrap:anywhere] sm:line-clamp-none sm:truncate">{item.merchantLabel}</span>
                 <button
                   type="button"
                   onClick={() => {
                     setLabelDraft(item.merchantLabel);
                     setEditingLabel(true);
                   }}
-                  className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                  className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
                   aria-label={t('subscriptions.rename.label')}
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -335,6 +336,11 @@ function SubscriptionRow({
               {' · '}
               {t('subscriptions.occurrences', { count: item.occurrenceCount })}
               {item.userLabelLocked ? ` · ${t('subscriptions.rename.custom')}` : ''}
+            </div>
+            {/* Phones (#155): cadence and next charge, whose columns are desktop-only. */}
+            <div className="text-xs text-muted-foreground truncate sm:hidden">
+              {item.cadence ? t(`subscriptions.cadence.${item.cadence}`) : t('subscriptions.cadence.unknown')}
+              {item.nextExpectedAt ? ` · ${formatRelative(item.nextExpectedAt, t)}` : ''}
             </div>
             {item.mergeStale && (
               <div className="text-xs text-warning flex items-center gap-1 mt-0.5">
@@ -605,7 +611,7 @@ export default function SubscriptionsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="md:p-6 space-y-6">
       {/* Processing status (#100): recalculation in progress / updated X ago. */}
       <DataUpdatingBanner watch={['SUBSCRIPTION_SCAN']} invalidate={[['subscriptions']]} />
       {/* Header */}
@@ -643,13 +649,13 @@ export default function SubscriptionsPage() {
         </div>
       )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="p-4">
+      {/* Summary — two across on phones, the count full width below (#155) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+        <Card className="p-3 sm:p-4">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">
             {t('subscriptions.summary.monthly')}
           </div>
-          <div className="text-2xl font-bold tabular-nums mt-1">
+          <div className="text-xl sm:text-2xl font-bold tabular-nums mt-1">
             {isLoading ? (
               <Skeleton className="h-7 w-24" />
             ) : (
@@ -657,11 +663,11 @@ export default function SubscriptionsPage() {
             )}
           </div>
         </Card>
-        <Card className="p-4">
+        <Card className="p-3 sm:p-4">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">
             {t('subscriptions.summary.annual')}
           </div>
-          <div className="text-2xl font-bold tabular-nums mt-1">
+          <div className="text-xl sm:text-2xl font-bold tabular-nums mt-1">
             {isLoading ? (
               <Skeleton className="h-7 w-24" />
             ) : (
@@ -669,11 +675,11 @@ export default function SubscriptionsPage() {
             )}
           </div>
         </Card>
-        <Card className="p-4">
+        <Card className="col-span-2 sm:col-span-1 p-3 sm:p-4">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">
             {t('subscriptions.summary.count')}
           </div>
-          <div className="text-2xl font-bold tabular-nums mt-1">
+          <div className="text-xl sm:text-2xl font-bold tabular-nums mt-1">
             {isLoading ? <Skeleton className="h-7 w-16" /> : data?.summary.activeCount ?? 0}
           </div>
           {(data?.summary.fxUnavailableCount ?? 0) > 0 && (

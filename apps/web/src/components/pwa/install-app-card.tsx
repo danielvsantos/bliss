@@ -12,7 +12,7 @@ export function InstallAppCard() {
 
   return (
     <Card className="overflow-hidden p-0 gap-0" data-testid="install-app-card">
-      <div className="flex flex-col gap-3 px-7 py-[18px] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 px-5 sm:px-7 py-[18px] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" aria-hidden />
           <div>

@@ -112,7 +112,6 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, onRetry, disabled 
   // this icon and the page-level onApprove handlers are driven by.
   const needsReview = item.status === 'needs-enrichment' || item.status === 'needs-account';
   const approveIcon = needsReview ? <ArrowRight className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />;
-  const approveIconMobile = needsReview ? <ArrowRight className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />;
   const approveColor = needsReview
     ? 'text-warning hover:text-warning hover:bg-warning/10'
     : 'text-positive hover:text-positive hover:bg-positive/10';
@@ -271,51 +270,52 @@ export function TxDataRow({ item, onApprove, onSkip, onClick, onRetry, disabled 
           <StatusBadge status={item.status} />
           <HoldBackBadge reasons={item.holdBackReasons} />
 
+          {/* 36px touch targets on phones (#155). */}
           {showActions && (
-            <span className="ml-auto flex items-center gap-0.5 shrink-0">
+            <span className="ml-auto -my-1.5 flex items-center gap-1 shrink-0">
               {hasDiff && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 text-brand-primary hover:text-brand-primary hover:bg-brand-primary/10"
+                  className="h-9 w-9 text-brand-primary hover:text-brand-primary hover:bg-brand-primary/10"
                   onClick={(e) => { e.stopPropagation(); setShowDiff(!showDiff); }}
                   title={showDiff ? 'Hide changes' : 'Show changes'}
                 >
-                  {showDiff ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {showDiff ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </Button>
               )}
               {isFailed ? (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 text-warning hover:text-warning hover:bg-warning/10"
+                  className="h-9 w-9 text-warning hover:text-warning hover:bg-warning/10"
                   onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
                   disabled={disabled}
                   title="Retry classification"
                 >
-                  <RotateCw className="h-3.5 w-3.5" />
+                  <RotateCw className="h-4 w-4" />
                 </Button>
               ) : (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={`h-6 w-6 ${approveColor}`}
+                  className={`h-9 w-9 ${approveColor}`}
                   onClick={(e) => { e.stopPropagation(); onApprove(); }}
                   disabled={disabled}
                   title={approveTitleMobile}
                 >
-                  {approveIconMobile}
+                  {approveIcon}
                 </Button>
               )}
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={(e) => { e.stopPropagation(); onSkip(); }}
                 disabled={disabled}
                 title="Skip"
               >
-                <XCircle className="h-3.5 w-3.5" />
+                <XCircle className="h-4 w-4" />
               </Button>
             </span>
           )}

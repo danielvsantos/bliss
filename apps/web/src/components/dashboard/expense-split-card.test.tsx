@@ -8,6 +8,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/hooks/use-analytics');
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }));
 vi.mock('@/lib/category-i18n', () => ({
   translateCategoryGroup: (_t: unknown, group: string) => group,
 }));
