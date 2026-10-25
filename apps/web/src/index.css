@@ -256,9 +256,6 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
-  .pwa-safe-b {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
   /* The band behind the iOS status bar: brand-deep (the manifest theme
      colour), so the white status-bar text stays readable in both themes. */
   .pwa-status-bar {

@@ -236,7 +236,7 @@ pnpm test:web
 - Manifest colours come from the brand tokens (`src/lib/pwa/manifest.ts`, drift-tested). Icons are generated from `pwa-assets/icon-source.jpg` with `pnpm --filter @bliss/web pwa:icons` and committed.
 - No third-party scripts in `index.html` (tested).
 - Standalone-aware UI: `useIsStandalone()` (`hooks/use-display-mode.ts`), `useInstallPrompt()`, `useOnlineStatus()`. Offline, `AppShell` renders `<OfflineScreen />` instead of the page.
-- Safe areas: `env(safe-area-inset-*)` is 0 outside the installed app; use the `.pwa-safe-x` / `.pwa-safe-b` utilities in `src/index.css` for new full-height or bottom-anchored surfaces.
+- Safe areas: `env(safe-area-inset-*)` is 0 outside the installed app; for new full-screen or bottom-anchored surfaces pad with `env(safe-area-inset-*)` (or `.pwa-safe-x`) and pin with `fixed inset-0` — never size with `100dvh`, which excludes the status bar in iOS standalone mode.
 
 ## Path aliases
 

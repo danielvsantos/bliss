@@ -11,7 +11,11 @@ type ThemeProviderProps = {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
+  // Light unless a theme was stored. There is no theme switcher, and the
+  // sign-in page stores "light", so in a browser everyone ends up on light.
+  // An installed PWA starts with empty storage (#155): "system" would put it
+  // in the unfinished dark theme whenever the phone is in dark mode.
+  defaultTheme = "light",
   storageKey = "bliss-ui-theme",
   forceLightMode = false,
 }: ThemeProviderProps) {

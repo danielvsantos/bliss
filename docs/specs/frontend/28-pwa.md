@@ -113,10 +113,13 @@ Strings: `pwa.install.*` in all five locales (parity test in `i18n-parity.test.t
 The status bar is `black-translucent` with `viewport-fit=cover`, so the page extends under it. In the installed app:
 
 - `body` gets `padding-top: env(safe-area-inset-top)`, and a fixed `.pwa-status-bar` band in `brand-deep` (rendered in `App.tsx`) sits behind the status bar so its white text stays readable in both themes.
-- `AppShell` takes `calc(100dvh - env(safe-area-inset-top))` with `.pwa-safe-x` / `.pwa-safe-b` (landscape notch, home indicator); the mobile sidebar drawer starts below the status bar and clears the home indicator.
+- `AppShell` is pinned to the screen with `fixed inset-0` and pads itself below the status bar (`pt-[env(safe-area-inset-top)]`) and clear of the landscape notch (`.pwa-safe-x`). It is deliberately **not** sized with `dvh`: in iOS standalone mode with the translucent status bar, `100dvh` already excludes the status bar, so `dvh` arithmetic left an empty band above the home indicator. Full-screen surfaces should follow the same pattern (`fixed inset-0` + inset padding), not `h-[100dvh]`.
+- `<main>` adds `env(safe-area-inset-bottom)` to its own bottom padding, so its background runs to the bottom edge and the last content scrolls clear of the home indicator. The mobile sidebar drawer starts below the status bar and clears the home indicator on its own background.
 - The toast viewport sits below the status bar on phones (`components/ui/toaster.tsx`, class-only change).
 
-Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing changes there. The remaining surfaces (sheets, dialogs, other drawers) are Phase 2.
+Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing changes there. The remaining surfaces (sheets, dialogs, other drawers, and the phone-width full-screen modals that use `h-[100dvh]`: Income Terms, Manage Assets) are Phase 2.
+
+**Theme.** `ThemeProvider` defaults to `light`. There is no theme switcher, and the sign-in page stores `light`, so browsers always ended up on light; an installed app starts with empty storage, and the former `system` default put it in the unfinished dark theme whenever the phone was in dark mode.
 
 ## 28.8. Testing
 
