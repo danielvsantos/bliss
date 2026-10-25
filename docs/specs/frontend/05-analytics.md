@@ -51,7 +51,7 @@ RecentTransactionsCard: 5 rows with emoji, date, description, category, account,
 
 ### 5.2.3. Styling Patterns
 
-- **Glass cards**: Applied globally via `[data-slot="card"]` CSS selector in `index.css` — `background: rgba(255,255,255,0.68)`, `backdrop-filter: blur(20px) saturate(1.6)`, multi-layer shadows. Affects all Card components site-wide. Dark mode variant inverts background.
+- **Glass cards**: Applied globally via `[data-slot="card"]` CSS selector in `index.css` — `background: rgba(255,255,255,0.68)`, `backdrop-filter: blur(20px) saturate(1.6)`, multi-layer shadows. Affects all Card components site-wide. (Light only: Bliss has no dark theme.)
 - **CardDivider**: 1px horizontal separator between card sections (added to `src/components/ui/card.tsx`).
 - **Account type icons**: Custom SVGs (BankIcon, CardTypeIcon, InvestIcon, WalletIcon). Type detected from `plaidItem.accounts[0].type` — `depository`, `credit`, `investment`, or manual fallback.
 - **Category emojis**: Transaction rows display the category emoji from `tx.category.icon` (returned by `/api/transactions`). Background color is type-based: Income=`bg-positive/10`, Expense=`bg-brand-primary/10`, Debt=`bg-negative/10`.

@@ -6,7 +6,6 @@ import { withAuth } from "./components/withAuth";
 import { Toaster } from "@/components/ui/toaster";
 import { AppShell } from '@/components/layout/app-shell';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { useForceTheme } from "./hooks/use-force-theme";
 import { PwaUpdater } from "@/components/pwa/pwa-updater";
 
 // Pre-wrap protected components once at module load time so that withAuth()
@@ -20,7 +19,6 @@ const wrappedRoutes = routes.map((route) => ({
 
 function RoutedApp() {
   const location = useLocation();
-  useForceTheme();
 
   return (
     <Routes location={location}>

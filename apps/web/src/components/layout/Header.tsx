@@ -96,7 +96,7 @@ export function Header({ sidebarOpen, onSidebarToggle, isMobile = false }: Heade
         gap: isMobileLayout ? 8 : 16,
         overflow: "visible",
       }}
-      className="dark:bg-[rgba(26,22,37,0.96)] z-10"
+      className="z-10"
     >
       <div style={{
         display: "flex", alignItems: "center", gap: 6,
@@ -128,7 +128,7 @@ export function Header({ sidebarOpen, onSidebarToggle, isMobile = false }: Heade
           fontFamily: "'Urbanist', sans-serif", fontSize: "0.9375rem",
           fontWeight: 500, color: "hsl(var(--brand-deep))",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }} className="dark:text-white">
+        }} className="">
           {getCurrentPageName()}
         </span>
       </div>

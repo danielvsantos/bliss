@@ -3,6 +3,9 @@ import tailwindcssAnimate from "tailwindcss-animate";
 import tailwindcssTypography from "@tailwindcss/typography";
 
 export default {
+	// Light only: Bliss has no dark theme. "class" (never applied) keeps any
+	// `dark:` utility a shadcn component brings in inert, instead of the default
+	// "media" strategy following the OS setting.
 	darkMode: ["class"],
 	content: [
 		"./pages/**/*.{ts,tsx}",

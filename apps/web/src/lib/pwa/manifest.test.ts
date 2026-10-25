@@ -49,10 +49,10 @@ describe('PWA manifest (#155)', () => {
     hexRgb(hex).forEach((value, i) => expect(Math.abs(value - fromToken[i])).toBeLessThanOrEqual(3));
   });
 
-  it('theme-color meta tags in index.html use the manifest theme colour', () => {
+  it('the theme-color meta tag in index.html uses the manifest theme colour', () => {
     const html = readFileSync(path.resolve(webRoot, 'index.html'), 'utf8');
     const metas = html.match(/<meta name="theme-color" content="([^"]+)"/g) ?? [];
-    expect(metas).toHaveLength(2);
+    expect(metas).toHaveLength(1);
     metas.forEach((meta) => expect(meta).toContain(PWA_THEME_COLOR));
   });
 

@@ -100,7 +100,7 @@ export function AppShell({ children }: AppShellProps) {
           sidebarOpen={sidebarOpen}
           onSidebarToggle={toggleSidebar}
         />
-        <main className="flex-1 overflow-auto px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:px-5 md:pt-5 md:pb-[calc(1.25rem+env(safe-area-inset-bottom))] lg:px-6 lg:pt-6 lg:pb-[calc(1.5rem+env(safe-area-inset-bottom))] bg-gray-50 dark:bg-gray-900">
+        <main className="flex-1 overflow-auto px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:px-5 md:pt-5 md:pb-[calc(1.25rem+env(safe-area-inset-bottom))] lg:px-6 lg:pt-6 lg:pb-[calc(1.5rem+env(safe-area-inset-bottom))] bg-gray-50">
           {/* Offline: no figures at all, not even the persisted cache (#155). */}
           {isOnline ? children : <OfflineScreen />}
         </main>

@@ -100,6 +100,10 @@ Use `/10` opacity for light backgrounds, `/20` for subtle borders.
 | Error / Critical | `text-destructive` | `bg-destructive/10` | `bg-destructive` |
 | Disconnected / Manual | `text-muted-foreground` | `bg-muted` | `bg-muted-foreground` |
 
+### Light only
+
+Bliss has no dark theme. Do not add `dark:` utilities, `.dark` CSS or a theme provider; `tailwind.config.ts` keeps `darkMode: ["class"]` (never applied) so a `dark:` class arriving with a shadcn component stays inert.
+
 ### Allowed raw Tailwind colors
 
 Only these are permitted without tokens:
@@ -186,7 +190,6 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-ticker-search.ts` -- Stock/fund ticker lookup
 - `use-export-transactions.ts` -- Transaction CSV export
 - `use-onboarding-progress.ts` -- Onboarding checklist state
-- `use-force-theme.ts` -- Theme override
 - `use-metadata.ts` -- Page metadata
 - `use-page-visible.ts` -- Page visibility detection
 - `use-display-mode.ts` -- `useIsStandalone()`: running as an installed app (#155)

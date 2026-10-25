@@ -1,4 +1,3 @@
-import { ThemeProvider } from "./theme";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "../contexts/AuthContext";
 import { OnboardingProvider } from "./onboarding-context";
@@ -11,13 +10,11 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <AuthProvider>
-          <OnboardingProvider>
-            {children}
-          </OnboardingProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <AuthProvider>
+        <OnboardingProvider>
+          {children}
+        </OnboardingProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

@@ -120,7 +120,7 @@ The status bar is `black-translucent` with `viewport-fit=cover`, so the page ext
 
 Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing changes there. Dialogs, sheets, drawers and the full-screen phone modals follow in Phase 2a (§28.9).
 
-**Theme.** `ThemeProvider` defaults to `light`. There is no theme switcher, and the sign-in page stores `light`, so browsers always ended up on light; an installed app starts with empty storage, and the former `system` default put it in the unfinished dark theme whenever the phone was in dark mode.
+**Theme.** Bliss is light only. The unfinished dark theme (a `system`-default `ThemeProvider` that put the installed app in dark mode whenever the phone was, with a header that stayed light) was removed: no theme provider or hooks, no `.dark` tokens, no `dark:` utilities, one `theme-color` and `<meta name="color-scheme" content="light">`. `tailwind.config.ts` keeps `darkMode: ["class"]`, a class that is never applied, so a `dark:` utility arriving with a shadcn component stays inert instead of following the OS.
 
 ## 28.8. Testing
 
