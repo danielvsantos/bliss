@@ -30,6 +30,8 @@ import {
   type EnableBankingConnectionState,
 } from '@/lib/enable-banking';
 import type { PlaidItem } from '@/types/api';
+import { useIsStandalone } from '@/hooks/use-display-mode';
+import { DesktopOnlyBankNote } from '@/components/pwa/desktop-only-bank-note';
 
 interface BankConnectionCardProps {
   /** An Enable Banking connection (PlaidItem with provider ENABLE_BANKING). */
@@ -68,6 +70,7 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
   const { t, i18n } = useTranslation();
   const language = i18n?.language;
   const { toast } = useToast();
+  const isStandalone = useIsStandalone();
   const { user } = useAuth();
   const [showDisconnect, setShowDisconnect] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
@@ -255,7 +258,9 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
             </Button>
           )}
 
-          {canReconnect && (
+          {/* Installed app (#155): the consent redirect needs a desktop browser. */}
+          {canReconnect && isStandalone && <DesktopOnlyBankNote />}
+          {canReconnect && !isStandalone && (
             <Button
               variant={state === 'expired' || state === 'disconnected' ? 'default' : 'outline'}
               size="sm"
@@ -289,7 +294,7 @@ export function BankConnectionCard({ item, onOpenMapping, onChanged }: BankConne
           )}
         </div>
 
-        {canReconnect && !isAuthoriser && (
+        {canReconnect && !isAuthoriser && !isStandalone && (
           <p className="text-xs text-muted-foreground">{t('enableBanking.card.reconnectOnlyAuthoriser')}</p>
         )}
         {state !== 'disconnected' && !paused && !canDisconnect && (

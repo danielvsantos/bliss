@@ -695,6 +695,6 @@ describe('ManageAssetsPage — mobile (375px)', () => {
     renderPage('/assets?item=4&modal=debt');
     const modal = await screen.findByTestId('debt-terms-modal');
     expect(modal.className).toContain('max-sm:w-screen');
-    expect(modal.className).toContain('max-sm:h-[100dvh]');
+    expect(modal.className).toContain('max-sm:h-[var(--vv-height,100dvh)]');
   });
 });

@@ -3225,6 +3225,9 @@ const en = {
     update: {
       reload: "Reload",
     },
+    banks: {
+      desktopOnly: "Connect and reconnect banks from a desktop browser. Synced transactions can still be reviewed here.",
+    },
     offline: {
       title: "You're offline",
       description: "Bliss needs a connection to show your data. Your figures load again as soon as you're back online.",

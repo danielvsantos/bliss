@@ -69,6 +69,11 @@ export function availableModals(asset: ManagedAsset): AssetModal[] {
   return out;
 }
 
-/** Dialog content classes that turn a modal into a full-screen sheet below `sm`. */
+/**
+ * Dialog content classes that turn a modal into a full-screen sheet below `sm`.
+ * Sized to the visible area (--vv-height, lib/pwa/visual-viewport.ts) rather
+ * than 100dvh, which in the installed iOS app excludes the status bar and
+ * ignores the keyboard; padded clear of the notch and home indicator (#155).
+ */
 export const MOBILE_SHEET_CLASSES =
-  'max-sm:max-w-none max-sm:w-screen max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:rounded-none max-sm:border-0 max-sm:p-4 max-sm:overflow-y-auto';
+  'max-sm:max-w-none max-sm:w-screen max-sm:h-[var(--vv-height,100dvh)] max-sm:max-h-[var(--vv-height,100dvh)] max-sm:rounded-none max-sm:border-0 max-sm:px-4 max-sm:pt-[calc(1rem+env(safe-area-inset-top))] max-sm:pb-[calc(1rem+env(safe-area-inset-bottom))] max-sm:[&>button:last-child]:top-[calc(1rem+env(safe-area-inset-top))] max-sm:overflow-y-auto';

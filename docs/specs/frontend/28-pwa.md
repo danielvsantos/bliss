@@ -2,12 +2,13 @@
 
 Task #155. `apps/web` is installable as a Progressive Web App: from the iPhone home screen (Safari → Share → Add to Home Screen) and with Chrome's one-tap install on Android and desktop, Bliss opens full-screen like an app. It is not a native app and is not distributed through any store.
 
-The work ships in two pull requests:
+The work ships in three pull requests:
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 — Installable | Manifest + icons, iOS meta tags, app-shell service worker, offline screen, update flow, nginx cache headers, install control, third-party script removed, base safe areas | This spec, shipped |
-| 2 — Standalone polish | Full safe-area pass (sheets, dialogs, drawers), 16 px selects, back navigation on detail views, resume refetch, 390 px layout pass on the 7 phone pages, Google Sign-In fallback, logout cache clearing, desktop-only bank connections | Planned (§28.9) |
+| 1 — Installable | Manifest + icons, iOS meta tags, app-shell service worker, offline screen, update flow, nginx cache headers, install control, third-party script removed, base safe areas | Shipped |
+| 2a — Standalone correctness | Logout cache clearing, desktop-only bank connections, resume refetch, keyboard-aware dialogs, safe areas on dialogs / sheets / drawers / full-screen phone modals | Shipped (§28.9) |
+| 2b — Phone layout pass | 390 px pass on Dashboard, Transactions, Transaction Review, Subscriptions, Portfolio, Insights, Notifications and the profile / admin section (Settings, users); back navigation on detail views | Planned (§28.10) |
 
 Out of scope by decision: push notifications, the app badge, offline access to financial data, connecting banks from the installed app, a native/Capacitor app, analytics or KPIs, a user-facing install guide (the in-app instructions are the only help).
 
@@ -117,7 +118,7 @@ The status bar is `black-translucent` with `viewport-fit=cover`, so the page ext
 - `<main>` adds `env(safe-area-inset-bottom)` to its own bottom padding, so its background runs to the bottom edge and the last content scrolls clear of the home indicator. The mobile sidebar drawer starts below the status bar and clears the home indicator on its own background.
 - The toast viewport sits below the status bar on phones (`components/ui/toaster.tsx`, class-only change).
 
-Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing changes there. The remaining surfaces (sheets, dialogs, other drawers, and the phone-width full-screen modals that use `h-[100dvh]`: Income Terms, Manage Assets) are Phase 2.
+Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing changes there. Dialogs, sheets, drawers and the full-screen phone modals follow in Phase 2a (§28.9).
 
 **Theme.** `ThemeProvider` defaults to `light`. There is no theme switcher, and the sign-in page stores `light`, so browsers always ended up on light; an installed app starts with empty storage, and the former `system` default put it in the unfinished dark theme whenever the phone was in dark mode.
 
@@ -133,14 +134,44 @@ Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing 
 | `src/components/pwa/install-app-button.test.tsx` | The four install branches |
 | `src/components/pwa/pwa-updater.test.tsx` | Toast on `pwa:need-refresh`, Reload applies the update |
 | `src/components/layout/app-shell.test.tsx` | Offline gate shows no figures and recovers on `online` |
+| `src/lib/query-client.test.ts`, `src/contexts/AuthContext.test.tsx` | Logout clears the cache and the persisted copy, also when sign-out fails; session expiry does not |
+| `src/components/plaid-connect.test.tsx`, `enable-banking/connect-dialog.test.tsx`, `accounts/bank-connection-card.test.tsx` | Standalone: desktop-only note, Plaid Link never loaded, no Enable Banking connect / reconnect |
+| `src/hooks/use-resume-refresh.test.tsx` | Refetch + update check after 6 min away, nothing after 4 min |
+| `src/lib/pwa/visual-viewport.test.ts` | `--vv-height` / `--vv-top` follow the keyboard; leftover pan reset only once it closes |
 
 Manual (real device): see the QA checklist in the task's completion proof — installability in Chrome DevTools (Lighthouse 12 dropped the PWA category), iPhone Add to Home Screen, Cache Storage contents after a session, airplane mode, and the update flow across a deploy.
 
-## 28.9. Phase 2 (planned)
+## 28.9. Phase 2a: standalone correctness
 
-- Safe areas on bottom sheets, dialogs and the remaining drawers; `SelectTrigger` at 16 px on phones (no zoom on focus).
+### Logout hygiene
+The QueryClient and its localStorage persister live in `src/lib/query-client.ts` (moved out of `providers.tsx` so `AuthContext` can import them without a cycle). `AuthContext.signOut()` calls `clearPersistedQueryCache()` in a `finally`: `queryClient.clear()`, then `persister.removeClient()`, so no portfolio, account or metadata payload stays on the device, even when the sign-out request itself fails. An `auth:session-expired` event does **not** clear it (PRD D9); the cache ages out on its 24 h `gcTime`.
+
+### Bank connections are desktop-only in the installed app
+Plaid Link and the Enable Banking consent page navigate out of the app's scope, which iOS runs in a browser sheet that does not share the app's session.
+- `PlaidConnect` (new connection and update/reconnect mode) renders `<DesktopOnlyBankNote />` (`pwa.banks.desktopOnly`) when `useIsStandalone()`. Plaid Link is never loaded there: the gate sits above the component that calls `usePlaidLink`.
+- `EnableBankingConnect` renders nothing in standalone: every page that has it (Accounts, Onboarding) also renders `PlaidConnect`, whose note covers both.
+- `BankConnectionCard` replaces the Enable Banking **Reconnect** button with the note. Sync now, Manage accounts and Disconnect stay; reviewing synced transactions is unaffected.
+
+### Google Sign-In
+Tested on a real iPhone (iOS, production): Google Sign-In completes inside the installed app, so it stays offered there. No standalone fallback is needed; email/password works as before.
+
+### Resume freshness
+`useResumeRefresh()` (mounted in `AppShell`) records when the page is hidden. Returning after at least `RESUME_REFRESH_AFTER_MS` (5 min) calls `queryClient.invalidateQueries({ refetchType: 'active' })` (the visible page refetches even inside its `staleTime`, which TanStack's focus refetch skips) and `checkForPwaUpdate(now, true)`.
+
+### Keyboard and dialogs
+When the iOS keyboard opens, only the *visual* viewport shrinks; `vh`-sized dialogs stay taller than what is visible, fields end up under the keyboard, and moving between them makes iOS pan the whole page (worst in standalone, with the status bar overlaid).
+- `src/lib/pwa/visual-viewport.ts` (`installVisualViewportVars()`, from `main.tsx`) publishes `--vv-height` / `--vv-top` on `<html>` from `window.visualViewport`, updated per animation frame on its `resize` / `scroll`.
+- `DialogContent` centres itself in the visible area (`top: calc(var(--vv-top) + var(--vv-height) / 2)`) and caps its height at 90 % of it, scrolling inside. With no keyboard both equal the old `50%` / `90vh`, so desktop is unchanged.
+- The full-screen phone modals (`MOBILE_SHEET_CLASSES` in `lib/manage-assets.ts`, now also used by the Income Terms modal) take `--vv-height` instead of `100dvh`, pad themselves clear of the notch and home indicator, and move their close button below the status bar.
+- When the keyboard closes and the document is not meant to scroll (the app shell is pinned), any leftover window scroll that iOS left behind is reset.
+- In standalone, `html` / `body` get `overscroll-behavior: none` (no rubber-banding of the whole app).
+- Selects are Radix components, not native `<select>`, so iOS never zooms on them; text inputs and textareas are already 16 px on phones.
+
+### Safe areas on overlays
+`components/ui/sheet.tsx` (side sheets pad top and bottom; the close button sits below the status bar; top/bottom sheets pad their outer edge) and `components/ui/drawer.tsx` (bottom drawers pad above the home indicator; top/side drawers pad the status bar). Class-only changes, 0 outside the installed app.
+
+## 28.10. Phase 2b (planned): phone layout pass
+
+- 390 px pass on Dashboard, Transactions, Transaction Review, Subscriptions, Portfolio, Insights, Notifications **and the profile / admin section** (Settings tabs, user management): no horizontal page scroll, tables as cards, charts that fit, dialogs on these pages as bottom drawers.
 - A visible back control on detail views (there is no browser chrome in standalone mode).
-- `use-resume-refresh`: after ≥ 5 min in the background, invalidate active queries and check for a new worker.
-- 390 px layout pass on Dashboard, Transactions, Transaction Review, Subscriptions, Portfolio, Insights and Notifications.
-- Auth in standalone: hide Google Sign-In behind a `GOOGLE_SIGNIN_IN_STANDALONE = false` constant in `platform.ts`, flipped only after a device test; clear the persisted query cache on logout (`queryClient.clear()` + `persister.removeClient()`), never on session expiry.
-- Bank connections desktop-only in standalone: `PlaidConnect`, `EnableBankingConnect` and the Enable Banking reconnect show "Connect banks from a desktop browser".
+- Desktop at ≥ 1024 px unchanged.

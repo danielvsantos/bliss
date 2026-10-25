@@ -6,6 +6,8 @@ import { Loader2, Plus, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from '@/lib/api';
 import { AccountSelectionModal } from './account-selection-modal';
+import { useIsStandalone } from '@/hooks/use-display-mode';
+import { DesktopOnlyBankNote } from '@/components/pwa/desktop-only-bank-note';
 
 interface PlaidConnectProps {
     onSuccess?: (public_token?: string, metadata?: Record<string, unknown>) => Promise<void> | void;
@@ -18,7 +20,17 @@ interface PlaidConnectProps {
     plaidItemId?: string;
 }
 
-export function PlaidConnect({ onSuccess, onComplete, variant = "default", className, children, plaidItemId }: PlaidConnectProps) {
+/**
+ * In the installed app (#155) Plaid Link is never loaded: connecting and
+ * re-authenticating banks happens in a desktop browser.
+ */
+export function PlaidConnect(props: PlaidConnectProps) {
+    const isStandalone = useIsStandalone();
+    if (isStandalone) return <DesktopOnlyBankNote className={props.className} />;
+    return <PlaidConnectButton {...props} />;
+}
+
+function PlaidConnectButton({ onSuccess, onComplete, variant = "default", className, children, plaidItemId }: PlaidConnectProps) {
     const { t } = useTranslation();
     const [token, setToken] = useState<string | null>(null);
     const [isInitializing, setIsInitializing] = useState(false);

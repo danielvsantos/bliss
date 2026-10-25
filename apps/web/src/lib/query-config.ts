@@ -11,7 +11,7 @@ import type { QueryClient } from '@tanstack/react-query';
  * views and hard reloads paint instantly instead of re-fetching.
  *
  * This is a leaf module: it imports only a type from `@tanstack/react-query` so
- * it can be shared by `lib/providers.tsx` and the hook files without an import
+ * it can be shared by `lib/query-client.ts` and the hook files without an import
  * cycle.
  */
 

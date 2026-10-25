@@ -13,6 +13,7 @@ vi.mock('@/hooks/use-onboarding-progress', () => ({
   useCompleteOnboardingStep: () => ({ mutate: vi.fn() }),
 }));
 vi.mock('@/hooks/use-plaid-review', () => ({ usePlaidTransactions: () => ({ data: undefined }) }));
+vi.mock('@/hooks/use-resume-refresh', () => ({ useResumeRefresh: () => {} }));
 vi.mock('@/hooks/use-imports', () => ({ usePendingImports: () => ({ data: undefined }) }));
 
 import { AppShell } from './app-shell';

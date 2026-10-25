@@ -15,6 +15,11 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+const clearPersistedQueryCache = vi.fn();
+vi.mock('@/lib/query-client', () => ({
+  clearPersistedQueryCache: () => clearPersistedQueryCache(),
+}));
+
 vi.mock('@/hooks/use-toast', () => ({
   toast: vi.fn(),
 }));
@@ -103,6 +108,35 @@ describe('useAuth', () => {
 
     expect(api.signout).toHaveBeenCalledOnce();
     expect(result.current.user).toBeNull();
+    expect(clearPersistedQueryCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('signOut clears the persisted query cache even when the API call fails (#155)', async () => {
+    clearPersistedQueryCache.mockClear();
+    vi.mocked(api.getSession).mockResolvedValueOnce(null);
+    vi.mocked(api.signout).mockRejectedValueOnce(new Error('offline'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.signOut()).rejects.toThrow('offline');
+    });
+    expect(clearPersistedQueryCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('a session-expired event does not clear the persisted cache (PRD D9)', async () => {
+    clearPersistedQueryCache.mockClear();
+    vi.mocked(api.getSession).mockResolvedValueOnce(null);
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      window.dispatchEvent(new Event('auth:session-expired'));
+    });
+    expect(clearPersistedQueryCache).not.toHaveBeenCalled();
   });
 
   it('sets user to null on session check failure', async () => {

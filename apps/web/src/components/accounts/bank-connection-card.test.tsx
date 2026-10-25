@@ -19,6 +19,8 @@ vi.mock('react-i18next', () => ({
 const toast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast }) }));
 vi.mock('@/hooks/use-auth');
+let standalone = false;
+vi.mock('@/hooks/use-display-mode', () => ({ useIsStandalone: () => standalone }));
 
 const DAY = 24 * 60 * 60 * 1000;
 const inDays = (n: number) => new Date(Date.now() + n * DAY).toISOString();
@@ -249,5 +251,21 @@ describe('BankConnectionCard (#148) — paused (no tenant credentials)', () => {
   it('a disconnected connection stays Disconnected', () => {
     renderPaused(makeItem({ status: 'REVOKED', paused: true }));
     expect(screen.getByTestId('eb-status-badge')).toHaveAttribute('data-state', 'disconnected');
+  });
+});
+
+describe('BankConnectionCard in the installed app (#155)', () => {
+  afterEach(() => {
+    standalone = false;
+  });
+
+  it('replaces Reconnect with the desktop-only note; Sync now and Disconnect stay', () => {
+    noDetails();
+    standalone = true;
+    renderCard(makeItem({ consentExpiration: inDays(5) }));
+    expect(screen.getByTestId('desktop-only-bank-note')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /enableBanking\.card\.reconnect/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /enableBanking\.card\.syncNow/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /enableBanking\.card\.disconnect$/ })).toBeInTheDocument();
   });
 });

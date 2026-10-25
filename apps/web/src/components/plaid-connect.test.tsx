@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PlaidConnect } from './plaid-connect';
 import { api } from '@/lib/api';
 import * as ReactPlaidLink from 'react-plaid-link';
@@ -9,6 +9,10 @@ import * as ReactPlaidLink from 'react-plaid-link';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
+
+// Installed-app flag (#155), toggled per test.
+let standalone = false;
+vi.mock('@/hooks/use-display-mode', () => ({ useIsStandalone: () => standalone }));
 
 // Mock API and external libraries
 vi.mock('@/lib/api');
@@ -118,5 +122,24 @@ describe('PlaidConnect', () => {
     // Validate we called both the background re-auth logic AND the custom
     expect(api.updatePlaidItem).toHaveBeenCalled();
     expect(customSuccess).toHaveBeenCalledWith('custom-public-token', { myData: true });
+  });
+});
+
+describe('PlaidConnect in the installed app (#155)', () => {
+  afterEach(() => {
+    standalone = false;
+  });
+
+  it.each([
+    ['new connection', undefined],
+    ['reconnect', 'item-1'],
+  ])('%s: shows the desktop-only note and never loads Plaid Link', (_label, plaidItemId) => {
+    standalone = true;
+    vi.clearAllMocks();
+    render(<PlaidConnect plaidItemId={plaidItemId} />);
+    expect(screen.getByTestId('desktop-only-bank-note')).toHaveTextContent('pwa.banks.desktopOnly');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(ReactPlaidLink.usePlaidLink).not.toHaveBeenCalled();
+    expect(api.createLinkToken).not.toHaveBeenCalled();
   });
 });
