@@ -234,6 +234,10 @@ export default withAuth(async function handler(req, res) {
       select: {
         id: true,
         symbol: true,
+        // The live price lookup needs the listing: without it the backend asks
+        // Twelve Data for the bare ticker, which can resolve to a different US
+        // instrument (NVD on Xetra → a US-listed ETF, #159).
+        exchange: true,
         accountId: true,
         currency: true,
         assetCurrency: true,
