@@ -204,6 +204,46 @@ describe('GET /api/portfolio/equity-analysis', () => {
     expect(res._body.groups[0].holdings[0].currentValue).toBe(900);
   });
 
+  it('prices a non-US listing on its own exchange (#159)', async () => {
+    // Backend behaviour: NVD on Xetra is NVIDIA in EUR; bare NVD resolves to a
+    // US-listed ETF at a very different price.
+    vi.mocked(calculateAssetCurrentValue).mockImplementationOnce(async (asset: any) =>
+      new Decimal(asset.exchange === 'XETR' ? 190.08 : 4.19));
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'EUR' });
+    mockPrisma.portfolioItem.findMany.mockImplementationOnce(async (args: any) => {
+      const item: Record<string, unknown> = {
+        id: 4723,
+        symbol: 'NVD',
+        exchange: 'XETR',
+        currency: 'EUR',
+        assetCurrency: 'EUR',
+        quantity: new Decimal(44),
+        costBasis: new Decimal(6000),
+        currentValue: new Decimal(8000),
+        costBasisInUSD: new Decimal(6500),
+        currentValueInUSD: new Decimal(8700),
+        source: 'PLAID',
+        category: { name: 'Stocks', group: 'EU Equities', processingHint: 'API_STOCK' },
+      };
+      // Return only the selected fields, like Prisma.
+      return [Object.fromEntries(Object.entries(item).filter(([k]) => args.select[k]))];
+    });
+    mockPrisma.securityMaster.findMany.mockResolvedValueOnce([
+      { symbol: 'NVD', name: 'NVIDIA Corp', sector: 'Technology', industry: 'Semiconductors', country: 'US' },
+    ]);
+
+    const res = makeRes();
+    await handler(makeReq({ query: { groupBy: 'sector' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(200);
+    expect(calculateAssetCurrentValue).toHaveBeenCalledWith(
+      expect.objectContaining({ symbol: 'NVD', exchange: 'XETR' }),
+    );
+    // Same value /api/portfolio/items reports: 44 × the Xetra price, in EUR
+    // (currency conversion is an identity mock here).
+    expect(res._body.groups[0].holdings[0].currentValue).toBeCloseTo(44 * 190.08, 2);
+  });
+
   it('returns empty when no stock holdings', async () => {
     mockPrisma.tenant.findUnique.mockResolvedValueOnce({ portfolioCurrency: 'USD' });
     mockPrisma.portfolioItem.findMany.mockResolvedValueOnce([]);
