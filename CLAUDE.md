@@ -221,6 +221,15 @@ Per-tenant "is my data still updating?" status, so users and agents can tell whe
 
 See [`docs/specs/api/01-user-identity.md`](docs/specs/api/01-user-identity.md#invite-only-gate-99) and [`docs/specs/api/11-admin-api.md`](docs/specs/api/11-admin-api.md#invite-only-sign-up-allowlist).
 
+### Installable PWA (#155)
+
+`apps/web` installs to the home screen (iOS Add to Home Screen, Chrome one-tap). See [`docs/specs/frontend/28-pwa.md`](docs/specs/frontend/28-pwa.md).
+
+- **App-shell-only service worker** (vite-plugin-pwa `generateSW`, `src/lib/pwa/sw-config.ts`): no runtime caching, `/api/*` never served or stored by it, so no financial data in Cache Storage. Registered in production builds only.
+- **Updates never strand an installed app:** a waiting build is applied on launch (first 10 s, before input), otherwise a "New version available — Reload" toast; nginx serves `index.html`, `sw.js`, `manifest.webmanifest` and `version.json` `no-cache`. A CDN in front of the web service must respect that.
+- Offline, the app shell shows "You're offline" instead of any figures. No third-party scripts in `index.html`.
+- Retiring the PWA needs a self-unregistering `sw.js` (kill switch in the spec), not just removing the plugin.
+
 ### Smart import (CSV/XLSX)
 
 Adapter-driven pipeline: detect format -> stage rows -> AI classify -> user review -> commit.

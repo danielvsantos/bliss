@@ -3206,6 +3206,31 @@ const en = {
       historyDaysHint: "Also applies to Enable Banking connections.",
     },
   },
+  // Installable PWA (#155)
+  pwa: {
+    install: {
+      button: "Install app",
+      settingsTitle: "Bliss on your phone",
+      settingsDescription: "Install Bliss on your home screen to open it full-screen, like an app.",
+      bannerTitle: "Install Bliss on your phone",
+      bannerDescription: "Open it from your home screen, full-screen, like an app.",
+      dismiss: "Dismiss",
+      iosTitle: "Add Bliss to your Home Screen",
+      iosStep1: "Tap the Share button in the browser toolbar.",
+      iosStep2: "Scroll down and tap “Add to Home Screen”.",
+      iosStep3: "Tap “Add”. Bliss appears on your Home Screen.",
+      iosSignInNote: "The app doesn't share your browser's login, so you sign in once inside the app.",
+      done: "Got it",
+    },
+    update: {
+      reload: "Reload",
+    },
+    offline: {
+      title: "You're offline",
+      description: "Bliss needs a connection to show your data. Your figures load again as soon as you're back online.",
+      retry: "Try again",
+    },
+  },
 };
 
 export default en;

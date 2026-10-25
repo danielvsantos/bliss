@@ -3164,6 +3164,31 @@ const fr = {
       historyDaysHint: "S'applique aussi aux connexions Enable Banking.",
     },
   },
+  // Installable PWA (#155)
+  pwa: {
+    install: {
+      button: "Installer l'app",
+      settingsTitle: "Bliss sur votre téléphone",
+      settingsDescription: "Installez Bliss sur votre écran d'accueil pour l'ouvrir en plein écran, comme une app.",
+      bannerTitle: "Installez Bliss sur votre téléphone",
+      bannerDescription: "Ouvrez-la depuis votre écran d'accueil, en plein écran, comme une app.",
+      dismiss: "Ignorer",
+      iosTitle: "Ajoutez Bliss à votre écran d'accueil",
+      iosStep1: "Touchez le bouton Partager dans la barre du navigateur.",
+      iosStep2: "Faites défiler et touchez « Sur l'écran d'accueil ».",
+      iosStep3: "Touchez « Ajouter ». Bliss apparaît sur votre écran d'accueil.",
+      iosSignInNote: "L'app ne partage pas la session de votre navigateur : vous vous connectez une fois dans l'app.",
+      done: "Compris",
+    },
+    update: {
+      reload: "Recharger",
+    },
+    offline: {
+      title: "Vous êtes hors ligne",
+      description: "Bliss a besoin d'une connexion pour afficher vos données. Vos chiffres se rechargent dès que vous êtes de nouveau en ligne.",
+      retry: "Réessayer",
+    },
+  },
 };
 
 export default fr;

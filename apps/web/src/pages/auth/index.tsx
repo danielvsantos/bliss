@@ -22,6 +22,8 @@ import { setTenantMeta } from "@/utils/tenantMetaStorage";
 import { Logo } from "@/components/logo";
 import { returnToFromLocation } from "@/lib/return-to";
 import { useSignupMode } from "@/hooks/use-signup-mode";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { OfflineScreen } from "@/components/pwa/offline-screen";
 
 // Invite-only sign-up (#99). Both are i18n keys.
 const INVITE_ONLY_NOTICE =
@@ -849,6 +851,12 @@ function RightPanel() {
 export default function AuthPage() {
   const { t } = useTranslation();
   const isDesktop = useIsDesktop();
+  const isOnline = useOnlineStatus();
+
+  /* ── Offline (#155): signing in needs the network ── */
+  if (!isOnline) {
+    return <OfflineScreen />;
+  }
 
   /* ── Desktop: 50/50 split ── */
   if (isDesktop) {

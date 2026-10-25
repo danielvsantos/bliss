@@ -552,3 +552,38 @@ describe('i18n parity — task #143 eToro copy trading keys', () => {
     });
   }
 });
+
+// Installable PWA (#155): install control, update toast, offline screen.
+const PWA_KEYS = [
+  'pwa.install.button',
+  'pwa.install.settingsTitle',
+  'pwa.install.settingsDescription',
+  'pwa.install.bannerTitle',
+  'pwa.install.bannerDescription',
+  'pwa.install.dismiss',
+  'pwa.install.iosTitle',
+  'pwa.install.iosStep1',
+  'pwa.install.iosStep2',
+  'pwa.install.iosStep3',
+  'pwa.install.iosSignInNote',
+  'pwa.install.done',
+  'pwa.update.reload',
+  'pwa.offline.title',
+  'pwa.offline.description',
+  'pwa.offline.retry',
+  'notifications.info.newVersion',
+];
+
+describe('i18n parity — installable PWA (#155)', () => {
+  for (const key of PWA_KEYS) {
+    it(`"${key}" is a translated, non-empty string in every locale`, () => {
+      const enValue = resolve(en, key);
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+        if (lang !== 'en') expect(v, `${lang}:${key}`).not.toBe(enValue);
+      }
+    });
+  }
+});

@@ -156,6 +156,9 @@
     font-family: var(--font-family-base);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Installed app on a notched iPhone (#155): the status bar is
+       black-translucent, so the page starts below it. 0 everywhere else. */
+    padding-top: env(safe-area-inset-top);
   }
 
   h1 {
@@ -244,4 +247,26 @@
   box-shadow:
     0 0 0 2px hsl(var(--ring-offset)),
     0 0 0 4px hsl(var(--ring));
+}
+/* ── Installable PWA safe areas (#155) ──────────────────────────────────────
+   env(safe-area-inset-*) is 0 in a normal browser tab and on desktop, so these
+   only take effect in the installed app on notched devices. */
+@layer utilities {
+  .pwa-safe-x {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .pwa-safe-b {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* The band behind the iOS status bar: brand-deep (the manifest theme
+     colour), so the white status-bar text stays readable in both themes. */
+  .pwa-status-bar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: env(safe-area-inset-top);
+    background-color: hsl(var(--brand-deep));
+    z-index: 110;
+    pointer-events: none;
+  }
 }
