@@ -503,6 +503,91 @@ describe('securityMasterService', () => {
       expect(upsertCall.update.earningsTrusted).toBe(false);
     });
 
+    // ─── Unit consistency (#158) ───────────────────────────────────────────
+    // Foreign issuers: Twelve Data reports EPS in the reporting currency
+    // (NVO → DKK) or mixes currencies across quarters (NU → BRL + USD) while
+    // the quote is in USD. The P/E is then wrong and must not be trusted.
+
+    it('marks earningsTrusted=false when quarters mix currencies (NU-like BRL + USD)', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+
+      const earnings = {
+        earnings: [
+          { date: daysAgo(30), epsActual: 0.11, surprisePrc: null },
+          { date: daysAgo(120), epsActual: 0.63, surprisePrc: null },
+          { date: daysAgo(210), epsActual: 0.62, surprisePrc: null },
+          { date: daysAgo(300), epsActual: 0.62, surprisePrc: null },
+        ],
+      };
+      const quote = { close: 15.16, currency: 'USD' };
+
+      await upsertFundamentals('NU', { earnings, dividends: null, quote });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(upsertCall.update.earningsTrusted).toBe(false);
+    });
+
+    it('marks earningsTrusted=false when P/E is implausibly low (NVO-like EPS in DKK)', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+
+      const earnings = {
+        earnings: [
+          { date: daysAgo(30), epsActual: 6.18, surprisePrc: null },
+          { date: daysAgo(120), epsActual: 4.5, surprisePrc: null },
+          { date: daysAgo(210), epsActual: 4.1, surprisePrc: null },
+          { date: daysAgo(300), epsActual: 4.5, surprisePrc: null },
+        ],
+      };
+      const quote = { close: 39.05, currency: 'USD' };
+
+      await upsertFundamentals('NVO', { earnings, dividends: null, quote });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(parseFloat(upsertCall.update.peRatio)).toBeLessThan(3);
+      expect(upsertCall.update.earningsTrusted).toBe(false);
+    });
+
+    it('marks earningsTrusted=false when the earnings currency differs from the quote currency', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+
+      const earnings = {
+        meta: { currency: 'BRL' },
+        earnings: [
+          { date: daysAgo(30), epsActual: 0.2, surprisePrc: null },
+          { date: daysAgo(120), epsActual: 0.2, surprisePrc: null },
+          { date: daysAgo(210), epsActual: 0.2, surprisePrc: null },
+          { date: daysAgo(300), epsActual: 0.2, surprisePrc: null },
+        ],
+      };
+      const quote = { close: 40.0, currency: 'USD' };
+
+      await upsertFundamentals('VTEX', { earnings, dividends: null, quote });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(upsertCall.update.earningsTrusted).toBe(false);
+    });
+
+    it('keeps earningsTrusted=true for genuine quarter-to-quarter variation in one currency', async () => {
+      prisma.securityMaster.upsert.mockResolvedValue({});
+
+      const earnings = {
+        meta: { currency: 'usd' },
+        earnings: [
+          { date: daysAgo(30), epsActual: 0.04, surprisePrc: null },
+          { date: daysAgo(120), epsActual: 0.03, surprisePrc: null },
+          { date: daysAgo(210), epsActual: 0.02, surprisePrc: null },
+          { date: daysAgo(300), epsActual: 0.01, surprisePrc: null },
+        ],
+      };
+      const quote = { close: 5.0, currency: 'USD' };
+
+      await upsertFundamentals('VTEX', { earnings, dividends: null, quote });
+
+      const upsertCall = prisma.securityMaster.upsert.mock.calls[0][0];
+      expect(parseFloat(upsertCall.update.peRatio)).toBeCloseTo(50, 2);
+      expect(upsertCall.update.earningsTrusted).toBe(true);
+    });
+
     it('marks earningsTrusted=false and preserves previous trailingEps when no earnings data', async () => {
       prisma.securityMaster.upsert.mockResolvedValue({});
 
