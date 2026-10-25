@@ -68,7 +68,8 @@ export function GroupCard({
   const effectivePendingCount = pendingCount ?? fallbackPendingCount;
 
   return (
-    <Card className="overflow-hidden">
+    // max-md:gap-0: Card's gap-6 left empty bands between header, divider and rows on phones (#155).
+    <Card className="overflow-hidden max-md:gap-0">
       {/* Header — uses div instead of button to avoid button-inside-button nesting */}
       <div
         role="button"
@@ -96,7 +97,8 @@ export function GroupCard({
           {totalCount ?? items.length}
         </Badge>
 
-        <span className="font-semibold text-sm flex-1 truncate">
+        {/* basis-32: on a phone the name keeps its width and Approve All wraps below (#155). */}
+        <span className="font-semibold text-sm flex-1 basis-32 min-w-0 truncate">
           {categoryName}
         </span>
 

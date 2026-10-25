@@ -337,14 +337,16 @@ function LiabilityRow({ item, currency, onShowInChart }: { item: PortfolioRowIte
         {formatCurrency(marketValue, currency)}
       </TableCell>
       <TableCell className="text-right">
+        {/* Icon-only on phones so the table fits 390 px (#155). */}
         <Button
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 text-xs"
+          className="h-9 w-9 p-0 sm:h-8 sm:w-auto sm:px-3 gap-1.5 text-xs"
           onClick={() => navigate(`/assets?item=${item.id}&modal=debt`)}
+          aria-label={item.debtTerms ? t("portfolio.editTerms") : t("portfolio.addTerms")}
         >
           <EditIcon className="h-3.5 w-3.5" />
-          {item.debtTerms ? t("portfolio.editTerms") : t("portfolio.addTerms")}
+          <span className="hidden sm:inline">{item.debtTerms ? t("portfolio.editTerms") : t("portfolio.addTerms")}</span>
         </Button>
       </TableCell>
     </TableRow>
@@ -1145,7 +1147,7 @@ export default function PortfolioHoldingsPage() {
                     <TableHead className="hidden sm:table-cell">{t("portfolio.interestRate")}</TableHead>
                     <TableHead className="hidden sm:table-cell">{t("portfolio.term")}</TableHead>
                     <TableHead className="text-right">{t("portfolio.balance")}</TableHead>
-                    <TableHead className="text-right">{t("common.actions")}</TableHead>
+                    <TableHead className="text-right"><span className="sr-only sm:not-sr-only">{t("common.actions")}</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

@@ -667,7 +667,7 @@ function IntegrationRow({
   const lastUsed = formatDate(integration.lastUsedAt, i18n.language) ?? t(`${T}.never_used`);
 
   return (
-    <li className="px-7 py-4" data-testid="integration-row">
+    <li className="px-5 sm:px-7 py-4" data-testid="integration-row">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -753,7 +753,7 @@ export function IntegrationsTab() {
   return (
     <>
       <Card className="overflow-hidden p-0 gap-0">
-        <div className="flex flex-col gap-3 px-7 pt-[22px] pb-[18px] sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 px-5 sm:px-7 pt-[22px] pb-[18px] sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">{t(`${T}.title`)}</h3>
             <p className="mt-1 text-sm text-muted-foreground">{t(`${T}.description`)}</p>
@@ -766,14 +766,14 @@ export function IntegrationsTab() {
 
         <div className="border-t border-border">
           {isLoading ? (
-            <div className="space-y-3 px-7 py-5">
+            <div className="space-y-3 px-5 sm:px-7 py-5">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
           ) : isError ? (
-            <p className="px-7 py-5 text-sm text-destructive">{t(`${T}.loading_error`)}</p>
+            <p className="px-5 sm:px-7 py-5 text-sm text-destructive">{t(`${T}.loading_error`)}</p>
           ) : !integrations || integrations.length === 0 ? (
-            <p className="px-7 py-5 text-sm text-muted-foreground">{t(`${T}.empty`)}</p>
+            <p className="px-5 sm:px-7 py-5 text-sm text-muted-foreground">{t(`${T}.empty`)}</p>
           ) : (
             <ul className="divide-y divide-border">
               {integrations.map((integration) => (
@@ -790,7 +790,7 @@ export function IntegrationsTab() {
           )}
         </div>
 
-        <div className="space-y-1.5 border-t border-border bg-muted/40 px-7 py-4 text-xs text-muted-foreground">
+        <div className="space-y-1.5 border-t border-border bg-muted/40 px-5 sm:px-7 py-4 text-xs text-muted-foreground">
           <p>{t(`${T}.acting_note`)}</p>
           <p>{t(`${T}.security_note`)}</p>
         </div>

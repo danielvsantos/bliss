@@ -393,7 +393,7 @@ export default function SettingsPage() {
 
   if (isReferenceDataLoading || !settings) {
     return (
-      <div className="max-w-[1120px] mx-auto py-7 px-4 sm:px-7 space-y-6">
+      <div className="max-w-[1120px] mx-auto py-2 sm:py-7 px-0 sm:px-7 space-y-6">
         <Skeleton className="h-12 w-64" />
         <Skeleton className="h-10 w-full max-w-lg" />
         <Skeleton className="h-64 w-full" />
@@ -413,7 +413,7 @@ export default function SettingsPage() {
   /* ─── Render ─────────────────────────────────────── */
 
   return (
-    <div className="max-w-[1120px] mx-auto py-7 px-4 sm:px-7 pb-20 flex flex-col gap-6 relative">
+    <div className="max-w-[1120px] mx-auto pt-2 sm:pt-7 px-0 sm:px-7 pb-20 flex flex-col gap-6 relative">
       {/* Page Header */}
       <div className="flex items-start gap-3.5">
         <div className="w-[42px] h-[42px] rounded-xl bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0 mt-0.5">
@@ -475,7 +475,7 @@ export default function SettingsPage() {
             <InstallAppCard />
             {/* Workspace Details Card */}
             <Card className="overflow-hidden p-0 gap-0">
-              <div className="px-7 pt-[22px] pb-[18px]">
+              <div className="px-5 sm:px-7 pt-[22px] pb-[18px]">
                 <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
                   Workspace Details
                 </h3>
@@ -486,7 +486,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-7">
+              <div className="px-5 sm:px-7 py-7">
                 <div className="flex flex-col gap-5">
                   <SectionLabel>Identity</SectionLabel>
 
@@ -503,7 +503,7 @@ export default function SettingsPage() {
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <Label>{t("pages.settings.general.user_management_label")}</Label>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -519,7 +519,7 @@ export default function SettingsPage() {
                     </Link>
                   </div>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <Label>Password</Label>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -536,7 +536,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-4 flex items-center justify-between">
+              <div className="px-5 sm:px-7 py-4 flex items-center justify-between">
                 <SaveConfirmation visible={generalSave.saved} />
                 <div className="ml-auto">
                   <Button onClick={() => handleSaveChanges(() => generalSave.trigger())} disabled={isSubmitting}>
@@ -555,7 +555,7 @@ export default function SettingsPage() {
             <Card className="overflow-hidden p-0 gap-0 border-destructive/30" style={{
               boxShadow: "0 1px 2px rgba(229,152,155,0.06), 0 4px 16px rgba(229,152,155,0.10), 0 12px 40px rgba(229,152,155,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
             }}>
-              <div className="px-7 pt-[18px] pb-[14px]">
+              <div className="px-5 sm:px-7 pt-[18px] pb-[14px]">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-destructive" />
                   <h3 className="text-lg font-medium text-destructive tracking-[-0.01em]">
@@ -566,7 +566,7 @@ export default function SettingsPage() {
 
               <CardDivider variant="destructive" />
 
-              <div className="px-7 py-5 flex items-center justify-between gap-6 flex-wrap">
+              <div className="px-5 sm:px-7 py-5 flex items-center justify-between gap-6 flex-wrap">
                 <div className="flex-1 min-w-[260px]">
                   <p className="text-[0.9375rem] font-medium text-foreground leading-snug">
                     Delete Workspace
@@ -626,7 +626,7 @@ export default function SettingsPage() {
           {/* ═══════ COUNTRIES & CURRENCIES TAB ═══════ */}
           <TabsContent value="countries-currencies" className="mt-0 space-y-5">
             <Card className="overflow-hidden p-0 gap-0">
-              <div className="px-7 pt-[22px] pb-[18px]">
+              <div className="px-5 sm:px-7 pt-[22px] pb-[18px]">
                 <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
                   Countries & Currencies
                 </h3>
@@ -637,7 +637,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-7">
+              <div className="px-5 sm:px-7 py-7">
                 <div className="flex flex-col gap-6">
                   <div>
                     <SectionLabel>Countries</SectionLabel>
@@ -669,7 +669,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-4 flex items-center justify-between">
+              <div className="px-5 sm:px-7 py-4 flex items-center justify-between">
                 <SaveConfirmation visible={countriesSave.saved} />
                 <div className="ml-auto">
                   <Button onClick={() => handleSaveChanges(() => countriesSave.trigger())} disabled={isSubmitting}>
@@ -686,7 +686,7 @@ export default function SettingsPage() {
 
             {/* Portfolio Display Currency */}
             <Card className="overflow-hidden p-0 gap-0">
-              <div className="px-7 pt-[22px] pb-[18px]">
+              <div className="px-5 sm:px-7 pt-[22px] pb-[18px]">
                 <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
                   Portfolio Display Currency
                 </h3>
@@ -698,7 +698,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-7">
+              <div className="px-5 sm:px-7 py-7">
                 <div>
                   {isLoadingTenantSettings ? (
                     <Skeleton className="h-11 w-full" />
@@ -731,7 +731,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-4 flex items-center justify-between">
+              <div className="px-5 sm:px-7 py-4 flex items-center justify-between">
                 <SaveConfirmation visible={portfolioSave.saved} />
                 <div className="ml-auto">
                   <Button
@@ -771,7 +771,7 @@ export default function SettingsPage() {
           {/* ═══════ BANKS TAB ═══════ */}
           <TabsContent value="banks" className="mt-0 space-y-5">
             <Card className="overflow-hidden p-0 gap-0">
-              <div className="px-7 pt-[22px] pb-[18px]">
+              <div className="px-5 sm:px-7 pt-[22px] pb-[18px]">
                 <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
                   {t("pages.settings.banks.title")}
                 </h3>
@@ -782,7 +782,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-7">
+              <div className="px-5 sm:px-7 py-7">
                 <div className="flex flex-col gap-6">
                   <MultiSelectCombobox
                     label="Your Banks"
@@ -870,7 +870,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-4 flex items-center justify-between">
+              <div className="px-5 sm:px-7 py-4 flex items-center justify-between">
                 <SaveConfirmation visible={banksSave.saved} />
                 <div className="ml-auto">
                   <Button onClick={() => handleSaveChanges(() => banksSave.trigger())} disabled={isSubmitting}>
@@ -889,7 +889,7 @@ export default function SettingsPage() {
           {/* ═══════ AI CLASSIFICATION TAB ═══════ */}
           <TabsContent value="ai-classification" className="mt-0 space-y-5">
             <Card className="overflow-hidden p-0 gap-0">
-              <div className="px-7 pt-[22px] pb-[18px]">
+              <div className="px-5 sm:px-7 pt-[22px] pb-[18px]">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-brand-primary" />
                   <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
@@ -904,7 +904,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-7">
+              <div className="px-5 sm:px-7 py-7">
                 {isLoadingTenantSettings ? (
                   <div className="space-y-6">
                     <Skeleton className="h-16 w-full" />
@@ -1017,7 +1017,7 @@ export default function SettingsPage() {
 
               <CardDivider />
 
-              <div className="px-7 py-4 flex items-center justify-between">
+              <div className="px-5 sm:px-7 py-4 flex items-center justify-between">
                 <SaveConfirmation visible={aiSave.saved} />
                 <div className="ml-auto">
                   <Button

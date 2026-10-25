@@ -240,6 +240,7 @@ pnpm test:web
 - Bank connections are desktop-only in the installed app: `PlaidConnect` / the Enable Banking reconnect render `<DesktopOnlyBankNote />`. A new connect or reconnect entry point must do the same.
 - Logout calls `clearPersistedQueryCache()` (`lib/query-client.ts`, which owns the QueryClient and its persister). `useResumeRefresh()` refetches the visible page after ≥ 5 min in the background.
 - Dialogs size to the visible area via `--vv-height` / `--vv-top` (`lib/pwa/visual-viewport.ts`), so forms stay above the iOS keyboard; full-screen phone modals use `MOBILE_SHEET_CLASSES` (`lib/manage-assets.ts`).
+- Phone layouts (390 px): `<main>` already pads phones, so page roots use `md:p-6`, not `p-6`; keep tap targets ≥ 36 px and never rely on hover (it does not exist on touch). Dialogs and sheets don't auto-focus their first field on touch devices (`preventTouchAutoFocus`). See spec §28.10.
 - Safe areas: `env(safe-area-inset-*)` is 0 outside the installed app; for new full-screen or bottom-anchored surfaces pad with `env(safe-area-inset-*)` (or `.pwa-safe-x`) and pin with `fixed inset-0` — never size with `100dvh`, which excludes the status bar in iOS standalone mode.
 
 ## Path aliases

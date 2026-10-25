@@ -906,7 +906,7 @@ export default function SmartImportPage() {
   // ═════════════════════════════════════════════════════════════════════
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="md:p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>

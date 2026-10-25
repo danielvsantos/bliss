@@ -17,6 +17,7 @@ import { useAnalytics } from '@/hooks/use-analytics';
 import { startOfMonth, startOfYear, endOfMonth, subMonths, format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { translateCategoryGroup } from '@/lib/category-i18n';
 import { formatCurrency } from '@/lib/utils';
 import { buildGroupColorMap } from '@/lib/portfolio-utils';
@@ -83,6 +84,7 @@ interface ExpenseSplitCardProps {
 
 export function ExpenseSplitCard({ currency, year, className }: ExpenseSplitCardProps) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [period, setPeriod] = useState<ChartPeriod>('year');
 
   const { startMonth, endMonth } = useMemo(() => {
@@ -193,16 +195,17 @@ export function ExpenseSplitCard({ currency, year, className }: ExpenseSplitCard
             {/* Chart container */}
             <div className="w-full aspect-[4/3] max-h-60 overflow-visible relative">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart margin={{ top: 18, right: 36, bottom: 18, left: 36 }}>
+                {/* Phones (#155): no outside labels (they collide at this width); the legend below lists every slice. */}
+                <PieChart margin={isMobile ? { top: 8, right: 8, bottom: 8, left: 8 } : { top: 18, right: 36, bottom: 18, left: 36 }}>
                   <Pie
                     data={chartData}
                     cx="50%"
                     cy="50%"
-                    outerRadius="52%"
-                    innerRadius="30%"
+                    outerRadius={isMobile ? '80%' : '52%'}
+                    innerRadius={isMobile ? '48%' : '30%'}
                     paddingAngle={3}
                     dataKey="value"
-                    label={renderPieLabel}
+                    label={isMobile ? false : renderPieLabel}
                     labelLine={false}
                     strokeWidth={0}
                   >

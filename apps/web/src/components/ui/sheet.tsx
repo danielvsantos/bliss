@@ -4,7 +4,7 @@ import * as React from "react";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 
-import { cn } from "./utils";
+import { cn, preventTouchAutoFocus } from "./utils";
 
 function Sheet({ ...props }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
@@ -48,6 +48,7 @@ function SheetContent({
   className,
   children,
   side = "right",
+  onOpenAutoFocus,
   ...props
 }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
@@ -57,6 +58,7 @@ function SheetContent({
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        onOpenAutoFocus={preventTouchAutoFocus(onOpenAutoFocus)}
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
           side === "right" &&

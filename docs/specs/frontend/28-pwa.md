@@ -8,7 +8,7 @@ The work ships in three pull requests:
 |---|---|---|
 | 1 — Installable | Manifest + icons, iOS meta tags, app-shell service worker, offline screen, update flow, nginx cache headers, install control, third-party script removed, base safe areas | Shipped |
 | 2a — Standalone correctness | Logout cache clearing, desktop-only bank connections, resume refetch, keyboard-aware dialogs, safe areas on dialogs / sheets / drawers / full-screen phone modals | Shipped (§28.9) |
-| 2b — Phone layout pass | 390 px pass on Dashboard, Transactions, Transaction Review, Subscriptions, Portfolio, Insights, Notifications and the profile / admin section (Settings, users); back navigation on detail views | Planned (§28.10) |
+| 2b — Phone layout pass | 390 px pass on Dashboard, Transactions, Transaction Review, Subscriptions, Portfolio, Insights, Notifications and the profile / admin section (Settings, users); back navigation on detail views | Shipped (§28.10) |
 
 Out of scope by decision: push notifications, the app badge, offline access to financial data, connecting banks from the installed app, a native/Capacitor app, analytics or KPIs, a user-facing install guide (the in-app instructions are the only help).
 
@@ -170,8 +170,25 @@ When the iOS keyboard opens, only the *visual* viewport shrinks; `vh`-sized dial
 ### Safe areas on overlays
 `components/ui/sheet.tsx` (side sheets pad top and bottom; the close button sits below the status bar; top/bottom sheets pad their outer edge) and `components/ui/drawer.tsx` (bottom drawers pad above the home indicator; top/side drawers pad the status bar). Class-only changes, 0 outside the installed app.
 
-## 28.10. Phase 2b (planned): phone layout pass
+## 28.10. Phase 2b: phone layout pass
 
-- 390 px pass on Dashboard, Transactions, Transaction Review, Subscriptions, Portfolio, Insights, Notifications **and the profile / admin section** (Settings tabs, user management): no horizontal page scroll, tables as cards, charts that fit, dialogs on these pages as bottom drawers.
-- A visible back control on detail views (there is no browser chrome in standalone mode).
-- Desktop at ≥ 1024 px unchanged.
+Measured at 390 × 844 against a locally seeded workspace (a year of transactions in EUR / USD / BRL with long bank descriptors, investments, a property and mortgage, a Plaid review queue with a failed row, insights, detected subscriptions) with a Playwright crawl that reports horizontal overflow per page and screenshots each one, then re-run after the changes. Every change is scoped below `sm` / `md`, so tablet and desktop are unchanged: screenshots of the touched pages at 1280 × 800 are pixel-identical before and after (apart from the "Updated N min ago" line).
+
+**Page padding.** Transactions, Transaction Review, Subscriptions, Categories and Smart Import wrapped themselves in `p-6` inside `<main>`'s own padding — 40 px per side on a phone. They now use `md:p-6`; Settings uses `px-0 sm:px-7` and its cards `px-5 sm:px-7`. New pages should do the same: `<main>` already pads phones.
+
+| Page | Phone change |
+|---|---|
+| Dashboard | Expense donut: no outside labels (they collided) and a larger ring; the legend under it lists every slice |
+| Transactions | No empty column-header row; the amount column sizes to its content, so the description gets the width (date · category · account stay underneath). Filter drawer is a single full-width column (it was right-aligned in a column flex) |
+| Transaction Review | Header stacks: title, then the failed badge and Bulk Promote; the tab strip scrolls on its own and the view toggle wraps below (the page scrolled sideways before). Group header: the name keeps its width and **Approve All** wraps below instead of squeezing the name to one letter; no empty Card gaps between header, divider and rows. Row actions (approve / skip / retry / diff) are 36 px touch targets |
+| Subscriptions | Monthly and annual totals side by side, count below; merchant names up to two lines; cadence and next charge under the name (their columns are desktop-only); the rename pencil is always visible on touch screens (it was hover-only) |
+| Portfolio | Liabilities: Edit Terms is an icon button with an accessible label, so the table fits |
+| Settings | Label + description + button rows stack (they squeezed the label into a narrow column) |
+| User management | Header stacks (title, then Create User); Status and Last login columns are desktop-only, last login shows under the name |
+| Insights, Notifications, Accounts | Already fit; unchanged |
+
+**Dialogs and sheets on touch devices** (`preventTouchAutoFocus` in `components/ui/utils.ts`, used by `DialogContent` and `SheetContent`): opening one no longer focuses its first field, which popped the keyboard over the form before the user chose a field. Fields with an explicit `autoFocus` still focus.
+
+**Back navigation.** Detail views reachable from these pages already have a way back without browser chrome: the account detail panel and user management have a Back control; transaction edit, the review drawer and the Income Terms / Manage Assets modals close in place.
+
+**Out of scope (unchanged):** Smart Import, Maintenance and the other Settings tabs only need to work; they do, with the padding change above.
