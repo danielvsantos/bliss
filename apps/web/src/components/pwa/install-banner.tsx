@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Smartphone, X } from 'lucide-react';
+import { AppWindow, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
@@ -44,7 +44,7 @@ export function InstallBanner({ className }: { className?: string }) {
         className,
       )}
     >
-      <Smartphone className="h-5 w-5 shrink-0 text-brand-primary" aria-hidden />
+      <AppWindow className="h-5 w-5 shrink-0 text-brand-primary" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{t('pwa.install.bannerTitle')}</p>
         <p className="text-xs text-muted-foreground">{t('pwa.install.bannerDescription')}</p>

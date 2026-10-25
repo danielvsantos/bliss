@@ -3167,10 +3167,10 @@ const es = {
   pwa: {
     install: {
       button: "Instalar app",
-      settingsTitle: "Bliss en tu móvil",
-      settingsDescription: "Instala Bliss en tu pantalla de inicio para abrirlo a pantalla completa, como una app.",
-      bannerTitle: "Instala Bliss en tu móvil",
-      bannerDescription: "Ábrelo desde tu pantalla de inicio, a pantalla completa, como una app.",
+      settingsTitle: "App de Bliss",
+      settingsDescription: "Instala Bliss para abrirlo en su propia ventana, desde la pantalla de inicio, el Dock o la barra de tareas.",
+      bannerTitle: "Instala la app de Bliss",
+      bannerDescription: "Abre Bliss en su propia ventana, desde la pantalla de inicio, el Dock o la barra de tareas.",
       dismiss: "Descartar",
       iosTitle: "Añade Bliss a tu pantalla de inicio",
       iosStep1: "Toca el botón Compartir en la barra del navegador.",

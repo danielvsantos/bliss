@@ -1,4 +1,4 @@
-import { Smartphone } from 'lucide-react';
+import { AppWindow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/card';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
@@ -14,7 +14,7 @@ export function InstallAppCard() {
     <Card className="overflow-hidden p-0 gap-0" data-testid="install-app-card">
       <div className="flex flex-col gap-3 px-5 sm:px-7 py-[18px] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
-          <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" aria-hidden />
+          <AppWindow className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" aria-hidden />
           <div>
             <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">
               {t('pwa.install.settingsTitle')}

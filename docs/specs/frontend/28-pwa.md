@@ -90,7 +90,7 @@ Keep it deployed until every installed copy has opened at least once.
 | `src/components/pwa/install-banner.tsx` | Dashboard banner. Dismissal is permanent on the device: `localStorage['bliss.pwa.installBannerDismissed'] = '1'` (storage errors hide it for the session only) |
 | `src/components/pwa/install-app-card.tsx` | Settings → General: the always-available control |
 
-Strings: `pwa.install.*` in all five locales (parity test in `i18n-parity.test.ts`). Tests (`install-app-button.test.tsx`) cover the four branches: iOS instructions with the sign-in note, the Chrome prompt, hidden when standalone/unsupported, and permanent banner dismissal.
+The banner and Settings card are worded device-neutrally ("its own window, from your home screen, dock or taskbar") with an app-window icon, because desktop Chrome installs Bliss as an app too; only the iOS instructions mention the phone. Strings: `pwa.install.*` in all five locales (parity test in `i18n-parity.test.ts`). Tests (`install-app-button.test.tsx`) cover the four branches: iOS instructions with the sign-in note, the Chrome prompt, hidden when standalone/unsupported, and permanent banner dismissal.
 
 ## 28.5. Offline
 
