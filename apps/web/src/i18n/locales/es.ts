@@ -3182,6 +3182,9 @@ const es = {
     update: {
       reload: "Recargar",
     },
+    banks: {
+      desktopOnly: "Conecta y reconecta bancos desde un navegador de escritorio. Las transacciones sincronizadas se pueden seguir revisando aquí.",
+    },
     offline: {
       title: "Estás sin conexión",
       description: "Bliss necesita conexión para mostrar tus datos. Tus cifras volverán a cargarse en cuanto vuelvas a estar en línea.",

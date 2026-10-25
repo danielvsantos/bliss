@@ -42,6 +42,7 @@ import {
 } from '@/lib/passive-income';
 import { translateCategoryName } from '@/lib/category-i18n';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { MOBILE_SHEET_CLASSES } from '@/lib/manage-assets';
 import type { IncomeAssetClass, IncomeStream, IncomeTerms, IncomeTermsSibling, IncomeType } from '@/types/passive-income';
 import {
   collectErrors,
@@ -94,7 +95,7 @@ export function IncomeTermsModal(props: IncomeTermsModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-xl max-sm:max-w-none max-sm:w-screen max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:rounded-none max-sm:border-0 max-sm:p-4"
+        className={`sm:max-w-xl ${MOBILE_SHEET_CLASSES}`}
         data-testid="income-terms-modal"
       >
         {open && <IncomeTermsModalBody {...props} />}

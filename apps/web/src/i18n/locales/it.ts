@@ -3225,6 +3225,9 @@ const it = {
     update: {
       reload: "Ricarica",
     },
+    banks: {
+      desktopOnly: "Collega e ricollega le banche da un browser desktop. Le transazioni sincronizzate si possono comunque rivedere qui.",
+    },
     offline: {
       title: "Sei offline",
       description: "Bliss ha bisogno di una connessione per mostrare i tuoi dati. I tuoi numeri si ricaricano appena torni online.",

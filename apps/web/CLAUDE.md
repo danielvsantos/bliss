@@ -192,6 +192,7 @@ All data fetching is done via custom hooks wrapping TanStack Query:
 - `use-display-mode.ts` -- `useIsStandalone()`: running as an installed app (#155)
 - `use-install-prompt.ts` -- Install mode (iOS instructions / Chrome prompt) + `install()` (#155)
 - `use-online-status.ts` -- `navigator.onLine` with online/offline events (#155)
+- `use-resume-refresh.ts` -- Refetch the visible page after ≥ 5 min in the background (#155)
 - `use-user-signals.ts` -- User signal tracking
 - `use-toast.ts` -- Toast notification hook
 
@@ -236,6 +237,9 @@ pnpm test:web
 - Manifest colours come from the brand tokens (`src/lib/pwa/manifest.ts`, drift-tested). Icons are generated from `pwa-assets/icon-source.jpg` with `pnpm --filter @bliss/web pwa:icons` and committed.
 - No third-party scripts in `index.html` (tested).
 - Standalone-aware UI: `useIsStandalone()` (`hooks/use-display-mode.ts`), `useInstallPrompt()`, `useOnlineStatus()`. Offline, `AppShell` renders `<OfflineScreen />` instead of the page.
+- Bank connections are desktop-only in the installed app: `PlaidConnect` / the Enable Banking reconnect render `<DesktopOnlyBankNote />`. A new connect or reconnect entry point must do the same.
+- Logout calls `clearPersistedQueryCache()` (`lib/query-client.ts`, which owns the QueryClient and its persister). `useResumeRefresh()` refetches the visible page after ≥ 5 min in the background.
+- Dialogs size to the visible area via `--vv-height` / `--vv-top` (`lib/pwa/visual-viewport.ts`), so forms stay above the iOS keyboard; full-screen phone modals use `MOBILE_SHEET_CLASSES` (`lib/manage-assets.ts`).
 - Safe areas: `env(safe-area-inset-*)` is 0 outside the installed app; for new full-screen or bottom-anchored surfaces pad with `env(safe-area-inset-*)` (or `.pwa-safe-x`) and pin with `fixed inset-0` — never size with `100dvh`, which excludes the status bar in iOS standalone mode.
 
 ## Path aliases

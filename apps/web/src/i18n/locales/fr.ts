@@ -3183,6 +3183,9 @@ const fr = {
     update: {
       reload: "Recharger",
     },
+    banks: {
+      desktopOnly: "Connectez et reconnectez vos banques depuis un navigateur d'ordinateur. Les transactions synchronisées restent consultables ici.",
+    },
     offline: {
       title: "Vous êtes hors ligne",
       description: "Bliss a besoin d'une connexion pour afficher vos données. Vos chiffres se rechargent dès que vous êtes de nouveau en ligne.",

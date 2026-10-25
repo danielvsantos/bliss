@@ -21,6 +21,7 @@ import {
 } from '@/hooks/use-enable-banking';
 import { countryName, formatIsoDay } from '@/lib/enable-banking';
 import type { EnableBankingAspsp } from '@/types/api';
+import { useIsStandalone } from '@/hooks/use-display-mode';
 
 interface EnableBankingConnectProps {
   variant?: 'default' | 'outline' | 'secondary' | 'ghost' | 'link';
@@ -41,8 +42,11 @@ export function EnableBankingConnect({ variant = 'outline', className, children 
   const isViewer = user?.role === 'viewer';
   const enabled = useEnableBankingEnabled(!!user && !isViewer);
   const [open, setOpen] = useState(false);
+  const isStandalone = useIsStandalone();
 
-  if (!enabled) return null;
+  // Installed app (#155): no consent redirects. Every page with this button
+  // also renders <PlaidConnect />, whose desktop-only note covers both.
+  if (!enabled || isStandalone) return null;
 
   return (
     <>

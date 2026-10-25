@@ -571,6 +571,7 @@ const PWA_KEYS = [
   'pwa.offline.title',
   'pwa.offline.description',
   'pwa.offline.retry',
+  'pwa.banks.desktopOnly',
   'notifications.info.newVersion',
 ];
 

@@ -3225,6 +3225,9 @@ const pt = {
     update: {
       reload: "Recarregar",
     },
+    banks: {
+      desktopOnly: "Conecte e reconecte bancos em um navegador no computador. As transações sincronizadas ainda podem ser revisadas aqui.",
+    },
     offline: {
       title: "Você está offline",
       description: "O Bliss precisa de conexão para mostrar seus dados. Seus números voltam a carregar assim que você estiver online.",

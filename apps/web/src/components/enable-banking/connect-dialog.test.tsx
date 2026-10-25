@@ -18,6 +18,8 @@ vi.mock('react-i18next', () => ({
 const toast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast }) }));
 vi.mock('@/hooks/use-auth');
+let standalone = false;
+vi.mock('@/hooks/use-display-mode', () => ({ useIsStandalone: () => standalone }));
 
 const assign = vi.fn();
 const originalLocation = window.location;
@@ -154,5 +156,25 @@ describe('EnableBankingConnect (#132)', () => {
       ),
     );
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('EnableBankingConnect in the installed app (#155)', () => {
+  afterEach(() => {
+    standalone = false;
+  });
+
+  it('renders nothing (the PlaidConnect note covers the page)', async () => {
+    useHandlers();
+    setRole('admin');
+    standalone = true;
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <EnableBankingConnect />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(statusCalls).toBeGreaterThan(0));
+    expect(container).toBeEmptyDOMElement();
   });
 });

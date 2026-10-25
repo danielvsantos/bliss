@@ -5,6 +5,7 @@ import type { User } from '../types/api';
 import { updateTenantMetaFromAPI } from '@/utils/tenantMetaStorage';
 import { toast } from '@/hooks/use-toast';
 import { rememberReturnTo } from '@/lib/return-to';
+import { clearPersistedQueryCache } from '@/lib/query-client';
 import {
   AuthContext,
   type SignUpData,
@@ -186,6 +187,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       setError((error as Error).message || 'Sign out failed');
       throw error;
+    } finally {
+      // Even when the API call fails, leave no cached financial data on the
+      // device (#155). Session expiry deliberately does not do this (PRD D9).
+      clearPersistedQueryCache();
     }
   };
 

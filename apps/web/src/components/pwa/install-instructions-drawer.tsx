@@ -51,7 +51,7 @@ export function InstallInstructionsDrawer({ open, onOpenChange }: InstallInstruc
         <p className="mx-4 mt-4 rounded-[0.75rem] border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-sm text-brand-primary">
           {t('pwa.install.iosSignInNote')}
         </p>
-        <DrawerFooter className="pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <DrawerFooter>
           <DrawerClose asChild>
             <Button variant="outline">{t('pwa.install.done')}</Button>
           </DrawerClose>

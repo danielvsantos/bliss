@@ -9,6 +9,7 @@ import { usePlaidTransactions } from "@/hooks/use-plaid-review";
 import { usePendingImports } from "@/hooks/use-imports";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useResumeRefresh } from "@/hooks/use-resume-refresh";
 import { OfflineScreen } from "@/components/pwa/offline-screen";
 
 // Map page paths to checklist step keys
@@ -29,6 +30,7 @@ export function AppShell({ children }: AppShellProps) {
   const { user } = useAuth();
   const isViewer = user?.role === "viewer";
   const isOnline = useOnlineStatus();
+  useResumeRefresh();
   const completeStep = useCompleteOnboardingStep();
   const trackedPaths = useRef(new Set<string>());
 
