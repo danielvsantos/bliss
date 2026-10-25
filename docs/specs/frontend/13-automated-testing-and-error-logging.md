@@ -294,7 +294,7 @@ The frontend test suite consists of **89 test files with 601 tests** covering th
 
 **Test categories:**
 
-- **Hook tests** (`src/hooks/*.test.tsx`): The largest group, covering data-fetching hooks including use-account-list, use-currency-rates, use-dashboard-actions, use-equity-analysis, use-force-theme, use-insights, use-notifications, use-onboarding-progress, use-portfolio-holdings, use-portfolio-lots, use-sync-logs, use-tag-analytics, use-tags, use-ticker-search, and more. These use `renderHook()` and mock `api.X` directly with `vi.mocked()`.
+- **Hook tests** (`src/hooks/*.test.tsx`): The largest group, covering data-fetching hooks including use-account-list, use-currency-rates, use-dashboard-actions, use-equity-analysis, use-insights, use-notifications, use-onboarding-progress, use-portfolio-holdings, use-portfolio-lots, use-sync-logs, use-tag-analytics, use-tags, use-ticker-search, and more. These use `renderHook()` and mock `api.X` directly with `vi.mocked()`.
 - **Page tests** (`src/pages/*.test.tsx`): Component-level tests for dashboard, smart-import, transactions, reports/portfolio, and settings pages. These use RTL + `vi.mock('@/hooks/use-X')` + the typed helpers from `src/test/mock-helpers.ts` (see §13.4).
 - **Context tests** (`src/contexts/*.test.tsx`): AuthContext provider tests.
 - **Library tests** (`src/lib/*.test.ts`): Pure utility tests for investment-utils, pnl, portfolio-utils, and general utils.

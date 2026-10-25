@@ -3210,10 +3210,10 @@ const pt = {
   pwa: {
     install: {
       button: "Instalar app",
-      settingsTitle: "Bliss no seu celular",
-      settingsDescription: "Instale o Bliss na tela de início para abri-lo em tela cheia, como um app.",
-      bannerTitle: "Instale o Bliss no seu celular",
-      bannerDescription: "Abra-o pela tela de início, em tela cheia, como um app.",
+      settingsTitle: "App do Bliss",
+      settingsDescription: "Instale o Bliss para abri-lo em sua própria janela, pela tela de início, pelo Dock ou pela barra de tarefas.",
+      bannerTitle: "Instale o app do Bliss",
+      bannerDescription: "Abra o Bliss em sua própria janela, pela tela de início, pelo Dock ou pela barra de tarefas.",
       dismiss: "Dispensar",
       iosTitle: "Adicione o Bliss à Tela de Início",
       iosStep1: "Toque no botão Compartilhar na barra do navegador.",

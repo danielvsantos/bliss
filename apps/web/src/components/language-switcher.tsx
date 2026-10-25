@@ -44,7 +44,7 @@ export function LanguageSwitcher() {
 
   return (
     <Select value={currentLanguage} onValueChange={changeLanguage}>
-      <SelectTrigger className="w-[140px] border-none bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+      <SelectTrigger className="w-[140px] border-none bg-transparent hover:bg-gray-100 rounded-md">
         <SelectValue placeholder={t('pages.settings.language')}>
           <div className="flex items-center">
             <Globe className="h-4 w-4 mr-2" />

@@ -3168,10 +3168,10 @@ const fr = {
   pwa: {
     install: {
       button: "Installer l'app",
-      settingsTitle: "Bliss sur votre téléphone",
-      settingsDescription: "Installez Bliss sur votre écran d'accueil pour l'ouvrir en plein écran, comme une app.",
-      bannerTitle: "Installez Bliss sur votre téléphone",
-      bannerDescription: "Ouvrez-la depuis votre écran d'accueil, en plein écran, comme une app.",
+      settingsTitle: "Application Bliss",
+      settingsDescription: "Installez Bliss pour l'ouvrir dans sa propre fenêtre, depuis l'écran d'accueil, le Dock ou la barre des tâches.",
+      bannerTitle: "Installez l'application Bliss",
+      bannerDescription: "Ouvrez Bliss dans sa propre fenêtre, depuis l'écran d'accueil, le Dock ou la barre des tâches.",
       dismiss: "Ignorer",
       iosTitle: "Ajoutez Bliss à votre écran d'accueil",
       iosStep1: "Touchez le bouton Partager dans la barre du navigateur.",

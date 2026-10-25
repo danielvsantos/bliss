@@ -22,13 +22,13 @@ export function AccountsList({ accounts }: AccountsListProps) {
     <Card>
       <CardHeader className="px-6 pt-6 pb-0">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-semibold text-gray-900">
             {t('pages.accounts.title')}
           </h3>
           <Button
             type="button"
             variant="link"
-            className="text-primary-500 hover:text-primary-600 dark:text-primary-300 dark:hover:text-primary-200 text-sm font-medium"
+            className="text-primary-500 hover:text-primary-600 text-sm font-medium"
           >
             {t('dashboard.viewAll')}
           </Button>
@@ -39,25 +39,25 @@ export function AccountsList({ accounts }: AccountsListProps) {
           {accounts.map((account) => (
             <div
               key={account.id}
-              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
             >
               <div className="flex items-center">
                 <div
-                  className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700`}
+                  className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-gray-100`}
                 >
-                  <Wallet className="h-6 w-6 text-gray-500 dark:text-gray-300" />
+                  <Wallet className="h-6 w-6 text-gray-500" />
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  <p className="text-sm font-medium text-gray-900">
                     {account.name}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-gray-500">
                     {account.institution}
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                <p className="text-sm font-semibold text-gray-900">
                   {account.country}
                   {account.currency ? ` (${account.currency})` : ''}
                 </p>

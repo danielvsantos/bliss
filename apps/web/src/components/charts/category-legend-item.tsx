@@ -18,11 +18,11 @@ export function CategoryLegendItem({
           className="h-3 w-3 rounded-full mr-2"
           style={{ backgroundColor: color }}
         />
-        <span className="text-sm text-gray-600 dark:text-gray-300 capitalize">
+        <span className="text-sm text-gray-600 capitalize">
           {name}
         </span>
       </div>
-      <span className="text-sm font-medium text-gray-900 dark:text-white">
+      <span className="text-sm font-medium text-gray-900">
         {percentage}%
       </span>
     </div>

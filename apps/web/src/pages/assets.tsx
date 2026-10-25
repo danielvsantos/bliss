@@ -273,7 +273,7 @@ export default function ManageAssetsPage() {
             ? "border-brand-primary bg-brand-primary text-white"
             : info
               ? "border-gray-200 bg-muted text-muted-foreground hover:bg-accent/40"
-              : "border-gray-200 bg-white font-medium text-brand-deep hover:bg-accent/40 dark:bg-transparent",
+              : "border-gray-200 bg-white font-medium text-brand-deep hover:bg-accent/40",
         )}
         data-testid={`status-filter-${s}`}
       >

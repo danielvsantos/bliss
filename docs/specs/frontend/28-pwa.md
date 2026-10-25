@@ -90,7 +90,7 @@ Keep it deployed until every installed copy has opened at least once.
 | `src/components/pwa/install-banner.tsx` | Dashboard banner. Dismissal is permanent on the device: `localStorage['bliss.pwa.installBannerDismissed'] = '1'` (storage errors hide it for the session only) |
 | `src/components/pwa/install-app-card.tsx` | Settings → General: the always-available control |
 
-Strings: `pwa.install.*` in all five locales (parity test in `i18n-parity.test.ts`). Tests (`install-app-button.test.tsx`) cover the four branches: iOS instructions with the sign-in note, the Chrome prompt, hidden when standalone/unsupported, and permanent banner dismissal.
+The banner and Settings card are worded device-neutrally ("its own window, from your home screen, dock or taskbar") with an app-window icon, because desktop Chrome installs Bliss as an app too; only the iOS instructions mention the phone. Strings: `pwa.install.*` in all five locales (parity test in `i18n-parity.test.ts`). Tests (`install-app-button.test.tsx`) cover the four branches: iOS instructions with the sign-in note, the Chrome prompt, hidden when standalone/unsupported, and permanent banner dismissal.
 
 ## 28.5. Offline
 
@@ -120,7 +120,7 @@ The status bar is `black-translucent` with `viewport-fit=cover`, so the page ext
 
 Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing changes there. Dialogs, sheets, drawers and the full-screen phone modals follow in Phase 2a (§28.9).
 
-**Theme.** `ThemeProvider` defaults to `light`. There is no theme switcher, and the sign-in page stores `light`, so browsers always ended up on light; an installed app starts with empty storage, and the former `system` default put it in the unfinished dark theme whenever the phone was in dark mode.
+**Theme.** Bliss is light only. The unfinished dark theme (a `system`-default `ThemeProvider` that put the installed app in dark mode whenever the phone was, with a header that stayed light) was removed: no theme provider or hooks, no `.dark` tokens, no `dark:` utilities, one `theme-color` and `<meta name="color-scheme" content="light">`. `tailwind.config.ts` keeps `darkMode: ["class"]`, a class that is never applied, so a `dark:` utility arriving with a shadcn component stays inert instead of following the OS.
 
 ## 28.8. Testing
 

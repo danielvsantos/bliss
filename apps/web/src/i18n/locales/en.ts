@@ -3210,10 +3210,10 @@ const en = {
   pwa: {
     install: {
       button: "Install app",
-      settingsTitle: "Bliss on your phone",
-      settingsDescription: "Install Bliss on your home screen to open it full-screen, like an app.",
-      bannerTitle: "Install Bliss on your phone",
-      bannerDescription: "Open it from your home screen, full-screen, like an app.",
+      settingsTitle: "Bliss app",
+      settingsDescription: "Install Bliss to open it in its own window, from your home screen, dock or taskbar.",
+      bannerTitle: "Install the Bliss app",
+      bannerDescription: "Open Bliss in its own window, from your home screen, dock or taskbar.",
       dismiss: "Dismiss",
       iosTitle: "Add Bliss to your Home Screen",
       iosStep1: "Tap the Share button in the browser toolbar.",

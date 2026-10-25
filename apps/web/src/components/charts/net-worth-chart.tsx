@@ -73,7 +73,7 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
     <Card className={className}>
       <CardContent className="p-6">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-semibold text-gray-900">
             Asset Value Over Time
           </h3>
           <div className="flex space-x-2">
@@ -86,7 +86,7 @@ export function NetWorthChart({ className }: NetWorthChartProps) {
                 className={
                   period === option.value
                     ? ""
-                    : "text-gray-600 dark:text-gray-300"
+                    : "text-gray-600"
                 }
                 onClick={() => setPeriod(option.value)}
               >

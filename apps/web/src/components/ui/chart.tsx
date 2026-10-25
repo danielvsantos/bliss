@@ -6,7 +6,7 @@ import * as RechartsPrimitive from "recharts";
 import { cn } from "./utils";
 
 // Format: { THEME_NAME: CSS_SELECTOR }
-const THEMES = { light: "", dark: ".dark" } as const;
+const THEMES = { light: "" } as const; // light only: Bliss has no dark theme
 
 export type ChartConfig = {
   [k in string]: {
