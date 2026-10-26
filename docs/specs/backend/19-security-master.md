@@ -213,7 +213,7 @@ Key design decisions:
 ## 19.9. Tests
 
 - Unit tests for `securityMasterService` — computation logic (trailingEps, peRatio, dividendYield)
-- Unit tests for `securityMasterService` trust gate — flag transitions across the full matrix (4 fresh quarters, fewer than 4, stale newest, sparse span >450 days, no earnings data, dividend variants), plus the 24-hour grace window
+- Unit tests for `securityMasterService` trust gate — flag transitions across the full matrix (4 fresh quarters, fewer than 4, stale newest, sparse span >450 days, no earnings data, dividend variants, mixed-currency quarters, implausibly low P/E, earnings/quote currency mismatch), plus the 24-hour grace window
 - Unit tests for `twelveDataService.getEarnings` — sort newest-first, sanity bounds (drop >5y past, >1y future, malformed dates), keep near-future entries
 - Unit tests for `securityMasterWorker` — job routing, error handling
 - Unit tests for `ticker.js` cache-first logic — cache hit vs miss scenarios
@@ -241,6 +241,12 @@ Migration: `prisma/migrations/20260427000000_add_security_master_trust_flags/mig
 2. The 4 newest quarters span ≤450 days (roughly: 4 quarterly reports plus a 30-day buffer; a wider span means missing data, not a real reporting cadence).
 3. The most recent quarter is ≤180 days old (otherwise trailing EPS combined with the current price is too stale to be meaningful).
 4. `peRatio` was successfully computed (current price > 0 AND trailingEps > 0).
+5. EPS and price are in the same currency (#158). Twelve Data reports EPS in the issuer's reporting currency for some foreign issuers (Novo Nordisk ADR → DKK) and mixes currencies across quarters for others (Nu Holdings → BRL and USD), while the quote is in the listing currency. The gate fails when:
+   - the earnings `meta.currency` and the quote currency are both present and differ;
+   - any of the 4 quarters is more than 4× above or below their median `|eps_actual|` (a unit change between rows; BRL/USD ≈ 5.5);
+   - `peRatio` < 3 (not a credible trailing multiple; in practice EPS in a weaker currency than the price).
+
+   Each rejection with 4 quarters and a computed P/E logs `earnings marked untrusted` with the EPS values, P/E and both currencies.
 
 **`dividendTrusted` = true** for any of:
 
@@ -258,6 +264,8 @@ Migration: `prisma/migrations/20260427000000_add_security_master_trust_flags/mig
 const EARNINGS_TRUST_MAX_SPAN_DAYS = 450;  // 4 quarters + buffer
 const EARNINGS_TRUST_MAX_AGE_DAYS = 180;   // staleness ceiling for trailing EPS
 const DIVIDEND_TRUST_MAX_AGE_DAYS = 180;   // staleness ceiling for last ex-date
+const EARNINGS_TRUST_MAX_QUARTER_DISPERSION = 4; // quarter vs median |eps| (#158)
+const EARNINGS_TRUST_MIN_PE = 3;           // floor below which EPS units are suspect (#158)
 ```
 
 These can be tuned globally if calibration data shows the gate is too strict or too loose. The thresholds were chosen to balance: higher-than-typical-quarterly cadence for safety (450 not 365, 180 not 90), but tight enough that genuinely stale or sparse data is excluded.

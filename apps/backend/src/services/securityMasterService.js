@@ -137,6 +137,18 @@ const EARNINGS_TRUST_MAX_AGE_DAYS = 180;
 const DIVIDEND_TRUST_MAX_AGE_DAYS = 180;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// Unit-consistency gates (#158). Twelve Data reports EPS in the issuer's
+// reporting currency for some foreign issuers (Novo Nordisk ADR → DKK) and
+// mixes currencies across quarters for others (Nu Holdings: three quarters
+// in BRL, the latest in USD), while the quote is in the listing currency.
+// Dividing a USD price by DKK/BRL EPS yields a wildly wrong P/E, so:
+//   - a quarter more than 4× above/below the median of the trailing four
+//     signals a unit change between rows (BRL/USD ≈ 5.5);
+//   - a P/E below 3 is not a credible trailing multiple and in practice
+//     means EPS in a weaker currency than the price.
+const EARNINGS_TRUST_MAX_QUARTER_DISPERSION = 4;
+const EARNINGS_TRUST_MIN_PE = 3;
+
 /**
  * Decide whether earnings-derived fields can be trusted for downstream use
  * (insights LLM context, equity analysis page).
@@ -146,10 +158,29 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * in the exchange's local timezone (which can off-by-one a same-day refresh).
  * We need 4 quarters spanning a reasonable window AND a recent enough latest
  * report that combining trailing EPS with the current price is meaningful.
+ * EPS must also be in the same currency as the price (see the unit-consistency
+ * gates above): an explicit currency mismatch, quarters on different scales or
+ * an implausibly low P/E all mark the earnings untrusted.
  */
-function isEarningsTrustworthy(last4, peRatio) {
+function isEarningsTrustworthy(last4, peRatio, { earningsCurrency = null, quoteCurrency = null } = {}) {
     if (last4.length < 4) return false;
     if (peRatio == null) return false;
+
+    if (earningsCurrency && quoteCurrency &&
+        earningsCurrency.toUpperCase() !== quoteCurrency.toUpperCase()) {
+        return false;
+    }
+
+    if (Number(peRatio) < EARNINGS_TRUST_MIN_PE) return false;
+
+    const magnitudes = last4.map(e => Math.abs(e.epsActual)).sort((a, b) => a - b);
+    const median = (magnitudes[1] + magnitudes[2]) / 2;
+    if (median > 0 && magnitudes.some(m =>
+        m > median * EARNINGS_TRUST_MAX_QUARTER_DISPERSION ||
+        m < median / EARNINGS_TRUST_MAX_QUARTER_DISPERSION
+    )) {
+        return false;
+    }
 
     const dates = last4.map(e => new Date(e.date).getTime()).sort((a, b) => b - a);
     const newestMs = dates[0];
@@ -264,7 +295,18 @@ async function upsertFundamentals(symbol, { earnings, dividends, quote, isEtf = 
                 ? new Decimal(withActual[0].surprisePrc.toFixed(4))
                 : null;
 
-            data.earningsTrusted = isEarningsTrustworthy(last4, peRatio);
+            data.earningsTrusted = isEarningsTrustworthy(last4, peRatio, {
+                earningsCurrency: earnings.meta?.currency || null,
+                quoteCurrency: quote?.currency || null,
+            });
+            if (!data.earningsTrusted && last4.length === 4 && peRatio != null) {
+                logger.warn(`[SecurityMaster] ${symbol}: earnings marked untrusted`, {
+                    epsActual: last4.map(e => e.epsActual),
+                    peRatio: Number(peRatio),
+                    earningsCurrency: earnings.meta?.currency || null,
+                    quoteCurrency: quote?.currency || null,
+                });
+            }
         } else {
             logger.warn(`[SecurityMaster] ${symbol}: no past earnings with actual EPS — preserving previous values, marking earnings untrusted`);
         }
