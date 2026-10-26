@@ -316,6 +316,21 @@ paths:
           description: Unauthorized
         '500':
           description: Server Error
+        '503':
+          description: |
+            Plaid is not configured on this server (`PLAID_CLIENT_ID` / `PLAID_SECRET` unset).
+            The stable `code` lets clients show a configuration message instead of a generic error (#154).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Plaid is not configured on this server. Please set PLAID_CLIENT_ID and PLAID_SECRET environment variables."
+                  code:
+                    type: string
+                    enum: [PLAID_NOT_CONFIGURED]
 
   # ─────────────────────────────────────────────────────────────
   # 2. Public Token Exchange

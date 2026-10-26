@@ -84,8 +84,9 @@ export const DASHBOARD_ACTIONS: DashboardAction[] = [
   },
   {
     id: 'connect-bank',
-    label: 'Connect Bank',
-    description: 'Link your bank for automatic sync',
+    // Provider-neutral (#154); /accounts shows admins the EU setup path too.
+    label: 'Connect your bank',
+    description: 'Plaid (US, CA, UK) or Enable Banking (EU) for automatic sync',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
         <path d="M1.5 13h10M1.5 6.5h10M7 2L12.5 5H1.5L7 2z"

@@ -733,6 +733,12 @@ export type UserSignal = {
   expiresAt?: string;
 };
 
+/** Error body of POST /api/plaid/create-link-token (503 when Plaid has no server keys, #154). */
+export type PlaidLinkTokenErrorBody = {
+  error: string;
+  code?: 'PLAID_NOT_CONFIGURED';
+};
+
 // ─── Enable Banking (#132) ─────────────────────────────────────────────────────
 
 /** GET /api/enablebanking/status (#148). */

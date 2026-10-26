@@ -184,8 +184,8 @@ export function OnboardingAccountSetup({
     }
     if (!user?.id) {
       toast({
-        title: t("Error"),
-        description: t("Could not identify your user. Please try again."),
+        title: t("common.error"),
+        description: t("onboarding.errors.noUser"),
         variant: "destructive",
       });
       return;
@@ -222,10 +222,10 @@ export function OnboardingAccountSetup({
       onComplete();
     } catch (error) {
       toast({
-        title: t("Error"),
+        title: t("common.error"),
         description:
           (error as Error).message ||
-          t("Could not set up your accounts. Please try again."),
+          t("onboarding.errors.setupAccounts"),
         variant: "destructive",
       });
     } finally {
@@ -240,7 +240,7 @@ export function OnboardingAccountSetup({
       {/* Bank grid */}
       <div>
         <label className="text-sm font-medium mb-2 block">
-          {t("Select your banks")}
+          {t("onboarding.accounts.selectBanks")}
         </label>
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-44 overflow-y-auto pr-1">
           {allBanks.map((bank) => {
@@ -274,7 +274,7 @@ export function OnboardingAccountSetup({
             className="mt-2 flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80 transition-colors disabled:opacity-40"
           >
             <Plus className="h-4 w-4" />
-            {t("Add a different bank")}
+            {t("onboarding.accounts.addDifferentBank")}
           </button>
         ) : (
           <div className="mt-2 flex gap-2">
@@ -282,7 +282,7 @@ export function OnboardingAccountSetup({
               autoFocus
               value={newBankName}
               onChange={(e) => setNewBankName(e.target.value)}
-              placeholder={t("Bank name")}
+              placeholder={t("onboarding.accounts.bankName")}
               className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary"
               onKeyDown={(e) => {
                 if (e.key === "Enter") addCustomBank();
@@ -294,14 +294,14 @@ export function OnboardingAccountSetup({
               onClick={addCustomBank}
               disabled={newBankName.trim().length < 2}
             >
-              {t("Add")}
+              {t("common.add")}
             </Button>
           </div>
         )}
 
         {atBankCap && (
           <p className="mt-1.5 text-xs text-muted-foreground">
-            {t("You can add up to {{count}} banks here — you can add more later.", {
+            {t("onboarding.accounts.bankCap", {
               count: MAX_BANKS,
             })}
           </p>
@@ -319,7 +319,7 @@ export function OnboardingAccountSetup({
                   type="button"
                   onClick={() => toggleBank(bank.key, bank.name)}
                   className="text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={t("Remove bank")}
+                  aria-label={t("onboarding.accounts.removeBank")}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -328,7 +328,7 @@ export function OnboardingAccountSetup({
               {bank.accounts.map((row, index) => (
                 <div key={row.id} className="flex items-start gap-2">
                   <span className="text-xs text-muted-foreground w-14 shrink-0 pt-2">
-                    {t("Account")} {index + 1}
+                    {t("onboarding.accounts.account")} {index + 1}
                   </span>
                   {/* Selectors stack on mobile, sit side-by-side from sm: up. */}
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
@@ -339,7 +339,7 @@ export function OnboardingAccountSetup({
                       }
                     >
                       <SelectTrigger className="h-8 w-full min-w-0 sm:flex-1">
-                        <SelectValue placeholder={t("Currency")} />
+                        <SelectValue placeholder={t("common.currency")} />
                       </SelectTrigger>
                       <SelectContent>
                         {currencyOptions.map((c) => (
@@ -357,7 +357,7 @@ export function OnboardingAccountSetup({
                         }
                       >
                         <SelectTrigger className="h-8 w-full min-w-0 sm:flex-1">
-                          <SelectValue placeholder={t("Country")} />
+                          <SelectValue placeholder={t("common.country")} />
                         </SelectTrigger>
                         <SelectContent>
                           {countryOptions.map((c) => (
@@ -374,7 +374,7 @@ export function OnboardingAccountSetup({
                       type="button"
                       onClick={() => removeAccountRow(bank.key, row.id)}
                       className="shrink-0 pt-2 text-muted-foreground hover:text-destructive transition-colors"
-                      aria-label={t("Remove account")}
+                      aria-label={t("onboarding.accounts.removeAccount")}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -389,7 +389,7 @@ export function OnboardingAccountSetup({
                   className="flex items-center gap-1.5 text-xs text-brand-primary hover:text-brand-primary/80 transition-colors"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  {t("Add account")}
+                  {t("onboarding.accounts.addAccount")}
                 </button>
               )}
             </div>
@@ -397,10 +397,10 @@ export function OnboardingAccountSetup({
 
           <p className="text-xs text-muted-foreground">
             {multiCountry
-              ? t("Pick the country for each account — it defaults to {{country}}.", {
+              ? t("onboarding.accounts.pickCountry", {
                   country: countryLabel,
                 })
-              : t("Accounts will be created in {{country}}.", { country: countryLabel })}
+              : t("onboarding.accounts.createdIn", { country: countryLabel })}
           </p>
         </div>
       )}
@@ -410,11 +410,9 @@ export function OnboardingAccountSetup({
           {isSubmitting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : selectedBanks.length === 0 ? (
-            t("Skip for now")
-          ) : totalAccounts === 1 ? (
-            t("Create 1 account")
+            t("onboarding.accounts.skip")
           ) : (
-            t("Create {{count}} accounts", { count: totalAccounts })
+            t("onboarding.accounts.create", { count: totalAccounts })
           )}
         </Button>
       </div>

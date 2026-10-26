@@ -11,8 +11,7 @@ import { updateTenantMetaFromAPI, getTenantMeta } from "@/utils/tenantMetaStorag
 import { useAuth } from "@/hooks/use-auth";
 import { useMetadata } from "@/hooks/use-metadata";
 import { useCompleteOnboardingStep } from "@/hooks/use-onboarding-progress";
-import { PlaidConnect } from "@/components/plaid-connect";
-import { EnableBankingConnect } from "@/components/enable-banking/connect-dialog";
+import { BankProviderOptions } from "@/components/onboarding/bank-provider-options";
 import { OnboardingAccountSetup } from "@/components/onboarding/onboarding-account-setup";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,6 +39,9 @@ const itemVariants = {
   hidden: { y: 20, opacity: 0 },
   visible: { y: 0, opacity: 1, transition: { duration: 0.3 } },
 };
+
+/** Upper bound on recording onboarding completion before the bank redirect. */
+const ENABLE_BANKING_COMPLETION_TIMEOUT_MS = 5000;
 
 export default function OnboardingPage() {
   const { t } = useTranslation();
@@ -104,12 +106,12 @@ export default function OnboardingPage() {
     setIsLoading(true);
     try {
       const tenantId = getTenantId();
-      if (!tenantId) throw new Error(t("No tenant found"));
+      if (!tenantId) throw new Error(t("onboarding.errors.noTenant"));
 
       const tenantMeta = getTenantMeta();
       const name = tenantMeta?.name;
       const plan = tenantMeta?.plan;
-      if (!name || !plan) throw new Error(t("Tenant name or plan missing. Please contact support."));
+      if (!name || !plan) throw new Error(t("onboarding.errors.tenantMissing"));
 
       // Build payload — countries as array, currencies as array
       const payload: TenantUpdateRequest = { name, plan };
@@ -129,13 +131,36 @@ export default function OnboardingPage() {
       setCurrentStep("connect");
     } catch (error) {
       toast({
-        title: t("Error"),
-        description: (error as Error).message || t("Could not save your preferences. Please try again."),
+        title: t("common.error"),
+        description: (error as Error).message || t("onboarding.errors.savePreferences"),
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Enable Banking (#154): leaving for the bank's consent page ends onboarding.
+  // Sequential writes (the progress PUT is read-modify-write), awaited before
+  // the redirect because unloading the page cancels in-flight requests, and
+  // capped so a hung request never keeps the user from their bank.
+  const recordEnableBankingCompletion = () => {
+    const record = async () => {
+      try {
+        await api.completeOnboardingStep("step2_connect", { method: "enable_banking" });
+      } catch {
+        // Bookkeeping only: never block the redirect.
+      }
+      try {
+        await api.completeOnboardingStep("setupComplete");
+      } catch {
+        // As above.
+      }
+    };
+    return Promise.race([
+      record(),
+      new Promise<void>((resolve) => setTimeout(resolve, ENABLE_BANKING_COMPLETION_TIMEOUT_MS)),
+    ]);
   };
 
   // Complete onboarding and redirect
@@ -151,7 +176,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-brand-primary/10 to-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <Card className="w-full max-w-xl mx-auto shadow-xl" style={{ background: 'hsl(var(--card))', backdropFilter: 'none', WebkitBackdropFilter: 'none' }}>
+      <Card className={`w-full ${currentStep === "connect" ? "max-w-2xl" : "max-w-xl"} mx-auto shadow-xl`} style={{ background: 'hsl(var(--card))', backdropFilter: 'none', WebkitBackdropFilter: 'none' }}>
         <CardContent className="p-6 md:p-8">
           <AnimatePresence mode="wait">
             {/* ═══════════════════════════════════════════════ */}
@@ -168,12 +193,12 @@ export default function OnboardingPage() {
               >
                 <motion.div className="text-center mb-4" variants={itemVariants}>
                   <h2 className="text-3xl font-bold mb-2">
-                    {t("Welcome to")} <span className="text-brand-primary">bliss</span>
+                    {t("onboarding.welcome.title")} <span className="text-brand-primary">bliss</span>
                   </h2>
                   <div className="min-h-8">
                     <TypeAnimation
                       sequence={[
-                        t("Let's personalize your experience"),
+                        t("onboarding.welcome.subtitle"),
                         () => setWelcomeAnimDone(true),
                       ]}
                       speed={30}
@@ -188,7 +213,7 @@ export default function OnboardingPage() {
                     {/* Country picker (multi-select) */}
                     <motion.div variants={itemVariants}>
                       <label className="text-sm font-medium mb-2 block">
-                        {t("Your countries")}
+                        {t("onboarding.welcome.countries")}
                       </label>
                       <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-40 overflow-y-auto pr-1">
                         {countries.map((c) => (
@@ -211,7 +236,7 @@ export default function OnboardingPage() {
                     {/* Currency picker */}
                     <motion.div variants={itemVariants}>
                       <label className="text-sm font-medium mb-2 block">
-                        {t("Your currencies")}
+                        {t("onboarding.welcome.currencies")}
                       </label>
                       <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-1">
                         {currencies.map((c) => (
@@ -246,7 +271,7 @@ export default function OnboardingPage() {
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <>
-                            {t("Continue")}
+                            {t("common.continue")}
                             <ArrowRight className="h-4 w-4" />
                           </>
                         )}
@@ -274,12 +299,12 @@ export default function OnboardingPage() {
                     <Building2 className="h-7 w-7" />
                   </div>
                   <h2 className="text-2xl font-bold mb-2">
-                    {t("Connect your accounts")}
+                    {t("onboarding.connect.title")}
                   </h2>
                   <div className="min-h-8">
                     <TypeAnimation
                       sequence={[
-                        t("Link a bank, import a CSV, or add accounts manually"),
+                        t("onboarding.connect.subtitle"),
                         () => setConnectAnimDone(true),
                       ]}
                       speed={30}
@@ -291,40 +316,27 @@ export default function OnboardingPage() {
 
                 {connectAnimDone && (
                   <motion.div className="space-y-3" variants={itemVariants}>
-                    {/* Primary CTA: Plaid */}
-                    <div className="rounded-xl border-2 border-brand-primary/30 bg-brand-primary/5 p-5">
-                      <div className="flex items-start gap-4">
-                        <div className="bg-brand-primary/10 text-brand-primary h-10 w-10 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                          <Building2 className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-base mb-1">
-                            {t("Connect your bank")}
-                          </h3>
-                          <p className="text-sm text-muted-foreground mb-3">
-                            {t("Securely link your bank accounts via Plaid for automatic transaction sync.")}
-                          </p>
-                          <PlaidConnect
-                            className="w-full rounded-lg"
-                            onComplete={async () => {
-                              completeStep.mutate({ step: "step2_connect", data: { method: "plaid" } });
-                              completeStep.mutate({ step: "connectBank" });
-                              await finishOnboarding("/");
-                            }}
-                          >
-                            {t("Connect Bank Account")}
-                          </PlaidConnect>
-                          {/* Enable Banking (#132): EU banks; renders nothing when not configured. */}
-                          <EnableBankingConnect variant="outline" className="w-full rounded-lg mt-2" />
-                        </div>
-                      </div>
+                    {/* Bank sync (#154): Plaid and Enable Banking with equal weight */}
+                    <div>
+                      <h3 className="font-semibold text-base mb-1">{t("onboarding.connect.bankTitle")}</h3>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        {t("onboarding.connect.bankDescription")}
+                      </p>
+                      <BankProviderOptions
+                        onPlaidComplete={async () => {
+                          completeStep.mutate({ step: "step2_connect", data: { method: "plaid" } });
+                          completeStep.mutate({ step: "connectBank" });
+                          await finishOnboarding("/");
+                        }}
+                        onEnableBankingRedirect={recordEnableBankingCompletion}
+                      />
                     </div>
 
                     {/* Divider */}
                     <div className="flex items-center gap-3 py-1">
                       <div className="flex-1 border-t" />
                       <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {t("or")}
+                        {t("common.or")}
                       </span>
                       <div className="flex-1 border-t" />
                     </div>
@@ -342,9 +354,9 @@ export default function OnboardingPage() {
                         <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-sm">{t("Import a spreadsheet")}</h3>
+                        <h3 className="font-semibold text-sm">{t("onboarding.connect.importTitle")}</h3>
                         <p className="text-xs text-muted-foreground">
-                          {t("Upload a CSV or Excel file with your transactions.")}
+                          {t("onboarding.connect.importDescription")}
                         </p>
                       </div>
                     </button>
@@ -378,9 +390,9 @@ export default function OnboardingPage() {
                       <Wallet className="h-5 w-5" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold">{t("Add your banks & accounts")}</h2>
+                      <h2 className="text-xl font-bold">{t("onboarding.accounts.title")}</h2>
                       <p className="text-sm text-muted-foreground">
-                        {t("Pick the banks you use and add an account for each. You can fill in the account numbers later.")}
+                        {t("onboarding.accounts.subtitle")}
                       </p>
                     </div>
                   </div>

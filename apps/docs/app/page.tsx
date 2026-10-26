@@ -243,7 +243,7 @@ export default function HomePage() {
             │
             └─► 3rd Party Integrations:
                 ├─► AI: LLM provider abstraction (Gemini / OpenAI / Anthropic)
-                ├─► Banks: Plaid (Sync + Tokens)
+                ├─► Banks: Plaid (US/CA/UK) + Enable Banking (EU PSD2)
                 ├─► Prices: TwelveData (Real-time Stocks)
                 ├─► FX: TwelveData (Historical Rates; CurrencyLayer optional/legacy)
                 └─► Ops: Sentry (Observability)`}
@@ -405,35 +405,61 @@ export default function HomePage() {
             {/* Box 2: Secure Institution Sync (small, top right) */}
             <div className="glass-card p-6 flex flex-col">
               <div className="flex items-center gap-3 mb-4">
-                <Image
-                  src="/images/plaidlogo.png"
-                  alt="Plaid"
-                  width={28}
-                  height={28}
-                  className="w-7 h-7"
-                />
+                <div className="flex items-center gap-1.5">
+                  <Image
+                    src="/images/plaidlogo.png"
+                    alt="Plaid"
+                    width={28}
+                    height={28}
+                    className="w-7 h-7"
+                  />
+                  <Image
+                    src="/images/enablebankinglogo-mark.png"
+                    alt="Enable Banking"
+                    width={28}
+                    height={28}
+                    className="w-7 h-7 rounded-md bg-white"
+                  />
+                </div>
                 <h3 className="text-lg font-semibold" style={{ color: '#3A3542' }}>
                   Secure Institution Sync
                 </h3>
               </div>
               <p className="text-sm leading-relaxed mb-4" style={{ color: '#5A5266' }}>
-                Robust Plaid webhook ingestion handles encrypted payload staging, optimistic account linking,
-                and automated token rotation.
+                Two bank feeds, one review queue. Plaid covers US, Canadian and UK banks with webhook
+                ingestion and automated token rotation. Enable Banking connects EU banks through PSD2
+                consent, using each workspace&apos;s own Enable Banking app, imports booked transactions
+                and reminds you before the consent needs renewing.
               </p>
-              <Link
-                href="/docs/guides/plaid-bank-sync"
-                className="inline-flex items-center gap-1 text-xs font-medium mb-4 transition-colors hover:text-[#3A3542]"
-                style={{ color: '#6D657A' }}
-              >
-                Plaid setup guide <ArrowRight />
-              </Link>
-              {/* Icon lockup: Plaid → arrow → Bliss */}
-              <div className="mt-auto flex items-center justify-center gap-6 py-6" style={{ backgroundColor: 'hsl(var(--muted))', borderRadius: '12px' }}>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4">
+                <Link
+                  href="/docs/guides/plaid-bank-sync"
+                  className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-[#3A3542]"
+                  style={{ color: '#6D657A' }}
+                >
+                  Plaid setup guide <ArrowRight />
+                </Link>
+                <Link
+                  href="/docs/guides/enable-banking"
+                  className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-[#3A3542]"
+                  style={{ color: '#6D657A' }}
+                >
+                  Enable Banking setup guide <ArrowRight />
+                </Link>
+              </div>
+              {/* Icon lockup: Plaid + Enable Banking → arrow → Bliss */}
+              <div className="mt-auto flex items-center justify-center gap-4 py-6" style={{ backgroundColor: 'hsl(var(--muted))', borderRadius: '12px' }}>
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                     <Image src="/images/plaidlogo.png" alt="Plaid" width={24} height={24} className="w-6 h-6" />
                   </div>
                   <span className="text-[10px] font-medium" style={{ color: '#5A5266' }}>Plaid</span>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <Image src="/images/enablebankinglogo-mark.png" alt="Enable Banking" width={24} height={24} className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] font-medium" style={{ color: '#5A5266' }}>Enable Banking</span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
@@ -704,7 +730,7 @@ not used lately?`}</span>
                 AES-256-GCM Encryption
               </h3>
               <p className="text-sm leading-relaxed" style={{ color: '#5A5266' }}>
-                Your sensitive data — including Plaid access tokens and raw bank payloads — is encrypted
+                Your sensitive data — including Plaid access tokens, Enable Banking credentials and raw bank payloads — is encrypted
                 at rest, ensuring your financial footprint remains strictly yours.
               </p>
             </div>

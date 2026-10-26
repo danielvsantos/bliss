@@ -66,9 +66,15 @@ export function EnableBankingConnect({ variant = 'outline', className, children 
 interface EnableBankingConnectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Awaited after the consent URL is returned and before leaving for the bank
+   * (#154: onboarding records its completion here). Bound it yourself: the
+   * redirect waits for it. The Accounts page passes nothing.
+   */
+  onBeforeRedirect?: () => Promise<void>;
 }
 
-function EnableBankingConnectDialog({ open, onOpenChange }: EnableBankingConnectDialogProps) {
+export function EnableBankingConnectDialog({ open, onOpenChange, onBeforeRedirect }: EnableBankingConnectDialogProps) {
   const { t, i18n } = useTranslation();
   const language = i18n?.language;
   const { toast } = useToast();
@@ -102,8 +108,13 @@ function EnableBankingConnectDialog({ open, onOpenChange }: EnableBankingConnect
     connect.mutate(
       { aspspName: selected.name, aspspCountry: selected.country },
       {
-        onSuccess: ({ url }) => {
+        onSuccess: async ({ url }) => {
           setRedirecting(true);
+          try {
+            await onBeforeRedirect?.();
+          } catch {
+            // Never block the bank redirect on the caller's bookkeeping.
+          }
           window.location.assign(url);
         },
         onError: (error) => {

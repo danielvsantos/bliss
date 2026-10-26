@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 import en from './locales/en';
@@ -587,4 +589,135 @@ describe('i18n parity — installable PWA (#155)', () => {
       }
     });
   }
+});
+
+// Keys introduced by task #154 (provider-aware onboarding: Plaid or Enable Banking).
+const ONBOARDING_BANK_KEYS = [
+  'onboarding.connect.title',
+  'onboarding.connect.subtitle',
+  'onboarding.connect.bankTitle',
+  'onboarding.connect.bankDescription',
+  'onboarding.connect.learnMore',
+  'onboarding.connect.plaid.title',
+  'onboarding.connect.plaid.description',
+  'onboarding.connect.plaid.button',
+  'onboarding.connect.plaid.notConfigured',
+  'onboarding.connect.plaid.notConfiguredHint',
+  'onboarding.connect.plaid.error',
+  'onboarding.connect.enableBanking.title',
+  'onboarding.connect.enableBanking.description',
+  'onboarding.connect.enableBanking.connect',
+  'onboarding.connect.enableBanking.setup',
+  'onboarding.connect.enableBanking.adminOnly',
+  'onboarding.connect.setup.title',
+  'onboarding.connect.setup.description',
+  'onboarding.connect.setup.needTitle',
+  'onboarding.connect.setup.needAccount',
+  'onboarding.connect.setup.needApp',
+  'onboarding.connect.setup.needCallback',
+  'onboarding.connect.setup.limit',
+  'onboarding.connect.setup.guide',
+];
+// Dashboard actions use flat natural-language keys (looked up directly).
+const DASHBOARD_ACTION_KEYS = [
+  'Connect your bank',
+  'Plaid (US, CA, UK) or Enable Banking (EU) for automatic sync',
+];
+
+describe('i18n parity — task #154 onboarding bank providers', () => {
+  for (const key of ONBOARDING_BANK_KEYS) {
+    it(`"${key}" is a translated, non-empty string in every locale`, () => {
+      const enValue = resolve(en, key);
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+        if (lang !== 'en') expect(v, `${lang}:${key}`).not.toBe(enValue);
+      }
+    });
+  }
+  for (const key of DASHBOARD_ACTION_KEYS) {
+    it(`dashboard action "${key}" is translated in every locale`, () => {
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = dict[key];
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        if (lang !== 'en') expect(v, `${lang}:${key}`).not.toBe(key);
+      }
+    });
+  }
+});
+
+// The whole onboarding wizard is translated (#154). Scans the onboarding
+// sources for literal t('…') keys, so a new untranslated string fails here.
+// Keys must be literals in these files; computed keys are not seen.
+const SRC = join(__dirname, '..');
+const ONBOARDING_FILES = [
+  join(SRC, 'pages/onboarding.tsx'),
+  ...readdirSync(join(SRC, 'components/onboarding'))
+    .filter((f) => f.endsWith('.tsx') && !f.endsWith('.test.tsx') && f !== 'setup-checklist.tsx')
+    .map((f) => join(SRC, 'components/onboarding', f)),
+];
+// Words that are genuinely the same as English in some locale.
+const SAME_AS_EN: Record<string, string[]> = {
+  'common.error': ['es'],
+};
+
+function onboardingKeys(): string[] {
+  const keys = new Set<string>();
+  for (const file of ONBOARDING_FILES) {
+    const src = readFileSync(file, 'utf8');
+    // t("key") / t('key') / t(`key`) without interpolation; `${T}.x` templates
+    // are expanded from the file's `const T = '…'`.
+    const prefix = /const T = ['"]([^'"]+)['"]/.exec(src)?.[1];
+    for (const m of src.matchAll(/\bt\(\s*(['"`])([^'"`]+?)\1/g)) {
+      const raw = m[2];
+      const key = raw.includes('${T}') && prefix ? raw.replace('${T}', prefix) : raw;
+      if (key.includes('${')) continue;
+      keys.add(key);
+    }
+  }
+  return [...keys].sort();
+}
+
+function lookup(dict: Record<string, unknown>, key: string): unknown {
+  const direct = resolve(dict, key);
+  if (direct !== undefined) return direct;
+  // i18next plural: key_one / key_other.
+  return resolve(dict, `${key}_other`);
+}
+
+describe('i18n — onboarding wizard has no untranslated keys (#154)', () => {
+  const keys = onboardingKeys();
+
+  it('finds the onboarding keys', () => {
+    expect(keys.length).toBeGreaterThan(30);
+    expect(keys).toContain('onboarding.accounts.create');
+  });
+
+  it('uses namespaced keys, never English sentences', () => {
+    for (const key of keys) expect(key, key).toMatch(/^[a-zA-Z]+(\.[a-zA-Z_]+)+$/);
+  });
+
+  for (const key of keys) {
+    it(`"${key}" resolves in all 5 locales and is translated`, () => {
+      const enValue = lookup(en, key);
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = lookup(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+        if (lang !== 'en' && !SAME_AS_EN[key]?.includes(lang)) {
+          expect(v, `${lang}:${key}`).not.toBe(enValue);
+        }
+      }
+    });
+  }
+
+  it('the account-count plural has _one and _other in every locale', () => {
+    for (const [lang, dict] of Object.entries(LOCALES)) {
+      for (const form of ['_one', '_other']) {
+        const v = resolve(dict, `onboarding.accounts.create${form}`) as string;
+        expect(v, `${lang}${form}`).toContain('{{count}}');
+      }
+    }
+  });
 });
