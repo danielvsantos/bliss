@@ -246,6 +246,12 @@ pnpm test:web
 - Phone layouts (390 px): `<main>` already pads phones, so page roots use `md:p-6`, not `p-6`; keep tap targets ≥ 36 px and never rely on hover (it does not exist on touch). Dialogs and sheets don't auto-focus their first field on touch devices (`preventTouchAutoFocus`). See spec §28.10.
 - Safe areas: `env(safe-area-inset-*)` is 0 outside the installed app; for new full-screen or bottom-anchored surfaces pad with `env(safe-area-inset-*)` (or `.pwa-safe-x`) and pin with `fixed inset-0` — never size with `100dvh`, which excludes the status bar in iOS standalone mode.
 
+## Sessions (#156)
+
+- `lib/api.ts` refreshes the session on a 401 (`POST /api/auth/refresh`, one in-flight call shared by concurrent 401s, `navigator.locks` across tabs) and retries the request once; `auth:session-expired` fires only when the refresh fails. **Never call auth endpoints through anything but the `APIClient` methods**, and never make the refresh call through the intercepted client (it uses its own bare instance). 401s from `signin`, `signup`, `signout`, `refresh` and `reauth` never refresh or sign the user out.
+- Key-minting UI (create integration, add key, OAuth consent) uses `useRecentAuth()` (`hooks/use-recent-auth.tsx`): `ensureRecentAuth()` before opening the form, `withReauthRetry(fn)` around the mutation, render `dialog`. The confirm-identity dialog offers the same methods in the installed app as in the browser.
+- Settings → General has "Sign out of all other devices" (`components/settings/sign-out-others-dialog.tsx`).
+
 ## Path aliases
 
 `@/*` maps to `./src/*` (configured in `vite.config.ts` and `tsconfig.json`). Use `@/components/ui/button`, `@/hooks/use-transactions`, etc.

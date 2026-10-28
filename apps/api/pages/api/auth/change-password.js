@@ -5,6 +5,8 @@ import { AuthService } from '../../../services/auth.service';
 import { cors } from '../../../utils/cors.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { withAuth } from '../../../utils/withAuth.js';
+import { requireTrustedOrigin } from '../../../utils/trustedOrigin.js';
+import { revokeAllAndRestart } from '../../../services/session.service.js';
 
 export default withAuth(async function handler(req, res) {
   // Apply rate limiting
@@ -23,6 +25,8 @@ export default withAuth(async function handler(req, res) {
     res.status(405).end(`Method ${req.method} Not Allowed`);
     return;
   }
+
+  if (!requireTrustedOrigin(req, res)) return;
 
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
@@ -68,13 +72,17 @@ export default withAuth(async function handler(req, res) {
       return;
     }
 
-    // Hash new password and update
+    // Hash the new password, store it and end every session in one
+    // transaction (#156): other devices get 401 on their next request. This
+    // device gets a fresh session, so it stays signed in.
     const { hash, salt } = await AuthService.hashPassword(newPassword);
 
-    await prisma.user.update({
-      where: { id: req.user.id },
-      data: { passwordHash: hash, passwordSalt: salt },
-    });
+    await revokeAllAndRestart(
+      res,
+      { id: req.user.id, tenantId: req.user.tenantId, email: req.user.email },
+      req,
+      { passwordData: { passwordHash: hash, passwordSalt: salt } },
+    );
 
     res.status(StatusCodes.OK).json({ message: 'Password updated successfully' });
     return;

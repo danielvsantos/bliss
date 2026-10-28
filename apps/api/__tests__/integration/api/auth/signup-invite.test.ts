@@ -34,6 +34,7 @@ function makeRes() {
   res.status = vi.fn((c: number) => { res._status = c; return res; });
   res.json = vi.fn((b: unknown) => { res._body = b; return res; });
   res.setHeader = vi.fn((k: string, v: unknown) => { res._headers[k] = v; return res; });
+  res.getHeader = (k: string) => res._headers[k];
   res.end = vi.fn(() => res);
   return res;
 }
@@ -155,7 +156,9 @@ describe('credentials sign-up in invite-only mode', () => {
 
     const first = await signup(`  ${email.toUpperCase()}  `);
     expect(first._status).toBe(201);
-    expect(first._headers['Set-Cookie']).toContain('token=');
+    // Both session cookies (#156): access + refresh.
+    expect(String(first._headers['Set-Cookie'])).toContain('token=');
+    expect(String(first._headers['Set-Cookie'])).toContain('bliss_rt=');
     const tenantId = first._body.user.tenant.id;
 
     const row = await inviteRow(email);

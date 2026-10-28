@@ -19,7 +19,7 @@ vi.mock('jsonwebtoken', () => ({
   sign: vi.fn().mockReturnValue('mock-jwt'),
 }));
 vi.mock('uuid', () => ({ v4: vi.fn().mockReturnValue('test-uuid') }));
-vi.mock('../../../utils/cookieUtils.js', () => ({ setAuthCookie: vi.fn() }));
+vi.mock('../../../services/session.service.js', () => ({ startSession: vi.fn().mockResolvedValue({ sessionId: 's' }) }));
 vi.mock('../../../lib/defaultCategories.js', () => ({
   DEFAULT_CATEGORIES: [
     { code: 'FOOD', name: 'Food', group: 'Daily', type: 'Essentials' },

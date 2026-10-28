@@ -57,6 +57,14 @@ vi.mock('../../../../services/auth.service', () => ({
   },
 }));
 
+// Mock the session service (#156): revocation + fresh session for this device.
+const { mockRevokeAllAndRestart } = vi.hoisted(() => ({
+  mockRevokeAllAndRestart: vi.fn().mockResolvedValue({ sessionId: 'new-sess' }),
+}));
+vi.mock('../../../../services/session.service.js', () => ({
+  revokeAllAndRestart: mockRevokeAllAndRestart,
+}));
+
 import handler from '../../../../pages/api/auth/change-password.js';
 
 // ---------------------------------------------------------------------------
@@ -66,7 +74,7 @@ import handler from '../../../../pages/api/auth/change-password.js';
 function makeReq(overrides: Partial<NextApiRequest> = {}): NextApiRequest {
   return {
     method: 'PUT',
-    headers: {},
+    headers: { origin: 'http://localhost:8080' },
     cookies: {},
     body: {},
     query: {},
@@ -222,10 +230,23 @@ describe('PUT /api/auth/change-password', () => {
     expect(res._body).toEqual({ message: 'Password updated successfully' });
 
     expect(mockHashPassword).toHaveBeenCalledWith('NewPassword1');
-    expect(mockPrisma.user.update).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { passwordHash: 'new-hash', passwordSalt: 'new-salt' },
-    });
+    expect(mockRevokeAllAndRestart).toHaveBeenCalledWith(
+      res,
+      { id: 1, tenantId: 'tenant-1', email: 'test@example.com' },
+      req,
+      { passwordData: { passwordHash: 'new-hash', passwordSalt: 'new-salt' } },
+    );
+  });
+
+  it('rejects a foreign Origin before touching the password (#156)', async () => {
+    const req = makeReq({ body: VALID_BODY, headers: { origin: 'https://evil.example' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(403);
+    expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    expect(mockRevokeAllAndRestart).not.toHaveBeenCalled();
   });
 
   // AuthService.hashPassword now returns `salt: null` — the scrypt salt lives
@@ -247,13 +268,17 @@ describe('PUT /api/auth/change-password', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(200);
-    expect(mockPrisma.user.update).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: {
-        passwordHash: '$scrypt$N=131072,r=8,p=1$c2FsdA==$aGFzaA==',
-        passwordSalt: null,
+    expect(mockRevokeAllAndRestart).toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ id: 1 }),
+      req,
+      {
+        passwordData: {
+          passwordHash: '$scrypt$N=131072,r=8,p=1$c2FsdA==$aGFzaA==',
+          passwordSalt: null,
+        },
       },
-    });
+    );
   });
 
   it('returns 500 on unexpected error and captures in Sentry', async () => {

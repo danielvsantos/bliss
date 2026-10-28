@@ -119,6 +119,18 @@ export const ROTATION_COVERAGE = [
     fields: [{ name: 'email', searchable: true, sanity: isEmail }],
   },
   {
+    // Signed-in device data (#156). Rows live at most ~15 days.
+    label: 'UserSession.userAgent/ipAddress',
+    model: 'UserSession',
+    prismaModel: 'userSession',
+    idField: 'id',
+    orderBy: { id: 'asc' },
+    fields: [
+      { name: 'userAgent', searchable: false, sanity: nonEmptyString },
+      { name: 'ipAddress', searchable: false, sanity: nonEmptyString },
+    ],
+  },
+  {
     label: 'PlaidTransaction.rawJson',
     model: 'PlaidTransaction',
     prismaModel: 'plaidTransaction',

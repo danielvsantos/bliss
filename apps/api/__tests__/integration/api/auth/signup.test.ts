@@ -64,6 +64,7 @@ function makeRes(): MockRes {
       res._headers[name] = value;
       return res;
     }),
+    getHeader: (name: string) => res._headers[name],
     end: vi.fn(),
   };
   return res;
@@ -114,7 +115,9 @@ describe('POST /api/auth/signup', () => {
     const body = res._body as { user?: { tenantId?: string } };
     expect(body).toMatchObject({ message: 'Signup successful' });
     expect(body.user).toBeDefined();
-    expect(res._headers['Set-Cookie']).toContain('token=');
+    // Both session cookies (#156): access + refresh.
+    expect(String(res._headers['Set-Cookie'])).toContain('token=');
+    expect(String(res._headers['Set-Cookie'])).toContain('bliss_rt=');
 
     // Track for cleanup
     if (body.user?.tenantId) createdTenantIds.push(body.user.tenantId);

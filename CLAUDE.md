@@ -14,7 +14,7 @@ Monorepo with four services behind a single `.env` file:
 | `apps/docs` | Next.js 15 + Nextra | 3002 | ESM | Documentation site |
 | `packages/shared` | tsup (dual ESM/CJS) | -- | Dual | Encryption (AES-256-GCM), storage adapters, `portfolio` (passive income projection engine, asset class classifier, ETF look-through) |
 
-**Communication flow:** Browser -> API (JWT in httpOnly cookies) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues. AI agents and other systems call the API with **integration tokens** (`Authorization: Bearer bliss_…`, see below) — directly or through the **MCP server** at `POST /api/mcp`.
+**Communication flow:** Browser -> API (15-min access JWT + rotating refresh token in httpOnly cookies, see "Sessions" below) -> Backend (via `INTERNAL_API_KEY` header). Backend workers process async jobs via Redis/BullMQ queues. AI agents and other systems call the API with **integration tokens** (`Authorization: Bearer bliss_…`, see below) — directly or through the **MCP server** at `POST /api/mcp`.
 
 **Database:** PostgreSQL with the pgvector extension. Single Prisma schema at `prisma/schema.prisma` shared by API and backend. 65+ migrations.
 
@@ -75,6 +75,10 @@ AI agents, scripts and other systems authenticate with `Authorization: Bearer bl
 ### MCP coverage: every token-reachable route needs a tool or an exclusion
 
 The MCP server (#89) wraps the REST API. **A new route (or method) that an integration key can reach must be wrapped by an MCP tool (`apps/api/lib/mcp/tools/*.js`, listed in the tool's `wraps`) or added to `apps/api/lib/mcp/exclusions.js` with a reason** — `apps/api/__tests__/unit/mcp/coverage.test.ts` fails otherwise. After changing tools, regenerate the tool reference with `pnpm --filter @bliss/api mcp:reference` (a test fails when `docs/guides/mcp-tool-reference.md` is stale). MCP tools never contain business logic or Prisma access: they call REST routes over loopback.
+
+### Sessions: short access token + rotating refresh token (#156)
+
+Sign-in, sign-up and Google sign-in all go through `startSession()` in `apps/api/services/session.service.js` — never call `jwt.sign` in a route. The access JWT lives **15 min** (cookie `token`, `Path=/`, claims include `auth_time` + `iat_ms`); the refresh cookie `bliss_rt` (`Path=/api/auth`) rotates on every `POST /api/auth/refresh`. A session (`UserSession`, one row per device, SHA-256 hashes only, UA/IP encrypted) ends after **7 days idle** or **15 days** absolute. Reusing a rotated token revokes the whole family. `withAuth` refuses access tokens older than `User.sessionsRevokedAt` (password change, "Sign out of all other devices") — immediate, no Redis needed. Creating an integration or key and approving an OAuth connection call `requireRecentAuth()` (`utils/recentAuth.js`, sign-in within 15 min, else `403 REAUTH_REQUIRED`). Session-changing routes use `requireTrustedOrigin()` (`utils/trustedOrigin.js`). The `UserSession` migration is hand-written: **`migrate deploy` only.** The new `/api/auth/*` routes are denylisted (`D/D` in the route matrix), not MCP-excluded. See [`docs/specs/api/01-user-identity.md` §1.5h](docs/specs/api/01-user-identity.md#15h-session-lifecycle-156).
 
 ### Encryption
 

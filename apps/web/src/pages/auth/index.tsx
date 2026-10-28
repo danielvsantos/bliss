@@ -606,7 +606,7 @@ function AuthCard() {
                 ? t("Sign in with Google")
                 : t("Sign up with Google")
             }
-            onClick={signInWithGoogle}
+            onClick={() => signInWithGoogle()}
           />
           <OrSeparator />
         </>

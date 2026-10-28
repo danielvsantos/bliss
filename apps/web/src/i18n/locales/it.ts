@@ -373,7 +373,17 @@ const it = {
         tenant_name_description: "Questo \u00E8 il nome della tua organizzazione o del tuo profilo finanziario personale.",
         user_management_label: "Gestione utenti",
         user_management_button: "Gestisci utenti",
-        user_management_description: "Gestisci gli utenti con accesso al tuo account tenant."
+        user_management_description: "Gestisci gli utenti con accesso al tuo account tenant.",
+        sign_out_others: {
+          label: "Altri dispositivi",
+          description: "Esci ovunque tranne che su questo dispositivo. Gli altri browser e le app installate dovranno accedere di nuovo.",
+          button: "Esci da tutti gli altri dispositivi",
+          confirm_title: "Uscire da tutti gli altri dispositivi?",
+          confirm_description: "Tutti gli altri browser e le app installate collegati al tuo account verranno disconnessi alla prossima richiesta. Questo dispositivo resta connesso.",
+          confirm: "Disconnetti gli altri",
+          success: "Gli altri dispositivi sono stati disconnessi.",
+          error: "Impossibile disconnettere gli altri dispositivi. Riprova.",
+        },
       },
       countries: {
         title: "Paesi",
@@ -515,6 +525,17 @@ const it = {
       goBack: "Torna alla pagina principale",
     },
     login: {
+      confirm_identity: {
+        title: "Conferma che sei tu",
+        description: "Per la tua sicurezza, conferma la tua identità per continuare. È necessario quando l'ultimo accesso risale a più di 15 minuti fa.",
+        password_label: "Password",
+        confirm: "Conferma",
+        google: "Continua con Google",
+        divider: "oppure",
+        wrong_password: "Password errata. Riprova.",
+        error: "Impossibile confermare la tua identità. Riprova.",
+        no_method: "Questo account non può confermare la propria identità qui. Esci, accedi di nuovo e riprova.",
+      },
       title: "Accedi",
       subtitle: "Accedi al tuo account",
       noAccount: "Non hai un account?",

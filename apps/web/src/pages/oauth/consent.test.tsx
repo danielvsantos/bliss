@@ -13,7 +13,10 @@ vi.mock('react-i18next', () => ({
     i18n: { language: 'en' },
   }),
 }));
-vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: { email: 'admin@example.com' }, loading: false }) }));
+const signInWithGoogle = vi.fn();
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => ({ user: { email: 'admin@example.com' }, loading: false, signInWithGoogle }),
+}));
 
 // Radix RadioGroup measures its items; jsdom has no ResizeObserver.
 global.ResizeObserver = class {
@@ -45,7 +48,12 @@ function consentReturns(body: unknown, status = 200) {
   server.use(http.get('/api/oauth/requests/req-1', () => HttpResponse.json(body as object, { status })));
 }
 
-beforeEach(() => assign.mockReset());
+beforeEach(() => {
+  assign.mockReset();
+  signInWithGoogle.mockReset();
+  // Signed in recently by default: no confirm-identity prompt (#156).
+  server.use(http.get('/api/auth/reauth', () => HttpResponse.json({ recent: true, methods: ['password'] })));
+});
 afterEach(() => Object.defineProperty(window, 'location', { configurable: true, value: originalLocation }));
 
 describe('OAuth consent page (#89)', () => {
@@ -128,3 +136,27 @@ describe('OAuth consent page (#89)', () => {
     expect(screen.getByText(`${T}.allow`).closest('button')).not.toBeDisabled();
   });
 });
+
+describe('OAuth consent page — recent sign-in (#156)', () => {
+  it('asks an admin to confirm identity on load; Google returns to this same request', async () => {
+    consentReturns({ request: REQUEST, canApprove: true, expiryOptions: [30, 90, 365, null] });
+    server.use(http.get('/api/auth/reauth', () => HttpResponse.json({ recent: false, methods: ['password', 'google'] })));
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByTestId('confirm-identity-dialog')).toBeInTheDocument();
+    await user.click(screen.getByText('pages.login.confirm_identity.google'));
+
+    expect(signInWithGoogle).toHaveBeenCalledWith({ returnTo: '/oauth/consent?request=req-1', prompt: 'select_account' });
+  });
+
+  it('never prompts a non-admin who cannot approve', async () => {
+    consentReturns({ request: REQUEST, canApprove: false, expiryOptions: [] });
+    server.use(http.get('/api/auth/reauth', () => HttpResponse.json({ recent: false, methods: ['password'] })));
+    renderPage();
+
+    expect(await screen.findByText(`${T}.admin_required`)).toBeInTheDocument();
+    expect(screen.queryByTestId('confirm-identity-dialog')).not.toBeInTheDocument();
+  });
+});
+

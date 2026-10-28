@@ -15,9 +15,21 @@ components:
       in: cookie
       name: token
       description: >
-        HttpOnly cookie set by /api/auth/signin, /api/auth/signup, and
-        /api/auth/google-token. Automatically sent by the browser on all
-        credentialed requests (withCredentials: true).
+        HttpOnly access cookie (15-minute JWT, Path=/) set by /api/auth/signin,
+        /api/auth/signup, /api/auth/google-token, /api/auth/refresh and
+        /api/auth/reauth. Automatically sent by the browser on all credentialed
+        requests (withCredentials: true). Claims: jti, userId, tenantId, email,
+        auth_time (the real sign-in, epoch s) and iat_ms (#156).
+    refreshCookieAuth:
+      type: apiKey
+      in: cookie
+      name: bliss_rt
+      description: >
+        HttpOnly refresh cookie (#156), `<sessionId>.<secret>`, scoped to
+        Path=/api/auth with the same SameSite/Secure/Domain rules as `token`.
+        Set together with the access cookie on every sign-in; rotated on every
+        refresh. Max-Age follows the 7-day idle timeout, capped at the 15-day
+        absolute session expiry. Only its SHA-256 hash is stored.
 
   schemas:
     SignupInviteRequiredError:
@@ -302,7 +314,10 @@ paths:
                   user:
                     $ref: '#/components/schemas/User'
         '401':
-          description: Unauthorized (token is missing, invalid, or expired)
+          description: >
+            Unauthorized (token is missing, invalid, expired, or issued before
+            the user's sessionsRevokedAt — code SESSION_REVOKED, #156). The SPA
+            tries POST /api/auth/refresh before treating the user as signed out.
         '404':
           description: Not Found (user associated with token not found)
         '500':
@@ -314,23 +329,24 @@ paths:
       tags:
         - Authentication
       description: |
-        Actively revokes the caller's JWT server-side and clears the session cookie.
+        Actively revokes the caller's session server-side and clears both session cookies.
 
         Flow:
-        1. Reads and verifies the `token` cookie (requires a valid session).
-        2. Extracts the `jti` claim from the decoded payload.
+        1. Rejects a foreign `Origin` (or, without one, `Referer`) with 403 UNTRUSTED_ORIGIN.
+        2. Decodes the `token` cookie (jwt.decode — works for an expired token too).
         3. Calls addToDenylist(jti, remainingTtl) — token is immediately invalid in Redis.
-        4. Calls clearAuthCookie(res) — sets Set-Cookie: token=; Max-Age=0.
+        4. Revokes this device's session family when the `bliss_rt` cookie matches it (#156).
+        5. Clears `token` (Path=/) and `bliss_rt` (Path=/api/auth) with Max-Age=0.
 
-        Authentication required. Calling without a valid cookie returns 401.
+        Succeeds without a session too (nothing to revoke; cookies are cleared).
       security:
         - cookieAuth: []
       responses:
         '200':
-          description: Signed out. Cookie cleared and token revoked.
+          description: Signed out. Cookies cleared, token and session revoked.
           headers:
             Set-Cookie:
-              description: Clears the session cookie (token=; Max-Age=0; Path=/).
+              description: Clears both cookies (token=; Max-Age=0; Path=/ and bliss_rt=; Max-Age=0; Path=/api/auth).
               schema:
                 type: string
           content:
@@ -341,10 +357,164 @@ paths:
                   message:
                     type: string
                     example: 'Signed out successfully'
-        '401':
-          description: Unauthorized (cookie absent, token invalid, or already revoked)
+        '403':
+          description: Untrusted request origin (code UNTRUSTED_ORIGIN, #156)
         '500':
           description: Internal Server Error
+
+  /api/auth/refresh:
+    post:
+      summary: Rotate the refresh token and issue a new access token (#156)
+      tags:
+        - Authentication
+      description: |
+        Authenticated by the `bliss_rt` cookie only. The SPA calls it when a
+        request answers 401 (one in-flight call shared by concurrent 401s),
+        then retries the request once.
+
+        - Current token → rotated: new access + refresh cookies; the idle
+          clock resets (never past the 15-day absolute expiry).
+        - The token rotated within the last 10 s, from the same device → a new
+          access cookie only (concurrent tabs).
+        - The previous token from the same device after more than 10 s (a
+          lost response) → rotated again.
+        - Any other token of the family (reuse) → the whole family is revoked,
+          both cookies are cleared, 401 SESSION_REVOKED.
+
+        Origin-guarded. Rate limit: 60 per 5 minutes per IP. Integration keys
+        are refused (NOT_AVAILABLE_TO_INTEGRATIONS).
+      security:
+        - refreshCookieAuth: []
+      responses:
+        '200':
+          description: Session refreshed
+          headers:
+            Set-Cookie:
+              description: New `token` (Max-Age=900) and, on rotation, a new `bliss_rt`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '401':
+          description: >
+            No live session: SESSION_EXPIRED (no/malformed cookie, idle or
+            absolute expiry, user gone) or SESSION_REVOKED (revoked or reused).
+            Both cookies are cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum: [SESSION_EXPIRED, SESSION_REVOKED]
+        '403':
+          description: Untrusted request origin (UNTRUSTED_ORIGIN) or integration key
+        '405':
+          description: Method Not Allowed (only POST)
+        '429':
+          description: Too Many Requests
+
+  /api/auth/reauth:
+    get:
+      summary: Recent sign-in status (#156)
+      tags:
+        - Authentication
+      description: |
+        Whether the session's real sign-in (`auth_time`) is within the last
+        15 minutes — required to create an integration or a key and to approve
+        an OAuth connection — and which methods can confirm it.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recent:
+                    type: boolean
+                  methods:
+                    type: array
+                    items:
+                      type: string
+                      enum: [password, google]
+        '401':
+          description: Not signed in
+    post:
+      summary: Confirm identity with the password (#156)
+      tags:
+        - Authentication
+      description: |
+        Marks the session as freshly authenticated and issues a new access
+        cookie. The 15-day session cap is unchanged. A wrong password never
+        changes the session. Google accounts repeat Google sign-in instead
+        (prompt=select_account), which bumps the same session in google-token.
+        Origin-guarded; uses the sign-in rate limiter.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Confirmed (new access cookie)
+        '400':
+          description: NO_PASSWORD — the account has no password (use Google)
+        '401':
+          description: REAUTH_FAILED — wrong password (session left intact)
+        '403':
+          description: UNTRUSTED_ORIGIN, viewer, or integration key
+        '429':
+          description: Too Many Requests
+
+  /api/auth/sessions/revoke-others:
+    post:
+      summary: Sign out of all other devices (#156)
+      tags:
+        - Authentication
+      description: |
+        Authenticated by the refresh cookie (every role, viewers included).
+        Sets the user's sessionsRevokedAt and revokes every other session in
+        one transaction: other devices get 401 on their next request. This
+        device gets a fresh access cookie and stays signed in.
+        Origin-guarded; 3 per 15 minutes.
+      security:
+        - refreshCookieAuth: []
+      responses:
+        '200':
+          description: Other sessions revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: integer
+                    example: 2
+        '401':
+          description: SESSION_EXPIRED — no live session on this device
+        '403':
+          description: UNTRUSTED_ORIGIN or integration key
+        '429':
+          description: Too Many Requests
 
   /api/auth/change-password:
     put:
@@ -360,6 +530,12 @@ paths:
         and have no stored password hash).
 
         **Rate limit**: 3 attempts per 15-minute window.
+
+        **Sessions (#156):** on success every other device is signed out on its
+        next request (sessionsRevokedAt + every session revoked, in the same
+        transaction as the new hash). This device receives new `token` and
+        `bliss_rt` cookies and stays signed in. Origin-guarded
+        (403 UNTRUSTED_ORIGIN).
       security:
         - cookieAuth: []
       requestBody:
@@ -499,9 +675,11 @@ paths:
         1. Reads the signed NextAuth JWT from the request cookie using `getToken({ req, secret })`.
         2. Validates the token and extracts `token.id` (the application user ID).
         3. Looks up the user record in the database (`prisma.user.findUnique`).
-        4. Issues a **custom application JWT** (`{ userId, email, tenantId, jti }`, 24 h expiry,
-           signed with `JWT_SECRET`). Assigns role: 'admin' for new tenant owners.
-        5. Calls setAuthCookie(res, token) — JWT delivered as an HttpOnly cookie.
+        4. If the browser already holds a live session of the same user (`bliss_rt`, the
+           Google step-up for a recent sign-in, #156), that session's sign-in time becomes
+           now and a new 15-minute access cookie is issued (the 15-day cap is unchanged).
+        5. Otherwise starts a new session: 15-minute access cookie + `bliss_rt` refresh
+           cookie. A live session of a different user on this browser is revoked.
         6. Reads the `isNew` flag propagated through the NextAuth JWT callbacks.
         7. Redirects to `${FRONTEND_URL}/auth/callback?isNew=<bool>`.
            The token is NOT in the redirect URL.

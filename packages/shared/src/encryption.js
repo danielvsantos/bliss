@@ -170,4 +170,9 @@ export const encryptedFields = {
     // User.email so the gate can look an invite up by normalized address.
     email: { searchable: true },
   },
+  UserSession: {
+    // Signed-in device data (#156): user-agent summary and IP. Never logged.
+    userAgent: { searchable: false },
+    ipAddress: { searchable: false },
+  },
 };

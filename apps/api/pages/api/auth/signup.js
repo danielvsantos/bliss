@@ -3,11 +3,9 @@ import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import { AuthService } from '../../../services/auth.service';
 import { cors } from '../../../utils/cors.js';
-import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { DEFAULT_CATEGORIES } from '../../../lib/defaultCategories.js';
-import { setAuthCookie } from '../../../utils/cookieUtils.js';
+import { startSession } from '../../../services/session.service.js';
 import { normalizeEmail } from '../../../utils/normalizeEmail.js';
 import { isInviteOnly } from '../../../utils/signupMode.js';
 import {
@@ -18,12 +16,6 @@ import {
   INVITE_REQUIRED_BODY,
   SIGNUP_INVITE_REQUIRED,
 } from '../../../services/signupInvite.service.js';
-
-const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET_CURRENT or JWT_SECRET must be set in environment variables');
-}
-const TOKEN_EXPIRY = '24h';
 
 export default async function handler(req, res) {
   // Apply rate limiting
@@ -178,7 +170,7 @@ export default async function handler(req, res) {
     const preferredLocale = acceptLanguage.split(',')[0].replace(/-/g, '_');
     
     // Create everything in a transaction
-    const { user, tenant, token, inviteId } = await prisma.$transaction(async (tx) => {
+    const { user, tenant, inviteId } = await prisma.$transaction(async (tx) => {
       // First create the tenant
       const tenant = await tx.tenant.create({
         data: {
@@ -250,19 +242,7 @@ export default async function handler(req, res) {
         skipDuplicates: true,
       });
 
-      // Generate JWT token with a unique ID for revocation support
-      const token = jwt.sign(
-        {
-          jti: uuidv4(),
-          userId: user.id,
-          email: user.email, // This will be the decrypted email from the middleware
-          tenantId: tenant.id
-        },
-        JWT_SECRET,
-        { expiresIn: TOKEN_EXPIRY }
-      );
-
-      return { user, tenant, token, inviteId };
+      return { user, tenant, inviteId };
     });
 
     if (inviteId !== undefined) logInviteConsumed('credentials', inviteId, tenant.id);
@@ -270,8 +250,9 @@ export default async function handler(req, res) {
     // To ensure consistency with the signin response, nest tenant within user
     const userWithTenant = { ...user, tenant };
 
-    // Set HttpOnly cookie and return user info (no token in body)
-    setAuthCookie(res, token);
+    // Start a session (#156): access + refresh cookies, no token in the body.
+    // `user.email` is the decrypted email from the middleware.
+    await startSession(res, { id: user.id, tenantId: tenant.id, email: user.email }, req);
     res.status(StatusCodes.CREATED).json({
       message: "Signup successful",
       user: userWithTenant,

@@ -38,6 +38,21 @@ export function rememberReturnTo(search: string = window.location.search): void 
   }
 }
 
+/**
+ * Keep an explicit path across a full-page redirect — the Google step-up of
+ * the confirm-identity dialog (#156) returns the user to the page they were on
+ * (e.g. the OAuth consent request).
+ */
+export function rememberReturnToPath(path: string): void {
+  const value = safeReturnTo(path);
+  try {
+    if (value) sessionStorage.setItem(STORAGE_KEY, value);
+    else sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage unavailable (private mode): the user lands on the home page.
+  }
+}
+
 /** Read and clear the remembered returnTo. */
 export function consumeReturnTo(): string | null {
   try {
