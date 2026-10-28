@@ -71,7 +71,7 @@ describe('withAuth()', () => {
     await withAuth(handler)(req, res);
 
     expect(handler).toHaveBeenCalledOnce();
-    expect(req.user).toEqual(TEST_USER);
+    expect(req.user).toEqual({ ...TEST_USER, authenticatedAt: null });
   });
 
   it('attaches req.user from Bearer Authorization header as fallback', async () => {
@@ -82,7 +82,7 @@ describe('withAuth()', () => {
     await withAuth(handler)(req, res);
 
     expect(handler).toHaveBeenCalledOnce();
-    expect(req.user).toEqual(TEST_USER);
+    expect(req.user).toEqual({ ...TEST_USER, authenticatedAt: null });
   });
 
   it('returns 401 when no token is present', async () => {
@@ -157,7 +157,7 @@ describe('withAuth()', () => {
       await withAuth(handler)(req, res);
 
       expect(handler).toHaveBeenCalledOnce();
-      expect(req.user).toEqual(VIEWER_USER);
+      expect(req.user).toEqual({ ...VIEWER_USER, authenticatedAt: null });
     });
 
     it('blocks POST requests for viewer role with 403', async () => {
@@ -214,7 +214,7 @@ describe('withAuth()', () => {
       await withAuth(handler)(req, res);
 
       expect(handler).toHaveBeenCalledOnce();
-      expect(req.user).toEqual(TEST_USER);
+      expect(req.user).toEqual({ ...TEST_USER, authenticatedAt: null });
     });
   });
 
@@ -542,5 +542,71 @@ describe('withAuth() — integration tokens', () => {
         expect(line).not.toContain(keyHash);
       }
     });
+  });
+});
+
+describe('withAuth() session lifecycle (#156)', () => {
+  const REVOKED_AT = new Date('2026-10-26T12:00:00.000Z');
+
+  it('exposes authenticatedAt from the auth_time claim', async () => {
+    (mockJwt.verify as ReturnType<typeof vi.fn>).mockReturnValue({ userId: 1, jti: 'j', auth_time: 1_790_000_000 });
+    const handler = vi.fn().mockResolvedValue(undefined);
+    const req = makeReq({ cookies: { token: VALID_TOKEN } });
+
+    await withAuth(handler)(req, makeRes());
+
+    expect(req.user.authenticatedAt).toEqual(new Date(1_790_000_000 * 1000));
+  });
+
+  it('refuses an access token issued before sessionsRevokedAt (iat_ms)', async () => {
+    (mockPrisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ ...TEST_USER, sessionsRevokedAt: REVOKED_AT });
+    (mockJwt.verify as ReturnType<typeof vi.fn>).mockReturnValue({ userId: 1, jti: 'j', iat_ms: REVOKED_AT.getTime() - 1 });
+    const handler = vi.fn();
+    const res = makeRes();
+
+    await withAuth(handler)(makeReq({ cookies: { token: VALID_TOKEN } }), res);
+
+    expect(res.status).toHaveBeenCalledWith(StatusCodes.UNAUTHORIZED);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SESSION_REVOKED' }));
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('accepts a token minted at the revocation instant (the device that revoked)', async () => {
+    (mockPrisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ ...TEST_USER, sessionsRevokedAt: REVOKED_AT });
+    (mockJwt.verify as ReturnType<typeof vi.fn>).mockReturnValue({ userId: 1, jti: 'j', iat_ms: REVOKED_AT.getTime() });
+    const handler = vi.fn().mockResolvedValue(undefined);
+
+    await withAuth(handler)(makeReq({ cookies: { token: VALID_TOKEN } }), makeRes());
+
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('compares a legacy token (no iat_ms) by iat seconds', async () => {
+    (mockPrisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ ...TEST_USER, sessionsRevokedAt: REVOKED_AT });
+    const before = Math.floor(REVOKED_AT.getTime() / 1000) - 60;
+    (mockJwt.verify as ReturnType<typeof vi.fn>).mockReturnValue({ userId: 1, jti: 'j', iat: before });
+    const res = makeRes();
+
+    await withAuth(vi.fn())(makeReq({ cookies: { token: VALID_TOKEN } }), res);
+    expect(res.status).toHaveBeenCalledWith(StatusCodes.UNAUTHORIZED);
+
+    (mockJwt.verify as ReturnType<typeof vi.fn>).mockReturnValue({ userId: 1, jti: 'j', iat: before + 120 });
+    const handler = vi.fn().mockResolvedValue(undefined);
+    const req = makeReq({ cookies: { token: VALID_TOKEN } });
+    await withAuth(handler)(req, makeRes());
+    expect(handler).toHaveBeenCalledOnce();
+    expect(req.user.authenticatedAt).toBeNull();
+  });
+
+  it('treats a revoked session as anonymous on optional routes', async () => {
+    (mockPrisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ ...TEST_USER, sessionsRevokedAt: REVOKED_AT });
+    (mockJwt.verify as ReturnType<typeof vi.fn>).mockReturnValue({ userId: 1, jti: 'j', iat_ms: 0 });
+    const handler = vi.fn().mockResolvedValue(undefined);
+    const req = makeReq({ cookies: { token: VALID_TOKEN } });
+
+    await withAuth(handler, { optional: true })(req, makeRes());
+
+    expect(req.user).toBeNull();
+    expect(handler).toHaveBeenCalledOnce();
   });
 });

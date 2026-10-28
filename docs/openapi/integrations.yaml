@@ -200,7 +200,18 @@ paths:
                   apiKey: { $ref: '#/components/schemas/ApiKey' }
                   token: { $ref: '#/components/schemas/Token' }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: >
+            Not an admin, an integration token, or REAUTH_REQUIRED — the
+            caller's sign-in is older than 15 minutes (#156). Confirm identity
+            with POST /api/auth/reauth (or a repeated Google sign-in) and retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string, example: REAUTH_REQUIRED }
 
   /api/integrations/{id}:
     parameters:
@@ -280,7 +291,18 @@ paths:
                   apiKey: { $ref: '#/components/schemas/ApiKey' }
                   token: { $ref: '#/components/schemas/Token' }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: >
+            Not an admin, an integration token, or REAUTH_REQUIRED — the
+            caller's sign-in is older than 15 minutes (#156). Confirm identity
+            with POST /api/auth/reauth (or a repeated Google sign-in) and retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string, example: REAUTH_REQUIRED }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: 'The integration is revoked (code INTEGRATION_REVOKED).'

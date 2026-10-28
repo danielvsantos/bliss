@@ -373,7 +373,17 @@ const en = {
         tenant_name_description: "This is the name of your organization or personal finance profile.",
         user_management_label: "User Management",
         user_management_button: "Manage Users",
-        user_management_description: "Manage users with access to your tenant account."
+        user_management_description: "Manage users with access to your tenant account.",
+        sign_out_others: {
+          label: "Other devices",
+          description: "Sign out everywhere except this device. Your other browsers and installed apps will need to sign in again.",
+          button: "Sign out of all other devices",
+          confirm_title: "Sign out of all other devices?",
+          confirm_description: "Every other browser and installed app signed in to your account is signed out on its next request. This device stays signed in.",
+          confirm: "Sign out others",
+          success: "Other devices have been signed out.",
+          error: "Could not sign out other devices. Please try again.",
+        },
       },
       countries: {
         title: "Countries",
@@ -515,6 +525,17 @@ const en = {
       goBack: "Go back to homepage",
     },
     login: {
+      confirm_identity: {
+        title: "Confirm it's you",
+        description: "For your security, please confirm your identity to continue. This is needed when your last sign-in was more than 15 minutes ago.",
+        password_label: "Password",
+        confirm: "Confirm",
+        google: "Continue with Google",
+        divider: "or",
+        wrong_password: "Incorrect password. Please try again.",
+        error: "Could not confirm your identity. Please try again.",
+        no_method: "This account cannot confirm its identity here. Sign out and sign in again, then retry.",
+      },
       title: "Login",
       subtitle: "Sign in to your account",
       noAccount: "Don't have an account?",

@@ -26,6 +26,12 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// The confirm-identity dialog (#156) reads useAuth for the Google step-up.
+const mockSignInWithGoogle = vi.fn();
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => ({ signInWithGoogle: mockSignInWithGoogle }),
+}));
+
 const T = 'pages.settings.integrations';
 const TOKEN = 'bliss_AbCdEfGh_0123456789abcdefghijABCDEFGHIJklmnopqrstu';
 
@@ -71,6 +77,8 @@ function listReturns(integrations: unknown[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Signed in recently by default: no confirm-identity prompt (#156).
+  server.use(http.get('/api/auth/reauth', () => HttpResponse.json({ recent: true, methods: ['password'] })));
 });
 
 describe('IntegrationsTab', () => {
@@ -124,7 +132,7 @@ describe('IntegrationsTab', () => {
     renderTab();
 
     await user.click(await screen.findByText(`${T}.create`));
-    await user.type(screen.getByLabelText(`${T}.form.name_label`), 'Claude agent');
+    await user.type(await screen.findByLabelText(`${T}.form.name_label`), 'Claude agent');
     await user.click(screen.getByRole('radio', { name: new RegExp(`^${T}.access_read_write`) }));
     await user.click(screen.getByLabelText(`${T}.form.expiry_never`));
     expect(screen.getByText(`${T}.form.no_expiry_warning`)).toBeInTheDocument();
@@ -150,7 +158,7 @@ describe('IntegrationsTab', () => {
     // Reopening starts from a clean form, never the old token.
     await user.click(screen.getByText(`${T}.create`));
     expect(screen.queryByTestId('token-reveal')).not.toBeInTheDocument();
-    expect(screen.getByLabelText(`${T}.form.name_label`)).toHaveValue('');
+    expect(await screen.findByLabelText(`${T}.form.name_label`)).toHaveValue('');
   });
 
   it('requires a name', async () => {
@@ -158,7 +166,7 @@ describe('IntegrationsTab', () => {
     const user = userEvent.setup();
     renderTab();
     await user.click(await screen.findByText(`${T}.create`));
-    await user.click(screen.getByText(`${T}.form.create_submit`));
+    await user.click(await screen.findByText(`${T}.form.create_submit`));
     expect(screen.getByText(`${T}.form.name_required`)).toBeInTheDocument();
   });
 
@@ -168,7 +176,7 @@ describe('IntegrationsTab', () => {
     const user = userEvent.setup();
     renderTab();
     await user.click(await screen.findByText(`${T}.create`));
-    await user.type(screen.getByLabelText(`${T}.form.name_label`), 'x');
+    await user.type(await screen.findByLabelText(`${T}.form.name_label`), 'x');
     await user.click(screen.getByText(`${T}.form.create_submit`));
     await waitFor(() => expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' })));
     expect(screen.queryByTestId('token-reveal')).not.toBeInTheDocument();
@@ -186,7 +194,7 @@ describe('IntegrationsTab', () => {
     const user = userEvent.setup();
     renderTab();
     await user.click(await screen.findByText(`${T}.add_key`));
-    await user.type(screen.getByLabelText(`${T}.form.key_name_label`), 'CI');
+    await user.type(await screen.findByLabelText(`${T}.form.key_name_label`), 'CI');
     await user.click(screen.getByLabelText(`${T}.form.expiry_30`));
     await user.click(screen.getByText(`${T}.form.add_key_submit`));
     const reveal = await screen.findByTestId('token-reveal');
@@ -288,6 +296,67 @@ describe('TokenReveal — MCP snippet (#89)', () => {
     const copied = await navigator.clipboard.readText();
     expect(copied).toMatch(new RegExp(`^claude mcp add --transport http bliss \\S+/api/mcp --header "Authorization: Bearer ${TOKEN}"$`));
     expect(await within(snippet).findByText(`${T}.reveal.copied`)).toBeInTheDocument();
+  });
+});
+
+describe('IntegrationsTab — recent sign-in (#156)', () => {
+  it('asks to confirm identity before opening the create form, then opens it', async () => {
+    listReturns([]);
+    server.use(
+      http.get('/api/auth/reauth', () => HttpResponse.json({ recent: false, methods: ['password'] })),
+      http.post('/api/auth/reauth', () => HttpResponse.json({ ok: true })),
+    );
+    const user = userEvent.setup();
+    renderTab();
+
+    await user.click(await screen.findByText(`${T}.create`));
+    expect(await screen.findByTestId('confirm-identity-dialog')).toBeInTheDocument();
+    expect(screen.queryByLabelText(`${T}.form.name_label`)).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('pages.login.confirm_identity.password_label'), 'pw');
+    await user.click(screen.getByText('pages.login.confirm_identity.confirm'));
+
+    expect(await screen.findByLabelText(`${T}.form.name_label`)).toBeInTheDocument();
+  });
+
+  it('does not open the form when the confirmation is cancelled', async () => {
+    listReturns([]);
+    server.use(http.get('/api/auth/reauth', () => HttpResponse.json({ recent: false, methods: ['password'] })));
+    const user = userEvent.setup();
+    renderTab();
+
+    await user.click(await screen.findByText(`${T}.create`));
+    await user.click(await screen.findByText('common.cancel'));
+
+    await waitFor(() => expect(screen.queryByTestId('confirm-identity-dialog')).not.toBeInTheDocument());
+    expect(screen.queryByLabelText(`${T}.form.name_label`)).not.toBeInTheDocument();
+  });
+
+  it('retries the create after a REAUTH_REQUIRED that happens while the form is open', async () => {
+    listReturns([]);
+    let posts = 0;
+    server.use(
+      http.post('/api/auth/reauth', () => HttpResponse.json({ ok: true })),
+      http.post('/api/integrations', () => {
+        posts += 1;
+        return posts === 1
+          ? HttpResponse.json({ code: 'REAUTH_REQUIRED' }, { status: 403 })
+          : HttpResponse.json({ integration: INTEGRATION, apiKey: KEY, token: TOKEN }, { status: 201 });
+      }),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderTab();
+
+    await user.click(await screen.findByText(`${T}.create`));
+    await user.type(await screen.findByLabelText(`${T}.form.name_label`), 'Agent');
+    await user.click(screen.getByText(`${T}.form.create_submit`));
+
+    await user.type(await screen.findByLabelText('pages.login.confirm_identity.password_label'), 'pw');
+    await user.click(screen.getByText('pages.login.confirm_identity.confirm'));
+
+    expect(await screen.findByTestId('token-reveal')).toBeInTheDocument();
+    expect(posts).toBe(2);
   });
 });
 

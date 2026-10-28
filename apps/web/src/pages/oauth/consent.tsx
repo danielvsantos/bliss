@@ -6,6 +6,7 @@ import { AlertTriangle, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 
 import api from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
+import { useRecentAuth } from '@/hooks/use-recent-auth';
 import { withAuth } from '@/components/withAuth';
 import { Logo } from '@/components/logo';
 import { Card } from '@/components/ui/card';
@@ -20,6 +21,10 @@ import type { IntegrationAccessLevel, KeyExpiryDays } from '@/types/integrations
  * here (via /api/oauth/authorize) to approve access to Bliss through the MCP
  * server. Approving creates an integration (#84) that shows up in Settings →
  * Integrations; the browser is then sent back to the app with a one-time code.
+ *
+ * Approving requires a sign-in within 15 minutes (#156): the page checks on
+ * load, so a Google step-up (which lands back on this same consent request)
+ * happens before the user reads the form, and again on a REAUTH_REQUIRED.
  */
 
 const T = 'pages.oauth.consent';
@@ -48,6 +53,7 @@ function OAuthConsentPage() {
   const [expiry, setExpiry] = useState('90');
   const [submitting, setSubmitting] = useState<'approve' | 'deny' | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const recentAuth = useRecentAuth(`/oauth/consent?request=${encodeURIComponent(requestId)}`);
 
   const consent = useQuery({
     queryKey: ['oauth-consent', requestId],
@@ -56,6 +62,13 @@ function OAuthConsentPage() {
     retry: false,
     staleTime: Infinity,
   });
+
+  // Confirm identity up front for admins who can approve (#156).
+  const canApprove = consent.data?.canApprove === true;
+  const { ensureRecentAuth } = recentAuth;
+  useEffect(() => {
+    if (canApprove) void ensureRecentAuth();
+  }, [canApprove, ensureRecentAuth]);
 
   // Never offer more than the app asked for.
   useEffect(() => {
@@ -68,7 +81,8 @@ function OAuthConsentPage() {
     try {
       const option = EXPIRY_OPTIONS.find((o) => o.value === expiry);
       const { redirectUrl } = kind === 'approve'
-        ? await api.approveOAuthRequest(requestId, { accessLevel, expiresInDays: option ? option.days : 90 })
+        ? await recentAuth.withReauthRetry(() =>
+          api.approveOAuthRequest(requestId, { accessLevel, expiresInDays: option ? option.days : 90 }))
         : await api.denyOAuthRequest(requestId);
       window.location.assign(redirectUrl);
     } catch (error) {
@@ -221,6 +235,7 @@ function OAuthConsentPage() {
           </>
         )}
       </Card>
+      {recentAuth.dialog}
     </div>
   );
 }

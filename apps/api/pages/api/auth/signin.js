@@ -3,17 +3,9 @@ import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import { AuthService } from '../../../services/auth.service';
 import { cors } from '../../../utils/cors.js';
-import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
 import { rateLimiters } from '../../../utils/rateLimit.js';
-import { setAuthCookie } from '../../../utils/cookieUtils.js';
 import { normalizeEmail } from '../../../utils/normalizeEmail.js';
-
-const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET_CURRENT or JWT_SECRET must be set in environment variables');
-}
-const TOKEN_EXPIRY = '24h';
+import { startSession } from '../../../services/session.service.js';
 
 // Simple email validation regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -89,20 +81,9 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Generate JWT token with a unique ID for revocation support
-    const token = jwt.sign(
-      {
-        jti: uuidv4(),
-        userId: user.id,
-        tenantId: user.tenant.id,
-        email: user.email
-      },
-      JWT_SECRET,
-      { expiresIn: TOKEN_EXPIRY }
-    );
-
-    // Set HttpOnly cookie and return user info (no token in body)
-    setAuthCookie(res, token);
+    // Start a session (#156): 15-min access cookie + rotating refresh cookie.
+    // No token in the body.
+    await startSession(res, { id: user.id, tenantId: user.tenant.id, email: user.email }, req);
     res.status(StatusCodes.OK).json({
       user: {
         id: user.id,

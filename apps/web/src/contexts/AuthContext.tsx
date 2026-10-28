@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import api from '../lib/api';
+import api, { resetSessionExpired } from '../lib/api';
 import { AxiosError } from 'axios';
 import type { User } from '../types/api';
 import { updateTenantMetaFromAPI } from '@/utils/tenantMetaStorage';
 import { toast } from '@/hooks/use-toast';
-import { rememberReturnTo } from '@/lib/return-to';
+import { rememberReturnTo, rememberReturnToPath } from '@/lib/return-to';
 import { clearPersistedQueryCache } from '@/lib/query-client';
 import {
   AuthContext,
   type SignUpData,
   type SignInData,
   type SignUpResponse,
+  type GoogleSignInOptions,
 } from './auth-context-value';
 
 interface APIErrorResponse {
@@ -55,6 +56,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       const session = await api.getSession();
       if (session?.user) {
+        // Signed in again: a later expiry must notify again (#156).
+        resetSessionExpired();
         setUser(session.user);
         // Also update tenant meta when session is checked
         if (session.user.tenant?.id) {
@@ -143,11 +146,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (options: GoogleSignInOptions = {}) => {
     try {
       setError(null);
-      // Google sign-in leaves the SPA: keep ?returnTo for pages/auth/callback.tsx.
-      rememberReturnTo();
+      // Google sign-in leaves the SPA: keep ?returnTo (or the step-up's
+      // explicit path, #156) for pages/auth/callback.tsx.
+      if (options.returnTo) rememberReturnToPath(options.returnTo);
+      else rememberReturnTo();
       const apiUrl = (import.meta.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
       // Step 1: fetch CSRF token cross-origin (NextAuth requires this for OAuth initiation)
@@ -157,7 +162,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Step 2: submit a form POST — the correct NextAuth v4 pattern to trigger an OAuth redirect
       const form = document.createElement('form');
       form.method = 'POST';
-      form.action = `${apiUrl}/api/auth/signin/google`;
+      // NextAuth forwards query parameters to Google's authorization URL.
+      form.action = options.prompt
+        ? `${apiUrl}/api/auth/signin/google?prompt=${encodeURIComponent(options.prompt)}`
+        : `${apiUrl}/api/auth/signin/google`;
 
       const addHidden = (name: string, value: string) => {
         const input = document.createElement('input');

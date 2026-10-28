@@ -588,3 +588,28 @@ describe('i18n parity — installable PWA (#155)', () => {
     });
   }
 });
+
+// Longer-lived sessions (#156): Settings → General "Sign out of all other
+// devices" and the confirm-identity dialog of the recent sign-in rule.
+const SESSION_KEYS = [
+  ...['label', 'description', 'button', 'confirm_title', 'confirm_description', 'confirm', 'success', 'error']
+    .map((k) => `pages.settings.general.sign_out_others.${k}`),
+  ...['title', 'description', 'password_label', 'confirm', 'google', 'divider', 'wrong_password', 'error', 'no_method']
+    .map((k) => `pages.login.confirm_identity.${k}`),
+];
+// Words that are legitimately the same as English in a locale.
+const SAME_AS_EN = new Set(['it:pages.login.confirm_identity.password_label']);
+
+describe('i18n parity — longer-lived sessions (#156)', () => {
+  for (const key of SESSION_KEYS) {
+    it(`"${key}" is a translated, non-empty string in every locale`, () => {
+      const enValue = resolve(en, key);
+      for (const [lang, dict] of Object.entries(LOCALES)) {
+        const v = resolve(dict, key);
+        expect(typeof v, `${lang}:${key}`).toBe('string');
+        expect((v as string).trim().length, `${lang}:${key}`).toBeGreaterThan(0);
+        if (lang !== 'en' && !SAME_AS_EN.has(`${lang}:${key}`)) expect(v, `${lang}:${key}`).not.toBe(enValue);
+      }
+    });
+  }
+});

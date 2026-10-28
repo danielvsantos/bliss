@@ -113,6 +113,7 @@ The migration is hand-written (`20261002120000_add_oauth`) and is applied with `
   - **Allow** and **Deny** buttons
 
   Non-admins see "Only a workspace admin can connect apps", with Deny only. After a decision the page calls `window.location.assign(redirectUrl)`.
+- **Recent sign-in (#156).** `POST /api/oauth/requests/:id/approve` answers `403 REAUTH_REQUIRED` unless the admin signed in (password or Google) within the last 15 minutes. The consent page checks `GET /api/auth/reauth` as soon as it knows the user can approve, so the confirm-identity dialog — and a Google step-up, which returns to `/oauth/consent?request=<id>` through the same `sessionStorage` return path — happens before the user reads the form. The request lives 10 minutes, which is ample. A `REAUTH_REQUIRED` on Allow re-opens the dialog and retries once. A request that expired during the detour shows the normal expired-request error.
 - **Return to the page after sign-in.** The web `withAuth` sends signed-out users to `/auth?returnTo=<path>`. Sign-in navigates back, and Google sign-in carries the value through `sessionStorage`. `lib/return-to.ts` only accepts same-origin relative paths, so this can't become an open redirect.
 - **Settings → Integrations** shows **Connected via OAuth · <client>** and the connection expiry. It hides **Add key** and the key list for these connections; Revoke is unchanged.
 - The strings live under `pages.oauth.consent.*` and `pages.settings.integrations.oauth.*`, in 5 locales.

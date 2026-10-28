@@ -53,6 +53,7 @@ import {
   KeyRound,
   Landmark,
   Activity,
+  LogOut,
 } from "lucide-react";
 import { useTenantSettings, useUpdateTenantSettings } from "@/hooks/use-tenant-settings";
 
@@ -70,6 +71,7 @@ import {
 } from "@/components/settings/multi-select-combobox";
 import { SaveConfirmation } from "@/components/settings/save-confirmation";
 import { ChangePasswordDialog } from "@/components/settings/change-password-dialog";
+import { SignOutOthersDialog } from "@/components/settings/sign-out-others-dialog";
 import { InstallAppCard } from "@/components/pwa/install-app-card";
 
 /* ─── Types ─────────────────────────────────────────── */
@@ -180,6 +182,7 @@ export default function SettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [signOutOthersOpen, setSignOutOthersOpen] = useState(false);
 
   // AI Classification thresholds
   const [aiAutoPromote, setAiAutoPromote] = useState<number>(95);
@@ -529,6 +532,26 @@ export default function SettingsPage() {
                     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setChangePasswordOpen(true)}>
                       <Lock className="h-3.5 w-3.5" />
                       Change Password
+                    </Button>
+                  </div>
+
+                  {/* Session lifecycle (#156): every role, this device stays signed in. */}
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <Label>{t("pages.settings.general.sign_out_others.label")}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t("pages.settings.general.sign_out_others.description")}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => setSignOutOthersOpen(true)}
+                      data-testid="sign-out-others"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      {t("pages.settings.general.sign_out_others.button")}
                     </Button>
                   </div>
                 </div>
@@ -1073,6 +1096,7 @@ export default function SettingsPage() {
       </Tabs>
 
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
+      <SignOutOthersDialog open={signOutOthersOpen} onOpenChange={setSignOutOthersOpen} />
     </div>
   );
 }

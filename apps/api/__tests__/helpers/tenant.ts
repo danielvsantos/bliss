@@ -44,9 +44,10 @@ export async function createIsolatedTenant(suffix = ''): Promise<IsolatedTenant>
     },
   });
 
-  // Mint a short-lived JWT token signed with the test secret
+  // Mint a short-lived JWT token signed with the test secret. `auth_time` =
+  // now, like a fresh sign-in, so recent-sign-in routes (#156) accept it.
   const token = jwt.sign(
-    { jti: uuidv4(), userId: user.id, tenantId: tenant.id },
+    { jti: uuidv4(), userId: user.id, tenantId: tenant.id, auth_time: Math.floor(Date.now() / 1000) },
     JWT_SECRET,
     { expiresIn: '1h' }
   );

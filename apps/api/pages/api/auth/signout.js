@@ -2,9 +2,10 @@ import { StatusCodes } from 'http-status-codes';
 import { cors } from '../../../utils/cors.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import * as Sentry from '@sentry/nextjs';
-import { clearAuthCookie } from '../../../utils/cookieUtils.js';
 import jwt from 'jsonwebtoken';
 import { addToDenylist } from '../../../utils/denylist.js';
+import { requireTrustedOrigin } from '../../../utils/trustedOrigin.js';
+import { revokeSession } from '../../../services/session.service.js';
 
 export default async function handler(req, res) {
   // Apply rate limiting
@@ -24,6 +25,8 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (!requireTrustedOrigin(req, res)) return;
+
   try {
     // Revoke the current token by adding its jti to the denylist
     const token = req.cookies?.token;
@@ -41,8 +44,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // Clear the HttpOnly auth cookie so the browser discards it immediately.
-    clearAuthCookie(res);
+    // Revoke this device's session (#156) and clear both cookies so the
+    // browser discards them immediately.
+    await revokeSession(req, res);
     res.status(StatusCodes.OK).json({ message: 'Signed out successfully' });
   } catch (error) {
     Sentry.captureException(error);

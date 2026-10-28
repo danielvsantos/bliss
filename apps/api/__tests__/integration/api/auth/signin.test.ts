@@ -25,9 +25,9 @@ vi.mock('../../../../utils/cors.js', () => ({
   cors: (_req: unknown, _res: unknown) => false,
 }));
 
-// Mock cookieUtils
-vi.mock('../../../../utils/cookieUtils.js', () => ({
-  setAuthCookie: vi.fn(),
+// Mock the session service (#156) — its own tests cover the cookies.
+vi.mock('../../../../services/session.service.js', () => ({
+  startSession: vi.fn().mockResolvedValue({ sessionId: 'sess' }),
 }));
 
 // Mock Prisma
@@ -65,8 +65,7 @@ vi.mock('uuid', () => ({
 }));
 
 import handler from '../../../../pages/api/auth/signin.js';
-import { setAuthCookie } from '../../../../utils/cookieUtils.js';
-import jwt from 'jsonwebtoken';
+import { startSession as setAuthCookie } from '../../../../services/session.service.js';
 
 // ---------------------------------------------------------------------------
 // req / res factories
@@ -186,7 +185,7 @@ describe('POST /api/auth/signin', () => {
     expect(mockVerifyAndUpgrade).toHaveBeenCalledWith(TEST_USER, 'wrong-password');
   });
 
-  it('returns 200 with user object and calls setAuthCookie on success', async () => {
+  it('returns 200 with user object and starts a session on success', async () => {
     mockPrisma.user.findFirst.mockResolvedValueOnce(TEST_USER);
     mockVerifyAndUpgrade.mockResolvedValueOnce(true);
 
@@ -206,11 +205,10 @@ describe('POST /api/auth/signin', () => {
       },
     });
 
-    expect(setAuthCookie).toHaveBeenCalledWith(res, 'mock-jwt-token');
-    expect(jwt.sign).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 1, tenantId: 'tenant-1', email: 'test@example.com' }),
-      expect.any(String),
-      expect.objectContaining({ expiresIn: '24h' }),
+    expect(setAuthCookie).toHaveBeenCalledWith(
+      res,
+      { id: 1, tenantId: 'tenant-1', email: 'test@example.com' },
+      req,
     );
   });
 

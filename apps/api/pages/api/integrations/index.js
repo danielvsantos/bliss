@@ -4,6 +4,7 @@ import prisma from '../../../prisma/prisma.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { cors } from '../../../utils/cors.js';
 import { withAuth } from '../../../utils/withAuth.js';
+import { requireRecentAuth } from '../../../utils/recentAuth.js';
 import {
   API_KEY_PUBLIC_SELECT,
   OAUTH_CLIENT_INCLUDE,
@@ -56,6 +57,9 @@ export default withAuth(async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      // Minting a key requires a sign-in within the last 15 minutes (#156).
+      if (!requireRecentAuth(req, res)) return;
+
       const parsed = validateCreateIntegration(req.body);
       if (!parsed.ok) {
         return res.status(StatusCodes.BAD_REQUEST).json({ error: parsed.error });

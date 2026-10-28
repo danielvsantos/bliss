@@ -4,6 +4,7 @@ import prisma from '../../../../../prisma/prisma.js';
 import { rateLimiters } from '../../../../../utils/rateLimit.js';
 import { cors } from '../../../../../utils/cors.js';
 import { withAuth } from '../../../../../utils/withAuth.js';
+import { requireRecentAuth } from '../../../../../utils/recentAuth.js';
 import {
   API_KEY_PUBLIC_SELECT,
   buildApiKey,
@@ -39,6 +40,9 @@ export default withAuth(async function handler(req, res) {
       res.setHeader('Allow', ['POST']);
       return res.status(StatusCodes.METHOD_NOT_ALLOWED).json({ error: `Method ${req.method} Not Allowed` });
     }
+
+    // Minting a key requires a sign-in within the last 15 minutes (#156).
+    if (!requireRecentAuth(req, res)) return;
 
     const integration = typeof id === 'string'
       ? await prisma.integration.findFirst({ where: { id, tenantId } })

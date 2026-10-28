@@ -20,7 +20,10 @@ const { mockPrisma } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../prisma/prisma.js', () => ({ default: mockPrisma }));
-vi.mock('../../../utils/cookieUtils.js', () => ({ setAuthCookie: vi.fn() }));
+const { mockSession } = vi.hoisted(() => ({
+  mockSession: { findLiveSession: vi.fn(), reauthenticate: vi.fn() },
+}));
+vi.mock('../../../services/session.service.js', () => mockSession);
 
 import { getToken } from 'next-auth/jwt';
 const mockGetToken = getToken as ReturnType<typeof vi.fn>;
@@ -83,6 +86,33 @@ describe('GET /api/auth/google-token', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._redirectUrl).toMatch(/isNew=true/);
+  });
+
+  it('starts or steps up the session through reauthenticate (#156)', async () => {
+    const live = { id: 'sess', userId: 1, tenantId: 'tenant-abc' };
+    mockSession.findLiveSession.mockResolvedValue(live);
+    mockGetToken.mockResolvedValue({ id: 1, email: 'user@test.com', isNew: false });
+    const user = { id: 1, email: 'user@test.com', tenantId: 'tenant-abc', name: 'Test User' };
+    mockPrisma.user.findUnique.mockResolvedValue(user);
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(mockSession.reauthenticate).toHaveBeenCalledWith(req, res, user, { session: live });
+    expect(res._redirectUrl).toMatch(/\/auth\/callback/);
+  });
+
+  it('redirects with oauth_failed when the session cannot be issued', async () => {
+    mockGetToken.mockResolvedValue({ id: 1, email: 'user@test.com' });
+    mockPrisma.user.findUnique.mockResolvedValue({ id: 1, email: 'user@test.com', tenantId: 't' });
+    mockSession.findLiveSession.mockResolvedValue(null);
+    mockSession.reauthenticate.mockRejectedValueOnce(new Error('db down'));
+
+    const res = makeRes();
+    await handler(makeReq() as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._redirectUrl).toMatch(/error=oauth_failed/);
   });
 
   it('redirects with error when nextAuthToken is missing', async () => {

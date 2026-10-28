@@ -373,7 +373,17 @@ const pt = {
         tenant_name_description: "Este é o nome da sua organização ou perfil de finanças pessoais.",
         user_management_label: "Gestão de Usuários",
         user_management_button: "Gerenciar Usuários",
-        user_management_description: "Gerencie os usuários com acesso à sua conta."
+        user_management_description: "Gerencie os usuários com acesso à sua conta.",
+        sign_out_others: {
+          label: "Outros dispositivos",
+          description: "Saia em todos os lugares, exceto neste dispositivo. Seus outros navegadores e apps instalados precisarão entrar novamente.",
+          button: "Sair de todos os outros dispositivos",
+          confirm_title: "Sair de todos os outros dispositivos?",
+          confirm_description: "Todos os outros navegadores e apps instalados conectados à sua conta serão desconectados na próxima solicitação. Este dispositivo continua conectado.",
+          confirm: "Desconectar os outros",
+          success: "Os outros dispositivos foram desconectados.",
+          error: "Não foi possível desconectar os outros dispositivos. Tente novamente.",
+        },
       },
       countries: {
         title: "Países",
@@ -515,6 +525,17 @@ const pt = {
       goBack: "Voltar para a página inicial",
     },
     login: {
+      confirm_identity: {
+        title: "Confirme que é você",
+        description: "Para sua segurança, confirme sua identidade para continuar. Isso é necessário quando seu último login foi há mais de 15 minutos.",
+        password_label: "Senha",
+        confirm: "Confirmar",
+        google: "Continuar com o Google",
+        divider: "ou",
+        wrong_password: "Senha incorreta. Tente novamente.",
+        error: "Não foi possível confirmar sua identidade. Tente novamente.",
+        no_method: "Esta conta não pode confirmar a identidade aqui. Saia, entre novamente e tente outra vez.",
+      },
       title: "Entrar",
       subtitle: "Acesse sua conta",
       noAccount: "Não tem uma conta?",

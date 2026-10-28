@@ -7,6 +7,7 @@ import { AuthProvider } from './AuthContext';
 import { useAuth } from '@/hooks/use-auth';
 
 vi.mock('@/lib/api', () => ({
+  resetSessionExpired: vi.fn(),
   default: {
     getSession: vi.fn(),
     signin: vi.fn(),
