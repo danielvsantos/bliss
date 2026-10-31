@@ -118,13 +118,14 @@ See what your holdings and benefits are expected to pay over the next 12, 24 or 
 - **By holding or by account** — One row per security (cash per currency) even if you hold it in several accounts, with per-account detail one click away
 - **Computed on read** — Nothing is stored, so changing a rate or a holding updates the projection immediately
 
-#### Secure Bank Sync via Plaid
+#### Secure Bank Sync via Plaid or Enable Banking
 
-- **One-click bank linking** — Connect checking, savings, credit cards, and investment accounts
-- **Cursor-based incremental sync** — Automatic transaction fetching with up to 2 years of history on first connect
-- **Multi-institution support** — Thousands of financial institutions across countries
-- **Connection health monitoring** — Sync logs, re-auth handling, automated token rotation
-- **Encrypted at rest** — Plaid access tokens and raw payloads stored with AES-256-GCM
+Two bank feeds, one review queue. Pick the one that covers your bank, right in the first-run setup:
+
+- **Plaid (US, Canada, UK)** — One-click linking of checking, savings, credit cards and investment accounts; cursor-based incremental sync with up to 2 years of history on first connect; re-auth handling and automated token rotation. Needs server keys (`PLAID_CLIENT_ID` / `PLAID_SECRET`)
+- **Enable Banking (EU, PSD2)** — Connect EU banks (Revolut ES first) through the bank's own PSD2 consent page. Each workspace brings its own Enable Banking application (app ID + private key in Settings → Bank sync, or during onboarding), so there are no env vars; booked transactions only, with a reminder before the consent expires. See the [Enable Banking guide](https://blissfinance.co/docs/guides/enable-banking)
+- **Connection health monitoring** — Sync logs and reconnect prompts for both providers
+- **Encrypted at rest** — Plaid access tokens, Enable Banking credentials and raw payloads stored with AES-256-GCM
 
 ### Built for AI Agents
 
@@ -147,7 +148,7 @@ Host completely isolated financial environments for family, friends, or a partne
 
 #### AES-256-GCM Encryption at Rest
 
-Self-hosted doesn't mean risk-free. Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database. Classification lookup tables use SHA-256 hashes instead of plaintext for performance indexes. A documented [key rotation procedure](https://blissfinance.co/docs/guides/key-rotation) covers `ENCRYPTION_SECRET` and every other Bliss-owned secret. No telemetry, no cloud sync, no third-party analytics — every byte stays on your hardware, except what you choose to send to an LLM provider or hand to an AI agent you connect.
+Self-hosted doesn't mean risk-free. Transaction descriptions, account numbers, and Plaid access tokens are encrypted before they reach the database, and so are Enable Banking application keys. Classification lookup tables use SHA-256 hashes instead of plaintext for performance indexes. A documented [key rotation procedure](https://blissfinance.co/docs/guides/key-rotation) covers `ENCRYPTION_SECRET` and every other Bliss-owned secret. No telemetry, no cloud sync, no third-party analytics — every byte stays on your hardware, except what you choose to send to an LLM provider or hand to an AI agent you connect.
 
 #### Event-Driven Analytics
 
@@ -184,7 +185,7 @@ Three services. Nine asynchronous workers. Sixty endpoints. One configuration fi
             │
             └─► 3rd Party Integrations:
                 ├─► AI: LLM provider abstraction (Gemini / OpenAI / Anthropic)
-                ├─► Banks: Plaid (Sync + Tokens)
+                ├─► Banks: Plaid (US/CA/UK) + Enable Banking (EU PSD2)
                 ├─► Prices: TwelveData (Real-time Stocks)
                 ├─► FX: TwelveData (Historical Rates; CurrencyLayer optional/legacy)
                 └─► Ops: Sentry (Observability)
@@ -273,7 +274,8 @@ Enable additional features by adding API keys. All degrade gracefully if missing
 
 | Feature | Provider | Env Var | What it unlocks |
 |---------|----------|---------|----------------|
-| Bank sync | [Plaid](https://plaid.com) | `PLAID_CLIENT_ID` | One-click bank account linking and automatic transaction sync |
+| Bank sync (US, CA, UK) | [Plaid](https://plaid.com) | `PLAID_CLIENT_ID` | One-click bank account linking and automatic transaction sync |
+| Bank sync (EU) | [Enable Banking](https://enablebanking.com) | None: per-workspace credentials in Settings → Bank sync | EU bank connections through PSD2 consent, feeding the same review queue ([guide](https://blissfinance.co/docs/guides/enable-banking)) |
 | Stock prices & FX | [Twelve Data](https://twelvedata.com) | `TWELVE_DATA_API_KEY` | Real-time and historical pricing for 10,000+ symbols, plus historical & current FX rates for multi-currency conversion (default FX source) |
 | Currency rates (legacy) | [CurrencyLayer](https://currencylayer.com) | `CURRENCYLAYER_API_KEY` | Optional legacy FX source. Only used when `CURRENCY_PROVIDER=CURRENCYLAYER`; Twelve Data covers FX by default |
 | Error tracking | [Sentry](https://sentry.io) | `SENTRY_DSN` | Production error monitoring and performance tracing |

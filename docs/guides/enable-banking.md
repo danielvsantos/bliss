@@ -30,6 +30,19 @@ A workspace **admin** sets the application up in **Settings → Bank sync**. No 
 
 ## 2. Enter the credentials in Bliss
 
+You can do this in the first-run wizard or later in Settings. Both use the same form and the same checks.
+
+### Setting up during onboarding
+
+1. In step 2 (*Connect your accounts*), choose **Set up EU bank sync** on the **Enable Banking — EU banks** card.
+2. The dialog lists what you need, shows the **callback URL** to register on your application, and asks for the **Application id** and the **private key**, exactly as in steps 2–4 below.
+3. Click **Save and verify**. When Enable Banking confirms the credentials, the bank picker opens straight away: pick your bank and click **Continue to bank** (see [3. Connect a bank](#3-connect-a-bank)). Leaving for the bank completes onboarding; after consent you land on **Accounts** to map the accounts.
+4. If verification could not run (Enable Banking unreachable), the credentials are saved as **Not verified** and the dialog closes. The card then reads **Connect EU bank**, and you can start the connection when you're ready, or choose Plaid or a spreadsheet instead.
+
+Closing the dialog at any point changes nothing else. Saving credentials alone does not finish onboarding.
+
+### Setting up in Settings → Bank sync
+
 1. Open **Settings → Bank sync** (admins only).
 2. Enter the **Application id** (a UUID such as `6f0c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b`).
 3. **Upload the `.pem` file** (drop it on the box or use *Choose file*). If you only have the key as text, choose **Paste instead** and paste it whole, including the `-----BEGIN … PRIVATE KEY-----` and `-----END … PRIVATE KEY-----` lines. Windows line endings and a key written on one line with `\n` escapes (as in a `.env` file) are accepted too.

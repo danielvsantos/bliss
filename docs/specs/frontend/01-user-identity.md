@@ -109,17 +109,22 @@ A 3-step wizard with Framer Motion transitions and TypeAnimation text reveal tha
    - Multi-select **currency picker** with currency symbols — users choose their active currencies.
    - "Continue" button advances to step 2 and calls `completeOnboardingStep('step1_profile')`.
 
-2. **Connect** (`currentStep: 'connect'`)
-   - Two paths presented:
-     - **Plaid Link** (primary CTA) — Opens the Plaid connection flow. On success, redirects to the dashboard.
-     - **CSV Import** (secondary) — Navigates to the bank selection step for manual account creation.
-   - Calls `completeOnboardingStep('step2_connect')` on progression.
+2. **Connect** (`currentStep: 'connect'`) — provider-aware since #154
+   - Provider-neutral headline ("Connect your accounts" / "Link a bank for automatic sync, import a spreadsheet, or add accounts manually").
+   - **`BankProviderOptions`** (`components/onboarding/bank-provider-options.tsx`): two cards of identical styling, always both shown and always in this order, with no ranking by the step-1 country:
+     - **Plaid — US, Canada & UK banks.** `PlaidConnect` with `renderUnavailable`: the link-token request it already makes on mount is the configuration signal. `503 { code: 'PLAID_NOT_CONFIGURED' }` → "Plaid isn't set up on this server" + guide link (no button); any other failure → a warning-token "Couldn't reach Plaid" hint. On completion: `step2_connect {method:'plaid'}` + `connectBank`, then `setupComplete` and navigate to `/` (unchanged).
+     - **Enable Banking — EU banks.** From `GET /api/enablebanking/status`: `enabled` → "Connect EU bank" opens `EnableBankingConnectDialog`; `!enabled && configurable` → "Set up EU bank sync" opens `EnableBankingSetupDialog` (the Settings → Bank sync `CredentialsForm` plus a "What you need" checklist, the 5-account limit and the guide link). A `VERIFIED` save opens the connect dialog with no further click; an `UNVERIFIED` save closes the setup and the card reads "Connect EU bank". `configurable: false` shows a one-line note, no setup entry. In the installed app the card shows `DesktopOnlyBankNote`.
+     - Leaving for the bank ends onboarding: the connect dialog's `onBeforeRedirect` writes `step2_connect {method:'enable_banking'}` then `setupComplete` **sequentially** (the progress PUT is read-modify-write), errors swallowed, the pair capped at 5 s, before `window.location.assign`. The callback → `/accounts` mapping flow is unchanged; `connectBank` self-heals from the account count once an account is mapped.
+   - **Spreadsheet import** (secondary, under an "or" divider) — `step2_connect {method:'csv'}`, then the account step.
+   - The step-2 card widens to `max-w-2xl` so the two provider cards sit side by side on desktop; they stack on phones.
 
 3. **Create Account** (`currentStep: 'create-account'`)
    - **Bank selection grid** — Filtered by the countries selected in step 1. Users select their bank.
    - **Inline `AccountForm`** — After selecting a bank, an inline form allows the user to create their first account.
    - On account creation, calls `completeOnboardingStep('setupComplete')` which sets `Tenant.onboardingCompletedAt`.
    - Navigates to the main dashboard.
+
+**Localisation (#154).** Every string in the wizard (steps 1–3) is a namespaced key under `onboarding.*` (`welcome`, `connect`, `accounts`, `errors`) or `common.*`, translated in all 5 locales; the account count uses the `onboarding.accounts.create_one` / `_other` plural. `i18n-parity.test.ts` scans the onboarding sources for literal `t('…')` keys and fails on any key that is missing or untranslated.
 
 ### Context: `src/lib/onboarding-context.tsx`
 
@@ -413,12 +418,17 @@ sequenceDiagram
     APIClient->>TenantsAPI: PUT /api/tenants (countries, currencies)
     TenantsAPI-->>APIClient: 200 OK
 
-    User->>OnboardingPage: Step 2: Chooses Plaid or CSV
+    User->>OnboardingPage: Step 2: Chooses Plaid, Enable Banking or CSV
     alt Plaid path
         OnboardingPage->>OnboardingPage: Opens Plaid Link
         OnboardingPage->>APIClient: completeOnboardingStep('setupComplete')
         OnboardingPage->>TenantMeta: updateTenantMetaFromAPI()
         OnboardingPage->>User: navigates to /
+    else Enable Banking path
+        OnboardingPage->>OnboardingPage: Setup dialog (if no credentials), then bank picker
+        OnboardingPage->>APIClient: completeOnboardingStep('step2_connect', { method: 'enable_banking' })
+        OnboardingPage->>APIClient: completeOnboardingStep('setupComplete')
+        OnboardingPage->>User: window.location.assign(bank consent URL) → callback → /accounts mapping
     else CSV path
         OnboardingPage->>OnboardingCtx: setCurrentStep('create-account')
         User->>OnboardingPage: Step 3: Selects bank, creates account

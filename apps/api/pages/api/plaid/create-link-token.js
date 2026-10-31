@@ -59,8 +59,11 @@ async function handlePost(req, res, user) {
     // Guard: ensure Plaid credentials are configured
     if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
         console.error('Plaid credentials missing: PLAID_CLIENT_ID or PLAID_SECRET not set');
-        return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+        // 503 + stable code (#154): onboarding shows "Plaid isn't set up on this
+        // server" instead of a dead button, without parsing the message.
+        return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
             error: 'Plaid is not configured on this server. Please set PLAID_CLIENT_ID and PLAID_SECRET environment variables.',
+            code: 'PLAID_NOT_CONFIGURED',
         });
     }
 

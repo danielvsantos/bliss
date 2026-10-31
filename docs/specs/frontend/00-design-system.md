@@ -392,6 +392,7 @@ Language is auto-detected from the browser and persisted in `localStorage` under
 - **Frontend-only** — the API returns language-agnostic data (ISO dates, numeric codes). All user-facing text is translated on the client.
 - **Inline resources** — translations are bundled as TypeScript objects imported at startup, not lazy-loaded.
 - **Fallback** — if a key is missing in the active locale, i18next falls back to `en`.
+- **Onboarding wizard (#154)** — its strings live under `onboarding.*` (`welcome`, `connect`, `accounts`, `errors`) plus `common.*`. `i18n-parity.test.ts` scans `pages/onboarding.tsx` and `components/onboarding/*.tsx` for literal `t('…')` keys and fails when one is missing from a locale or left in English in es/fr/pt/it; keys there must be literals (computed keys are not seen). A word that is genuinely identical in a locale goes in the test's `SAME_AS_EN` allowlist.
 
 ### Configuration
 

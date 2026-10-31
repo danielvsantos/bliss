@@ -56,7 +56,25 @@ Twelve Data covers 10,000+ symbols across 27+ global markets (NYSE, NASDAQ, XETR
 
 ---
 
-## Plaid (Bank Sync)
+## Bank Sync: Plaid or Enable Banking
+
+Bliss has two bank feeds. Both land transactions in the same **Transaction Review** queue, with the same AI classification and duplicate detection. Pick by where your bank is; you can run both side by side.
+
+| | Plaid | Enable Banking |
+|---|---|---|
+| **Banks** | US, Canada, UK | EU banks over PSD2 (Revolut ES tested first) |
+| **Who sets it up** | The server operator (env vars) | Each workspace admin, in the app (no env vars) |
+| **Credentials** | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Your own Enable Banking application: app ID + private key in **Settings → Bank sync** or during onboarding |
+| **Limits** | Your Plaid plan | 5 linked accounts per application in restricted mode |
+| **History** | Up to 2 years on first connect | Booked transactions from your history-days setting; the consent lasts as long as the bank allows (180 days for Revolut ES) and Bliss reminds you to renew it |
+
+**Choose Plaid** when your banks are in the US, Canada or the UK. Plaid serves EU banks only on Custom plans.
+
+**Choose Enable Banking** when your banks are in the EU. Nothing changes on the server: a workspace admin brings an Enable Banking application and connects the first bank from the onboarding wizard or Settings → Bank sync.
+
+The first-run wizard shows both options side by side. When the server has no Plaid keys, the Plaid option says so instead of showing a button.
+
+### Plaid
 
 **What it powers:** Automatic bank account linking and transaction synchronization.
 
@@ -66,11 +84,21 @@ Plaid connects to thousands of financial institutions worldwide. Once linked, Bl
 - Detects investment transactions and enriches them with ticker/price data
 - Monitors connection health and handles re-authentication when banks require it
 
-**Without Plaid:** You can still import transactions manually via CSV/XLSX. The Smart Import pipeline provides the same AI classification -- the only difference is that you export from your bank and upload the file yourself.
+**Without Plaid:** You can still use Enable Banking for EU banks, or import transactions via CSV/XLSX. The Smart Import pipeline provides the same AI classification -- the only difference is that you export from your bank and upload the file yourself.
 
 **Env vars:** `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`
 
 See the [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) guide for setup details.
+
+### Enable Banking (EU)
+
+**What it powers:** EU bank connections through PSD2 consent, feeding the same review queue as Plaid.
+
+Each workspace connects through its own Enable Banking application, so there is nothing to configure on the server. A workspace admin enters the application ID and private key once (during onboarding or in **Settings → Bank sync**); Bliss verifies them with Enable Banking, stores them encrypted and never shows the key again. The bank's consent page then authorizes access, and Bliss reminds you before the consent expires.
+
+**Env vars:** none required. Optional server-wide settings: `ENABLE_BANKING_REDIRECT_URL`, `ENABLE_BANKING_SYNC_TIMES`, `ENABLE_BANKING_DAILY_BUDGET`.
+
+See the [EU Bank Sync with Enable Banking](/docs/guides/enable-banking) guide for setup details.
 
 ---
 
@@ -108,7 +136,8 @@ When `CURRENCY_PROVIDER` is unset, Bliss picks Twelve Data if `TWELVE_DATA_API_K
 |---------|---------|-----------|-------------|
 | LLM provider (Gemini / OpenAI / Anthropic) | AI classification + insights | **Yes** | Free tiers available from all three |
 | Twelve Data | Stock/ETF/crypto prices **+ FX rates (default)** | No | Free tier for basics; Pro for international |
-| Plaid | Bank account sync | No | Free sandbox for testing |
+| Plaid | Bank account sync (US, CA, UK) | No | Free sandbox for testing |
+| Enable Banking | Bank account sync (EU, PSD2) — no env vars, per-workspace credentials | No | Free restricted-mode application (5 accounts) |
 | CurrencyLayer | Exchange rates (legacy — only when `CURRENCY_PROVIDER=CURRENCYLAYER`) | No | Not needed if Twelve Data is configured |
 
 The optional services degrade gracefully. The LLM provider is the one hard requirement — without it, AI classification and insights are unavailable.
