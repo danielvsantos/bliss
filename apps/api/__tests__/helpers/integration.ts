@@ -68,7 +68,12 @@ export async function createTenantUser(tenantId: string, role: 'admin' | 'member
       role,
     },
   });
-  const token = jwt.sign({ jti: uuidv4(), userId: user.id, tenantId }, JWT_SECRET, { expiresIn: '1h' });
+  // `auth_time` = now: a fresh sign-in for the recent-sign-in routes (#156).
+  const token = jwt.sign(
+    { jti: uuidv4(), userId: user.id, tenantId, auth_time: Math.floor(Date.now() / 1000) },
+    JWT_SECRET,
+    { expiresIn: '1h' },
+  );
   return { userId: user.id, token };
 }
 

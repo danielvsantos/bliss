@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { setAuthCookie, clearAuthCookie } from '../../../utils/cookieUtils.js';
+import {
+  setAuthCookie,
+  clearAuthCookie,
+  setRefreshCookie,
+  clearSessionCookies,
+  appendSetCookie,
+} from '../../../utils/cookieUtils.js';
 
 function makeRes() {
   return { setHeader: vi.fn() } as any;
@@ -41,7 +47,7 @@ describe('cookieUtils', () => {
       expect(cookie).toContain('HttpOnly');
       expect(cookie).toContain('Path=/');
       expect(cookie).toContain('SameSite=Lax');
-      expect(cookie).toContain('Max-Age=86400');
+      expect(cookie).toContain('Max-Age=900');
     });
 
     it('uses SameSite=None + Secure when cross-origin', () => {
@@ -131,6 +137,73 @@ describe('cookieUtils', () => {
       expect(cookie).toContain('Secure');
       expect(cookie).toContain('Domain=.blissfinance.co');
       expect(cookie).toContain('SameSite=None');
+    });
+  });
+
+  describe('refresh cookie (#156)', () => {
+    function makeHeaderRes() {
+      const headers: Record<string, unknown> = {};
+      return {
+        headers,
+        setHeader: vi.fn((k: string, v: unknown) => { headers[k] = v; }),
+        getHeader: (k: string) => headers[k],
+      } as any;
+    }
+
+    it('is HttpOnly, scoped to /api/auth, with the given Max-Age', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.FRONTEND_URL;
+      delete process.env.COOKIE_DOMAIN;
+      const res = makeRes();
+
+      setRefreshCookie(res, 'sid.secret', 604800.9);
+
+      const cookie: string = res.setHeader.mock.calls[0][1];
+      expect(cookie).toContain('bliss_rt=sid.secret');
+      expect(cookie).toContain('HttpOnly');
+      expect(cookie).toContain('Path=/api/auth');
+      expect(cookie).toContain('Max-Age=604800');
+    });
+
+    it('matches the access cookie SameSite/Secure/Domain in cross-origin production', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.FRONTEND_URL = 'https://app.blissfinance.co';
+      process.env.NEXTAUTH_URL = 'https://api.blissfinance.co';
+      process.env.COOKIE_DOMAIN = '.blissfinance.co';
+      const res = makeHeaderRes();
+
+      setAuthCookie(res, 'jwt');
+      setRefreshCookie(res, 'sid.secret', 60);
+
+      const [access, refresh] = res.headers['Set-Cookie'] as string[];
+      for (const attr of ['SameSite=None', 'Secure', 'Domain=.blissfinance.co']) {
+        expect(access).toContain(attr);
+        expect(refresh).toContain(attr);
+      }
+    });
+
+    it('appends instead of overwriting earlier cookies', () => {
+      const res = makeHeaderRes();
+      appendSetCookie(res, 'a=1');
+      appendSetCookie(res, 'b=2');
+      appendSetCookie(res, 'c=3');
+      expect(res.headers['Set-Cookie']).toEqual(['a=1', 'b=2', 'c=3']);
+    });
+
+    it('clearSessionCookies expires both cookies on their own paths', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.FRONTEND_URL;
+      const res = makeHeaderRes();
+
+      clearSessionCookies(res);
+
+      const [access, refresh] = res.headers['Set-Cookie'] as string[];
+      expect(access).toMatch(/^token=; /);
+      expect(access).toContain('Path=/;');
+      expect(access).toContain('Max-Age=0');
+      expect(refresh).toMatch(/^bliss_rt=; /);
+      expect(refresh).toContain('Path=/api/auth');
+      expect(refresh).toContain('Max-Age=0');
     });
   });
 });

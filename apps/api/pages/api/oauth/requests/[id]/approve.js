@@ -2,6 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import { cors } from '../../../../../utils/cors.js';
 import { withAuth } from '../../../../../utils/withAuth.js';
+import { requireRecentAuth } from '../../../../../utils/recentAuth.js';
 import { limit } from '../../../../../lib/oauthHttp.js';
 import { OAuthError, approveRequest, loadRequestForUser } from '../../../../../services/oauth.service.js';
 
@@ -9,6 +10,7 @@ import { OAuthError, approveRequest, loadRequestForUser } from '../../../../../s
  * Approve a pending OAuth request (#89) — tenant admins only, like creating an
  * integration (#84). Body: { accessLevel, expiresInDays }. Creates the
  * Integration and returns the client redirect URL carrying a one-time code.
+ * Requires a recent sign-in (403 REAUTH_REQUIRED otherwise, #156).
  */
 export default withAuth(async function handler(req, res) {
   await limit(req, res);
@@ -17,6 +19,8 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
+  // Approving mints an integration key: sign-in within 15 minutes (#156).
+  if (!requireRecentAuth(req, res)) return;
   try {
     const result = await loadRequestForUser(req.query.id, req.user);
     if (!result.request) return res.status(result.status).json({ error: result.error });

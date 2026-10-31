@@ -13,6 +13,7 @@ export default {
   'choosing-categories': 'Choosing the Right Category',
   'tracking-subscriptions': 'Tracking Subscriptions',
   'financial-insights': 'Financial Insights',
+  'account-security': 'Account Security & Sessions',
   'connecting-ai-agents': 'Connecting AI Agents & Other Systems',
   'using-bliss-with-claude-mcp': 'Use Bliss with Claude (MCP)',
   'bring-your-finances-with-claude': 'Bring Your Finances into Bliss with Claude',

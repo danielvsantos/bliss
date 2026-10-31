@@ -48,6 +48,10 @@ export const rateLimiters = {
     portfolio: createRateLimiter({ max: 100, windowMs: 5 * 60 * 1000 }),  // 100 portfolio API calls per 5 min
     session: createRateLimiter({ max: 100, windowMs: 5 * 60 * 1000 }),   // 100 session checks per 5 min
     signin: createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 }),       // 5 logins per 5 min
+    // Session refresh (#156): one per device every 15 min plus tab/resume
+    // bursts; a household behind one NAT must never hit it (a 429 here is a
+    // forced sign-in), hence its own, roomier limiter.
+    refresh: createRateLimiter({ max: 60, windowMs: 5 * 60 * 1000 }),
     signup: createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 }),      // 5 signups per 5 min
     tags: createRateLimiter({ max: 100, windowMs: 5 * 60 * 1000 }), // 100 tag  per 5 min
     subscriptions: createRateLimiter({ max: 120, windowMs: 5 * 60 * 1000 }), // 120 subscriptions API calls per 5 min (reads + row actions)

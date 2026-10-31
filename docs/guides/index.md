@@ -16,6 +16,7 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 | [Choosing the Right Category](/docs/guides/choosing-categories) | Resolve the ambiguous cases and write custom categories the AI can use |
 | [Tracking Subscriptions](/docs/guides/tracking-subscriptions) | How recurring charges are detected, and confirming or dismissing them |
 | [Financial Insights](/docs/guides/financial-insights) | How the sixteen lenses and four report cadences turn your data into advice |
+| [Account Security & Sessions](/docs/guides/account-security) | How long you stay signed in, signing out other devices, and the "Confirm it's you" prompt |
 | [Connecting AI Agents & Other Systems](/docs/guides/connecting-ai-agents) | Give Claude, a script or another system its own revocable, read-only or read-write API token |
 | [Use Bliss with Claude (MCP)](/docs/guides/using-bliss-with-claude-mcp) | Connect Claude Code, Claude Desktop or any MCP client and manage your finances in plain language |
 | [Bring Your Finances into Bliss with Claude](/docs/guides/bring-your-finances-with-claude) | Let Claude interview you, build an import plan and guide you through it step by step |

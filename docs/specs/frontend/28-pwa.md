@@ -158,6 +158,13 @@ Tested on a real iPhone (iOS, production): Google Sign-In completes inside the i
 ### Resume freshness
 `useResumeRefresh()` (mounted in `AppShell`) records when the page is hidden. Returning after at least `RESUME_REFRESH_AFTER_MS` (5 min) calls `queryClient.invalidateQueries({ refetchType: 'active' })` (the visible page refetches even inside its `staleTime`, which TanStack's focus refetch skips) and `checkForPwaUpdate(now, true)`.
 
+### Session lifetime in the installed app (#156)
+The installed app no longer signs users out every 24 hours. Sign-in sets a 15-minute access cookie plus a rotating refresh cookie (`bliss_rt`, `Path=/api/auth`); an active user signs in at most once per 15 days, and a device left unused for 7 days signs in again ([`docs/specs/api/01-user-identity.md` §1.5h](../api/01-user-identity.md#15h-session-lifecycle-156)).
+- **Resume + single-flight refresh.** Coming back after ≥ 5 minutes usually means the access token has expired, so the resume refetch above produces a burst of 401s. The `lib/api.ts` interceptor sends **one** `POST /api/auth/refresh` for the whole burst (and `navigator.locks` serialises tabs), then retries every query once; no sign-in screen appears. Tested together in `src/lib/api.session.test.tsx`.
+- **Opening the app days later.** The app-load session check refreshes too, so a PWA opened after a few days lands signed in.
+- **Logout hygiene is unchanged.** Sign-out still calls `clearPersistedQueryCache()`; it now also revokes the device's session server-side. A device signed out remotely (password change, "Sign out of all other devices" in Settings → General) gets 401 on its next request and keeps D9 (its persisted cache is not wiped).
+- **Confirm identity** (creating integration keys, approving AI connections) offers the same methods in the installed app as in the browser: password, or Google — which stays offered here (see Google Sign-In above).
+
 ### Keyboard and dialogs
 When the iOS keyboard opens, only the *visual* viewport shrinks; `vh`-sized dialogs stay taller than what is visible, fields end up under the keyboard, and moving between them makes iOS pan the whole page (worst in standalone, with the status bar overlaid).
 - `src/lib/pwa/visual-viewport.ts` (`installVisualViewportVars()`, from `main.tsx`) publishes `--vv-height` / `--vv-top` on `<html>` from `window.visualViewport`, updated per animation frame on its `resize` / `scroll`.

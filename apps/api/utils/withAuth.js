@@ -131,7 +131,9 @@ async function authenticateIntegration(token, req, res, handler, { optional, req
  *   1. req.cookies.token   (HttpOnly cookie — primary, post-Phase 2.2)
  *   2. Authorization header (Bearer <token> — fallback for backwards compat)
  *
- * On success: attaches req.user = { id, tenantId, email, role } and calls handler.
+ * On success: attaches req.user = { id, tenantId, email, role, authenticatedAt }
+ * and calls handler. Access tokens issued before User.sessionsRevokedAt are
+ * refused (#156).
  * On failure: returns 401.
  *
  * Integration tokens (`Authorization: Bearer bliss_…`, #84) are checked first
@@ -221,7 +223,7 @@ export function withAuth(handler, { optional = false, requireRole } = {}) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
-        select: { id: true, tenantId: true, email: true, role: true },
+        select: { id: true, tenantId: true, email: true, role: true, sessionsRevokedAt: true },
       });
 
       if (!user) {
@@ -230,6 +232,21 @@ export function withAuth(handler, { optional = false, requireRole } = {}) {
           return handler(req, res);
         }
         return res.status(StatusCodes.UNAUTHORIZED).json({ error: 'User not found' });
+      }
+
+      // Immediate revocation (#156): a password change or "Sign out of all
+      // other devices" sets sessionsRevokedAt, and every access token issued
+      // before it stops working on its next request — with or without Redis.
+      // `iat_ms` gives millisecond precision; legacy tokens only have `iat`.
+      if (user.sessionsRevokedAt) {
+        const issuedAtMs = typeof decoded.iat_ms === 'number' ? decoded.iat_ms : (decoded.iat ?? 0) * 1000;
+        if (issuedAtMs < user.sessionsRevokedAt.getTime()) {
+          if (optional) {
+            req.user = null;
+            return handler(req, res);
+          }
+          return res.status(StatusCodes.UNAUTHORIZED).json({ error: 'Session has been revoked', code: 'SESSION_REVOKED' });
+        }
       }
 
       // Viewer role: read-only access (block all non-GET requests)
@@ -242,7 +259,15 @@ export function withAuth(handler, { optional = false, requireRole } = {}) {
         return res.status(StatusCodes.FORBIDDEN).json({ error: 'Insufficient permissions' });
       }
 
-      req.user = user;
+      // `authenticatedAt` is the real sign-in time of this session (`auth_time`,
+      // #156), used by the recent-sign-in check. null for legacy tokens.
+      req.user = {
+        id: user.id,
+        tenantId: user.tenantId,
+        email: user.email,
+        role: user.role,
+        authenticatedAt: typeof decoded.auth_time === 'number' ? new Date(decoded.auth_time * 1000) : null,
+      };
       return handler(req, res);
     } catch (err) {
       console.error('withAuth: DB lookup failed', err);

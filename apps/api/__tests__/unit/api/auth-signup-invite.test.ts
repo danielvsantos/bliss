@@ -42,7 +42,7 @@ vi.mock('jsonwebtoken', () => ({
   sign: vi.fn().mockReturnValue('mock-jwt'),
 }));
 vi.mock('uuid', () => ({ v4: vi.fn().mockReturnValue('test-uuid') }));
-vi.mock('../../../utils/cookieUtils.js', () => ({ setAuthCookie: vi.fn() }));
+vi.mock('../../../services/session.service.js', () => ({ startSession: vi.fn().mockResolvedValue({ sessionId: 's' }) }));
 vi.mock('../../../lib/defaultCategories.js', () => ({
   DEFAULT_CATEGORIES: [{ code: 'FOOD', name: 'Food', group: 'Daily', type: 'Essentials' }],
 }));
@@ -51,7 +51,7 @@ vi.mock('../../../services/auth.service', () => ({ AuthService: mockAuthService 
 vi.mock('../../../services/auth.service.js', () => ({ AuthService: mockAuthService }));
 
 import handler from '../../../pages/api/auth/signup.js';
-import { setAuthCookie } from '../../../utils/cookieUtils.js';
+import { startSession as setAuthCookie } from '../../../services/session.service.js';
 
 const INVITE_REQUIRED = {
   error: 'Sign-up on this instance is by invitation only.',

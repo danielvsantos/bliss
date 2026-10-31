@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type {
   User,
   Tenant,
@@ -200,11 +200,45 @@ const rawJsonResponse = [(data: unknown) => {
   }
 }];
 
-// Module-level flag to fire session-expired event only once per page load
+// Fire session-expired at most once until the next successful sign-in.
 let sessionExpiredFired = false;
+
+/** Re-arm the session-expired event after a successful sign-in (#156). */
+export function resetSessionExpired(): void {
+  sessionExpiredFired = false;
+}
+
+/**
+ * Auth routes whose 401 means "wrong credentials" or "no session", never "the
+ * access token expired": they never trigger a refresh, and never fire
+ * `auth:session-expired` (a wrong password in the confirm-identity dialog must
+ * not sign the user out, #156 R20).
+ */
+const NO_REFRESH_URLS = new Set([
+  '/api/auth/refresh',
+  '/api/auth/signin',
+  '/api/auth/signup',
+  '/api/auth/signout',
+  '/api/auth/reauth',
+]);
+
+type RetryableConfig = InternalAxiosRequestConfig & { _retried?: boolean; _sentAt?: number };
+
+/** `403 REAUTH_REQUIRED`: the action needs a sign-in within 15 minutes (#156). */
+export function isReauthRequired(error: unknown): boolean {
+  const e = error as AxiosError<{ code?: string }>;
+  return e?.response?.status === 403 && e.response.data?.code === 'REAUTH_REQUIRED';
+}
 
 class APIClient {
   private client: AxiosInstance;
+  /**
+   * Bare instance for POST /api/auth/refresh: no interceptors, so the refresh
+   * call can never re-enter the 401 handler (#156 R24).
+   */
+  private refreshClient: AxiosInstance;
+  private refreshPromise: Promise<boolean> | null = null;
+  private lastRefreshAt = 0;
 
   constructor() {
     const baseURL = (import.meta.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
@@ -231,28 +265,86 @@ class APIClient {
       }],
     });
 
+    this.refreshClient = axios.create({
+      baseURL: normalizedBaseURL,
+      headers: { 'Content-Type': 'application/json' },
+      withCredentials: true,
+    });
+
+    // Remember when each request left, so a 401 for a request sent before
+    // the latest successful refresh just retries instead of refreshing again.
+    this.client.interceptors.request.use((config) => {
+      (config as RetryableConfig)._sentAt = Date.now();
+      return config;
+    });
+
     // Response interceptor for handling errors
     this.client.interceptors.response.use(
       (response) => {
         return response;
       },
-      (error: AxiosError<APIError>) => {
-        const isSessionCheck = error.config?.url === '/api/auth/session';
+      async (error: AxiosError<APIError>) => {
+        const config = error.config as RetryableConfig | undefined;
+        const url = config?.url ?? '';
+        const status = error.response?.status;
+        const isSessionCheck = url === '/api/auth/session';
+        const isAuthCredentialCall = NO_REFRESH_URLS.has(url);
+
+        // Access token expired (15 min, #156): refresh once, then retry the
+        // request once. Concurrent 401s (e.g. the resume refetch burst) share
+        // one in-flight refresh. The session check refreshes too, so an
+        // installed app opened days later lands signed in.
+        if (status === 401 && config && !config._retried && !isAuthCredentialCall) {
+          const refreshed = this.lastRefreshAt > (config._sentAt ?? 0) || await this.refreshOnce();
+          if (refreshed) {
+            config._retried = true;
+            return this.client.request(config);
+          }
+        }
+
         // A 401 on the session check is expected when the user is not logged in — don't log it.
         if (!isSessionCheck) {
-          console.error(`[API Error] ${error.response?.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
+          console.error(`[API Error] ${status} ${error.config?.method?.toUpperCase()} ${url}`, error.response?.data);
         }
-        // On 401, emit a custom event so AuthContext can clear the user and show a toast.
-        // Do NOT redirect here — window.location.href causes a full page reload
-        // which remounts AuthContext → infinite loop. The withAuth HOC handles the redirect.
-        // Exclude the initial session check — a 401 there just means the user isn't logged in.
-        if (error.response?.status === 401 && !isSessionCheck && !sessionExpiredFired) {
+        // The refresh failed: emit a custom event so AuthContext can clear the
+        // user and show a toast. Do NOT redirect here — window.location.href
+        // causes a full page reload which remounts AuthContext → infinite loop.
+        // The withAuth HOC handles the redirect. The session check stays
+        // silent — a 401 there just means the user isn't logged in.
+        if (status === 401 && !isSessionCheck && !isAuthCredentialCall && !sessionExpiredFired) {
           sessionExpiredFired = true;
           window.dispatchEvent(new Event('auth:session-expired'));
         }
         return Promise.reject(error);
       }
     );
+  }
+
+  /**
+   * One refresh at a time per tab, and — via the Web Locks API where
+   * available — across tabs, so a second tab refreshes with the cookie the
+   * first one already rotated. The server's 10 s grace window covers browsers
+   * without Web Locks.
+   */
+  private refreshOnce(): Promise<boolean> {
+    if (this.refreshPromise) return this.refreshPromise;
+    const run = async (): Promise<boolean> => {
+      try {
+        await this.refreshClient.post('/api/auth/refresh');
+        this.lastRefreshAt = Date.now();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    const attempt = locks?.request
+      ? (async () => locks.request('bliss-auth-refresh', run))()
+      : run();
+    this.refreshPromise = attempt.finally(() => {
+      this.refreshPromise = null;
+    });
+    return this.refreshPromise;
   }
 
   // Auth
@@ -288,6 +380,23 @@ class APIClient {
 
   async changePassword(data: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<{ message: string }> {
     const response = await this.client.put('/api/auth/change-password', data);
+    return response.data;
+  }
+
+  /** Recent sign-in status and the ways this user can confirm it (#156). */
+  async getReauthStatus(): Promise<{ recent: boolean; methods: ('password' | 'google')[] }> {
+    const response = await this.client.get('/api/auth/reauth');
+    return response.data;
+  }
+
+  /** Confirm identity with the password; rejects with 401 REAUTH_FAILED (#156). */
+  async reauthWithPassword(password: string): Promise<void> {
+    await this.client.post('/api/auth/reauth', { password });
+  }
+
+  /** "Sign out of all other devices" (#156). This device stays signed in. */
+  async signOutOtherDevices(): Promise<{ revoked: number }> {
+    const response = await this.client.post('/api/auth/sessions/revoke-others');
     return response.data;
   }
 

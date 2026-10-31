@@ -23,6 +23,7 @@ import {
   useRevokeIntegration,
 } from '@/hooks/use-integrations';
 import { useToast } from '@/hooks/use-toast';
+import { useRecentAuth } from '@/hooks/use-recent-auth';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -266,7 +267,18 @@ export function TokenReveal({ token, onDone }: { token: string; onDone: () => vo
 
 // ─── Dialogs ────────────────────────────────────────────────────────────────
 
-function CreateIntegrationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/** Runs a key-minting mutation, confirming identity on 403 REAUTH_REQUIRED (#156). */
+type ReauthGuard = <R>(fn: () => Promise<R>) => Promise<R>;
+
+function CreateIntegrationDialog({
+  open,
+  onOpenChange,
+  guard,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  guard: ReauthGuard;
+}) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const create = useCreateIntegration();
@@ -301,12 +313,12 @@ function CreateIntegrationDialog({ open, onOpenChange }: { open: boolean; onOpen
       return;
     }
     try {
-      const result = await create.mutateAsync({
+      const result = await guard(() => create.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         accessLevel,
         key: { name: keyName.trim() || undefined, expiresInDays: expiryDays(expiry) },
-      });
+      }));
       setToken(result.token);
       toast({ title: t(`${T}.toast.created`) });
     } catch {
@@ -386,9 +398,11 @@ function CreateIntegrationDialog({ open, onOpenChange }: { open: boolean; onOpen
 function AddKeyDialog({
   integration,
   onOpenChange,
+  guard,
 }: {
   integration: Integration | null;
   onOpenChange: (open: boolean) => void;
+  guard: ReauthGuard;
 }) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -409,11 +423,11 @@ function AddKeyDialog({
   async function submit() {
     if (!integration) return;
     try {
-      const result = await addKey.mutateAsync({
+      const result = await guard(() => addKey.mutateAsync({
         integrationId: integration.id,
         name: keyName.trim() || undefined,
         expiresInDays: expiryDays(expiry),
-      });
+      }));
       setToken(result.token);
       toast({ title: t(`${T}.toast.key_created`) });
     } catch {
@@ -749,6 +763,17 @@ export function IntegrationsTab() {
   const [addKeyFor, setAddKeyFor] = useState<Integration | null>(null);
   const [renameFor, setRenameFor] = useState<Integration | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<PendingRevoke | null>(null);
+  // Minting a key needs a sign-in within 15 minutes (#156): confirm before
+  // the form opens, and again if the window lapses while it is open.
+  const recentAuth = useRecentAuth();
+
+  async function openCreate() {
+    if (await recentAuth.ensureRecentAuth()) setCreateOpen(true);
+  }
+
+  async function openAddKey(integration: Integration) {
+    if (await recentAuth.ensureRecentAuth()) setAddKeyFor(integration);
+  }
 
   return (
     <>
@@ -758,7 +783,7 @@ export function IntegrationsTab() {
             <h3 className="text-lg font-medium text-foreground tracking-[-0.01em]">{t(`${T}.title`)}</h3>
             <p className="mt-1 text-sm text-muted-foreground">{t(`${T}.description`)}</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="shrink-0">
+          <Button onClick={() => void openCreate()} className="shrink-0">
             <Plus className="mr-1.5 h-4 w-4" />
             {t(`${T}.create`)}
           </Button>
@@ -780,7 +805,7 @@ export function IntegrationsTab() {
                 <IntegrationRow
                   key={integration.id}
                   integration={integration}
-                  onAddKey={() => setAddKeyFor(integration)}
+                  onAddKey={() => void openAddKey(integration)}
                   onRename={() => setRenameFor(integration)}
                   onRevoke={() => setPendingRevoke({ kind: 'integration', integration })}
                   onRevokeKey={(key) => setPendingRevoke({ kind: 'key', integration, key })}
@@ -796,8 +821,13 @@ export function IntegrationsTab() {
         </div>
       </Card>
 
-      <CreateIntegrationDialog open={createOpen} onOpenChange={setCreateOpen} />
-      <AddKeyDialog integration={addKeyFor} onOpenChange={(open) => !open && setAddKeyFor(null)} />
+      <CreateIntegrationDialog open={createOpen} onOpenChange={setCreateOpen} guard={recentAuth.withReauthRetry} />
+      <AddKeyDialog
+        integration={addKeyFor}
+        onOpenChange={(open) => !open && setAddKeyFor(null)}
+        guard={recentAuth.withReauthRetry}
+      />
+      {recentAuth.dialog}
       <RenameDialog integration={renameFor} onOpenChange={(open) => !open && setRenameFor(null)} />
       <RevokeConfirmDialog pending={pendingRevoke} onOpenChange={(open) => !open && setPendingRevoke(null)} />
     </>

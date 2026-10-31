@@ -1,17 +1,19 @@
 import { getToken } from 'next-auth/jwt';
-import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
 import prisma from '../../../prisma/prisma.js';
 import * as Sentry from '@sentry/nextjs';
-import { setAuthCookie } from '../../../utils/cookieUtils.js';
+import { findLiveSession, reauthenticate } from '../../../services/session.service.js';
 
-const JWT_SECRET = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET_CURRENT or JWT_SECRET must be set in environment variables');
-}
-const TOKEN_EXPIRY = '24h';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:8080';
 
+/**
+ * Exchanges the NextAuth (Google) session for a Bliss session and redirects to
+ * the SPA. Every Google sign-in is a real sign-in (#156):
+ *   - the browser already holds a live session of the same user (the Google
+ *     step-up for a recent sign-in) → that session's `authenticatedAt` moves
+ *     to now; its 15-day cap is unchanged;
+ *   - otherwise → a new session (access + refresh cookies); a live session of
+ *     a different user on this browser is revoked.
+ */
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
@@ -37,22 +39,12 @@ export default async function handler(req, res) {
       return res.redirect(`${FRONTEND_URL}/auth?error=oauth_failed`);
     }
 
-    // Issue a custom JWT identical in shape to the one from signin.js
-    const token = jwt.sign(
-      {
-        jti: uuidv4(),
-        userId: user.id,
-        tenantId: user.tenantId,
-        email: user.email,
-      },
-      JWT_SECRET,
-      { expiresIn: TOKEN_EXPIRY }
-    );
+    const session = await findLiveSession(req);
+    await reauthenticate(req, res, user, { session });
 
     const isNew = nextAuthToken.isNew ?? false;
 
-    // Set HttpOnly cookie and redirect to frontend (no token in URL)
-    setAuthCookie(res, token);
+    // Cookies are set; redirect to the frontend (no token in URL)
     return res.redirect(`${FRONTEND_URL}/auth/callback?isNew=${isNew}`);
   } catch (error) {
     console.error('Google token exchange error:', error);

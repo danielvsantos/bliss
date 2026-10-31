@@ -15,8 +15,8 @@ vi.mock('../../../utils/cors.js', () => ({
   cors: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock('../../../utils/cookieUtils.js', () => ({
-  clearAuthCookie: vi.fn(),
+vi.mock('../../../services/session.service.js', () => ({
+  revokeSession: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../utils/denylist.js', () => ({
@@ -30,14 +30,14 @@ vi.mock('jsonwebtoken', () => ({
 // ── Imports (after mocks) ────────────────────────────────────────────────────
 
 import jwt from 'jsonwebtoken';
-import { clearAuthCookie } from '../../../utils/cookieUtils.js';
+import { revokeSession } from '../../../services/session.service.js';
 import { addToDenylist } from '../../../utils/denylist.js';
 import handler from '../../../pages/api/auth/signout.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeReq(overrides: Record<string, unknown> = {}) {
-  return { method: 'POST', cookies: {}, headers: {}, ...overrides } as any;
+  return { method: 'POST', cookies: {}, headers: { origin: 'http://localhost:8080' }, ...overrides } as any;
 }
 
 function makeRes() {
@@ -73,7 +73,7 @@ describe('POST /api/auth/signout', () => {
 
     await handler(req, res);
 
-    expect(clearAuthCookie).toHaveBeenCalledWith(res);
+    expect(revokeSession).toHaveBeenCalledWith(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: 'Signed out successfully' });
   });
@@ -101,7 +101,7 @@ describe('POST /api/auth/signout', () => {
     expect(actualTtl).toBeGreaterThan(3590);
     expect(actualTtl).toBeLessThanOrEqual(3600);
 
-    expect(clearAuthCookie).toHaveBeenCalledWith(res);
+    expect(revokeSession).toHaveBeenCalledWith(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -113,7 +113,7 @@ describe('POST /api/auth/signout', () => {
 
     expect(jwt.decode).not.toHaveBeenCalled();
     expect(addToDenylist).not.toHaveBeenCalled();
-    expect(clearAuthCookie).toHaveBeenCalledWith(res);
+    expect(revokeSession).toHaveBeenCalledWith(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: 'Signed out successfully' });
   });
@@ -134,15 +134,25 @@ describe('POST /api/auth/signout', () => {
     await handler(req, res);
 
     expect(addToDenylist).toHaveBeenCalled();
-    expect(clearAuthCookie).toHaveBeenCalledWith(res);
+    expect(revokeSession).toHaveBeenCalledWith(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: 'Signed out successfully' });
   });
 
+  it('rejects a foreign Origin without revoking anything (#156)', async () => {
+    const req = makeReq({ headers: { origin: 'https://evil.example' }, cookies: { token: 'some-jwt-token' } });
+    const res = makeRes();
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UNTRUSTED_ORIGIN' }));
+    expect(revokeSession).not.toHaveBeenCalled();
+    expect(addToDenylist).not.toHaveBeenCalled();
+  });
+
   it('returns 500 on unexpected error', async () => {
-    (clearAuthCookie as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
-      throw new Error('Unexpected failure');
-    });
+    (revokeSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Unexpected failure'));
 
     const req = makeReq();
     const res = makeRes();

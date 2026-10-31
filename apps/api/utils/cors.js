@@ -1,18 +1,13 @@
+import { allowedOrigins } from './allowedOrigins.js';
+
 // Middleware to handle CORS
 export function cors(req, res) {
-  // Allowed origins are driven by the existing FRONTEND_URL env var.
-  // In non-production, localhost dev servers are added automatically so local
-  // development works without any extra configuration.
-  const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
-
-  if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push('http://localhost:8080', 'http://localhost:3000');
-  }
+  const allowed = allowedOrigins();
 
   const origin = req.headers.origin;
 
   // Only set Access-Control-Allow-Origin if origin is in our allowed list
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && allowed.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     // Only set credentials header if we're allowing the origin
     res.setHeader('Access-Control-Allow-Credentials', 'true');

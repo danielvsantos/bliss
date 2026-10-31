@@ -79,6 +79,7 @@ model Tenant {
   etoroConnections    EtoroConnection[]
   etoroCopies         EtoroCopy[]
   etoroCopyValues     EtoroCopyValue[]
+  userSessions        UserSession[]
 
   // Subscriptions & recurring charges: timestamp of the last admin-triggered
   // "full history scan" (48-month Tier-A lookback). null = never run.
@@ -142,12 +143,46 @@ model User {
   // Notification center
   lastNotificationSeenAt DateTime?  // When user last opened notification center
 
+  // Session lifecycle (#156). withAuth rejects any access token issued before
+  // this instant (password change, "Sign out of all other devices").
+  sessionsRevokedAt DateTime?
+  sessions          UserSession[]
+
   // Integrations this user created. Token requests act on behalf of the
   // creator, so deleting the user cascades to (and revokes) them.
   integrations      Integration[]
 
   @@index([email])
   @@index([provider, providerId])
+}
+
+/// One signed-in device (#156): a refresh-token family. The refresh cookie is
+/// `<id>.<secret>`; only SHA-256 hashes of the secret are stored. Rotation
+/// moves tokenHash to previousTokenHash and never touches authenticatedAt or
+/// absoluteExpiresAt. Hand-written migration: `migrate deploy` only.
+model UserSession {
+  /// 16 random bytes, base64url; also the first half of the refresh token.
+  id                String    @id
+  tenantId          String
+  userId            String
+  tokenHash         String    // SHA-256 hex of the current secret
+  previousTokenHash String?
+  rotatedAt         DateTime?
+  authenticatedAt   DateTime  // real sign-in / step-up; never moved by refresh
+  absoluteExpiresAt DateTime  // creation + 15d; never extended
+  idleExpiresAt     DateTime  // min(last refresh + 7d, absoluteExpiresAt)
+  lastUsedAt        DateTime  @default(now())
+  revokedAt         DateTime?
+  revokedReason     String?   // signout | reuse | password_change | sign_out_others | user_switch
+  userAgent         String?   // encrypted (summary: browser + OS)
+  ipAddress         String?   // encrypted
+  createdAt         DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([absoluteExpiresAt])
 }
 
 model Account {

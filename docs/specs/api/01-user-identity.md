@@ -15,7 +15,7 @@ This is the primary endpoint for new user registration. It's a critical, all-in-
 - **Transactional Creation**: It uses a Prisma `$transaction` to ensure that the creation of a new `Tenant`, the associated `User`, and all relational records (like `TenantCountry`, `TenantCurrency`, `TenantBank`) are created atomically. If any step fails, the entire transaction is rolled back.
 - **Password Hashing**: It calls out to an `AuthService` to hash the user's password before storing it in the database.
 - **Token Generation**: Generates and signs a new JWT with `user.id`, `user.email`, `tenant.id`, and a `jti: uuidv4()` claim.
-- **Cookie Issuance**: Calls `utils/cookieUtils.js → setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie. The token is **not** included in the response body.
+- **Session Issuance**: Calls `services/session.service.js → startSession(res, user, req)`, which sets the 15-minute access cookie and the rotating refresh cookie (see [§1.5h Session lifecycle](#15h-session-lifecycle-156)). No token is included in the response body.
 
 ### Account-existence disclosure
 
@@ -58,7 +58,7 @@ The invite list itself is managed by the operator through [`/api/admin/invites`]
 7.  **JWT Generation**: A JWT is signed with `user.id`, `user.email`, `tenant.id`, and `jti: uuidv4()`.
 8.  **Role assignment**: `AuthService.createUser()` is called with `role: 'admin'` — signup always creates a tenant owner.
 9.  The transaction is committed.
-10. `setAuthCookie(res, token)` writes the JWT as an HttpOnly cookie.
+10. `startSession(res, user, req)` sets the access + refresh cookies (§1.5h).
 11. Returns `201 Created` with `{ message: "Signup successful", user: userWithTenant }` where `userWithTenant` is the user object with the `tenant` nested inside (i.e., `{ ...user, tenant }`). **The `token` field is not in the response body.**
 
 ### Dependencies:
@@ -207,7 +207,7 @@ This endpoint handles the authentication process for existing users.
 4.  Calls `AuthService.verifyPassword()` with the incoming password and the user's stored `passwordHash` and `passwordSalt`.
 5.  If verification fails, it returns a `401 Unauthorized` error.
 6.  Signs a new JWT with a `jti: uuidv4()` claim.
-7.  Calls `setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie.
+7.  Calls `startSession(res, user, req)` to set the access + refresh cookies (§1.5h).
 8.  Returns `200 OK` with `{ user }` only — **no `token` field in the response body**.
 
 ### Dependencies:
@@ -262,7 +262,7 @@ sequenceDiagram
     AuthService-->>SignupAPI: {hash, salt}
     SignupAPI->>Database: $transaction: CREATE Tenant, User (role: admin), Relations
     Database-->>SignupAPI: created objects
-    SignupAPI->>SignupAPI: setAuthCookie(res, token) — HttpOnly cookie
+    SignupAPI->>SignupAPI: startSession() — access + refresh HttpOnly cookies
     SignupAPI-->>APIClient: 201 Created {message, user: userWithTenant} — no token in body
     APIClient-->>AuthContext: response
     AuthContext-->>AuthPage: success
@@ -283,14 +283,15 @@ sequenceDiagram
 
 ## 1.5b. `pages/api/auth/signout.js` — Sign-Out Endpoint
 
-A **stateful** sign-out endpoint that actively revokes the caller's JWT server-side.
+A **stateful** sign-out endpoint that actively revokes the caller's session server-side.
 
 ### Responsibilities:
 - Does **not** use `withAuth` — reads the JWT directly from `req.cookies.token` and decodes it with `jwt.decode()` (not `jwt.verify()`).
+- Rejects a request whose `Origin` (or, without one, `Referer`) is not the frontend: `403 UNTRUSTED_ORIGIN` (§1.5h).
 - If a token is present and decodable, extracts the `jti` and `exp` claims.
 - Calls `addToDenylist(jti, remainingTtl)` — immediately invalidates the token in Redis even before natural expiry.
-- Calls `clearAuthCookie(res)` from `utils/cookieUtils.js` — sets `Set-Cookie: token=; Max-Age=0` to delete the browser cookie.
-- Returns `200 OK` with `{ message: 'Signed out successfully' }`.
+- Calls `revokeSession(req, res)` (#156): revokes this device's `UserSession` (`revokedReason: 'signout'`) when the `bliss_rt` cookie matches it, and clears **both** cookies (`token` on `Path=/`, `bliss_rt` on `Path=/api/auth`).
+- Returns `200 OK` with `{ message: 'Signed out successfully' }`. The SPA also clears the persisted query cache (`clearPersistedQueryCache()`, #155).
 
 ### Behaviour:
 - Accepts `POST` requests only.
@@ -386,8 +387,11 @@ Converts a short-lived NextAuth session cookie into the application's standard c
 2. If the token is missing or has no `id` field → redirect to `${FRONTEND_URL}/auth?error=oauth_failed`.
 3. Looks up the user in the database via `prisma.user.findUnique({ where: { id: token.id } })`.
 4. If the user is not found → redirect to `${FRONTEND_URL}/auth?error=oauth_failed`.
-5. Issues a **custom application JWT** via `jwt.sign({ jti: uuidv4(), userId, tenantId, email }, JWT_SECRET, { expiresIn: '24h' })`. The JWT payload contains only `{ jti, userId, tenantId, email }` — no `role` field.
-6. Calls `setAuthCookie(res, token)` to write the JWT as an HttpOnly cookie.
+5. Reads the `bliss_rt` cookie (`findLiveSession`) and calls `reauthenticate(req, res, user, { session })` (#156):
+   - a live session of the **same** user on this browser (the Google step-up of §1.5h) → its `authenticatedAt` becomes now and a new access cookie is issued; its 15-day cap is unchanged;
+   - otherwise → `startSession` (access + refresh cookies); a live session of a **different** user on this browser is revoked (`user_switch`).
+   The access JWT payload is `{ jti, userId, tenantId, email, auth_time, iat_ms }` — no `role` field.
+6. Not Origin-guarded: this is a top-level GET navigation from NextAuth, authenticated by the NextAuth JWT.
 7. Reads `nextAuthToken.isNew ?? false`.
 8. Redirects to: `${FRONTEND_URL}/auth/callback?isNew=${isNew}`. **The `token` is NOT in the redirect URL.**
 
@@ -474,8 +478,10 @@ Allows authenticated users to change their password. Only available for credenti
 5. Rejects if user has no `passwordHash` — OAuth-only account (`400`).
 6. Calls `AuthService.verifyPassword(currentPassword, hash, salt)`. Rejects if false (`401`).
 7. Calls `AuthService.hashPassword(newPassword)` to produce new `{ hash, salt }`.
-8. Updates the user record with the new hash and salt.
+8. `revokeAllAndRestart()` (#156): in one transaction stores the new hash and salt, sets `User.sessionsRevokedAt = now` and revokes every `UserSession` of the user (`password_change`); then starts a fresh session for this device.
 9. Returns `200 OK` with `{ message: "Password updated successfully" }`.
+
+Before step 1 the request's `Origin` (or `Referer`) must be the frontend (`403 UNTRUSTED_ORIGIN`).
 
 ### Response Codes:
 | Code | Condition |
@@ -488,12 +494,85 @@ Allows authenticated users to change their password. Only available for credenti
 | `500` | Unexpected server error |
 
 ### Session Behaviour:
-The endpoint does **not** invalidate the current JWT session. The user remains logged in after changing their password.
+Every **other** device is signed out on its next request (its access token predates `sessionsRevokedAt`, its refresh token's family is revoked) — with or without Redis. The device that made the change gets a new session and stays signed in.
 
 ### Dependencies:
 - **`AuthService`**: `hashPassword()` and `verifyPassword()` for credential operations.
 - **`prisma`**: `user.findUnique()` to fetch credentials, `user.update()` to save new hash.
 - **`@sentry/nextjs`**: Exception capture on unexpected errors.
+
+---
+
+## 1.5h. Session lifecycle (#156)
+
+Every sign-in (password, sign-up, Google) starts a **session**: a short access JWT plus a rotating refresh token. An active user signs in at most once per 15 days, on the web and in the installed PWA (#155). One module issues and checks everything: `services/session.service.js`.
+
+### Tokens and lifetimes (server-side constants, no env vars)
+
+| | Value | Where |
+|---|---|---|
+| Access JWT | 15 min (`ACCESS_TTL_S`), cookie `token`, `Path=/`, `Max-Age=900` | claims `{ jti, userId, tenantId, email, auth_time, iat_ms }` |
+| Refresh token | `<sessionId>.<secret>` (16 + 32 random bytes, base64url), cookie `bliss_rt`, HttpOnly, `Path=/api/auth` | `Max-Age` = idle expiry − now |
+| Idle timeout | 7 days without a refresh (`IDLE_TTL_MS`) | `UserSession.idleExpiresAt` |
+| Absolute cap | 15 days after sign-in (`ABSOLUTE_TTL_MS`), never extended | `UserSession.absoluteExpiresAt` |
+| Recent sign-in window | 15 min (`REAUTH_WINDOW_S`) | `auth_time` claim |
+
+Both cookies share the SameSite / Secure / Domain rules of `utils/cookieUtils.js` (`SameSite=None; Secure` cross-origin, `Lax` same-origin, `COOKIE_DOMAIN`). Helpers append to `Set-Cookie`, so the two cookies never overwrite each other.
+
+### `UserSession` (one row per signed-in device, hand-written migration `20261026120000_add_user_sessions`)
+
+`id` (the random session id), `tenantId`, `userId`, `tokenHash` (SHA-256 hex of the current secret), `previousTokenHash`, `rotatedAt`, `authenticatedAt` (real sign-in or step-up; refresh never moves it), `absoluteExpiresAt`, `idleExpiresAt`, `lastUsedAt`, `revokedAt`, `revokedReason` (`signout | reuse | password_change | sign_out_others | user_switch`), `userAgent` (a "browser on OS" summary) and `ipAddress` — both **encrypted** (`encryptedFields` + `ROTATION_COVERAGE`), never logged. Cascades from `User` and `Tenant`. `User.sessionsRevokedAt` is the per-user revocation instant.
+
+Only hashes are stored: raw tokens never appear in the DB, logs or responses. The first lookup is by the unguessable session id (like `ApiKey.prefix`); every later read and write is scoped by that row's `tenantId` + `userId`.
+
+Pruning: on every sign-in and refresh, that user's rows past their idle or absolute expiry, or revoked more than a day ago, are deleted (fire-and-forget, user-scoped). The table holds about 15 days of history.
+
+### `POST /api/auth/refresh`
+
+Authenticated by `bliss_rt` only; Origin-guarded; `rateLimiters.refresh` (60 / 5 min / IP — a separate, roomier limiter than signin, because a 429 here is a forced sign-in). Decision table for presented token P and family F:
+
+| Condition | Result |
+|---|---|
+| No / malformed cookie, F missing, idle- or absolute-expired, user gone | `401 SESSION_EXPIRED`, both cookies cleared |
+| F revoked | `401 SESSION_REVOKED`, both cookies cleared |
+| `hash(P) = F.tokenHash` | **rotate** atomically (`updateMany … tokenHash: hash(P), revokedAt: null`); new access + refresh cookies; `idleExpiresAt = min(now + 7 d, absoluteExpiresAt)`. A lost race (count 0) re-reads F and falls through |
+| `hash(P) = F.previousTokenHash`, same user-agent summary, ≤ 10 s since rotation | **grace**: new access cookie only (the concurrent request already stored the successor in the shared cookie jar). Never a second family |
+| `hash(P) = F.previousTokenHash`, same user-agent summary, > 10 s | **lost response**: rotate again from P (the successor was provably never presented) |
+| anything else | **reuse**: revoke F (`reuse`), clear both cookies, `401 SESSION_REVOKED`, log `refresh_token_reuse { tenantId, userId, sessionId }` (never the token) |
+
+Because the session id travels with the token, any stale token of a family maps back to it, so reuse anywhere in the chain revokes the family. A cookie naming another session's id is handled as a stolen token of that session (only a holder of one of its tokens can know the id).
+
+### Revocation
+
+- **Immediate, Redis-independent:** `withAuth` already loads the `User` row; it rejects an access token whose `iat_ms` (legacy tokens: `iat` × 1000) is older than `User.sessionsRevokedAt` with `401 SESSION_REVOKED`. The Redis `jti` denylist (signout) is unchanged and still fail-open.
+- **Signout** (§1.5b): revokes this device's family, denylists the `jti`, clears both cookies.
+- **Change password** (§1.5g): `sessionsRevokedAt = now` + revoke every family, then a fresh session for this device.
+- **`POST /api/auth/sessions/revoke-others`** ("Sign out of all other devices", Settings → General): authenticated by the refresh cookie, not `withAuth`, so **every role** (viewers too) can use it; Origin-guarded; `rateLimiters.changePassword`. One transaction sets `sessionsRevokedAt = now` and revokes every other family (`sign_out_others`); this device gets an access token minted at that same instant and stays signed in. `200 { revoked: n }`; `401 SESSION_EXPIRED` without a live session.
+
+### Recent sign-in (`utils/recentAuth.js`)
+
+Creating an integration (`POST /api/integrations`), creating a key (`POST /api/integrations/:id/keys`) and approving an OAuth connection (`POST /api/oauth/requests/:id/approve`) require `now − auth_time ≤ 15 min`, otherwise `403 { code: 'REAUTH_REQUIRED' }` before any DB access. Refresh carries `auth_time` forward and never resets it; a legacy token (no `auth_time`) is never recent.
+
+`/api/auth/reauth` (withAuth):
+- `GET` → `200 { recent, methods }`, `methods` ⊆ `['password', 'google']` (password when the user has one; Google when the user is a Google account and Google is configured).
+- `POST { password }` (Origin-guarded, `rateLimiters.signin`, `AuthService.verifyPassword`) → `200 { ok: true }`: the family's `authenticatedAt` becomes now and a new access cookie is set; the absolute cap is unchanged. Without a live family (a legacy token) a new session is started. Wrong password → `401 REAUTH_FAILED` with no cookie or session change; Google-only account → `400 NO_PASSWORD`.
+- Google step-up: the SPA repeats Google sign-in with `prompt=select_account` and a remembered return path; `google-token.js` bumps the same family (§1.5e). This proves a live Google session rather than a fresh credential — accepted.
+
+### Origin guard (`utils/trustedOrigin.js`)
+
+Refresh, signout, change-password, sessions/revoke-others and `POST reauth` accept a request only when `Origin` is the frontend (the CORS allow-list, `utils/allowedOrigins.js`); without `Origin`, the `Referer` origin must match; with neither → `403 UNTRUSTED_ORIGIN`. Required because the cookies are `SameSite=None` in cross-origin deployments.
+
+### Integration keys
+
+All new routes are under `/api/auth`, which `INTEGRATION_DENYLIST` already refuses for every method; they are classified `D/D` in `integrationRouteMatrix.data.ts`. Denied routes are not reachable operations, so they are **not** listed in `lib/mcp/exclusions.js` (the MCP coverage test rejects exclusions for unreachable routes).
+
+### Web client (`apps/web/src/lib/api.ts`)
+
+The 401 interceptor refreshes once and retries the request once. Concurrent 401s (e.g. the resume refetch, #155) share one in-flight refresh (and `navigator.locks` serialises tabs); a request sent before the latest successful refresh just retries. The refresh call uses a bare axios instance and never re-enters the interceptor. Auth credential routes (`refresh`, `signin`, `signup`, `signout`, `reauth`) never trigger a refresh or `auth:session-expired`. The session check refreshes too, but stays silent when that fails. `auth:session-expired` fires once until the next successful sign-in.
+
+### Rollout
+
+No forced logout: legacy 24 h tokens keep working until they expire (and count as "not recent"); the user then signs in once and moves to the new flow. Rolling back to code that ignores `bliss_rt` signs every user out once within 15 minutes; the schema change is additive.
 
 ---
 

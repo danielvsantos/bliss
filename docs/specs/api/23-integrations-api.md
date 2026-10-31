@@ -237,6 +237,16 @@ responses.
 
 Key `status` is derived: `revoked` (wins) → `expired` → `active`.
 
+**Recent sign-in (#156).** The two key-minting `POST`s also require the
+admin's real sign-in (`auth_time` in the access JWT) to be within the last
+15 minutes; otherwise they answer `403 { code: 'REAUTH_REQUIRED' }` before
+any DB access. Refreshing the session never resets it, and legacy tokens are
+never recent. Settings → Integrations checks `GET /api/auth/reauth` before
+opening the create / add-key form and shows a confirm-identity dialog
+(password, or a repeated Google sign-in) when needed; a `REAUTH_REQUIRED` that
+happens while the form is open re-opens it and retries once. See
+[`01-user-identity.md` §1.5h](./01-user-identity.md#15h-session-lifecycle-156).
+
 ## 23.6. Error codes
 
 | Status | `code` | When |
@@ -247,6 +257,7 @@ Key `status` is derived: `revoked` (wins) → `expired` → `active`.
 | 403 | `NOT_AVAILABLE_TO_INTEGRATIONS` | Denylisted route (withAuth or middleware) |
 | 403 | `READ_ONLY_INTEGRATION` | Non-GET with a read-only token |
 | 403 | — (`Insufficient permissions` / route's own message) | Admin-only route |
+| 403 | `REAUTH_REQUIRED` | Creating an integration or a key more than 15 minutes after the admin's last sign-in (#156) |
 | 400 | `ACCESS_LEVEL_IMMUTABLE` | PATCH tried to change the access level |
 | 409 | `INTEGRATION_REVOKED` | Adding a key to a revoked integration |
 | 409 | `OAUTH_MANAGED` | Adding a key to an OAuth connection (its key is managed by the OAuth server) |

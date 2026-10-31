@@ -11,7 +11,7 @@ All files use `import` / `export`. Never use `require()` in this app.
 ```
 apps/api/
   pages/api/            # File-based API routes (the core of this app)
-    auth/               # signin, signup, signup-mode (public invite-only flag, #99), signout, session, change-password, google-token, [...nextauth]
+    auth/               # signin, signup, signup-mode (public invite-only flag, #99), signout, session, change-password, google-token, refresh, reauth, sessions/revoke-others (#156), [...nextauth]
     integrations/       # index, [id], [id]/keys (index, [keyId]) — admin-only integration token management (#84)
     transactions/       # CRUD (index), bulk (PATCH recategorise, #141), export, merchant-history
     imports/            # upload, detect-adapter, adapters, adapters/[id], pending, similar, [id], [id]/rows/[rowId], [id]/seeds, [id]/confirm-seeds
@@ -83,8 +83,11 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 ## Authentication
 
 - **JWT** stored in HttpOnly cookies (primary) or Authorization Bearer header (fallback)
-- **Token payload:** `{ jti, userId, tenantId, email }` -- signed with `JWT_SECRET_CURRENT`, 24h expiry
-- **Revocation:** jti added to Redis denylist on signout (TTL = remaining token life)
+- **Sessions (#156):** every sign-in path calls `startSession()` (`services/session.service.js`): a **15-min** access JWT `{ jti, userId, tenantId, email, auth_time, iat_ms }` in cookie `token` plus a rotating refresh cookie `bliss_rt` (`Path=/api/auth`). One `UserSession` row per device (hashes only; `userAgent`/`ipAddress` encrypted), **7 days idle / 15 days absolute**. `POST /api/auth/refresh` rotates, with a 10 s same-device grace and reuse detection that revokes the family. Never sign a JWT in a route.
+- **Revocation:** jti added to Redis denylist on signout (TTL = remaining token life), plus the session family revoked. `User.sessionsRevokedAt` (password change, `POST /api/auth/sessions/revoke-others`) makes `withAuth` refuse older access tokens immediately — no Redis needed.
+- **Recent sign-in:** `requireRecentAuth(req, res)` (`utils/recentAuth.js`) on `POST /api/integrations`, `POST /api/integrations/:id/keys`, `POST /api/oauth/requests/:id/approve` → `403 REAUTH_REQUIRED` when `req.user.authenticatedAt` is older than 15 min. `/api/auth/reauth` confirms with the password; Google step-up goes through `google-token.js`.
+- **Origin guard:** session-changing routes (refresh, signout, change-password, sessions/revoke-others, `POST reauth`) call `requireTrustedOrigin(req, res)` (`utils/trustedOrigin.js`, same allow-list as CORS via `utils/allowedOrigins.js`) — the cookies are `SameSite=None` cross-origin.
+- **Migration:** `UserSession` + `User.sessionsRevokedAt` are hand-migrated (`migrate deploy` only). New `/api/auth/*` routes are `D/D` in the route matrix (already denylisted by the `/api/auth` prefix) and are **not** listed in `lib/mcp/exclusions.js`.
 - **Secret rotation:** `withAuth` tries `JWT_SECRET_CURRENT` first, then `JWT_SECRET_PREVIOUS`
 - **Multi-tenant isolation:** `user.tenantId` from JWT is used in every Prisma query. Never trust client-supplied tenantId.
 - **Integration tokens (#84):** `Authorization: Bearer bliss_<prefix>_<secret>` is checked first in `withAuth` (cookie ignored). It hydrates `req.user` as the creating admin with a capped role (`READ_ONLY` → `viewer`, `READ_WRITE` → `member`, never `admin`) plus `authType: 'integration'`, `integrationId`, `apiKeyId`, and logs one `integration_request` line per request. Only a SHA-256 hash + public prefix is stored (`ApiKey`). See `docs/specs/api/23-integrations-api.md`.
@@ -100,7 +103,9 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 | `apiKeys.js` | Integration tokens: generate, SHA-256 hash, parse, `verifyApiKey`, throttled `touchLastUsed` |
 | `integrationPolicy.js` | Pure (Edge-safe) token policy: path normalisation, `INTEGRATION_DENYLIST`, `INTEGRATION_WRITE_ALLOWED` (exact `POST /api/accounts` + `POST /api/banks`, #98), `VIEWER_POST_ALLOWED` (`/api/mcp`), `effectiveRole`, token extraction/redaction |
 | `cors.js` | Dynamic origin whitelist from `FRONTEND_URL`, auto-adds localhost in dev |
-| `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config |
+| `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config; access (`token`, 15 min) + refresh (`bliss_rt`, `Path=/api/auth`) cookies, appended to `Set-Cookie` |
+| `trustedOrigin.js` | Origin/Referer guard for session-changing routes (#156) |
+| `recentAuth.js` | Recent sign-in check for key-minting actions (#156) |
 | `rateLimit.js` | Per-route rate limiters (incl. `integrations`, `oauth`, `oauthRegister`) |
 | `oauth.js` | OAuth config + pure helpers: issuer, MCP challenge, redirect-URI allowlist, PKCE, scopes, secret generation |
 | `denylist.js` | Redis-backed JWT revocation, fail-open if Redis unavailable |
@@ -187,6 +192,7 @@ pnpm test:integration   # integration only (requires bliss_test DB)
 | Service | Purpose |
 |---------|---------|
 | `auth.service.js` | User CRUD, Google OAuth find-or-create, and `verifyAndUpgrade` (verify + rehash-on-login) |
+| `session.service.js` | Session lifecycle (#156): `startSession`, `refreshSession` (rotate / grace / reuse), `revokeSession`, `revokeOtherSessions`, `revokeAllAndRestart`, `reauthenticate`, prune |
 | `password.js` | Password hashing. scrypt `N=2^17,r=8,p=1`, PHC-style string in `passwordHash`, `passwordSalt` null. Verifies legacy PBKDF2-1,000 rows too and upgrades them on login |
 | `transaction.service.js` | Debt repayment splitting (principal + interest calculation) |
 | `plaid.service.js` | Pre-configured Plaid client instance |

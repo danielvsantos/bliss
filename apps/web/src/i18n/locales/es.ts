@@ -363,7 +363,17 @@ const es = {
         tenant_name_description: "Es el nombre de tu organización o perfil de finanzas personales.",
         user_management_label: "Gestión de usuarios",
         user_management_button: "Gestionar usuarios",
-        user_management_description: "Gestiona los usuarios con acceso a tu cuenta tenant."
+        user_management_description: "Gestiona los usuarios con acceso a tu cuenta tenant.",
+        sign_out_others: {
+          label: "Otros dispositivos",
+          description: "Cierra la sesión en todas partes excepto en este dispositivo. Tus otros navegadores y apps instaladas tendrán que iniciar sesión de nuevo.",
+          button: "Cerrar sesión en los demás dispositivos",
+          confirm_title: "¿Cerrar sesión en los demás dispositivos?",
+          confirm_description: "Todos los demás navegadores y apps instaladas con tu cuenta cerrarán sesión en su próxima solicitud. Este dispositivo sigue con la sesión iniciada.",
+          confirm: "Cerrar las demás",
+          success: "Se ha cerrado la sesión en los demás dispositivos.",
+          error: "No se pudo cerrar la sesión en los demás dispositivos. Inténtalo de nuevo.",
+        },
       },
       countries: {
         title: "Países",
@@ -505,6 +515,17 @@ const es = {
       goBack: "Volver a la página de inicio",
     },
     login: {
+      confirm_identity: {
+        title: "Confirma que eres tú",
+        description: "Por tu seguridad, confirma tu identidad para continuar. Es necesario cuando tu último inicio de sesión fue hace más de 15 minutos.",
+        password_label: "Contraseña",
+        confirm: "Confirmar",
+        google: "Continuar con Google",
+        divider: "o",
+        wrong_password: "Contraseña incorrecta. Inténtalo de nuevo.",
+        error: "No se pudo confirmar tu identidad. Inténtalo de nuevo.",
+        no_method: "Esta cuenta no puede confirmar su identidad aquí. Cierra sesión, vuelve a iniciarla y reinténtalo.",
+      },
       title: "Iniciar sesión",
       subtitle: "Accede a tu cuenta",
       noAccount: "¿No tienes cuenta?",

@@ -29,7 +29,7 @@ const PUBLIC_OPENAPI = resolve(PUBLIC_DIR, 'openapi');
 
 const FEATURE_MAP = {
   'design-system':            { title: 'Design System',              order: 0,  description: 'Color tokens, typography, component patterns, and the Bliss UIKit' },
-  'user-identity':            { title: 'User Identity & Auth',       order: 1,  description: 'Registration, sign-in, JWT sessions, Google OAuth, RBAC roles' },
+  'user-identity':            { title: 'User Identity & Auth',       order: 1,  description: 'Registration, sign-in, sessions (15-min access token + rotating refresh token), Google OAuth, RBAC roles' },
   'accounts-and-categories':  { title: 'Accounts & Categories',      order: 2,  description: 'Multi-bank account management, category hierarchy, account owners' },
   'reference-data':           { title: 'Reference Data',             order: 3,  description: 'Countries, currencies, banks, tenant configuration, and admin maintenance / rebuild operations' },
   'transactions':             { title: 'Transactions',               order: 4,  description: 'CRUD operations, filtering, bulk actions, and encrypted storage' },

@@ -363,7 +363,17 @@ const fr = {
         tenant_name_description: "Il s'agit du nom de votre organisation ou de votre profil de finances personnelles.",
         user_management_label: "Gestion des utilisateurs",
         user_management_button: "Gérer les utilisateurs",
-        user_management_description: "Gérez les utilisateurs ayant accès à votre compte tenant."
+        user_management_description: "Gérez les utilisateurs ayant accès à votre compte tenant.",
+        sign_out_others: {
+          label: "Autres appareils",
+          description: "Déconnectez-vous partout sauf sur cet appareil. Vos autres navigateurs et applications installées devront se reconnecter.",
+          button: "Se déconnecter de tous les autres appareils",
+          confirm_title: "Se déconnecter de tous les autres appareils ?",
+          confirm_description: "Tous les autres navigateurs et applications installées connectés à votre compte seront déconnectés à leur prochaine requête. Cet appareil reste connecté.",
+          confirm: "Déconnecter les autres",
+          success: "Les autres appareils ont été déconnectés.",
+          error: "Impossible de déconnecter les autres appareils. Veuillez réessayer.",
+        },
       },
       countries: {
         title: "Pays",
@@ -505,6 +515,17 @@ const fr = {
       goBack: "Retour à la page d'accueil",
     },
     login: {
+      confirm_identity: {
+        title: "Confirmez votre identité",
+        description: "Pour votre sécurité, confirmez votre identité pour continuer. C'est nécessaire lorsque votre dernière connexion date de plus de 15 minutes.",
+        password_label: "Mot de passe",
+        confirm: "Confirmer",
+        google: "Continuer avec Google",
+        divider: "ou",
+        wrong_password: "Mot de passe incorrect. Veuillez réessayer.",
+        error: "Impossible de confirmer votre identité. Veuillez réessayer.",
+        no_method: "Ce compte ne peut pas confirmer son identité ici. Déconnectez-vous, reconnectez-vous, puis réessayez.",
+      },
       title: "Connexion",
       subtitle: "Connectez-vous à votre compte",
       noAccount: "Vous n'avez pas de compte ?",
