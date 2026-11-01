@@ -134,7 +134,8 @@ export function EnableBankingConnectDialog({ open, onOpenChange, onBeforeRedirec
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="sm:max-w-lg">
+      {/* grid-cols-1: a long bank name must truncate, not widen the dialog's grid track. */}
+      <DialogContent className="sm:max-w-lg grid-cols-1">
         <DialogHeader>
           <DialogTitle>{t('enableBanking.connect.title')}</DialogTitle>
           <DialogDescription>{t('enableBanking.connect.description')}</DialogDescription>
