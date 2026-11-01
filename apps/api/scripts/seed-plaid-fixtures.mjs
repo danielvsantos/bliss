@@ -14,6 +14,8 @@
  *   node scripts/seed-plaid-fixtures.mjs --count 25          # number of PlaidTransaction rows (default 10)
  */
 
+import { realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 import { encrypt } from '@bliss/shared/encryption';
 
@@ -140,9 +142,14 @@ async function main() {
   console.log(`  plaidTransactions: ${rows.length}`);
 }
 
-main()
-  .catch((err) => {
-    console.error('\n❌ Fixture seed failed:', err.message);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+// Run only when executed directly: the unit test imports the builders above,
+// and seeding on import raced the test run (process.exit(1) with no database).
+// realpathSync: Node resolves this module's URL through symlinks, argv[1] doesn't.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  main()
+    .catch((err) => {
+      console.error('\n❌ Fixture seed failed:', err.message);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}

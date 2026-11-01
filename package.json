@@ -41,6 +41,7 @@
       "were bumped and this entry keeps SDK and docs transitives (openai,",
       "@anthropic-ai/sdk, zod-to-json-schema, @scalar, nextra) on the patched line."
     ],
+    "//overrides-follow-redirects": "follow-redirects ^1.16.2: GHSA-mrwp-f3q8-3g9p (high; axios under plaid, api and backend still resolves 1.16.1).",
     "//auditConfig": [
       "Audit allowlist: advisories that genuinely cannot be fixed. Read by",
       "`pnpm audit` in .github/workflows/security-audit.yml. Each entry needs a",
@@ -85,7 +86,7 @@
       "@grpc/grpc-js": "^1.14.5",
       "@xmldom/xmldom": "^0.9.12",
       "form-data@2": "^2.5.6",
-      "follow-redirects": "^1.16.1",
+      "follow-redirects": "^1.16.2",
       "@opentelemetry/propagator-jaeger": "^2.9.0",
       "defu": "^6.1.5",
       "deepmerge-ts": "^8.0.0",

@@ -108,14 +108,14 @@ describe('OnboardingAccountSetup', () => {
     fireEvent.click(screen.getByText('Ally'));
 
     // Add a second account row to Chase (first "Add account" button belongs to Chase).
-    fireEvent.click(screen.getAllByText('Add account')[0]);
+    fireEvent.click(screen.getAllByText('onboarding.accounts.addAccount')[0]);
 
     // Change that new row's currency to EUR.
     const combos = screen.getAllByRole('combobox');
     fireEvent.click(combos[1]); // Chase row 2
     fireEvent.click(await screen.findByRole('option', { name: /Euro/ }));
 
-    fireEvent.click(screen.getByText('Create {{count}} accounts:3'));
+    fireEvent.click(screen.getByText('onboarding.accounts.create:3'));
 
     await waitFor(() => expect(api.createBank).toHaveBeenCalledTimes(2));
     expect(api.createBank).toHaveBeenCalledWith({ name: 'Chase' });
@@ -136,7 +136,7 @@ describe('OnboardingAccountSetup', () => {
   it('with zero banks selected, Continue creates nothing and still completes', async () => {
     const { onComplete } = renderSetup();
 
-    fireEvent.click(screen.getByText('Skip for now'));
+    fireEvent.click(screen.getByText('onboarding.accounts.skip'));
 
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
     expect(api.createBank).not.toHaveBeenCalled();
@@ -155,9 +155,9 @@ describe('OnboardingAccountSetup', () => {
     renderSetup();
     fireEvent.click(screen.getByText('Chase'));
     // starts with 1 row; add two more → 3 total, then the button is gone
-    fireEvent.click(screen.getAllByText('Add account')[0]);
-    fireEvent.click(screen.getAllByText('Add account')[0]);
-    expect(screen.queryByText('Add account')).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByText('onboarding.accounts.addAccount')[0]);
+    fireEvent.click(screen.getAllByText('onboarding.accounts.addAccount')[0]);
+    expect(screen.queryByText('onboarding.accounts.addAccount')).not.toBeInTheDocument();
   });
 
   it('shows a destructive toast and does not complete when creation fails', async () => {
@@ -165,7 +165,7 @@ describe('OnboardingAccountSetup', () => {
     const { onComplete } = renderSetup();
 
     fireEvent.click(screen.getByText('Chase'));
-    fireEvent.click(screen.getByText('Create 1 account'));
+    fireEvent.click(screen.getByText('onboarding.accounts.create:1'));
 
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' })),
@@ -181,7 +181,7 @@ describe('OnboardingAccountSetup', () => {
     // One combobox per row (currency only) — no country Select rendered.
     expect(screen.getAllByRole('combobox')).toHaveLength(1);
 
-    fireEvent.click(screen.getByText('Create 1 account'));
+    fireEvent.click(screen.getByText('onboarding.accounts.create:1'));
 
     await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(1));
     expect(vi.mocked(api.createAccount).mock.calls[0][0].countryId).toBe('USA');
@@ -196,7 +196,7 @@ describe('OnboardingAccountSetup', () => {
     const { onComplete } = renderSetup({ countryId: 'USA' });
 
     fireEvent.click(screen.getByText('Chase'));
-    fireEvent.click(screen.getAllByText('Add account')[0]); // Chase gets 2 rows
+    fireEvent.click(screen.getAllByText('onboarding.accounts.addAccount')[0]); // Chase gets 2 rows
 
     // Each row now has 2 comboboxes: [currency, country].
     const combos = screen.getAllByRole('combobox');
@@ -206,7 +206,7 @@ describe('OnboardingAccountSetup', () => {
     fireEvent.click(combos[3]);
     fireEvent.click(await screen.findByRole('option', { name: 'Portugal' }));
 
-    fireEvent.click(screen.getByText('Create {{count}} accounts:2'));
+    fireEvent.click(screen.getByText('onboarding.accounts.create:2'));
 
     await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(2));
     const countries = vi

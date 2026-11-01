@@ -13,6 +13,7 @@ This module handles secure connection establishment, real-time webhook processin
 - **Auth**: JWT.
 - **Body**: `{ plaidItemId?: string }` — when provided, creates a link token scoped to that existing Item (update mode for re-auth or reconnect). Omit for a new connection.
 - **Response**: `{ link_token: string }`.
+- **Not configured (#154)**: when `PLAID_CLIENT_ID` or `PLAID_SECRET` is unset, returns **`503 { error, code: 'PLAID_NOT_CONFIGURED' }`** without calling Plaid (was a code-less `500`). Onboarding step 2 reads the code to show "Plaid isn't set up on this server" instead of a dead button; the Accounts page, re-auth and the bank form treat it like any other failure.
 - **Configuration**: Requests access to `['transactions']` product. When `PLAID_WEBHOOK_URL` is set, the URL is included as the `webhook` parameter so Plaid sends TRANSACTIONS and ITEM events to the application automatically.
 
 ---

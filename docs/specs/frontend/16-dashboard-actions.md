@@ -109,7 +109,7 @@ interface DashboardAction {
 | 1 | `fix-connection` | Fix Bank Connection | quickAction | 1 | `hasActionRequired` |
 | 2 | `review-transactions` | Review Pending Transactions | both | 2 | `totalReviewCount > 0` (quick); always (onboarding) |
 | 3 | `update-prices` | Update Asset Prices | quickAction | 3 | `hasStaleManualAssets` |
-| 4 | `connect-bank` | Connect Bank | both | 4 | always (quick); `!hasPlaid` (onboarding) |
+| 4 | `connect-bank` | Connect your bank | both | 4 | always (quick); `!hasPlaid` (onboarding) |
 | 5 | `add-account` | Add Manual Account | both | 5 | `accountCount === 0` |
 | 6 | `import-csv` | Import Transactions | quickAction | 6 | `accountCount > 0 && !hasPlaid` (only manual-account users) |
 | 7 | `view-insights` | View Insights | quickAction | 5 | `insightCount > 0` |
@@ -121,7 +121,8 @@ interface DashboardAction {
 
 - `fix-connection` has highest priority and only appears when there's a real Plaid issue
 - `review-transactions` badge dynamically shows `totalReviewCount`
-- `connect-bank` + `add-account` are separate actions for Plaid vs manual account creation
+- `connect-bank` + `add-account` are separate actions for bank sync vs manual account creation. `connect-bank` is provider-neutral since #154 ("Connect your bank" / "Plaid (US, CA, UK) or Enable Banking (EU) for automatic sync"); its href stays `/accounts`, which shows admins without Enable Banking credentials the "Set up EU bank sync" link (#148). `hasPlaid` counts any `PlaidItem`, so an Enable Banking connection counts too
+- Onboarding step 2 itself offers Plaid and Enable Banking side by side (#154, `01-user-identity.md` §1.2)
 - `explore-expenses` and `check-pnl` serve dual roles: one-time onboarding steps + permanent quick action shortcuts (label: "View Financial Summary", href: `/reports/financial-summary`)
 - `view-insights` only appears when there are undismissed insights
 - `update-prices` only appears when manual assets are stale (>30 days or no initial price)

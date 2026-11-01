@@ -44,7 +44,7 @@ apps/web/src/
     passive-income/     # Passive Income page sections (chart, breakdown, streams, detached terms)
     manage-assets/      # Manage Assets row pieces (status chips, actions menu, detached terms banner)
     equity-analysis/    # Equity Analysis asset class badge/editor + asset class colors
-    onboarding/         # Onboarding flow components
+    onboarding/         # Onboarding flow components (bank-provider-options: Plaid + Enable Banking step 2, enable-banking-setup-dialog, #154)
     pwa/                # Installable PWA (#155): install button/banner/card, iOS instructions, update toast, offline screen
     plaid-connect.tsx   # Plaid connection component (top-level)
     withAuth.tsx        # Auth HOC wrapper (top-level); redirects to /auth?returnTo=

@@ -2,7 +2,7 @@
 
 Task #132. API: [`docs/specs/api/27-enable-banking-api.md`](../api/27-enable-banking-api.md). Backend: [`docs/specs/backend/24-enable-banking.md`](../backend/24-enable-banking.md). User guide: [EU Bank Sync with Enable Banking](../../guides/enable-banking.md).
 
-Everything here renders only when `GET /api/enablebanking/status` returns `enabled: true`, i.e. the tenant has saved its own Enable Banking credentials (#148, see §27.8). Without them the Accounts page, onboarding, settings and account detail look exactly as before (acceptance criterion "Hidden without credentials"). Viewers never see the connect entry point.
+Everything here renders only when `GET /api/enablebanking/status` returns `enabled: true`, i.e. the tenant has saved its own Enable Banking credentials (#148, see §27.8). Without them the Accounts page, settings and account detail look exactly as before (onboarding is the exception since #154: its Enable Banking card offers the setup, §27.2) (acceptance criterion "Hidden without credentials"). Viewers never see the connect entry point.
 
 ## 27.1. Data layer
 
@@ -16,7 +16,11 @@ Everything here renders only when `GET /api/enablebanking/status` returns `enabl
 
 ## 27.2. Connect dialog — `components/enable-banking/connect-dialog.tsx`
 
-"Connect EU bank (Enable Banking)" button next to the Plaid connect button on **Accounts** and under it in **Onboarding**. The dialog lists banks from `GET /aspsps` grouped by (localised) country, with search and logos, and shows **"Transactions will be imported from {startDate}"** plus the consent length before **Continue to bank**. Continue calls connect and does `window.location.assign(url)`. `COUNTRY_NOT_ENABLED` / `UNKNOWN_ASPSP` have their own messages.
+"Connect EU bank (Enable Banking)" button next to the Plaid connect button on **Accounts**. The dialog lists banks from `GET /aspsps` grouped by (localised) country, with search and logos, and shows **"Transactions will be imported from {startDate}"** plus the consent length before **Continue to bank**. Continue calls connect and does `window.location.assign(url)`. `COUNTRY_NOT_ENABLED` / `UNKNOWN_ASPSP` have their own messages.
+
+`EnableBankingConnectDialog` is exported and takes an optional `onBeforeRedirect?: () => Promise<void>`, awaited after connect returns the URL and before the redirect (the dialog stays in its "redirecting" state; a rejection is swallowed so the redirect always happens). A connect error never calls it. The Accounts page passes nothing, so it writes no onboarding steps.
+
+**Onboarding (#154).** Step 2 shows Plaid and Enable Banking as two equal cards (`components/onboarding/bank-provider-options.tsx`, see `01-user-identity.md` §1.2). The Enable Banking card reads "Connect EU bank" when `status.enabled`, otherwise "Set up EU bank sync" for admins (`configurable`), which opens `components/onboarding/enable-banking-setup-dialog.tsx`: a "What you need" checklist (Enable Banking account, production application in restricted mode, callback URL registered), the 5-account limit, the guide link and the **same** `CredentialsForm` as Settings → Bank sync (moved to `components/settings/enable-banking-credentials-form.tsx`; `onSaved` now receives the saved view). A `VERIFIED` save closes the setup and opens the connect dialog directly; `UNVERIFIED` closes it and the card reads "Connect EU bank". From onboarding, `onBeforeRedirect` records `step2_connect {method:'enable_banking'}` then `setupComplete` (sequential, errors swallowed, capped at 5 s). The key guarantees of §27.8 hold unchanged: component state only, the save mutation has `gcTime: 0` and is reset on success, nothing in browser storage.
 
 ## 27.3. Mapping dialog — `components/enable-banking/mapping-dialog.tsx`
 

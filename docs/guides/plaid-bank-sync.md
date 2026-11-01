@@ -17,6 +17,8 @@ PLAID_ENV=sandbox          # sandbox, development, or production
 
 For testing, use `sandbox` with credentials `user_good` / `pass_good`.
 
+Without these keys, the onboarding wizard's Plaid option reads *Plaid isn't set up on this server* and links back to this guide, instead of showing a button that never enables. The API answers `POST /api/plaid/create-link-token` with `503 { "code": "PLAID_NOT_CONFIGURED" }`. For EU banks you don't need Plaid at all: see [EU Bank Sync with Enable Banking](/docs/guides/enable-banking).
+
 ## Connecting an account
 
 1. Navigate to **Accounts** and click **Connect Bank Account**.

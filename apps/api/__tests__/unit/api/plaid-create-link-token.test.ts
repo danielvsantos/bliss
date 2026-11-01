@@ -108,6 +108,22 @@ describe('POST /api/plaid/create-link-token', () => {
     expect(res.setHeader).toHaveBeenCalledWith('Allow', ['POST']);
   });
 
+  it('returns 503 PLAID_NOT_CONFIGURED when Plaid credentials are missing (#154)', async () => {
+    delete process.env.PLAID_CLIENT_ID;
+    delete process.env.PLAID_SECRET;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const req = makeReq({ body: {} });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(503);
+    expect(res._body).toEqual(expect.objectContaining({ code: 'PLAID_NOT_CONFIGURED' }));
+    expect(mockPlaidClient.linkTokenCreate).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
   it('creates link token for new connection', async () => {
     mockPrisma.tenantCountry.findMany.mockResolvedValueOnce([
       { country: { iso2: 'US' } },

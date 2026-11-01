@@ -6,11 +6,11 @@ Step-by-step walkthroughs for getting the most out of Bliss. Start with Docker Q
 |-------|-------------------|
 | [Docker Quick Start](/docs/guides/docker-quickstart) | Run Bliss with one command and create your first account |
 | [Initial Account Setup](/docs/guides/tenant-seed-setup) | Set up accounts, banks, and categories to match your financial reality |
-| [Choosing Your External Services](/docs/guides/external-services) | What Gemini, Twelve Data (prices + FX rates), and Plaid do and why you'd want them |
+| [Choosing Your External Services](/docs/guides/external-services) | What the LLM provider, Twelve Data (prices + FX rates), Plaid and Enable Banking do and why you'd want them |
 | [Importing Transactions](/docs/guides/importing-transactions) | CSV/XLSX import, custom adapters, and the Bliss Native CSV format |
 | [Investment Portfolios](/docs/guides/investment-portfolios) | Track stocks, ETFs, and real estate with FIFO lot calculation |
 | [Passive Income](/docs/guides/passive-income) | Project dividends, coupons, rent, interest and benefits for the next 12–36 months |
-| [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) | Connect bank accounts for automatic transaction sync |
+| [Bank Sync with Plaid](/docs/guides/plaid-bank-sync) | Connect US, Canadian and UK bank accounts for automatic transaction sync |
 | [EU Bank Sync with Enable Banking](/docs/guides/enable-banking) | Sync EU bank accounts (e.g. Revolut ES) over PSD2, and move accounts off Plaid |
 | [AI Classification](/docs/guides/ai-classification) | How the 4-tier pipeline works and how to train it |
 | [Choosing the Right Category](/docs/guides/choosing-categories) | Resolve the ambiguous cases and write custom categories the AI can use |

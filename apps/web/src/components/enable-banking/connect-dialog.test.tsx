@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/msw/server';
 import { useAuth } from '@/hooks/use-auth';
-import { EnableBankingConnect } from './connect-dialog';
+import { EnableBankingConnect, EnableBankingConnectDialog } from './connect-dialog';
+import api from '@/lib/api';
 
 // Echo keys; fold interpolation values in so assertions can see them.
 vi.mock('react-i18next', () => ({
@@ -156,6 +157,69 @@ describe('EnableBankingConnect (#132)', () => {
       ),
     );
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('EnableBankingConnectDialog onBeforeRedirect (#154)', () => {
+  function renderDialog(onBeforeRedirect?: () => Promise<void>) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <EnableBankingConnectDialog open onOpenChange={() => {}} onBeforeRedirect={onBeforeRedirect} />
+      </QueryClientProvider>,
+    );
+  }
+
+  async function pickAndContinue() {
+    fireEvent.click(await screen.findByRole('option', { name: 'Banco Uno' }));
+    fireEvent.click(screen.getByRole('button', { name: 'enableBanking.connect.continue' }));
+  }
+
+  it('awaits onBeforeRedirect before leaving for the bank', async () => {
+    useHandlers();
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const onBeforeRedirect = vi.fn(() => new Promise<void>((resolve) => {
+      order.push('before');
+      release = () => { order.push('released'); resolve(); };
+    }));
+    assign.mockImplementation(() => order.push('assign'));
+    renderDialog(onBeforeRedirect);
+    await pickAndContinue();
+
+    await waitFor(() => expect(onBeforeRedirect).toHaveBeenCalledTimes(1));
+    expect(assign).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://bank.test/auth'));
+    expect(order).toEqual(['before', 'released', 'assign']);
+  });
+
+  it('still redirects when onBeforeRedirect rejects', async () => {
+    useHandlers();
+    const onBeforeRedirect = vi.fn(() => Promise.reject(new Error('boom')));
+    renderDialog(onBeforeRedirect);
+    await pickAndContinue();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://bank.test/auth'));
+  });
+
+  it('does not call onBeforeRedirect when connect fails', async () => {
+    useHandlers({ connectStatus: 400, connectResponse: { code: 'UNKNOWN_ASPSP', error: 'x' } });
+    const onBeforeRedirect = vi.fn(() => Promise.resolve());
+    renderDialog(onBeforeRedirect);
+    await pickAndContinue();
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    expect(onBeforeRedirect).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('without onBeforeRedirect (Accounts page) writes no onboarding steps', async () => {
+    useHandlers();
+    const spy = vi.spyOn(api, 'completeOnboardingStep');
+    renderDialog();
+    await pickAndContinue();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://bank.test/auth'));
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
 

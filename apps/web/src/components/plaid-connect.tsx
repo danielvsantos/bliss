@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import type { AxiosError } from 'axios';
 import { usePlaidLink } from 'react-plaid-link';
 import { useTranslation } from 'react-i18next';
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,9 @@ import api from '@/lib/api';
 import { AccountSelectionModal } from './account-selection-modal';
 import { useIsStandalone } from '@/hooks/use-display-mode';
 import { DesktopOnlyBankNote } from '@/components/pwa/desktop-only-bank-note';
+import type { PlaidLinkTokenErrorBody } from '@/types/api';
+
+export type PlaidUnavailableReason = 'not_configured' | 'error';
 
 interface PlaidConnectProps {
     onSuccess?: (public_token?: string, metadata?: Record<string, unknown>) => Promise<void> | void;
@@ -18,6 +22,11 @@ interface PlaidConnectProps {
     children?: React.ReactNode;
     /** When provided, PlaidLink opens in update mode for re-authentication */
     plaidItemId?: string;
+    /**
+     * Rendered instead of the (disabled) button when the link token could not
+     * be created (#154). Without it the button stays disabled, as before.
+     */
+    renderUnavailable?: (reason: PlaidUnavailableReason) => React.ReactNode;
 }
 
 /**
@@ -30,10 +39,11 @@ export function PlaidConnect(props: PlaidConnectProps) {
     return <PlaidConnectButton {...props} />;
 }
 
-function PlaidConnectButton({ onSuccess, onComplete, variant = "default", className, children, plaidItemId }: PlaidConnectProps) {
+function PlaidConnectButton({ onSuccess, onComplete, variant = "default", className, children, plaidItemId, renderUnavailable }: PlaidConnectProps) {
     const { t } = useTranslation();
     const [token, setToken] = useState<string | null>(null);
     const [isInitializing, setIsInitializing] = useState(false);
+    const [initError, setInitError] = useState<PlaidUnavailableReason | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [createdPlaidItemId, setCreatedPlaidItemId] = useState<string | null>(null);
     const { toast } = useToast();
@@ -42,12 +52,15 @@ function PlaidConnectButton({ onSuccess, onComplete, variant = "default", classN
 
     const initializeLink = useCallback(async () => {
         setIsInitializing(true);
+        setInitError(null);
         try {
             // Pass plaidItemId for update mode (re-auth), or undefined for new connection
             const data = await api.createLinkToken(plaidItemId);
             setToken(data.link_token);
         } catch (error) {
             console.error("Failed to create link token", error);
+            const code = (error as AxiosError<PlaidLinkTokenErrorBody>)?.response?.data?.code;
+            setInitError(code === 'PLAID_NOT_CONFIGURED' ? 'not_configured' : 'error');
             // Fail silently on init, user will define behavior when button is disabled or loading
         } finally {
             setIsInitializing(false);
@@ -121,6 +134,8 @@ function PlaidConnectButton({ onSuccess, onComplete, variant = "default", classN
     // Default button content
     const defaultContent = isUpdateMode ? t('plaidConnect.reconnect') : t('plaidConnect.connectBank');
     const Icon = isUpdateMode ? RefreshCw : Plus;
+
+    if (initError && renderUnavailable) return <>{renderUnavailable(initError)}</>;
 
     return (
         <>

@@ -143,3 +143,43 @@ describe('PlaidConnect in the installed app (#155)', () => {
     expect(api.createLinkToken).not.toHaveBeenCalled();
   });
 });
+
+describe('PlaidConnect renderUnavailable (#154)', () => {
+  const notConfigured = Object.assign(new Error('Request failed with status code 503'), {
+    response: { status: 503, data: { error: 'Plaid is not configured', code: 'PLAID_NOT_CONFIGURED' } },
+  });
+  const otherFailure = Object.assign(new Error('Request failed with status code 500'), {
+    response: { status: 500, data: { error: 'Server Error' } },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => vi.mocked(console.error).mockRestore());
+
+  it('renders the not-configured state from the error code, with one request and no button', async () => {
+    vi.mocked(api.createLinkToken).mockRejectedValueOnce(notConfigured);
+    render(<PlaidConnect renderUnavailable={(reason) => <p data-testid="unavailable">{reason}</p>} />);
+
+    expect(await screen.findByTestId('unavailable')).toHaveTextContent('not_configured');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(api.createLinkToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports any other link-token failure as a generic error', async () => {
+    vi.mocked(api.createLinkToken).mockRejectedValueOnce(otherFailure);
+    render(<PlaidConnect renderUnavailable={(reason) => <p data-testid="unavailable">{reason}</p>} />);
+
+    expect(await screen.findByTestId('unavailable')).toHaveTextContent('error');
+  });
+
+  it('without renderUnavailable keeps the disabled button (Accounts page, re-auth)', async () => {
+    vi.mocked(api.createLinkToken).mockRejectedValueOnce(notConfigured);
+    render(<PlaidConnect />);
+
+    await waitFor(() => expect(api.createLinkToken).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button')).toBeDisabled());
+    expect(screen.getByText('plaidConnect.connectBank')).toBeInTheDocument();
+  });
+});
