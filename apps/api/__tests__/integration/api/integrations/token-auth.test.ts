@@ -176,7 +176,7 @@ describe('integration tokens — end to end', () => {
 
     it('records lastUsedAt / lastUsedIp on the key', async () => {
       const { token, apiKeyId } = await createIntegrationKey(a);
-      await call(transactionsHandler, makeReq({ headers: { ...bearer(token), 'x-real-ip': '203.0.113.7' } }));
+      await call(transactionsHandler, makeReq({ headers: bearer(token), socket: { remoteAddress: '203.0.113.7' } }));
       await new Promise((r) => setTimeout(r, 50));
       const key = await prisma.apiKey.findUnique({ where: { id: apiKeyId } });
       expect(key!.lastUsedAt).not.toBeNull();

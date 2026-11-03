@@ -137,3 +137,20 @@ export function clearSessionCookies(res) {
   clearAuthCookie(res);
   clearRefreshCookie(res);
 }
+
+/** NextAuth's session cookie names: plain on http, `__Secure-` on https. */
+export const NEXTAUTH_SESSION_COOKIES = ['next-auth.session-token', '__Secure-next-auth.session-token'];
+
+/**
+ * Clear the NextAuth (Google) session cookie under both names (#78 R2). After
+ * `google-token` exchanges it, and on sign-out, it must not linger: it can
+ * otherwise be exchanged again for a fresh Bliss session. The `__Secure-`
+ * name is only honoured by the browser with `Secure`.
+ * @param {import('next').NextApiResponse} res
+ */
+export function clearNextAuthCookies(res) {
+  for (const name of NEXTAUTH_SESSION_COOKIES) {
+    const secure = name.startsWith('__Secure-') ? '; Secure' : '';
+    appendSetCookie(res, `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`);
+  }
+}

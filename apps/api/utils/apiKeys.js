@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 import prisma from '../prisma/prisma.js';
 import { timingSafeCompare } from './timingSafeCompare.js';
+import { clientIp } from './clientIp.js';
 import { TOKEN_PREFIX, redactIntegrationTokens } from './integrationPolicy.js';
 
 /**
@@ -186,16 +187,12 @@ export function _resetLastUsedThrottle() {
 }
 
 /**
- * Client IP as seen by the API, same sources as the rate limiter.
+ * Client IP as seen by the API — the same resolution as the rate limiters
+ * (utils/clientIp.js, #78 R3).
  *
  * @param {object} req
  * @returns {string|null}
  */
 export function requestIp(req) {
-  return (
-    req.headers?.['x-real-ip']
-    || req.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
-    || req.socket?.remoteAddress
-    || null
-  );
+  return clientIp(req);
 }

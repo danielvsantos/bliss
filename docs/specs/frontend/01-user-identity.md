@@ -37,7 +37,7 @@ This component serves as the primary user interface for both logging in and regi
 
 | Schema | Fields | Rules |
 |--------|--------|-------|
-| `loginSchema` | `email`, `password` | email: valid format; password: min 6 chars |
+| `loginSchema` | `email`, `password` | email: valid format; password: non-empty (no length rule, so an existing shorter password still signs in — #78 R10). A 429 shows `notifications.error.tooManyRequests` (error `code: 'RATE_LIMITED'` from `AuthContext.signIn`, #78 R11), never "invalid credentials". |
 | `registerSchema` | `name`, `email`, `password` | name: min 2 chars; email: valid format; password: min 8 chars |
 
 Note: The register form does **not** include a confirm-password field. Instead, a hint is displayed: "Use at least 8 characters, including a number."
@@ -287,7 +287,7 @@ Both tabs render only when `user?.role === 'admin'`. **Maintenance** hosts `Main
 ### Responsibilities (`users.tsx` - User Management):
 -   **User Lifecycle Management**: Provides a full suite of CRUD (Create, Read, Update, Delete) operations for users within a tenant.
 -   **Role Display**: The user table includes a **Role** column showing each user's role as a colour-coded badge (purple for `admin`/`owner`, muted for `viewer`/`readonly`, default muted for `member`).
--   **Create User**: Opens a dialog with fields for **Name**, **Email**, **Password** (min 6 characters), **Role** (Admin / Member / Viewer), and **Preferred Language**. Calls `api.createUser` to create the user with login credentials. The "Create User" button is disabled until a valid email and password (6+ characters) are provided. The user can sign in immediately after creation.
+-   **Create User**: Opens a dialog with fields for **Name**, **Email**, **Password** (min `PASSWORD_MIN_LENGTH` = 8 characters, `lib/password-policy.ts`, #78 R10), **Role** (Admin / Member / Viewer), and **Preferred Language**. Calls `api.createUser` to create the user with login credentials. The "Create User" button is disabled until a valid email and password (8+ characters) are provided. The user can sign in immediately after creation.
 -   **Edit User**: Calls `api.updateUser` to modify a user's details. The edit dialog includes a **Role** `<Select>` field (`Admin` / `Member` / `Viewer`). The `role` value is included in the `handleUpdateUser` payload. Only admins may change another user's role.
 -   **Remove User**: Calls `api.deleteUser` to remove a user's access to the tenant.
 

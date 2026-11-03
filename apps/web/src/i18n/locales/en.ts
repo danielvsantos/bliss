@@ -1560,7 +1560,7 @@ const en = {
     emailAddress: "Email Address",
     emailPlaceholder: "Enter their email address",
     password: "Password",
-    passwordPlaceholder: "Set a password (min 6 characters)",
+    passwordPlaceholder: "Set a password (min 8 characters)",
     role: "Role",
     selectRole: "Select role",
     roleAdmin: "Admin",

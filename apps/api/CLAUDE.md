@@ -80,13 +80,15 @@ export default async function handler(req, res) {
 
 Errors are caught in try/catch, logged to Sentry, and returned as `{ error, details? }`.
 
+The limiter runs before CORS, so `createRateLimiter` sets the CORS headers itself on a 429 (`setCorsHeaders`, #78 D8) and never counts `OPTIONS` preflights; keep the order. Limiters key on `clientIp(req)` (`utils/clientIp.js`) — never read `x-real-ip` / `x-forwarded-for` directly.
+
 ## Authentication
 
 - **JWT** stored in HttpOnly cookies (primary) or Authorization Bearer header (fallback)
 - **Sessions (#156):** every sign-in path calls `startSession()` (`services/session.service.js`): a **15-min** access JWT `{ jti, userId, tenantId, email, auth_time, iat_ms }` in cookie `token` plus a rotating refresh cookie `bliss_rt` (`Path=/api/auth`). One `UserSession` row per device (hashes only; `userAgent`/`ipAddress` encrypted), **7 days idle / 15 days absolute**. `POST /api/auth/refresh` rotates, with a 10 s same-device grace and reuse detection that revokes the family. Never sign a JWT in a route.
 - **Revocation:** jti added to Redis denylist on signout (TTL = remaining token life), plus the session family revoked. `User.sessionsRevokedAt` (password change, `POST /api/auth/sessions/revoke-others`) makes `withAuth` refuse older access tokens immediately — no Redis needed.
 - **Recent sign-in:** `requireRecentAuth(req, res)` (`utils/recentAuth.js`) on `POST /api/integrations`, `POST /api/integrations/:id/keys`, `POST /api/oauth/requests/:id/approve` → `403 REAUTH_REQUIRED` when `req.user.authenticatedAt` is older than 15 min. `/api/auth/reauth` confirms with the password; Google step-up goes through `google-token.js`.
-- **Origin guard:** session-changing routes (refresh, signout, change-password, sessions/revoke-others, `POST reauth`) call `requireTrustedOrigin(req, res)` (`utils/trustedOrigin.js`, same allow-list as CORS via `utils/allowedOrigins.js`) — the cookies are `SameSite=None` cross-origin.
+- **Origin guard:** session-changing routes (refresh, signout, change-password, sessions/revoke-others, `POST reauth`) plus signin, signup and `oauth/requests/[id]/{approve,deny}` (#78 R7) call `requireTrustedOrigin(req, res)` (`utils/trustedOrigin.js`, same allow-list as CORS via `utils/allowedOrigins.js`) — the cookies are `SameSite=None` cross-origin.
 - **Migration:** `UserSession` + `User.sessionsRevokedAt` are hand-migrated (`migrate deploy` only). New `/api/auth/*` routes are `D/D` in the route matrix (already denylisted by the `/api/auth` prefix) and are **not** listed in `lib/mcp/exclusions.js`.
 - **Secret rotation:** `withAuth` tries `JWT_SECRET_CURRENT` first, then `JWT_SECRET_PREVIOUS`
 - **Multi-tenant isolation:** `user.tenantId` from JWT is used in every Prisma query. Never trust client-supplied tenantId.
@@ -106,7 +108,10 @@ Errors are caught in try/catch, logged to Sentry, and returned as `{ error, deta
 | `cookieUtils.js` | HttpOnly, Secure, SameSite cookie config; access (`token`, 15 min) + refresh (`bliss_rt`, `Path=/api/auth`) cookies, appended to `Set-Cookie` |
 | `trustedOrigin.js` | Origin/Referer guard for session-changing routes (#156) |
 | `recentAuth.js` | Recent sign-in check for key-minting actions (#156) |
-| `rateLimit.js` | Per-route rate limiters (incl. `integrations`, `oauth`, `oauthRegister`) |
+| `rateLimit.js` | Per-route rate limiters (incl. `integrations`, `oauth`, `oauthRegister`, per-account `signinAccount`, per-user `reauth`, `signout`); 429 = `{ error, code: 'RATE_LIMITED' }` with CORS headers |
+| `clientIp.js` | The only client-IP resolver (#78 R3): socket address, or `TRUST_PROXY_IP_HEADER` (`x-real-ip` / rightmost `x-forwarded-for`), or `x-real-ip` from a loopback socket (MCP) |
+| `googleExchange.js` | 5-min single-use window for the NextAuth (Google) cookie (#78 R2) |
+| `passwordPolicy.js` | `PASSWORD_MIN_LENGTH` = 8 for every new password (#78 R10) |
 | `oauth.js` | OAuth config + pure helpers: issuer, MCP challenge, redirect-URI allowlist, PKCE, scopes, secret generation |
 | `denylist.js` | Redis-backed JWT revocation, fail-open if Redis unavailable |
 | `produceEvent.js` | Dispatch events to backend via `POST BACKEND_URL/api/events` with `INTERNAL_API_KEY` |

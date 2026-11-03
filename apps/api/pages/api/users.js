@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { RelationshipType } from '@prisma/client'; // Import the enum
 import { cors } from '../../utils/cors.js';
 import { rateLimiters } from '../../utils/rateLimit.js';
+import { PASSWORD_MIN_LENGTH } from '../../utils/passwordPolicy.js';
 import { withAuth } from '../../utils/withAuth.js';
 import { AuthService } from '../../services/auth.service.js';
 
@@ -98,8 +99,8 @@ async function handlePost(req, res, user) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format.' });
       return;
   }
-  if (!password || password.length < 6) {
-    res.status(StatusCodes.BAD_REQUEST).json({ error: 'Password is required and must be at least 6 characters.' });
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: `Password is required and must be at least ${PASSWORD_MIN_LENGTH} characters.` });
     return;
   }
   if (name && (name.length < 1 || name.length > 100)) { // Allow name length 1

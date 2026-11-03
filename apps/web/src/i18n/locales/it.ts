@@ -1560,7 +1560,7 @@ const it = {
     emailAddress: "Indirizzo email",
     emailPlaceholder: "Inserisci l'indirizzo email",
     password: "Password",
-    passwordPlaceholder: "Imposta una password (min 6 caratteri)",
+    passwordPlaceholder: "Imposta una password (min 8 caratteri)",
     role: "Ruolo",
     selectRole: "Seleziona ruolo",
     roleAdmin: "Amministratore",

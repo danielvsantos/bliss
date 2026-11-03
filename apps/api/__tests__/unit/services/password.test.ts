@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { randomBytes, pbkdf2Sync } from 'crypto';
 
 import {
@@ -149,6 +149,13 @@ describe('password (scrypt)', () => {
       ['missing parameters', '$scrypt$r=8$c2FsdA==$aGFzaA=='],
       ['empty salt', '$scrypt$N=16384,r=8,p=1$$aGFzaA=='],
       ['invalid N (not a power of two)', '$scrypt$N=12345,r=8,p=1$c2FsdA==$aGFzaA=='],
+      ['N=3 (not a power of two)', '$scrypt$N=3,r=8,p=1$c2FsdA==$aGFzaA=='],
+      ['N=2^21 (above the bound)', '$scrypt$N=2097152,r=8,p=1$c2FsdA==$aGFzaA=='],
+      ['r=0', '$scrypt$N=16384,r=0,p=1$c2FsdA==$aGFzaA=='],
+      ['r above the bound', '$scrypt$N=16384,r=33,p=1$c2FsdA==$aGFzaA=='],
+      ['p above the bound', '$scrypt$N=16384,r=8,p=17$c2FsdA==$aGFzaA=='],
+      ['N too large for r (RFC 7914)', '$scrypt$N=131072,r=1,p=1$c2FsdA==$aGFzaA=='],
+      ['hash longer than 64 bytes', `$scrypt$N=16384,r=8,p=1$c2FsdA==$${Buffer.alloc(65, 1).toString('base64')}`],
     ])('returns false for %s', async (_label, stored) => {
       await expect(verifyPassword('pw', stored, 'somesalt')).resolves.toBe(false);
     });
@@ -186,6 +193,37 @@ describe('password (scrypt)', () => {
       expect(needsRehash(null)).toBe(false);
       expect(needsRehash(undefined)).toBe(false);
       expect(needsRehash('')).toBe(false);
+    });
+  });
+
+  // #78 R9: a scrypt failure on a well-formed row is not a wrong password.
+  describe('unexpected scrypt failure', () => {
+    afterEach(() => {
+      vi.doUnmock('crypto');
+      vi.resetModules();
+      vi.restoreAllMocks();
+    });
+
+    it('rejects and logs password_verify_error instead of returning false', async () => {
+      const hash = await hashPassword('s3cure-pw');
+      vi.resetModules();
+      vi.doMock('crypto', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('crypto')>();
+        const scrypt = (...args: unknown[]) => {
+          const cb = args[args.length - 1] as (err: Error) => void;
+          const err = Object.assign(new Error('Cannot allocate memory'), { code: 'ERR_OUT_OF_MEMORY' });
+          process.nextTick(() => cb(err));
+        };
+        return { ...actual, default: { ...actual, scrypt }, scrypt };
+      });
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const fresh = await import('../../../services/password.js');
+
+      await expect(fresh.verifyPassword('s3cure-pw', hash, null)).rejects.toMatchObject({ code: 'ERR_OUT_OF_MEMORY' });
+      const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('password_verify_error');
+      expect(logged).toContain('ERR_OUT_OF_MEMORY');
+      expect(logged).not.toContain('s3cure-pw');
     });
   });
 });

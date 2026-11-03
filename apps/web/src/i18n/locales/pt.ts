@@ -1560,7 +1560,7 @@ const pt = {
     emailAddress: "Endereço de E-mail",
     emailPlaceholder: "Digite o endereço de e-mail",
     password: "Senha",
-    passwordPlaceholder: "Defina uma senha (mín. 6 caracteres)",
+    passwordPlaceholder: "Defina uma senha (mín. 8 caracteres)",
     role: "Função",
     selectRole: "Selecione a função",
     roleAdmin: "Administrador",

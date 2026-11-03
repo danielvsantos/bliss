@@ -46,7 +46,7 @@ vi.mock('../../../services/auth.service.js', () => ({ AuthService: mockAuthServi
 import handler from '../../../pages/api/auth/signup.js';
 
 function makeReq(overrides: Partial<NextApiRequest> = {}): NextApiRequest {
-  return { method: 'POST', headers: {}, cookies: {}, body: {}, query: {}, ...overrides } as unknown as NextApiRequest;
+  return { method: 'POST', headers: { origin: 'http://localhost:8080' }, cookies: {}, body: {}, query: {}, ...overrides } as unknown as NextApiRequest;
 }
 
 function makeRes() {
@@ -82,6 +82,39 @@ describe('POST /api/auth/signup validation', () => {
 
     expect(res._status).toBe(400);
     expect(res._body.error).toMatch(/at least 8 characters/i);
+  });
+
+  it('rejects a 7-character password (#78 R10)', async () => {
+    const req = makeReq({ body: { email: 'test@test.com', password: 'abcdefg', tenantName: 'My Tenant' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/at least 8 characters/i);
+  });
+
+  // #78 R7: login CSRF — a cross-site form POST must not create a tenant.
+  it('rejects a cross-origin request with 403 UNTRUSTED_ORIGIN before any work', async () => {
+    const req = makeReq({
+      headers: { origin: 'https://evil.example', 'content-type': 'application/x-www-form-urlencoded' },
+      body: { email: 'test@test.com', password: 'longenough', tenantName: 'My Tenant' },
+    });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(403);
+    expect(res._body.code).toBe('UNTRUSTED_ORIGIN');
+  });
+
+  it('rejects a request with neither Origin nor Referer', async () => {
+    const req = makeReq({ headers: {}, body: { email: 'test@test.com', password: 'longenough', tenantName: 'My Tenant' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(403);
   });
 
   it('returns 400 for invalid email format', async () => {

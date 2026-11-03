@@ -93,6 +93,30 @@ describe('useAuth', () => {
     await waitFor(() => expect(result.current.user).toEqual(mockUser));
   });
 
+  // #78 R11: a 429 must surface as RATE_LIMITED, never as a wrong password.
+  it('signIn rejects with code RATE_LIMITED on a 429', async () => {
+    vi.mocked(api.getSession).mockResolvedValueOnce(null);
+    vi.mocked(api.signin).mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 429'), {
+      response: { status: 429, data: { error: 'Too Many Requests. Please try again later.', code: 'RATE_LIMITED' } },
+    }));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let caught: (Error & { code?: string }) | undefined;
+    await act(async () => {
+      try {
+        await result.current.signIn({ email: 'test@example.com', password: 'password123' });
+      } catch (err) {
+        caught = err as Error & { code?: string };
+      }
+    });
+
+    expect(caught?.code).toBe('RATE_LIMITED');
+    expect(result.current.user).toBeNull();
+  });
+
   it('signOut clears user state', async () => {
     const mockUser: User = { id: '1', email: 'test@example.com', name: 'Test' };
     vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser });

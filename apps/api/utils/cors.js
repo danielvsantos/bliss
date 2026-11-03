@@ -1,7 +1,12 @@
 import { allowedOrigins } from './allowedOrigins.js';
 
-// Middleware to handle CORS
-export function cors(req, res) {
+/**
+ * Sets the CORS response headers. `Access-Control-Allow-Origin` and
+ * `-Credentials` are only added for an allow-listed origin. Shared by `cors()`
+ * and the rate limiter's 429 handler (#78 D8), so a 429 stays readable by the
+ * SPA in a cross-origin deployment.
+ */
+export function setCorsHeaders(req, res) {
   const allowed = allowedOrigins();
 
   const origin = req.headers.origin;
@@ -24,6 +29,11 @@ export function cors(req, res) {
     'Access-Control-Allow-Methods',
     'GET, POST, PUT, PATCH, DELETE, OPTIONS'
   );
+}
+
+// Middleware to handle CORS
+export function cors(req, res) {
+  setCorsHeaders(req, res);
 
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
@@ -31,4 +41,4 @@ export function cors(req, res) {
     return true;
   }
   return false;
-} 
+}

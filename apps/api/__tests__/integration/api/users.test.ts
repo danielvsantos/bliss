@@ -206,7 +206,7 @@ describe('POST /api/users — user creation with password', () => {
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(400);
-    expect((res._body as { error: string }).error).toMatch(/6 characters/i);
+    expect((res._body as { error: string }).error).toMatch(/8 characters/i);
   });
 
   it('returns 400 when email is missing', async () => {

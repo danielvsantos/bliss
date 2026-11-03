@@ -1533,7 +1533,7 @@ const fr = {
     emailAddress: "Adresse email",
     emailPlaceholder: "Entrez son adresse email",
     password: "Mot de passe",
-    passwordPlaceholder: "Définir un mot de passe (min. 6 caractères)",
+    passwordPlaceholder: "Définir un mot de passe (min. 8 caractères)",
     role: "Rôle",
     selectRole: "Sélectionner un rôle",
     roleAdmin: "Administrateur",

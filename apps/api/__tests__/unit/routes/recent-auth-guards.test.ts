@@ -17,7 +17,7 @@ const { mockPrisma, mockOauth, authState } = vi.hoisted(() => ({
     integration: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     apiKey: { create: vi.fn() },
   },
-  mockOauth: { loadRequestForUser: vi.fn(), approveRequest: vi.fn(), OAuthError: class extends Error {} },
+  mockOauth: { loadRequestForUser: vi.fn(), approveRequest: vi.fn(), denyRequest: vi.fn(), OAuthError: class extends Error {} },
   authState: { user: null as any },
 }));
 
@@ -33,6 +33,7 @@ vi.mock('../../../utils/withAuth.js', () => ({
 import integrationsHandler from '../../../pages/api/integrations/index.js';
 import keysHandler from '../../../pages/api/integrations/[id]/keys/index.js';
 import approveHandler from '../../../pages/api/oauth/requests/[id]/approve.js';
+import denyHandler from '../../../pages/api/oauth/requests/[id]/deny.js';
 
 function makeRes() {
   const res: any = {};
@@ -59,7 +60,7 @@ describe.each(routes)('%s', (_name, handler, query) => {
     authState.user = { id: 'u1', tenantId: 't1', role: 'admin', authenticatedAt };
     const res = makeRes();
 
-    await handler({ method: 'POST', headers: {}, query, body: {} } as any, res);
+    await handler({ method: 'POST', headers: { origin: 'http://localhost:8080' }, query, body: {} } as any, res);
 
     expect(res._status).toBe(403);
     expect(res._body.code).toBe('REAUTH_REQUIRED');
@@ -74,8 +75,29 @@ describe.each(routes)('%s', (_name, handler, query) => {
     mockOauth.loadRequestForUser.mockResolvedValue({ status: 404, error: 'not found' });
     const res = makeRes();
 
-    await handler({ method: 'POST', headers: {}, query, body: {} } as any, res);
+    await handler({ method: 'POST', headers: { origin: 'http://localhost:8080' }, query, body: {} } as any, res);
 
     expect(res._status).not.toBe(403);
+  });
+});
+
+// #78 R7: OAuth consent is a cross-site-sensitive action.
+describe.each([
+  ['approve', approveHandler],
+  ['deny', denyHandler],
+] as const)('POST /api/oauth/requests/:id/%s from another origin', (_name, handler) => {
+  it.each([
+    ['a foreign Origin', { origin: 'https://evil.example' }],
+    ['no Origin or Referer', {}],
+  ])('answers 403 UNTRUSTED_ORIGIN for %s, before any work', async (_label, headers) => {
+    authState.user = { id: 'u1', tenantId: 't1', role: 'admin', authenticatedAt: new Date() };
+    const res = makeRes();
+
+    await handler({ method: 'POST', headers, query: { id: 'req-1' }, body: {} } as any, res);
+
+    expect(res._status).toBe(403);
+    expect(res._body.code).toBe('UNTRUSTED_ORIGIN');
+    expect(mockOauth.loadRequestForUser).not.toHaveBeenCalled();
+    expect(mockOauth.approveRequest).not.toHaveBeenCalled();
   });
 });

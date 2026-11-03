@@ -154,6 +154,37 @@ describe('AuthPage', () => {
     window.history.pushState({}, '', '/');
   });
 
+  // #78 R10: the login form never enforces the new-password minimum.
+  it('submits an existing 6-character password on sign-in', async () => {
+    mockSignIn.mockResolvedValueOnce({});
+    renderAuthPage();
+
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'test@bliss.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'abc123' } });
+    const submitBtn = screen.getAllByRole('button', { name: 'Sign In' }).find(b => b.getAttribute('type') === 'submit');
+    fireEvent.click(submitBtn!);
+
+    await waitFor(() => {
+      expect(mockSignIn).toHaveBeenCalledWith({ email: 'test@bliss.com', password: 'abc123' });
+    });
+  });
+
+  // #78 R11: a 429 is "too many attempts", not a credential failure.
+  it('shows the localised too-many-requests message for a rate-limited sign-in', async () => {
+    mockSignIn.mockRejectedValueOnce(Object.assign(new Error('Too Many Requests. Please try again later.'), { code: 'RATE_LIMITED' }));
+    renderAuthPage();
+
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'test@bliss.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
+    const submitBtn = screen.getAllByRole('button', { name: 'Sign In' }).find(b => b.getAttribute('type') === 'submit');
+    fireEvent.click(submitBtn!);
+
+    await waitFor(() => {
+      expect(screen.getByText('notifications.error.tooManyRequests')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Invalid credentials')).not.toBeInTheDocument();
+  });
+
   it('handles sign in failures gracefully', async () => {
     mockSignIn.mockRejectedValueOnce(new Error('Invalid credentials'));
     renderAuthPage();

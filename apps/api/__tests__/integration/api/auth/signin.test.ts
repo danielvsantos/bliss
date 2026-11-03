@@ -74,7 +74,7 @@ import { startSession as setAuthCookie } from '../../../../services/session.serv
 function makeReq(overrides: Partial<NextApiRequest> = {}): NextApiRequest {
   return {
     method: 'POST',
-    headers: {},
+    headers: { origin: 'http://localhost:8080' },
     cookies: {},
     body: {},
     query: {},

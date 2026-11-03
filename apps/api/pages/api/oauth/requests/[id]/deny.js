@@ -2,6 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import { cors } from '../../../../../utils/cors.js';
 import { withAuth } from '../../../../../utils/withAuth.js';
+import { requireTrustedOrigin } from '../../../../../utils/trustedOrigin.js';
 import { limit } from '../../../../../lib/oauthHttp.js';
 import { denyRequest, loadRequestForUser } from '../../../../../services/oauth.service.js';
 
@@ -13,6 +14,8 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
+  // Consent is a cross-site-sensitive action (#78 R7).
+  if (!requireTrustedOrigin(req, res)) return;
   try {
     const result = await loadRequestForUser(req.query.id, req.user);
     if (!result.request) return res.status(result.status).json({ error: result.error });

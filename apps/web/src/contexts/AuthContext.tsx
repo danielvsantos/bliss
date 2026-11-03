@@ -142,7 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         || 'Invalid email or password.';
       setError(errorMessage);
       setUser(null);
-      throw new Error(errorMessage);
+      // Keep a machine code so the form can localise it (#78 R11): a 429
+      // (rate limited) must never read as a wrong password.
+      const err = new Error(errorMessage) as Error & { code?: string };
+      err.code = axiosError.response?.status === 429
+        ? 'RATE_LIMITED'
+        : axiosError.response?.data?.code;
+      throw err;
     }
   };
 

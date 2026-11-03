@@ -1,12 +1,27 @@
+import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
+import { clientIp } from './clientIp.js';
+import { setCorsHeaders } from './cors.js';
+
+export const RATE_LIMITED = 'RATE_LIMITED';
+
+/** Default key: the real client IP (#78 R3, see utils/clientIp.js). */
+export const ipKey = (req) => clientIp(req) || '127.0.0.1';
 
 /**
  * Creates a rate limiter middleware with given options.
- * 
+ *
+ * Every 429 body is `{ error, code: 'RATE_LIMITED' }`, and the 429 carries the
+ * same CORS headers a normal response would (#78 D8): routes call the limiter
+ * before `cors()`, and without them a cross-origin SPA sees a CORS error
+ * instead of the 429. CORS preflights (`OPTIONS`) are never counted.
+ *
  * @param {Object} options
  * @param {number} options.max - Maximum number of requests allowed per window.
  * @param {number} options.windowMs - Time frame for rate limiting in milliseconds.
  * @param {string} [options.message] - Custom error message on exceeding the limit.
+ * @param {Function} [options.keyGenerator] - Custom key (default: client IP).
+ * @param {boolean} [options.skipSuccessfulRequests] - Only count failures.
  * @returns {Function} Express middleware
  */
 export const createRateLimiter = (options = {}) => {
@@ -17,20 +32,23 @@ export const createRateLimiter = (options = {}) => {
   return rateLimit({
     windowMs,
     max,
-    message: { error: message },
+    message: { error: message, code: RATE_LIMITED },
     standardHeaders: true,  // Send RateLimit-* headers
     legacyHeaders: false,   // Disable X-RateLimit-* headers
-    keyGenerator: (req) => {
-      // Get IP from various possible sources in Next.js
-      const ip = 
-        req.headers['x-real-ip'] ||
-        req.headers['x-forwarded-for']?.split(',')[0] ||
-        req.socket?.remoteAddress ||
-        '127.0.0.1';  // Fallback for local development
-      return ip;
-    }
+    skipSuccessfulRequests: options.skipSuccessfulRequests === true,
+    skip: (req) => req.method === 'OPTIONS',
+    keyGenerator: options.keyGenerator || ipKey,
+    handler: (req, res, _next, opts) => {
+      setCorsHeaders(req, res);
+      res.setHeader('Access-Control-Expose-Headers', 'RateLimit-Reset, Retry-After');
+      res.status(opts.statusCode).json(opts.message);
+    },
   });
 };
+
+/** Per-account signin key: never the plaintext email (#78 D3). */
+export const accountKey = (email) =>
+  `acct:${crypto.createHash('sha256').update(String(email ?? '')).digest('hex')}`;
 
 /**
  * Pre-configured limiters for common use cases.
@@ -48,6 +66,23 @@ export const rateLimiters = {
     portfolio: createRateLimiter({ max: 100, windowMs: 5 * 60 * 1000 }),  // 100 portfolio API calls per 5 min
     session: createRateLimiter({ max: 100, windowMs: 5 * 60 * 1000 }),   // 100 session checks per 5 min
     signin: createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 }),       // 5 logins per 5 min
+    // Per-account signin throttle (#78 D3): failures only, keyed on a hash of
+    // the normalised email (req.signinEmail, set by signin.js), so rotating IPs
+    // can't keep guessing one account.
+    signinAccount: createRateLimiter({
+      max: 10,
+      windowMs: 15 * 60 * 1000,
+      skipSuccessfulRequests: true,
+      keyGenerator: (req) => accountKey(req.signinEmail),
+    }),
+    // Step-up password check (#78 R11): per user, not the signin bucket.
+    reauth: createRateLimiter({
+      max: 5,
+      windowMs: 5 * 60 * 1000,
+      keyGenerator: (req) => (req.user?.id ? `user:${req.user.id}` : ipKey(req)),
+    }),
+    // Sign-out (#78 R11): its own roomy bucket so sign-outs never lock out sign-in.
+    signout: createRateLimiter({ max: 30, windowMs: 5 * 60 * 1000 }),
     // Session refresh (#156): one per device every 15 min plus tab/resume
     // bursts; a household behind one NAT must never hit it (a 429 here is a
     // forced sign-in), hence its own, roomier limiter.

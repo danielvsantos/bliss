@@ -464,7 +464,7 @@ describe('withAuth() — integration tokens', () => {
 
   it('records lastUsedAt (throttled) on use', async () => {
     const handler = vi.fn().mockResolvedValue(undefined);
-    await withAuth(handler)(tokenReq({ headers: { authorization: `Bearer ${token}`, 'x-real-ip': '9.9.9.9' } }), makeRes());
+    await withAuth(handler)(tokenReq({ headers: { authorization: `Bearer ${token}` }, socket: { remoteAddress: '9.9.9.9' } }), makeRes());
     await withAuth(handler)(tokenReq(), makeRes());
     await new Promise((r) => setTimeout(r, 0));
 

@@ -66,6 +66,7 @@ Set these per Railway service. Use `${{<service>.VAR}}` reference variables for 
 | `BACKEND_URL` | API | Internal backend address, e.g. `http://bliss-backend.railway.internal:8080`. Used for both event delivery and pricing calls. |
 | `NEXTAUTH_URL` | API | The API's public HTTPS URL, e.g. `https://api.yoursite.com`. |
 | `FRONTEND_URL` | API | The web app's public origin, e.g. `https://app.yoursite.com`. Drives CORS -- exact match, no trailing slash. |
+| `TRUST_PROXY_IP_HEADER` | API | `x-real-ip`. Railway's edge overwrites `X-Real-IP` with the real client address; without this setting the API keys every rate limit on the proxy's address, so all users share one sign-in bucket (5 per 5 min for the whole instance). **Set it before deploying a version with #78.** |
 | `COOKIE_DOMAIN` | API | `.yoursite.com` when web + API are siblings on one root domain (shared session). Leave unset otherwise -- never set it to a `*.up.railway.app` value (public suffix; browsers reject it). |
 | `SIGNUP_MODE` | API | Optional. `invite_only` restricts new sign-ups to invited emails; unset means open. See [Invite-only hosting](#invite-only-hosting). |
 | `ADMIN_API_KEY` | API | Optional operator credential. Required to manage invites when `SIGNUP_MODE=invite_only`. |

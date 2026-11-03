@@ -61,7 +61,7 @@ const INVITE_REQUIRED = {
 function makeReq(body: Record<string, unknown>): NextApiRequest {
   return {
     method: 'POST',
-    headers: {},
+    headers: { origin: 'http://localhost:8080' },
     cookies: {},
     query: {},
     body: { password: 'password123', tenantName: 'My Tenant', countries: [], currencies: [], bankIds: [], ...body },

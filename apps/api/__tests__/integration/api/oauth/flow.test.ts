@@ -75,7 +75,8 @@ async function authorizeAndApprove({
   const consent = await api(`/api/oauth/requests/${requestId}`, { headers: asUser(jwt) });
   const consentBody = await consent.json();
   const approve = await api(`/api/oauth/requests/${requestId}/approve`, {
-    method: 'POST', headers: asUser(jwt), body: JSON.stringify({ accessLevel, expiresInDays: 90 }),
+    // Consent is origin-guarded (#78 R7): the SPA's origin, as a browser sends it.
+    method: 'POST', headers: { ...asUser(jwt), origin: 'http://localhost:8080' }, body: JSON.stringify({ accessLevel, expiresInDays: 90 }),
   });
   const approveBody = await approve.json();
   const redirect = approveBody.redirectUrl ? new URL(approveBody.redirectUrl) : null;
@@ -421,7 +422,7 @@ describe('failure paths', () => {
       code_challenge_method: 'S256', state: 'q',
     })}`);
     const requestId = new URL(auth.headers.get('location')!).searchParams.get('request')!;
-    const deny = await (await api(`/api/oauth/requests/${requestId}/deny`, { method: 'POST', headers: asUser(tenant.token) })).json();
+    const deny = await (await api(`/api/oauth/requests/${requestId}/deny`, { method: 'POST', headers: { ...asUser(tenant.token), origin: 'http://localhost:8080' } })).json();
     const url = new URL(deny.redirectUrl);
     expect(url.searchParams.get('error')).toBe('access_denied');
     expect(url.searchParams.get('state')).toBe('q');

@@ -56,9 +56,10 @@ class Device {
   constructor(public ua: string, public ip = '203.0.113.7') {}
 
   async call(handler: Handler, { method = 'POST', body = {}, url = '/api/auth/x', origin = ORIGIN } = {}): Promise<Response> {
-    const headers: Record<string, string> = { 'user-agent': this.ua, 'x-real-ip': this.ip };
+    const headers: Record<string, string> = { 'user-agent': this.ua };
     if (origin) headers.origin = origin;
-    const req = { method, url, headers, cookies: { ...this.jar }, body, query: {} } as unknown as NextApiRequest;
+    // The device's address is the socket's (#78 R3: client headers are not trusted).
+    const req = { method, url, headers, socket: { remoteAddress: this.ip }, cookies: { ...this.jar }, body, query: {} } as unknown as NextApiRequest;
     const out: Response = { status: undefined, body: undefined, setCookies: [] };
     const headerStore: Record<string, unknown> = {};
     const res: any = {

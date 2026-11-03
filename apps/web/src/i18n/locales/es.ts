@@ -1532,7 +1532,7 @@ const es = {
     emailAddress: "Dirección de correo",
     emailPlaceholder: "Introduce su correo electrónico",
     password: "Contraseña",
-    passwordPlaceholder: "Establece una contraseña (mín. 6 caracteres)",
+    passwordPlaceholder: "Establece una contraseña (mín. 8 caracteres)",
     role: "Rol",
     selectRole: "Seleccionar rol",
     roleAdmin: "Administrador",

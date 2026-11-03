@@ -9,7 +9,8 @@ This document traces the user identity and authentication flow from the API pers
 This is the primary endpoint for new user registration. It's a critical, all-in-one handler that creates the core data structures for a new user.
 
 ### Responsibilities:
-- **Request Validation**: Performs comprehensive validation on the request body, checking for the presence and format of `email`, `password`, and `tenantName`.
+- **Origin guard (#78 R7)**: Rejects a request whose `Origin` (or, without one, `Referer`) is not a trusted frontend origin with `403 UNTRUSTED_ORIGIN` (`requireTrustedOrigin`, §1.5h) — a cross-site form POST must not create a tenant and sign the victim's browser into it.
+- **Request Validation**: Performs comprehensive validation on the request body, checking for the presence and format of `email`, `password` (at least `PASSWORD_MIN_LENGTH` = 8 characters, `utils/passwordPolicy.js`), and `tenantName`.
 - **Conflict Resolution**: Checks if a user with the provided email already exists to prevent duplicate accounts. The duplicate response is deliberately **non-confirming** — see "Account-existence disclosure" below.
 - **Relational Data Validation**: If `countries`, `currencies`, or `bankIds` are provided, it validates that all provided IDs exist in the database.
 - **Transactional Creation**: It uses a Prisma `$transaction` to ensure that the creation of a new `Tenant`, the associated `User`, and all relational records (like `TenantCountry`, `TenantCurrency`, `TenantBank`) are created atomically. If any step fails, the entire transaction is rolled back.
@@ -122,7 +123,7 @@ WHERE "passwordHash" IS NOT NULL AND "passwordHash" NOT LIKE '$scrypt$%';
 ### Key Functions:
 - **`hashPassword(password)`** — 16-byte random salt, async `crypto.scrypt` at the parameters above, returns `{ hash, salt: null }`.
 - **`verifyPassword(password, hash, salt)`** — detects the format and verifies against either. Returns `false` (never throws) for malformed, absent or mismatched-length input.
-- **`verifyAndUpgrade(user, plaintext)`** — verifies, then rehashes to scrypt if the stored hash is legacy. Called from both credential paths (`signin.js` and the NextAuth `CredentialsProvider`). Two call sites, one implementation: a divergence here would mean one login path never upgrades.
+- **`verifyAndUpgrade(user, plaintext)`** — verifies, then rehashes to scrypt if the stored hash is legacy. Called from `signin.js` — the only email/password sign-in path since #78 R1 removed NextAuth's credentials provider.
 - **`needsRehash(storedHash)`** — `true` only for a non-scrypt, non-empty hash.
 - **`findOrCreateGoogleUser({ email, name, googleId, emailVerified })`**:
     - Returns `{ user, isNew }` (not just the user object).
@@ -193,7 +194,9 @@ The service salts and hashes every password and never stores plaintext. Hashing 
 This endpoint handles the authentication process for existing users.
 
 ### Responsibilities:
-- **Request Validation**: It validates that the `email` and `password` fields are present in the request body and that the email is in a valid format.
+- **Throttling (#78 R1/R3)**: two limiters. `rateLimiters.signin` (5 / 5 min) is keyed on the **real client IP** (`utils/clientIp.js`: the socket address unless `TRUST_PROXY_IP_HEADER` names a trusted proxy header — §1.3a). `rateLimiters.signinAccount` (10 failures / 15 min, successful sign-ins don't count) is keyed on `acct:` + SHA-256 of the normalised email, runs **before** the user lookup (unknown emails count too, no enumeration oracle) and stops rotating IPs from guessing one account. Either answers `429 { error, code: 'RATE_LIMITED' }` with CORS headers (§1.3a).
+- **Origin guard (#78 R7)**: `requireTrustedOrigin` — a cross-origin request (including a cross-site form POST, i.e. login CSRF) gets `403 UNTRUSTED_ORIGIN` before any lookup.
+- **Request Validation**: It validates that the `email` and `password` fields are present in the request body and that the email is in a valid format. Sign-in never checks the new-password minimum, so an existing shorter password still signs in.
 - **User Lookup**: It queries the database to find a user matching the provided email. Because the email is encrypted, this lookup is handled seamlessly by the Prisma middleware, which encrypts the search term before querying the database.
 - **Password Verification**: It uses the `AuthService.verifyPassword` method to securely compare the provided password with the stored hash and salt.
 - **Token Generation**: Signs a new JWT with `userId`, `tenantId`, `email`, and `jti: uuidv4()`.
@@ -205,7 +208,7 @@ This endpoint handles the authentication process for existing users.
 2.  Performs validation checks. Fails with `400 Bad Request` if data is missing or malformed.
 3.  Looks up the `User` in the database by `email`. If no user is found, it fails with a `401 Unauthorized` error.
 4.  Calls `AuthService.verifyPassword()` with the incoming password and the user's stored `passwordHash` and `passwordSalt`.
-5.  If verification fails, it returns a `401 Unauthorized` error.
+5.  If verification fails, it returns a `401 Unauthorized` error. If verification **throws** (e.g. `ERR_OUT_OF_MEMORY` from scrypt, #78 R9), the error is logged (`password_verify_error`), reported to Sentry and answered `500 Authentication failed` — never "Invalid credentials".
 6.  Signs a new JWT with a `jti: uuidv4()` claim.
 7.  Calls `startSession(res, user, req)` to set the access + refresh cookies (§1.5h).
 8.  Returns `200 OK` with `{ user }` only — **no `token` field in the response body**.
@@ -213,6 +216,15 @@ This endpoint handles the authentication process for existing users.
 ### Dependencies:
 - **`AuthService`**: Relies on the service for the critical password verification step.
 - **`prisma`**: Used to find the user in the database.
+
+## 1.3a. Client IP and rate-limit responses (#78 R3, D8)
+
+- **One resolver:** `utils/clientIp.js → clientIp(req)` is used by every rate limiter, by `apiKeys.requestIp` (integration-key `lastUsedIp`, `UserSession.ipAddress`) and by the MCP loopback forwarder. It returns the **socket address** (`::ffff:a.b.c.d` normalised). A client-supplied header is honoured only when:
+  - `TRUST_PROXY_IP_HEADER=x-real-ip` (header used as-is) or `x-forwarded-for` (the **rightmost** entry — the one the trusted proxy appended); or
+  - the socket is loopback (`127.0.0.1` / `::1`): the API calling itself for MCP tools, forwarding the agent's IP in `x-real-ip`.
+- **Deployment settings:** Docker Compose publishes the API directly → leave `TRUST_PROXY_IP_HEADER` unset. Railway's edge overwrites `X-Real-IP` with the real client address → `TRUST_PROXY_IP_HEADER=x-real-ip` (set it **before** deploying, or every user shares the proxy's bucket). When the variable is unset and a non-loopback request carries `X-Real-IP`, the API logs `trust_proxy_header_ignored` once per process.
+- **429 responses:** every limiter answers `429 { error, code: 'RATE_LIMITED' }` with the same CORS headers a normal response gets (`setCorsHeaders`, `utils/cors.js`) plus `Access-Control-Expose-Headers: RateLimit-Reset, Retry-After`, so a cross-origin SPA can read it (routes call the limiter before `cors()`; without this the browser reported a CORS error). `OPTIONS` preflights are never counted.
+- **Auth buckets:** `signin` (IP, 5 / 5 min) and `signinAccount` (account, 10 failures / 15 min) on sign-in; `reauth` (per user, 5 / 5 min) on `POST /api/auth/reauth`; `signout` (IP, 30 / 5 min) — sign-out and step-up no longer share the sign-in bucket.
 
 ---
 
@@ -291,6 +303,8 @@ A **stateful** sign-out endpoint that actively revokes the caller's session serv
 - If a token is present and decodable, extracts the `jti` and `exp` claims.
 - Calls `addToDenylist(jti, remainingTtl)` — immediately invalidates the token in Redis even before natural expiry.
 - Calls `revokeSession(req, res)` (#156): revokes this device's `UserSession` (`revokedReason: 'signout'`) when the `bliss_rt` cookie matches it, and clears **both** cookies (`token` on `Path=/`, `bliss_rt` on `Path=/api/auth`).
+- Clears the NextAuth (Google) cookie under both names, `next-auth.session-token` and `__Secure-next-auth.session-token` (`clearNextAuthCookies`, #78 R2), so it cannot be exchanged for a new session.
+- Rate-limited by its own `rateLimiters.signout` bucket (30 / 5 min per IP), so sign-outs never lock out sign-in (#78 R11).
 - Returns `200 OK` with `{ message: 'Signed out successfully' }`. The SPA also clears the persisted query cache (`clearPersistedQueryCache()`, #155).
 
 ### Behaviour:
@@ -342,11 +356,14 @@ The default export is then a **custom `async function handler(req, res)`** that 
 | Provider | Purpose |
 |---|---|
 | `GoogleProvider` | OAuth 2.0 sign-in/sign-up via Google. Profile maps `sub → id`, `picture → image`, adds `googleId`. |
-| `CredentialsProvider` | Email + password sign-in. Delegates to `AuthService.findUserByEmail` + `AuthService.verifyPassword`. |
+
+There is **no credentials provider** (#78 R1): `POST /api/auth/callback/credentials` verifies nothing. Email/password sign-in goes through the rate-limited `/api/auth/signin` only, and NextAuth is Google glue.
+
+**Session lifetime:** `session.maxAge` is **300 s** (`GOOGLE_EXCHANGE_WINDOW_S`, `utils/googleExchange.js`). The NextAuth cookie only has to survive the Google round-trip to `google-token`; it is never a Bliss session (#78 R2).
 
 ### Callbacks:
 - **`signIn({ user, account, profile })`**: For the Google provider, calls `AuthService.findOrCreateGoogleUser({ email, name, googleId, emailVerified })` which returns `{ user: googleUser, isNew }`. Mutates NextAuth's transient `user` object in-place: sets `user.id`, `user.tenantId`, `user.isNew`. A thrown error is mapped through `GOOGLE_ERROR_CODES` (`google_account_exists`, `google_email_unverified`, `signup_invite_required`, else `oauth_failed`) to a `${FRONTEND_URL}/auth?error=<code>` redirect.
-- **`jwt({ token, user })`**: On first sign-in (when `user` is present), persists `id`, `tenantId`, `email`, `name`, and `isNew` into the NextAuth JWT cookie. Subsequent requests (where `user` is absent) return the token unchanged.
+- **`jwt({ token, user })`**: On first sign-in (when `user` is present), persists `id`, `tenantId`, `email`, `name`, `isNew` and **`signedInAt`** (ms, #78 R2) into the NextAuth JWT cookie. Subsequent requests (where `user` is absent) return the token unchanged. `signedInAt` exists because NextAuth re-issues `iat` on every `/api/auth/session` read, so `iat` cannot anchor a time window.
 - **`session({ session, token })`**: Copies `id`, `tenantId`, `email`, and `name` from the JWT token back onto `session.user` (used only if a NextAuth session is ever read directly; the app primarily uses the `google-token` bridge).
 
 ### `pages` Config:
@@ -362,10 +379,9 @@ findOrCreateGoogleUser() → { user, isNew }
 ```
 
 ### ESM / Module-Interop Note:
-Because Next.js compiles ESM modules through webpack, Google and Credentials providers may not export a default function in all evaluation contexts. The file uses a defensive interop pattern:
+Because Next.js compiles ESM modules through webpack, the Google provider may not export a default function in all evaluation contexts. The file uses a defensive interop pattern:
 ```js
 const GoogleProvider = GoogleProviderImport.default || GoogleProviderImport;
-const CredentialsProvider = CredentialsProviderImport.default || CredentialsProviderImport;
 ```
 
 ---
@@ -387,6 +403,11 @@ Converts a short-lived NextAuth session cookie into the application's standard c
 2. If the token is missing or has no `id` field → redirect to `${FRONTEND_URL}/auth?error=oauth_failed`.
 3. Looks up the user in the database via `prisma.user.findUnique({ where: { id: token.id } })`.
 4. If the user is not found → redirect to `${FRONTEND_URL}/auth?error=oauth_failed`.
+4a. **Single-use check (#78 R2, `googleExchangeRejection`)** — redirect to `?error=oauth_failed` without touching any session (`authenticatedAt` / `auth_time` unchanged) when the token's `signedInAt`:
+   - is missing or older than **5 minutes** (`GOOGLE_EXCHANGE_WINDOW_S`) — so a leftover cookie can neither sign in nor satisfy step-up;
+   - is not later than `User.sessionsRevokedAt` — password change and "sign out of all other devices" invalidate any cookie copied before them;
+   - is not later than the newest `UserSession.authenticatedAt` of the user (revoked rows included) — every successful exchange writes one, so a replay is refused. Side effect: a password sign-in of the same account inside the window also voids a pending Google cookie; the user repeats Google sign-in.
+   Rejections log `google_exchange_rejected { reason, userId }`. The NextAuth cookie is cleared (both names) on **every** outcome.
 5. Reads the `bliss_rt` cookie (`findLiveSession`) and calls `reauthenticate(req, res, user, { session })` (#156):
    - a live session of the **same** user on this browser (the Google step-up of §1.5h) → its `authenticatedAt` becomes now and a new access cookie is issued; its 15-day cap is unchanged;
    - otherwise → `startSession` (access + refresh cookies); a live session of a **different** user on this browser is revoked (`user_switch`).
@@ -472,7 +493,7 @@ Allows authenticated users to change their password. Only available for credenti
 
 ### Validation Flow:
 1. Rejects if any of the three fields are missing (`400`).
-2. Rejects if `newPassword.length < 8` (`400`).
+2. Rejects if `newPassword.length < PASSWORD_MIN_LENGTH` (8, `utils/passwordPolicy.js`, shared with signup and admin "add user", #78 R10) (`400`).
 3. Rejects if `newPassword !== confirmPassword` (`400`).
 4. Fetches user's `passwordHash` and `passwordSalt` from the database.
 5. Rejects if user has no `passwordHash` — OAuth-only account (`400`).
@@ -560,7 +581,7 @@ Creating an integration (`POST /api/integrations`), creating a key (`POST /api/i
 
 ### Origin guard (`utils/trustedOrigin.js`)
 
-Refresh, signout, change-password, sessions/revoke-others and `POST reauth` accept a request only when `Origin` is the frontend (the CORS allow-list, `utils/allowedOrigins.js`); without `Origin`, the `Referer` origin must match; with neither → `403 UNTRUSTED_ORIGIN`. Required because the cookies are `SameSite=None` in cross-origin deployments.
+Refresh, signout, change-password, sessions/revoke-others, `POST reauth` — and, since #78 R7, **signin, signup and OAuth consent approve/deny** — accept a request only when `Origin` is the frontend (the CORS allow-list, `utils/allowedOrigins.js`); without `Origin`, the `Referer` origin must match; with neither → `403 UNTRUSTED_ORIGIN`. Required because the cookies are `SameSite=None` in cross-origin deployments.
 
 ### Integration keys
 
@@ -568,7 +589,7 @@ All new routes are under `/api/auth`, which `INTEGRATION_DENYLIST` already refus
 
 ### Web client (`apps/web/src/lib/api.ts`)
 
-The 401 interceptor refreshes once and retries the request once. Concurrent 401s (e.g. the resume refetch, #155) share one in-flight refresh (and `navigator.locks` serialises tabs); a request sent before the latest successful refresh just retries. The refresh call uses a bare axios instance and never re-enters the interceptor. Auth credential routes (`refresh`, `signin`, `signup`, `signout`, `reauth`) never trigger a refresh or `auth:session-expired`. The session check refreshes too, but stays silent when that fails. `auth:session-expired` fires once until the next successful sign-in.
+The 401 interceptor refreshes once and retries the request once. Concurrent 401s (e.g. the resume refetch, #155) share one in-flight refresh (and `navigator.locks` serialises tabs); a request sent before the latest successful refresh just retries. The refresh call uses a bare axios instance and never re-enters the interceptor. Auth credential routes (`refresh`, `signin`, `signup`, `signout`, `reauth`) never trigger a refresh or `auth:session-expired`. A **429 from refresh** (#78 R11) fails the original request but never fires `auth:session-expired` — being rate-limited says nothing about the session. The session check refreshes too, but stays silent when that fails. `auth:session-expired` fires once until the next successful sign-in.
 
 ### Rollout
 
@@ -589,7 +610,7 @@ While the `signup` endpoint handles the initial creation, the ongoing management
 ### `pages/api/users.js` - User Management
 - **`GET /api/users`**: Fetches all users in the tenant (or a single user by ID). Returns the `role` field on each user object.
 - **`POST /api/users`** *(Admin only)*: Creates a new user with login credentials. Returns `403 Forbidden` if `req.user.role !== 'admin'`.
-  - **Required fields**: `email` (valid format), `password` (min 6 characters).
+  - **Required fields**: `email` (valid format), `password` (min `PASSWORD_MIN_LENGTH` = 8 characters, like signup and change-password — #78 R10).
   - **Optional fields**: `name`, `role` (`'admin'`, `'member'`, or `'viewer'`; defaults to `'member'`), `relationshipType`, `preferredLocale`, `profilePictureUrl`, `birthDate`.
   - Hashes the password via `AuthService.hashPassword()` (scrypt — see §1.2) before storage.
   - Sets `provider: 'credentials'` so the user can sign in immediately.

@@ -36,7 +36,7 @@ function methodsFor(user) {
 
 export default withAuth(async function handler(req, res) {
   await new Promise((resolve, reject) => {
-    const limiter = req.method === 'POST' ? rateLimiters.signin : rateLimiters.session;
+    const limiter = req.method === 'POST' ? rateLimiters.reauth : rateLimiters.session;
     limiter(req, res, (result) => {
       if (result instanceof Error) return reject(result);
       resolve(result);
