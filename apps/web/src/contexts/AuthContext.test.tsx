@@ -17,8 +17,11 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const clearPersistedQueryCache = vi.fn();
+const activatePersistedCache = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/lib/query-client', () => ({
   clearPersistedQueryCache: () => clearPersistedQueryCache(),
+  activatePersistedCache: (owner: string) => activatePersistedCache(owner),
+  cacheOwnerFor: (u: { id: string; tenant?: { id?: string } }) => `${u.id}:${u.tenant?.id ?? ''}`,
 }));
 
 vi.mock('@/hooks/use-toast', () => ({
@@ -144,6 +147,7 @@ describe('useAuth', () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
+    clearPersistedQueryCache.mockClear();
 
     await act(async () => {
       await expect(result.current.signOut()).rejects.toThrow('offline');
@@ -151,16 +155,48 @@ describe('useAuth', () => {
     expect(clearPersistedQueryCache).toHaveBeenCalledTimes(1);
   });
 
-  it('a session-expired event does not clear the persisted cache (PRD D9)', async () => {
-    clearPersistedQueryCache.mockClear();
-    vi.mocked(api.getSession).mockResolvedValueOnce(null);
+  // #78 R4 reverses #155 PRD D9: expiry must not leave data for the next person.
+  it('a session-expired event clears the persisted cache', async () => {
+    const mockUser: User = { id: '1', email: 'test@example.com', name: 'Test' };
+    vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser });
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAuth(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.user).toEqual(mockUser));
+    clearPersistedQueryCache.mockClear();
 
     act(() => {
       window.dispatchEvent(new Event('auth:session-expired'));
     });
+    expect(clearPersistedQueryCache).toHaveBeenCalledTimes(1);
+    expect(result.current.user).toBeNull();
+  });
+
+  it('activates the persisted cache for the signed-in owner before exposing the user', async () => {
+    const mockUser = { id: 'u1', email: 'a@b.co', tenant: { id: 't1' } } as unknown as User;
+    let userWhenActivated: unknown = 'unset';
+    let current: ReturnType<typeof useAuth> | undefined;
+    activatePersistedCache.mockImplementationOnce(async () => { userWhenActivated = current?.user; });
+    vi.mocked(api.getSession).mockResolvedValueOnce({ user: mockUser });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => { current = useAuth(); return current; }, { wrapper });
+
+    await waitFor(() => expect(result.current.user).toEqual(mockUser));
+    expect(activatePersistedCache).toHaveBeenCalledWith('u1:t1');
+    expect(userWhenActivated).toBeNull();
+  });
+
+  it('clears the cache when the session check answers 401, keeps it when offline', async () => {
+    vi.mocked(api.getSession).mockRejectedValueOnce(Object.assign(new Error('401'), { response: { status: 401 } }));
+    const first = renderHook(() => useAuth(), createWrapper());
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(clearPersistedQueryCache).toHaveBeenCalledTimes(1);
+
+    clearPersistedQueryCache.mockClear();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(api.getSession).mockRejectedValueOnce(new Error('Network error'));
+    const second = renderHook(() => useAuth(), createWrapper());
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
     expect(clearPersistedQueryCache).not.toHaveBeenCalled();
   });
 
