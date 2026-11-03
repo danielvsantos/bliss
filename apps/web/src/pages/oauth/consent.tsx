@@ -206,6 +206,10 @@ function OAuthConsentPage() {
                   )}
                 </div>
 
+                {/* #78 R6: a consent link can be sent by someone else (phishing). */}
+                <p className="text-xs font-medium text-warning" role="note" data-testid="oauth-consent-own-connection">
+                  {t(`${T}.only_started_by_you`)}
+                </p>
                 <p className="text-xs text-muted-foreground">{t(`${T}.footnote`)}</p>
               </>
             ) : (

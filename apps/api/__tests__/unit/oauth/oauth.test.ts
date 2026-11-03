@@ -61,9 +61,6 @@ describe('redirect-URI policy', () => {
     'https://claude.com/api/mcp/auth_callback',
     'http://localhost:33418/callback',
     'http://127.0.0.1/cb',
-    'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test',
-    'https://oauth-redirect-sandbox.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test',
-    'https://oauth-redirect-test.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test',
   ])('accepts %s', (uri) => expect(redirectUriError(uri)).toBeNull());
 
   it.each([
@@ -80,6 +77,40 @@ describe('redirect-URI policy', () => {
     ['not a url', /absolute URL/],
     ['', /must be a URL/],
   ])('rejects %s', (uri, why) => expect(redirectUriError(uri)).toMatch(why));
+
+  // #78 R6: the Google relay is open to every Google Cloud project, so only
+  // the Gemini connector shape naming THIS server is accepted.
+  describe('Gemini relay path pinning', () => {
+    const PROD_ID = '110151429349185469945';
+    const hosts = [
+      'oauth-redirect.googleusercontent.com',
+      'oauth-redirect-sandbox.googleusercontent.com',
+      'oauth-redirect-test.googleusercontent.com',
+    ];
+    beforeEach(() => { process.env.OAUTH_ISSUER_URL = 'https://bliss-api.bataty.es'; });
+
+    it.each(hosts.flatMap((h) => ['r', 'a'].map((p) => `https://${h}/${p}/user_bound_custom-mcp-${PROD_ID}-bliss-api_bataty_es`)))(
+      "accepts production's Gemini registration %s",
+      (uri) => expect(redirectUriError(uri)).toBeNull(),
+    );
+
+    it.each([
+      ['an arbitrary project', 'https://oauth-redirect.googleusercontent.com/r/attacker-project'],
+      ['another server\'s host', `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-${PROD_ID}-other-host_example_com`],
+      ['a host suffix', `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-${PROD_ID}-bliss-api_bataty_es_evil`],
+      ['dots instead of underscores', `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-${PROD_ID}-bliss-api.bataty.es`],
+      ['a non-numeric user id', 'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss-api_bataty_es'],
+      ['another path prefix', `https://oauth-redirect.googleusercontent.com/x/user_bound_custom-mcp-${PROD_ID}-bliss-api_bataty_es`],
+      ['a trailing segment', `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-${PROD_ID}-bliss-api_bataty_es/x`],
+      ['a query string', `https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-${PROD_ID}-bliss-api_bataty_es?p=attacker`],
+      ['the bare relay', 'https://oauth-redirect-sandbox.googleusercontent.com/'],
+    ])('rejects %s', (_label, uri) => expect(redirectUriError(uri)).toMatch(/Gemini connectors to this Bliss server/));
+
+    it('applies even when the relay host is configured explicitly', () => {
+      process.env.OAUTH_ALLOWED_REDIRECT_HOSTS = 'oauth-redirect.googleusercontent.com';
+      expect(redirectUriError('https://oauth-redirect.googleusercontent.com/r/attacker-project')).toMatch(/Gemini/);
+    });
+  });
 
   it('loopback follows the allowlist as a group', () => {
     process.env.OAUTH_ALLOWED_REDIRECT_HOSTS = 'claude.ai';

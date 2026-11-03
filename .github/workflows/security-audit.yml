@@ -19,6 +19,10 @@ on:
     - cron: '0 7 * * 1'
   workflow_dispatch:
 
+# Least privilege (#78 R13): every job only reads the repository.
+permissions:
+  contents: read
+
 jobs:
   audit:
     name: pnpm audit (production paths)

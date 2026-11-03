@@ -36,7 +36,7 @@ Open [http://localhost:8080](http://localhost:8080) once all containers are heal
 | `web` (Nginx) | 8080 | Serves the React SPA |
 | `api` (Next.js) | 3000 | Auth, REST API, Prisma ORM |
 | `backend` (Express) | 3001 | BullMQ workers, AI pipelines |
-| `postgres` | 5432 | PostgreSQL 16 + pgvector |
+| `postgres` | 5432 (localhost only) | PostgreSQL 16 + pgvector |
 | `redis` | 6379 | Job queues + cache |
 
 ## Data persistence
@@ -45,7 +45,7 @@ Your data lives in Docker named volumes (`postgres_data`, `redis_data`, `uploads
 
 ## Database GUI
 
-Adminer is included at [http://localhost:8888](http://localhost:8888). Log in with system **PostgreSQL**, server **postgres**, username **bliss**, and the `POSTGRES_PASSWORD` from your `.env`.
+Adminer is included at [http://localhost:8888](http://localhost:8888). Postgres (5432) and Adminer (8888) are published on `127.0.0.1` only, so they work from the machine running Docker but are never reachable from the network (Docker's port publishing bypasses host firewalls such as ufw). To reach them from elsewhere, use an SSH tunnel (`ssh -L 8888:localhost:8888 your-server`). Log in with system **PostgreSQL**, server **postgres**, username **bliss**, and the `POSTGRES_PASSWORD` from your `.env`.
 
 ---
 

@@ -81,6 +81,13 @@ describe('OAuth consent page (#89)', () => {
     expect(posted).toEqual({ accessLevel: 'READ_WRITE', expiresInDays: 365 });
   });
 
+  // #78 R6: consent links can be phished; the admin is told to approve only their own.
+  it('tells the admin to approve only a connection they just started', async () => {
+    consentReturns({ request: REQUEST, canApprove: true, expiryOptions: [30, 90, 365, null] });
+    renderPage();
+    expect(await screen.findByText(`${T}.only_started_by_you`)).toBeInTheDocument();
+  });
+
   it('sends "never" as a null expiry and warns about it', async () => {
     consentReturns({ request: REQUEST, canApprove: true, expiryOptions: [] });
     let posted: unknown;

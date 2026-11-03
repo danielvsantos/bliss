@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+# Least privilege (#78 R13): every job only reads the repository.
+permissions:
+  contents: read
+
 jobs:
   publish:
     name: Build & Push — ${{ matrix.image }}
@@ -20,12 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/login-action@v3
+      # Third-party actions holding the Docker Hub token are pinned by commit
+      # SHA (#78 R13); a moved tag can't change what runs.
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}

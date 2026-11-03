@@ -24,7 +24,8 @@ export const REFRESH_TOKEN_PREFIX = 'bliss_rt_';
 // https://<host>/r/<id>. Gemini registers all three at once (production,
 // sandbox, test). Exact hosts only: the rest of googleusercontent.com serves
 // user content (Apps Script, Drive, Sites), so a wildcard would let anyone
-// register a callback they control.
+// register a callback they control. The relay itself is open to every Google
+// Cloud project, so the path is pinned too (geminiRelayPathError, #78 R6).
 const GEMINI_REDIRECT_HOSTS = [
   'oauth-redirect.googleusercontent.com',
   'oauth-redirect-sandbox.googleusercontent.com',
@@ -97,6 +98,31 @@ export function redirectUriError(uri) {
   // Loopback clients (Claude Code / Desktop) are allowed as a group.
   const permitted = isLoopback ? allowed.has('localhost') || allowed.has('127.0.0.1') : allowed.has(host);
   if (!permitted) return `redirect host ${host} is not allowed on this Bliss server`;
+  return geminiRelayPathError(url);
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Google's relay forwards to whichever Google Cloud project the path names,
+ * so any path on a relay host would deliver a code to an attacker's project
+ * (#78 R6). Only the shape Gemini custom MCP connectors use is accepted:
+ * `/(r|a)/user_bound_custom-mcp-<numeric Google user id>-<this server's
+ * hostname, dots as underscores>`, e.g.
+ * `/r/user_bound_custom-mcp-110151429349185469945-bliss-api_bataty_es`.
+ *
+ * @param {URL} url
+ * @returns {string|null} an error message, or null when acceptable.
+ */
+export function geminiRelayPathError(url) {
+  if (!GEMINI_REDIRECT_HOSTS.includes(url.hostname.toLowerCase())) return null;
+  const serverHost = new URL(issuerUrl()).hostname.toLowerCase().replace(/\./g, '_');
+  const shape = new RegExp(`^/(r|a)/user_bound_custom-mcp-\\d+-${escapeRegExp(serverHost)}$`);
+  if (url.search || !shape.test(url.pathname)) {
+    return 'Google relay redirect URIs are only allowed for Gemini connectors to this Bliss server';
+  }
   return null;
 }
 

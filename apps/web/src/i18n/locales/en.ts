@@ -133,6 +133,7 @@ const en = {
         read_write_description: "Also re-categorise transactions, work your review queues, and edit portfolio data.",
         expiry_label: "Connection expires after",
         no_expiry_warning: "A connection without an expiry keeps working until you revoke it.",
+        only_started_by_you: "Only approve a connection you just started yourself. If someone sent you this link, deny it.",
         footnote: "The app sees your decrypted financial data. You can revoke the connection at any time in Settings → Integrations.",
         admin_required: "Only a workspace admin can connect apps. Ask an admin to connect it for you.",
         allow: "Allow",

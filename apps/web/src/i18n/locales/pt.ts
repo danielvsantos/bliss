@@ -133,6 +133,7 @@ const pt = {
         read_write_description: "Também recategorizar transações, tratar suas filas de revisão e editar dados da carteira.",
         expiry_label: "A conexão expira após",
         no_expiry_warning: "Uma conexão sem validade continua funcionando até você revogá-la.",
+        only_started_by_you: "Aprove apenas uma conexão que você mesmo acabou de iniciar. Se alguém lhe enviou este link, recuse-a.",
         footnote: "O app vê seus dados financeiros descriptografados. Você pode revogar a conexão a qualquer momento em Configurações → Integrações.",
         admin_required: "Só um administrador do espaço pode conectar apps. Peça a um administrador para conectar.",
         allow: "Permitir",

@@ -13,6 +13,7 @@ This module handles secure connection establishment, real-time webhook processin
 - **Auth**: JWT.
 - **Body**: `{ plaidItemId?: string }` — when provided, creates a link token scoped to that existing Item (update mode for re-auth or reconnect). Omit for a new connection.
 - **Response**: `{ link_token: string }`.
+- **Enable Banking items (#78 R12)**: the update-mode lookup is tenant-scoped (`findFirst({ id, tenantId })`, another tenant's item is `404`), and an Enable Banking connection answers **`400 { code: 'WRONG_PROVIDER' }`** like the other Plaid-SDK routes, so its session id is never sent to Plaid as an access token.
 - **Not configured (#154)**: when `PLAID_CLIENT_ID` or `PLAID_SECRET` is unset, returns **`503 { error, code: 'PLAID_NOT_CONFIGURED' }`** without calling Plaid (was a code-less `500`). Onboarding step 2 reads the code to show "Plaid isn't set up on this server" instead of a dead button; the Accounts page, re-auth and the bank form treat it like any other failure.
 - **Configuration**: Requests access to `['transactions']` product. When `PLAID_WEBHOOK_URL` is set, the URL is included as the `webhook` parameter so Plaid sends TRANSACTIONS and ITEM events to the application automatically.
 
@@ -260,7 +261,7 @@ Controls two things simultaneously:
 EU bank connections made through Enable Banking are stored as `PlaidItem` rows with `provider = 'ENABLE_BANKING'` and feed this review queue unchanged. Their lifecycle lives under `/api/enablebanking` — see [27-enable-banking-api.md](./27-enable-banking-api.md). On the Plaid routes:
 
 - `GET /api/plaid/items` returns `provider` (`'PLAID'` | `'ENABLE_BANKING'`), `aspspCountry` and `userId` for every item.
-- `resync`, `rotate-token`, `fetch-historical`, `sync-accounts`, `disconnect` and `PATCH /api/plaid/items` answer `400 { code: 'WRONG_PROVIDER' }` for an Enable Banking item.
+- `create-link-token` (update mode, #78), `resync`, `rotate-token`, `fetch-historical`, `sync-accounts`, `disconnect` and `PATCH /api/plaid/items` answer `400 { code: 'WRONG_PROVIDER' }` for an Enable Banking item.
 - Promotion (`transactions/[id]`, `bulk-promote`, `confirm-seeds`) describes an Enable Banking row by its remittance text (`bankTxLabel`), the same label its duplicate hash uses.
 
 ---

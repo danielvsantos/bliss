@@ -133,6 +133,7 @@ const it = {
         read_write_description: "Anche ricategorizzare transazioni, gestire le code di revisione e modificare i dati del portafoglio.",
         expiry_label: "La connessione scade dopo",
         no_expiry_warning: "Una connessione senza scadenza continua a funzionare finché non la revochi.",
+        only_started_by_you: "Approva solo una connessione che hai appena avviato tu. Se qualcuno ti ha inviato questo link, rifiutala.",
         footnote: "L'app vede i tuoi dati finanziari decifrati. Puoi revocare la connessione in qualsiasi momento in Impostazioni → Integrazioni.",
         admin_required: "Solo un amministratore dello spazio può collegare app. Chiedi a un amministratore di collegarla.",
         allow: "Consenti",

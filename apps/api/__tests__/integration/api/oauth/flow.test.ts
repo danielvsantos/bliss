@@ -26,7 +26,9 @@ import { createIntegrationKey, createTenantUser } from '../../../helpers/integra
 import { startLoopbackServer, makeFetchStub, connectMcp, type LoopbackServer } from '../../../helpers/mcpServer.js';
 
 const CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
-const GEMINI_CALLBACK = 'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test';
+// The issuer is the loopback test server (127.0.0.1), so the pinned Gemini
+// relay shape names it with dots as underscores (#78 R6).
+const GEMINI_CALLBACK = 'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-110151429349185469945-127_0_0_1';
 
 let server: LoopbackServer;
 const realFetch = globalThis.fetch;
@@ -222,7 +224,7 @@ describe('dynamic client registration', () => {
   });
 
   it('Gemini on Google\'s sandbox relay registers too, and is named Gemini', async () => {
-    const callback = 'https://oauth-redirect-sandbox.googleusercontent.com/r/user_bound_custom-mcp-abc123-bliss.test';
+    const callback = 'https://oauth-redirect-sandbox.googleusercontent.com/a/user_bound_custom-mcp-110151429349185469945-127_0_0_1';
     const res = await api('/api/oauth/register', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ redirect_uris: [callback], token_endpoint_auth_method: 'client_secret_basic' }),
@@ -336,6 +338,30 @@ describe('full flow', () => {
     expect((await mcpInit(tokens.access_token)).status).toBe(200);
     await api('/api/oauth/revoke', form({ token: tokens.access_token, client_id: client.client_id }));
     expect((await mcpInit(tokens.access_token)).status).toBe(401);
+  });
+});
+
+describe('Google relay pinning (#78 R6)', () => {
+  it('refuses to register an arbitrary project on the Google relay', async () => {
+    const { res, body } = await register(['https://oauth-redirect.googleusercontent.com/r/attacker-project']);
+    expect(res.status).toBe(400);
+    expect(body.error).toBe('invalid_redirect_uri');
+  });
+
+  it('an existing client whose redirect URI the policy now refuses gets an error page, never a redirect', async () => {
+    const stale = await prisma.oAuthClient.create({
+      data: { name: 'Gemini', redirectUris: ['https://oauth-redirect.googleusercontent.com/r/attacker-project'] },
+    });
+    try {
+      const res = await api(`/api/oauth/authorize?${new URLSearchParams({
+        response_type: 'code', client_id: stale.id, redirect_uri: 'https://oauth-redirect.googleusercontent.com/r/attacker-project',
+        code_challenge: pkce().challenge, code_challenge_method: 'S256', state: 's',
+      })}`);
+      expect(res.status).toBe(400);
+      expect(res.headers.get('location')).toBeNull();
+    } finally {
+      await prisma.oAuthClient.delete({ where: { id: stale.id } });
+    }
   });
 });
 

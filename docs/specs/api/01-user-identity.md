@@ -557,9 +557,11 @@ Authenticated by `bliss_rt` only; Origin-guarded; `rateLimiters.refresh` (60 / 5
 | No / malformed cookie, F missing, idle- or absolute-expired, user gone | `401 SESSION_EXPIRED`, both cookies cleared |
 | F revoked | `401 SESSION_REVOKED`, both cookies cleared |
 | `hash(P) = F.tokenHash` | **rotate** atomically (`updateMany … tokenHash: hash(P), revokedAt: null`); new access + refresh cookies; `idleExpiresAt = min(now + 7 d, absoluteExpiresAt)`. A lost race (count 0) re-reads F and falls through |
-| `hash(P) = F.previousTokenHash`, same user-agent summary, ≤ 10 s since rotation | **grace**: new access cookie only (the concurrent request already stored the successor in the shared cookie jar). Never a second family |
-| `hash(P) = F.previousTokenHash`, same user-agent summary, > 10 s | **lost response**: rotate again from P (the successor was provably never presented) |
+| `hash(P) = F.previousTokenHash`, ≤ 10 s since rotation | **grace**: new access cookie only (the concurrent request already stored the successor in the shared cookie jar). Never a second family, never a new refresh token |
+| `hash(P) = F.previousTokenHash`, > 10 s since rotation | **reuse** (#78 R8). The "lost response → rotate again" branch is gone: it was gated only on the user-agent summary ("Chrome on Windows"), which a thief can copy. A client that truly lost a rotation response and retries after 10 s is signed out — rare (Web Locks + the shared cookie jar), and failing closed is the PRD's choice. Watch `refresh_token_reuse` volume after deploy |
 | anything else | **reuse**: revoke F (`reuse`), clear both cookies, `401 SESSION_REVOKED`, log `refresh_token_reuse { tenantId, userId, sessionId }` (never the token) |
+
+`findLiveSession` (signout, reauth, sign-out-others, the Google step-up) applies the same rule: the current token, or the previous one only within 10 s of the rotation (#78 R8), so a rotated-out cookie can't act for the session indefinitely.
 
 Because the session id travels with the token, any stale token of a family maps back to it, so reuse anywhere in the chain revokes the family. A cookie naming another session's id is handled as a stolen token of that session (only a holder of one of its tokens can know the id).
 

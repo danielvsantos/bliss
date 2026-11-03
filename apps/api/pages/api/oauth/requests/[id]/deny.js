@@ -4,7 +4,7 @@ import { cors } from '../../../../../utils/cors.js';
 import { withAuth } from '../../../../../utils/withAuth.js';
 import { requireTrustedOrigin } from '../../../../../utils/trustedOrigin.js';
 import { limit } from '../../../../../lib/oauthHttp.js';
-import { denyRequest, loadRequestForUser } from '../../../../../services/oauth.service.js';
+import { OAuthError, denyRequest, loadRequestForUser } from '../../../../../services/oauth.service.js';
 
 /** Deny a pending OAuth request (#89): returns the client redirect with access_denied. */
 export default withAuth(async function handler(req, res) {
@@ -22,6 +22,7 @@ export default withAuth(async function handler(req, res) {
     const denied = await denyRequest(result.request, req.user);
     return res.status(StatusCodes.OK).json({ redirectUrl: denied.redirectUrl });
   } catch (err) {
+    if (err instanceof OAuthError) return res.status(StatusCodes.BAD_REQUEST).json({ error: err.description || err.error });
     Sentry.captureException(err);
     return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Server Error' });
   }
