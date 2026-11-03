@@ -6,18 +6,23 @@ import { cors } from '../../../utils/cors.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
 import { normalizeEmail } from '../../../utils/normalizeEmail.js';
 import { startSession } from '../../../services/session.service.js';
+import { requireTrustedOrigin } from '../../../utils/trustedOrigin.js';
 
 // Simple email validation regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default async function handler(req, res) {
-  // Apply rate limiting
-  await new Promise((resolve, reject) => {
-    rateLimiters.signin(req, res, (result) => {
+function runLimiter(limiter, req, res) {
+  return new Promise((resolve, reject) => {
+    limiter(req, res, (result) => {
       if (result instanceof Error) return reject(result);
       resolve(result);
     });
   });
+}
+
+export default async function handler(req, res) {
+  // Apply rate limiting
+  await runLimiter(rateLimiters.signin, req, res);
 
   // Handle CORS
   if (cors(req, res)) return;
@@ -28,8 +33,12 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Login CSRF guard (#78 R7): a cross-site form POST must not sign the
+  // victim's browser into someone else's tenant.
+  if (!requireTrustedOrigin(req, res)) return;
+
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     // Validate required fields
     if (!email || !password) {
@@ -49,6 +58,11 @@ export default async function handler(req, res) {
       res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
       return;
     }
+
+    // Per-account throttle (#78 D3): counts failures for this email whatever
+    // IP they come from, and runs before the lookup so unknown emails count too.
+    req.signinEmail = normalizedEmail;
+    await runLimiter(rateLimiters.signinAccount, req, res);
 
     // Find user by email - encryption handled by Prisma middleware.
     const user = await prisma.user.findFirst({

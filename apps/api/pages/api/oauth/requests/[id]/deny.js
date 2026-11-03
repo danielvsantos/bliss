@@ -2,8 +2,9 @@ import { StatusCodes } from 'http-status-codes';
 import * as Sentry from '@sentry/nextjs';
 import { cors } from '../../../../../utils/cors.js';
 import { withAuth } from '../../../../../utils/withAuth.js';
+import { requireTrustedOrigin } from '../../../../../utils/trustedOrigin.js';
 import { limit } from '../../../../../lib/oauthHttp.js';
-import { denyRequest, loadRequestForUser } from '../../../../../services/oauth.service.js';
+import { OAuthError, denyRequest, loadRequestForUser } from '../../../../../services/oauth.service.js';
 
 /** Deny a pending OAuth request (#89): returns the client redirect with access_denied. */
 export default withAuth(async function handler(req, res) {
@@ -13,12 +14,15 @@ export default withAuth(async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(StatusCodes.METHOD_NOT_ALLOWED).end();
   }
+  // Consent is a cross-site-sensitive action (#78 R7).
+  if (!requireTrustedOrigin(req, res)) return;
   try {
     const result = await loadRequestForUser(req.query.id, req.user);
     if (!result.request) return res.status(result.status).json({ error: result.error });
     const denied = await denyRequest(result.request, req.user);
     return res.status(StatusCodes.OK).json({ redirectUrl: denied.redirectUrl });
   } catch (err) {
+    if (err instanceof OAuthError) return res.status(StatusCodes.BAD_REQUEST).json({ error: err.description || err.error });
     Sentry.captureException(err);
     return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Server Error' });
   }

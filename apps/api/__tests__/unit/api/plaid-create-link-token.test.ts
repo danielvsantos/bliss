@@ -13,7 +13,7 @@ const { mockPrisma, mockPlaidClient } = vi.hoisted(() => ({
   mockPrisma: {
     tenantCountry: { findMany: vi.fn() },
     tenant: { findUnique: vi.fn() },
-    plaidItem: { findUnique: vi.fn() },
+    plaidItem: { findFirst: vi.fn() },
   },
   mockPlaidClient: {
     linkTokenCreate: vi.fn(),
@@ -153,7 +153,7 @@ describe('POST /api/plaid/create-link-token', () => {
       { country: { iso2: 'US' } },
     ]);
     mockPrisma.tenant.findUnique.mockResolvedValueOnce({ plaidHistoryDays: 90 });
-    mockPrisma.plaidItem.findUnique.mockResolvedValueOnce({
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
       id: 'item-1',
       tenantId: 'test-tenant-123',
       accessToken: 'access-sandbox-token',
@@ -176,6 +176,35 @@ describe('POST /api/plaid/create-link-token', () => {
     // Should NOT have products in update mode
     const callArg = mockPlaidClient.linkTokenCreate.mock.calls[0][0];
     expect(callArg.products).toBeUndefined();
+  });
+
+  // #78 R12: an Enable Banking session id must never reach Plaid.
+  it('refuses an Enable Banking connection with 400 WRONG_PROVIDER', async () => {
+    mockPrisma.tenantCountry.findMany.mockResolvedValueOnce([{ country: { iso2: 'ES' } }]);
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce({ plaidHistoryDays: 90 });
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce({
+      id: 'item-eb', tenantId: 'test-tenant-123', provider: 'ENABLE_BANKING', accessToken: 'eb-session-id',
+    });
+
+    const res = makeRes();
+    await handler(makeReq({ body: { plaidItemId: 'item-eb' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body.code).toBe('WRONG_PROVIDER');
+    expect(mockPlaidClient.linkTokenCreate).not.toHaveBeenCalled();
+  });
+
+  it("looks the item up within the caller's tenant: another tenant's item is 404", async () => {
+    mockPrisma.tenantCountry.findMany.mockResolvedValueOnce([]);
+    mockPrisma.tenant.findUnique.mockResolvedValueOnce(null);
+    mockPrisma.plaidItem.findFirst.mockResolvedValueOnce(null);
+
+    const res = makeRes();
+    await handler(makeReq({ body: { plaidItemId: 'foreign' } }) as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(404);
+    expect(mockPrisma.plaidItem.findFirst).toHaveBeenCalledWith({ where: { id: 'foreign', tenantId: 'test-tenant-123' } });
+    expect(mockPlaidClient.linkTokenCreate).not.toHaveBeenCalled();
   });
 
   it('returns 500 when Plaid API fails', async () => {

@@ -224,6 +224,9 @@ const NO_REFRESH_URLS = new Set([
 
 type RetryableConfig = InternalAxiosRequestConfig & { _retried?: boolean; _sentAt?: number };
 
+/** Outcome of a session refresh; a 429 is not a failed session (#78 R11). */
+type RefreshResult = 'ok' | 'failed' | 'rate_limited';
+
 /** `403 REAUTH_REQUIRED`: the action needs a sign-in within 15 minutes (#156). */
 export function isReauthRequired(error: unknown): boolean {
   const e = error as AxiosError<{ code?: string }>;
@@ -237,7 +240,7 @@ class APIClient {
    * call can never re-enter the 401 handler (#156 R24).
    */
   private refreshClient: AxiosInstance;
-  private refreshPromise: Promise<boolean> | null = null;
+  private refreshPromise: Promise<RefreshResult> | null = null;
   private lastRefreshAt = 0;
 
   constructor() {
@@ -295,11 +298,16 @@ class APIClient {
         // one in-flight refresh. The session check refreshes too, so an
         // installed app opened days later lands signed in.
         if (status === 401 && config && !config._retried && !isAuthCredentialCall) {
-          const refreshed = this.lastRefreshAt > (config._sentAt ?? 0) || await this.refreshOnce();
-          if (refreshed) {
+          const result: RefreshResult = this.lastRefreshAt > (config._sentAt ?? 0)
+            ? 'ok'
+            : await this.refreshOnce();
+          if (result === 'ok') {
             config._retried = true;
             return this.client.request(config);
           }
+          // A rate-limited refresh (#78 R11) says nothing about the session:
+          // fail this request, but never sign the user out over it.
+          if (result === 'rate_limited') return Promise.reject(error);
         }
 
         // A 401 on the session check is expected when the user is not logged in — don't log it.
@@ -326,15 +334,15 @@ class APIClient {
    * first one already rotated. The server's 10 s grace window covers browsers
    * without Web Locks.
    */
-  private refreshOnce(): Promise<boolean> {
+  private refreshOnce(): Promise<RefreshResult> {
     if (this.refreshPromise) return this.refreshPromise;
-    const run = async (): Promise<boolean> => {
+    const run = async (): Promise<RefreshResult> => {
       try {
         await this.refreshClient.post('/api/auth/refresh');
         this.lastRefreshAt = Date.now();
-        return true;
-      } catch {
-        return false;
+        return 'ok';
+      } catch (err) {
+        return (err as AxiosError)?.response?.status === 429 ? 'rate_limited' : 'failed';
       }
     };
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;

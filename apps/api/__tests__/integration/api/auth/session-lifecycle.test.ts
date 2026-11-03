@@ -56,9 +56,10 @@ class Device {
   constructor(public ua: string, public ip = '203.0.113.7') {}
 
   async call(handler: Handler, { method = 'POST', body = {}, url = '/api/auth/x', origin = ORIGIN } = {}): Promise<Response> {
-    const headers: Record<string, string> = { 'user-agent': this.ua, 'x-real-ip': this.ip };
+    const headers: Record<string, string> = { 'user-agent': this.ua };
     if (origin) headers.origin = origin;
-    const req = { method, url, headers, cookies: { ...this.jar }, body, query: {} } as unknown as NextApiRequest;
+    // The device's address is the socket's (#78 R3: client headers are not trusted).
+    const req = { method, url, headers, socket: { remoteAddress: this.ip }, cookies: { ...this.jar }, body, query: {} } as unknown as NextApiRequest;
     const out: Response = { status: undefined, body: undefined, setCookies: [] };
     const headerStore: Record<string, unknown> = {};
     const res: any = {
@@ -284,20 +285,64 @@ describe('rotation, grace and reuse (AC6, AC7)', () => {
     expect([a, b].filter((r) => r.setCookies.some((c) => c.startsWith('bliss_rt='))).length).toBe(1);
   });
 
-  it('recovers from a lost refresh response instead of flagging reuse', async () => {
+  // #78 R8: past the grace window a rotated-out token is reuse whatever its
+  // User-Agent says — "same device" is a spoofable label, so a lost response
+  // retried after 10 s now fails closed (the PRD's stated choice).
+  it('revokes the family when a rotated token comes back after the grace window with a matching User-Agent', async () => {
     const advance = useClock(new Date('2026-11-01T09:00:00Z'));
     const device = new Device(UA_IPHONE);
     await device.signin(emailA);
     const t1 = device.jar.bliss_rt;
     advance(60_000);
-    await device.refresh(); // response "lost": restore the old cookie
-    device.jar.bliss_rt = t1;
+    expect((await device.refresh()).status).toBe(200);
 
     advance(30_000);
-    const res = await device.refresh();
-    expect(res.status).toBe(200);
-    expect(device.jar.bliss_rt).not.toBe(t1);
+    const attacker = new Device(UA_IPHONE, '198.51.100.9');
+    attacker.jar.bliss_rt = t1;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await attacker.refresh();
+    vi.mocked(console.warn).mockRestore();
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('SESSION_REVOKED');
+    const row = await prisma.userSession.findFirst({ where: { id: device.sessionId(), tenantId: tenantA.tenantId } });
+    expect(row!.revokedReason).toBe('reuse');
+    expect((await device.refresh()).status).toBe(401);
+  });
+
+  it('within the grace window a rotated token gets an access cookie only, never a new refresh token', async () => {
+    const advance = useClock(new Date('2026-11-01T09:00:00Z'));
+    const device = new Device(UA_IPHONE);
+    await device.signin(emailA);
+    const t1 = device.jar.bliss_rt;
+    advance(60_000);
     expect((await device.refresh()).status).toBe(200);
+
+    advance(5_000);
+    const tab = new Device(UA_IPHONE);
+    tab.jar.bliss_rt = t1;
+    const res = await tab.refresh();
+    expect(res.status).toBe(200);
+    expect(res.setCookies.some((c) => c.startsWith('token='))).toBe(true);
+    expect(res.setCookies.some((c) => c.startsWith('bliss_rt='))).toBe(false);
+  });
+
+  it('signout and sign-out-others no longer accept a rotated-out token after the grace window', async () => {
+    const advance = useClock(new Date('2026-11-01T09:00:00Z'));
+    const device = new Device(UA_MAC);
+    await device.signin(emailA);
+    const t1 = device.jar.bliss_rt;
+    advance(60_000);
+    expect((await device.refresh()).status).toBe(200);
+    advance(30_000);
+
+    const stale = new Device(UA_MAC);
+    stale.jar = { ...device.jar, bliss_rt: t1 };
+    expect((await stale.call(revokeOthersHandler)).status).toBe(401);
+    await stale.call(signoutHandler);
+    const row = await prisma.userSession.findFirst({ where: { id: device.sessionId(), tenantId: tenantA.tenantId } });
+    // The stale cookie could not end (or act for) the live session.
+    expect(row!.revokedAt).toBeNull();
   });
 });
 

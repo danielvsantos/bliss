@@ -43,8 +43,8 @@ The well-known paths are served by `next.config.mjs` rewrites (`lib/oauthRewrite
 | `/api/oauth/register` | POST (JSON) | public | Dynamic client registration. Validates `redirect_uris` (§25.5) and returns `client_id`. Without a `client_name`, the client is named `Gemini` when every redirect URI is Gemini's, else `MCP client`; the name becomes the Integration's name. |
 | `/api/oauth/authorize` | GET | public (browser) | Validates the request, stores it, and 302s to `FRONTEND_URL/oauth/consent?request=<id>`. An unknown `client_id` or `redirect_uri` gets an HTML error page and is never redirected. Other errors redirect to `redirect_uri?error=…&state=…&iss=…`. `state` is returned byte-for-byte (Google's relay signs it and its state is longer than 500 characters); a `state` over 8,192 characters is refused with `invalid_request`, never shortened. |
 | `/api/oauth/requests/[id]` | GET | withAuth (JWT) | Consent data: `{ request: { clientName, redirectHost, maxAccessLevel, expiresAt }, canApprove, expiryOptions }`. The first user to open a request is bound to it. |
-| `/api/oauth/requests/[id]/approve` | POST (JSON) | withAuth `requireRole: 'admin'` | Body `{ accessLevel, expiresInDays: 30\|90\|365\|null }`. Creates the Integration and a one-time code, and returns `{ redirectUrl }`. |
-| `/api/oauth/requests/[id]/deny` | POST | withAuth (JWT) | Returns `{ redirectUrl }` with `error=access_denied` |
+| `/api/oauth/requests/[id]/approve` | POST (JSON) | withAuth `requireRole: 'admin'` | Body `{ accessLevel, expiresInDays: 30\|90\|365\|null }`. Creates the Integration and a one-time code, and returns `{ redirectUrl }`. Origin-guarded (`403 UNTRUSTED_ORIGIN`, #78 R7). Re-checks the redirect policy (`400` when it now refuses the URI, #78 R6). |
+| `/api/oauth/requests/[id]/deny` | POST | withAuth (JWT) | Returns `{ redirectUrl }` with `error=access_denied`. Origin-guarded (#78 R7); `400` instead of a redirect when the policy now refuses the URI (#78 R6). |
 | `/api/oauth/token` | POST (form or JSON) | public client | The two grants (§25.4). `client_id` may come in the body or, for clients used to `client_secret_basic`, an HTTP Basic header (the body wins; any secret is ignored); the same holds for `/revoke`. Responses carry `Cache-Control: no-store`. |
 | `/api/oauth/revoke` | POST (form or JSON) | public client | RFC 7009: `token` is either a refresh token or an access token. Unknown tokens get `200`. |
 
@@ -82,9 +82,18 @@ Registration accepts a redirect URI only if all of these hold:
 
 `oauth-redirect.googleusercontent.com`, `oauth-redirect-sandbox.googleusercontent.com` and `oauth-redirect-test.googleusercontent.com` are Google's OAuth relay hosts. Gemini custom MCP connectors register callbacks on all three at once (`/r/user_bound_custom-mcp-…`), and a nameless client on them is named `Gemini`. They are listed as exact hosts on purpose: the rest of `googleusercontent.com` serves user content (Apps Script, Drive, Sites), so a wildcard would let anyone register a callback they control.
 
+**The path is pinned too (#78 R6).** The relay forwards to whichever Google Cloud project the path names and is open to every project, so any path would let an attacker register a client called "Gemini" pointing at their own project and phish an admin with a real Bliss consent link. On a relay host (whatever `OAUTH_ALLOWED_REDIRECT_HOSTS` says) only the Gemini custom-connector shape naming **this** server is accepted (`geminiRelayPathError`, `utils/oauth.js`):
+
+```
+^/(r|a)/user_bound_custom-mcp-<digits>-<issuer hostname, dots → underscores>$   (no query string)
+e.g. /r/user_bound_custom-mcp-110151429349185469945-bliss-api_bataty_es   for https://bliss-api.bataty.es
+```
+
+The shape is inferred from production's Gemini registrations (one Google account). If Google changes it, Gemini registration fails with a clear `invalid_redirect_uri` and the pattern needs updating. The consent page tells the admin to approve only a connection they just started themselves.
+
 `OAUTH_ALLOWED_REDIRECT_HOSTS` is comma-separated. The default is `claude.ai,claude.com,oauth-redirect.googleusercontent.com,oauth-redirect-sandbox.googleusercontent.com,oauth-redirect-test.googleusercontent.com,localhost,127.0.0.1`. Loopback hosts are allowed as a group when `localhost` or `127.0.0.1` is listed.
 
-At `/authorize`, the `redirect_uri` must **exactly** match one of the client's registered URIs. The consent screen shows the redirect **host**.
+At `/authorize`, the `redirect_uri` must **exactly** match one of the client's registered URIs **and** still pass the redirect policy above (#78 R6): narrowing `OAUTH_ALLOWED_REDIRECT_HOSTS` or the relay rule takes effect for clients registered earlier — they get the HTML error page, never a redirect. Approve and deny re-check it as well. The consent screen shows the redirect **host**.
 
 ## 25.6. Data model
 

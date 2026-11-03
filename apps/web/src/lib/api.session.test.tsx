@@ -19,6 +19,7 @@ type ApiModule = typeof import('./api');
 
 let refreshCalls = 0;
 let refreshOk = true;
+let refreshRateLimited = false;
 let accessValid = false;
 let expired: ReturnType<typeof vi.fn>;
 
@@ -33,6 +34,7 @@ function useServer() {
     http.post('/api/auth/refresh', async () => {
       refreshCalls += 1;
       await new Promise((r) => setTimeout(r, 20));
+      if (refreshRateLimited) return HttpResponse.json({ error: 'Too many', code: 'RATE_LIMITED' }, { status: 429 });
       if (!refreshOk) return HttpResponse.json({ code: 'SESSION_EXPIRED' }, { status: 401 });
       accessValid = true;
       return HttpResponse.json({ ok: true });
@@ -50,6 +52,7 @@ function useServer() {
 beforeEach(() => {
   refreshCalls = 0;
   refreshOk = true;
+  refreshRateLimited = false;
   accessValid = false;
   expired = vi.fn();
   window.addEventListener('auth:session-expired', expired);
@@ -83,6 +86,15 @@ describe('401 → single-flight refresh', () => {
     expect(outcomes.every((o) => o.status === 'rejected')).toBe(true);
     expect(refreshCalls).toBe(1);
     expect(expired).toHaveBeenCalledTimes(1);
+  });
+
+  it('a 429 from refresh fails the request but never signs the user out (#78 R11)', async () => {
+    refreshRateLimited = true;
+    const { api } = await freshApi();
+
+    await expect(api.getIntegrations()).rejects.toMatchObject({ response: { status: 401 } });
+    expect(refreshCalls).toBe(1);
+    expect(expired).not.toHaveBeenCalled();
   });
 
   it('notifies again after a new sign-in re-arms the event', async () => {

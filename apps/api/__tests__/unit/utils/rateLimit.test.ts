@@ -32,7 +32,9 @@ describe('rateLimit', () => {
         expect.objectContaining({
           windowMs: 5 * 60 * 1000,
           max: 100,
-          message: { error: 'Too Many Requests. Please try again later.' },
+          message: { error: 'Too Many Requests. Please try again later.', code: 'RATE_LIMITED' },
+          skip: expect.any(Function),
+          handler: expect.any(Function),
           standardHeaders: true,
           legacyHeaders: false,
         }),
@@ -55,7 +57,7 @@ describe('rateLimit', () => {
 
       expect(mockRateLimit).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: { error: 'Slow down!' },
+          message: { error: 'Slow down!', code: 'RATE_LIMITED' },
         }),
       );
     });
@@ -67,18 +69,31 @@ describe('rateLimit', () => {
       expect(typeof opts.keyGenerator).toBe('function');
     });
 
-    it('keyGenerator extracts IP from x-real-ip header', () => {
+    // #78 R3: a client-set header never picks the bucket by default.
+    it('keyGenerator ignores a spoofed x-real-ip / x-forwarded-for when TRUST_PROXY_IP_HEADER is unset', () => {
+      vi.stubEnv('TRUST_PROXY_IP_HEADER', '');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
       createRateLimiter();
       const opts = mockRateLimit.mock.calls[0][0] as any;
-      const req = { headers: { 'x-real-ip': '1.2.3.4' }, socket: {} };
-      expect(opts.keyGenerator(req)).toBe('1.2.3.4');
+      const req = { headers: { 'x-real-ip': '1.2.3.4', 'x-forwarded-for': '5.6.7.8' }, socket: { remoteAddress: '203.0.113.9' } };
+      expect(opts.keyGenerator(req)).toBe('203.0.113.9');
+      vi.unstubAllEnvs();
     });
 
-    it('keyGenerator falls back to x-forwarded-for (first entry)', () => {
+    it('keyGenerator honours x-real-ip when TRUST_PROXY_IP_HEADER=x-real-ip', () => {
+      vi.stubEnv('TRUST_PROXY_IP_HEADER', 'x-real-ip');
       createRateLimiter();
       const opts = mockRateLimit.mock.calls[0][0] as any;
-      const req = { headers: { 'x-forwarded-for': '5.6.7.8, 9.10.11.12' }, socket: {} };
-      expect(opts.keyGenerator(req)).toBe('5.6.7.8');
+      const req = { headers: { 'x-real-ip': '1.2.3.4' }, socket: { remoteAddress: '10.0.0.2' } };
+      expect(opts.keyGenerator(req)).toBe('1.2.3.4');
+      vi.unstubAllEnvs();
+    });
+
+    it('skips CORS preflights (OPTIONS never counts)', () => {
+      createRateLimiter();
+      const opts = mockRateLimit.mock.calls[0][0] as any;
+      expect(opts.skip({ method: 'OPTIONS' })).toBe(true);
+      expect(opts.skip({ method: 'POST' })).toBe(false);
     });
 
     it('keyGenerator falls back to socket.remoteAddress', () => {
@@ -103,6 +118,7 @@ describe('rateLimit', () => {
       'banks', 'countries', 'currencies', 'currencyrates', 'assetprice',
       'openai', 'importsDetect', 'importsUpload', 'importsRead',
       'importsAdapters', 'plaidReview', 'changePassword',
+      'signinAccount', 'reauth', 'signout',
     ];
 
     it('has all expected keys', () => {
@@ -116,5 +132,23 @@ describe('rateLimit', () => {
         expect(typeof (rateLimiters as any)[key]).toBe('function');
       }
     });
+  });
+});
+
+describe('limiter keys (#78 D3)', () => {
+  it('signinAccount keys on a hash of the email, never the plaintext', () => {
+    const opts = (rateLimiters.signinAccount as any).__rateLimitOpts;
+    const key = opts.keyGenerator({ signinEmail: 'ana@example.com', headers: {}, socket: {} });
+    expect(key).toMatch(/^acct:[0-9a-f]{64}$/);
+    expect(key).not.toContain('ana');
+    expect(opts.keyGenerator({ signinEmail: 'ana@example.com' })).toBe(key);
+    expect(opts.skipSuccessfulRequests).toBe(true);
+    expect(opts.max).toBe(10);
+    expect(opts.windowMs).toBe(15 * 60 * 1000);
+  });
+
+  it('reauth keys per user', () => {
+    const opts = (rateLimiters.reauth as any).__rateLimitOpts;
+    expect(opts.keyGenerator({ user: { id: 7 }, headers: {}, socket: {} })).toBe('user:7');
   });
 });

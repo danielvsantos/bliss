@@ -6,11 +6,12 @@ import jwt from 'jsonwebtoken';
 import { addToDenylist } from '../../../utils/denylist.js';
 import { requireTrustedOrigin } from '../../../utils/trustedOrigin.js';
 import { revokeSession } from '../../../services/session.service.js';
+import { clearNextAuthCookies } from '../../../utils/cookieUtils.js';
 
 export default async function handler(req, res) {
   // Apply rate limiting
   await new Promise((resolve, reject) => {
-    rateLimiters.signin(req, res, (result) => {
+    rateLimiters.signout(req, res, (result) => {
       if (result instanceof Error) return reject(result);
       resolve(result);
     });
@@ -47,6 +48,8 @@ export default async function handler(req, res) {
     // Revoke this device's session (#156) and clear both cookies so the
     // browser discards them immediately.
     await revokeSession(req, res);
+    // And the NextAuth (Google) cookie (#78 R2), so it can't sign back in.
+    clearNextAuthCookies(res);
     res.status(StatusCodes.OK).json({ message: 'Signed out successfully' });
   } catch (error) {
     Sentry.captureException(error);

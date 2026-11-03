@@ -191,10 +191,19 @@ export async function findLiveSession(req, { now = new Date() } = {}) {
   const row = await prisma.userSession.findUnique({ where: { id: parsed.sessionId } });
   if (!isLive(row, now)) return null;
   const hash = hashSecret(parsed.secret);
-  if (!timingSafeCompare(hash, row.tokenHash) && !timingSafeCompare(hash, row.previousTokenHash ?? '')) {
-    return null;
-  }
-  return row;
+  if (timingSafeCompare(hash, row.tokenHash)) return row;
+  // A rotated-out token only counts inside the concurrent-request grace
+  // window (#78 R8): signout, reauth, sign-out-others and the Google step-up
+  // never accept it indefinitely.
+  if (row.previousTokenHash && timingSafeCompare(hash, row.previousTokenHash) && withinGrace(row, now)) return row;
+  return null;
+}
+
+/** True when the family rotated no more than GRACE_MS ago. */
+function withinGrace(row, now) {
+  if (!row.rotatedAt) return false;
+  const since = now.getTime() - row.rotatedAt.getTime();
+  return since >= 0 && since <= GRACE_MS;
 }
 
 function fail(res, code) {
@@ -243,12 +252,13 @@ async function rotate(res, row, user, presentedHash, expectedCurrent, now) {
  * family F):
  *   - F missing / revoked / idle- or absolute-expired / user gone → 401
  *   - hash(P) == F.tokenHash → rotate (atomic; a lost race re-reads F)
- *   - hash(P) == F.previousTokenHash, same device, ≤ 10 s since rotation →
- *     grace: new access cookie only (the concurrent request already stored
- *     the successor in the shared cookie jar)
- *   - hash(P) == F.previousTokenHash, same device, > 10 s → lost response:
- *     rotate again from P (the successor was provably never presented)
- *   - anything else → reuse: revoke F, 401, log `refresh_token_reuse`
+ *   - hash(P) == F.previousTokenHash, ≤ 10 s since rotation → grace: new
+ *     access cookie only (the concurrent request already stored the
+ *     successor in the shared cookie jar)
+ *   - anything else — including F.previousTokenHash after the grace window,
+ *     whatever User-Agent it carries (#78 R8: the UA summary is trivially
+ *     spoofed, so it can't tell a lost response from a stolen token) → reuse:
+ *     revoke F, 401, log `refresh_token_reuse`
  * Every failure clears both cookies.
  *
  * @returns {Promise<{ ok: true } | { ok: false, status: number, code: string }>}
@@ -282,14 +292,9 @@ export async function refreshSession(req, res, { now = new Date() } = {}) {
     if (!isLive(row, now)) return fail(res, row?.revokedAt ? SESSION_REVOKED : SESSION_EXPIRED);
   }
 
-  const sameDevice = summarizeUserAgent(req.headers?.['user-agent']) === (row.userAgent ?? null);
-  if (row.previousTokenHash && timingSafeCompare(presented, row.previousTokenHash) && sameDevice) {
-    const sinceRotation = row.rotatedAt ? now.getTime() - row.rotatedAt.getTime() : Infinity;
-    if (sinceRotation <= GRACE_MS) {
-      setAuthCookie(res, signAccessToken(user, row.authenticatedAt, now));
-      return { ok: true };
-    }
-    if (await rotate(res, row, user, presented, row.tokenHash, now)) return { ok: true };
+  if (row.previousTokenHash && timingSafeCompare(presented, row.previousTokenHash) && withinGrace(row, now)) {
+    setAuthCookie(res, signAccessToken(user, row.authenticatedAt, now));
+    return { ok: true };
   }
 
   await revokeFamily(row, 'reuse', now);

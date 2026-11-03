@@ -220,8 +220,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SignupInviteRequiredError'
+            # Also 403 { code: UNTRUSTED_ORIGIN } when Origin (or Referer) is
+            # not the frontend (#78 R7) — a cross-site form POST is refused.
         '429':
-          description: Too many sign-up attempts (rejected invite attempts count too).
+          description: >
+            Too many sign-up attempts (rejected invite attempts count too).
+            Body { error, code: RATE_LIMITED }; carries the CORS headers so the
+            SPA can read it (#78).
         '500':
           description: Internal Server Error
 
@@ -289,8 +294,21 @@ paths:
           description: Bad Request (e.g., missing fields, invalid email)
         '401':
           description: Unauthorized (invalid credentials)
+        '403':
+          description: >
+            UNTRUSTED_ORIGIN — Origin (or, without one, Referer) is not the
+            frontend (#78 R7, login CSRF guard).
+        '429':
+          description: >
+            RATE_LIMITED — 5 attempts per 5 min per client IP (the socket
+            address unless TRUST_PROXY_IP_HEADER is set), or 10 failed
+            attempts per 15 min for one account across IPs (#78). Body
+            { error, code: RATE_LIMITED }; carries the CORS headers.
         '500':
-          description: Internal Server Error
+          description: >
+            Internal Server Error — including a password check that failed
+            unexpectedly (e.g. out of memory, #78 R9), never reported as
+            invalid credentials.
 
   /api/auth/session:
     get:

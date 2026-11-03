@@ -131,6 +131,11 @@ export async function createAuthorizationRequest(query, now = new Date()) {
   if (!redirectUri || !client.redirectUris.includes(String(redirectUri))) {
     throw new AuthorizeError('invalid_request', 'redirect_uri does not match a registered URI', { redirect: false });
   }
+  // Re-checked on every authorization, not only at registration (#78 R6): a
+  // narrowed allowlist or relay policy applies to existing clients too, and
+  // the error page never redirects to the refused URI.
+  const policyProblem = redirectUriError(String(redirectUri));
+  if (policyProblem) throw new AuthorizeError('invalid_request', policyProblem, { redirect: false });
 
   if (one(query.response_type) !== 'code') {
     throw new AuthorizeError('unsupported_response_type', 'response_type must be "code"');
@@ -216,6 +221,9 @@ export async function approveRequest(request, user, { accessLevel, expiresInDays
   if (!CONNECTION_EXPIRY_DAYS.includes(expiresInDays)) {
     throw new OAuthError('invalid_request', 'expiresInDays must be 30, 90, 365 or null');
   }
+  // The redirect policy may have narrowed since /authorize (#78 R6).
+  const policyProblem = redirectUriError(request.redirectUri);
+  if (policyProblem) throw new OAuthError('invalid_request', policyProblem);
 
   const code = newAuthorizationCode();
   const connectionExpiresAt = expiresInDays == null ? null : new Date(now.getTime() + expiresInDays * 86_400_000);
@@ -262,6 +270,9 @@ export async function denyRequest(request, user, now = new Date()) {
     data: { usedAt: now },
   });
   logOAuthEvent('consent_denied', { clientId: request.clientId, tenantId: user.tenantId });
+  // Never send the browser to a redirect URI the policy now refuses (#78 R6).
+  const policyProblem = redirectUriError(request.redirectUri);
+  if (policyProblem) throw new OAuthError('invalid_request', policyProblem);
   return {
     redirectUrl: withParams(request.redirectUri, {
       error: 'access_denied', error_description: 'The user denied access', state: request.state, iss: issuerUrl(),

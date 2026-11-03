@@ -134,7 +134,7 @@ Every `env(safe-area-inset-*)` is 0 in a browser tab and on desktop, so nothing 
 | `src/components/pwa/install-app-button.test.tsx` | The four install branches |
 | `src/components/pwa/pwa-updater.test.tsx` | Toast on `pwa:need-refresh`, Reload applies the update |
 | `src/components/layout/app-shell.test.tsx` | Offline gate shows no figures and recovers on `online` |
-| `src/lib/query-client.test.ts`, `src/contexts/AuthContext.test.tsx` | Logout clears the cache and the persisted copy, also when sign-out fails; session expiry does not |
+| `src/lib/query-client.test.ts`, `src/contexts/AuthContext.test.tsx`, `src/contexts/AuthContext.shared-device.test.tsx` | Logout and session expiry clear the cache, the persisted copy and tenantMeta, also when sign-out fails; the cache is restored only for the user + tenant that wrote it (#78 R4) |
 | `src/components/plaid-connect.test.tsx`, `enable-banking/connect-dialog.test.tsx`, `accounts/bank-connection-card.test.tsx` | Standalone: desktop-only note, Plaid Link never loaded, no Enable Banking connect / reconnect |
 | `src/hooks/use-resume-refresh.test.tsx` | Refetch + update check after 6 min away, nothing after 4 min |
 | `src/lib/pwa/visual-viewport.test.ts` | `--vv-height` / `--vv-top` follow the keyboard; leftover pan reset only once it closes |
@@ -144,7 +144,13 @@ Manual (real device): see the QA checklist in the task's completion proof — in
 ## 28.9. Phase 2a: standalone correctness
 
 ### Logout hygiene
-The QueryClient and its localStorage persister live in `src/lib/query-client.ts` (moved out of `providers.tsx` so `AuthContext` can import them without a cycle). `AuthContext.signOut()` calls `clearPersistedQueryCache()` in a `finally`: `queryClient.clear()`, then `persister.removeClient()`, so no portfolio, account or metadata payload stays on the device, even when the sign-out request itself fails. An `auth:session-expired` event does **not** clear it (PRD D9); the cache ages out on its 24 h `gcTime`.
+The QueryClient and its localStorage persister live in `src/lib/query-client.ts` (moved out of `providers.tsx` so `AuthContext` can import them without a cycle). `AuthContext.signOut()` calls `clearPersistedQueryCache()` in a `finally`: `queryClient.clear()`, then `persister.removeClient()`, so no portfolio, account or metadata payload stays on the device, even when the sign-out request itself fails. ~~An `auth:session-expired` event does **not** clear it (PRD D9).~~ **Reversed by #78 R4 (shared devices):**
+
+- Nothing is restored at module load. `AuthContext.checkSession` awaits `activatePersistedCache(cacheOwnerFor(user))` **before** it sets the user, so a protected page can never paint before the owner check. The owner is `"<userId>:<tenantId>"`, stored in `localStorage['bliss.cacheOwner']`.
+- Same owner → the persisted cache is restored (the instant paint of #155 is kept for the person who wrote it). Any other owner, or a cache without a marker → the persisted cache, `tenantMeta` and every in-memory query are deleted first.
+- `clearPersistedQueryCache()` (sign-out, `auth:session-expired`, a session check answering 401 or with no user) also clears `tenantMeta` and the owner marker and stops persisting. A session check that fails offline / 5xx clears nothing — the offline screen shows no figures anyway.
+- The persister is owned by `query-client.ts` (1 s throttle like the sync persister) and drops a throttled write queued before a clear, so a pending write can never put the previous user's data back.
+- Cost: after an expiry, the next cold load fetches instead of painting from cache.
 
 ### Bank connections are desktop-only in the installed app
 Plaid Link and the Enable Banking consent page navigate out of the app's scope, which iOS runs in a browser sheet that does not share the app's session.
@@ -162,7 +168,7 @@ Tested on a real iPhone (iOS, production): Google Sign-In completes inside the i
 The installed app no longer signs users out every 24 hours. Sign-in sets a 15-minute access cookie plus a rotating refresh cookie (`bliss_rt`, `Path=/api/auth`); an active user signs in at most once per 15 days, and a device left unused for 7 days signs in again ([`docs/specs/api/01-user-identity.md` §1.5h](../api/01-user-identity.md#15h-session-lifecycle-156)).
 - **Resume + single-flight refresh.** Coming back after ≥ 5 minutes usually means the access token has expired, so the resume refetch above produces a burst of 401s. The `lib/api.ts` interceptor sends **one** `POST /api/auth/refresh` for the whole burst (and `navigator.locks` serialises tabs), then retries every query once; no sign-in screen appears. Tested together in `src/lib/api.session.test.tsx`.
 - **Opening the app days later.** The app-load session check refreshes too, so a PWA opened after a few days lands signed in.
-- **Logout hygiene is unchanged.** Sign-out still calls `clearPersistedQueryCache()`; it now also revokes the device's session server-side. A device signed out remotely (password change, "Sign out of all other devices" in Settings → General) gets 401 on its next request and keeps D9 (its persisted cache is not wiped).
+- **Logout hygiene is unchanged.** Sign-out still calls `clearPersistedQueryCache()`; it now also revokes the device's session server-side. A device signed out remotely (password change, "Sign out of all other devices" in Settings → General) gets 401 on its next request and its persisted cache is wiped when the 401 fires `auth:session-expired` (#78 R4).
 - **Confirm identity** (creating integration keys, approving AI connections) offers the same methods in the installed app as in the browser: password, or Google — which stays offered here (see Google Sign-In above).
 
 ### Keyboard and dialogs

@@ -3,7 +3,7 @@
  * client, the registry and the integration-policy allowance for /api/mcp.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as Sentry from '@sentry/nextjs';
 import {
   encodeCursor, decodeCursor, pageArgs, pageMeta, paginate, offsetArgs, offsetMeta, money, signedAmount, isoDate,
@@ -126,8 +126,12 @@ describe('errors', () => {
 });
 
 describe('loopback', () => {
+  // Behind a trusted proxy (Railway: TRUST_PROXY_IP_HEADER=x-real-ip, #78 R3).
+  beforeEach(() => { vi.stubEnv('TRUST_PROXY_IP_HEADER', 'x-real-ip'); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
   const req: any = {
-    headers: { authorization: 'Bearer bliss_abcdefgh_secret', 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'x-request-id': 'r1', cookie: 'token=jwt' },
+    headers: { authorization: 'Bearer bliss_abcdefgh_secret', 'x-real-ip': '203.0.113.9', 'x-forwarded-for': '198.51.100.66, 10.0.0.1', 'x-request-id': 'r1', cookie: 'token=jwt' },
     socket: { remoteAddress: '10.0.0.2' },
   };
 
@@ -156,10 +160,16 @@ describe('loopback', () => {
     expect(buildQuery({ a: 1, b: undefined, c: '', d: null, years: [2025, 2026] })).toBe('a=1&years=2025&years=2026');
   });
 
-  it('uses the same client IP expression as the rate limiters', () => {
+  it('uses the same client IP resolution as the rate limiters (utils/clientIp.js)', () => {
     expect(clientIp(req)).toBe('203.0.113.9');
     expect(clientIp({ headers: { 'x-real-ip': '198.51.100.1' } })).toBe('198.51.100.1');
     expect(clientIp({ headers: {}, socket: { remoteAddress: '10.0.0.3' } })).toBe('10.0.0.3');
+    vi.stubEnv('TRUST_PROXY_IP_HEADER', '');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Without a trusted proxy a client-set header is ignored…
+    expect(clientIp(req)).toBe('10.0.0.2');
+    // …except from the loopback socket, where the API forwards the agent's IP.
+    expect(clientIp({ headers: { 'x-real-ip': '198.51.100.1' }, socket: { remoteAddress: '127.0.0.1' } })).toBe('198.51.100.1');
   });
 
   it('forwards the key, client IP, request id and tool name — never cookies', async () => {

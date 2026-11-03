@@ -5,7 +5,7 @@ import type { User } from '../types/api';
 import { updateTenantMetaFromAPI } from '@/utils/tenantMetaStorage';
 import { toast } from '@/hooks/use-toast';
 import { rememberReturnTo, rememberReturnToPath } from '@/lib/return-to';
-import { clearPersistedQueryCache } from '@/lib/query-client';
+import { activatePersistedCache, cacheOwnerFor, clearPersistedQueryCache } from '@/lib/query-client';
 import {
   AuthContext,
   type SignUpData,
@@ -39,6 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleSessionExpired = () => {
       setUser(null);
+      // Shared device (#78 R4): an expired session leaves no financial data
+      // behind for the next person on this browser.
+      clearPersistedQueryCache();
       toast({
         title: 'Session expired',
         description: 'Your session has expired. Please sign in again.',
@@ -58,6 +61,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) {
         // Signed in again: a later expiry must notify again (#156).
         resetSessionExpired();
+        // Restore only this user's cache, and wipe anyone else's (incl.
+        // tenantMeta) BEFORE the app sees the user (#78 R4).
+        await activatePersistedCache(cacheOwnerFor(session.user));
         setUser(session.user);
         // Also update tenant meta when session is checked
         if (session.user.tenant?.id) {
@@ -65,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return session.user;
       }
+      clearPersistedQueryCache();
       setUser(null);
       return null;
     } catch (error: unknown) {
@@ -72,6 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const status = (error as { response?: { status?: number } })?.response?.status;
       if (status !== 401) {
         console.error('Session check failed:', error);
+      } else {
+        // Not signed in: nobody owns the cache (#78 R4). Offline / 5xx keeps
+        // it — the PWA offline screen shows no figures anyway.
+        clearPersistedQueryCache();
       }
       setUser(null);
       return null;
@@ -142,7 +153,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         || 'Invalid email or password.';
       setError(errorMessage);
       setUser(null);
-      throw new Error(errorMessage);
+      // Keep a machine code so the form can localise it (#78 R11): a 429
+      // (rate limited) must never read as a wrong password.
+      const err = new Error(errorMessage) as Error & { code?: string };
+      err.code = axiosError.response?.status === 429
+        ? 'RATE_LIMITED'
+        : axiosError.response?.data?.code;
+      throw err;
     }
   };
 
@@ -197,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw error;
     } finally {
       // Even when the API call fails, leave no cached financial data on the
-      // device (#155). Session expiry deliberately does not do this (PRD D9).
+      // device (#155). Session expiry does the same since #78 R4.
       clearPersistedQueryCache();
     }
   };

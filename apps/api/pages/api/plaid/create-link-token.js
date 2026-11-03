@@ -101,16 +101,22 @@ async function handlePost(req, res, user) {
 
         // If plaidItemId is provided, this is a re-auth/update mode request
         if (plaidItemId) {
-            const plaidItem = await prisma.plaidItem.findUnique({
-                where: { id: plaidItemId },
+            // Tenant-scoped lookup: another tenant's item is simply not found.
+            const plaidItem = await prisma.plaidItem.findFirst({
+                where: { id: plaidItemId, tenantId: user.tenantId },
             });
 
             if (!plaidItem) {
                 return res.status(StatusCodes.NOT_FOUND).json({ error: 'Plaid Item not found' });
             }
 
-            if (plaidItem.tenantId !== user.tenantId) {
-                return res.status(StatusCodes.FORBIDDEN).json({ error: 'Access denied' });
+            // Enable Banking connections share PlaidItem (#132); never send
+            // their session id to Plaid as an access token (#78 R12).
+            if (plaidItem.provider === 'ENABLE_BANKING') {
+                return res.status(StatusCodes.BAD_REQUEST).json({
+                    error: 'This is an Enable Banking connection. Use the Enable Banking actions instead.',
+                    code: 'WRONG_PROVIDER',
+                });
             }
 
             // Update mode: pass access_token instead of products

@@ -24,6 +24,7 @@ import { returnToFromLocation } from "@/lib/return-to";
 import { useSignupMode } from "@/hooks/use-signup-mode";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { OfflineScreen } from "@/components/pwa/offline-screen";
+import { PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 // Invite-only sign-up (#99). Both are i18n keys.
 const INVITE_ONLY_NOTICE =
@@ -53,15 +54,17 @@ function useIsDesktop(): boolean {
    VALIDATION SCHEMAS
 ══════════════════════════════════════════════════════ */
 
+// Sign-in never enforces the new-password minimum (#78 R10): an existing
+// shorter password must still sign in.
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(1),
 });
 
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z.string().min(PASSWORD_MIN_LENGTH),
 });
 
 /* ══════════════════════════════════════════════════════
@@ -237,7 +240,12 @@ function SignInForm({ demoMode = false }: { demoMode?: boolean }) {
       await signIn({ email: values.email, password: values.password });
       navigate(returnToFromLocation() ?? "/");
     } catch (err: unknown) {
-      setError((err as Error).message || t("Login failed"));
+      // #78 R11: a 429 is "too many attempts", never "invalid credentials".
+      if ((err as { code?: string }).code === "RATE_LIMITED") {
+        setError(t("notifications.error.tooManyRequests"));
+      } else {
+        setError((err as Error).message || t("Login failed"));
+      }
     } finally {
       setIsPending(false);
     }

@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 interface ChangePasswordDialogProps {
   open: boolean;
@@ -56,7 +57,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     }
     if (!newPassword) {
       newErrors.newPassword = t('changePassword.newPasswordMin');
-    } else if (newPassword.length < 8) {
+    } else if (newPassword.length < PASSWORD_MIN_LENGTH) {
       newErrors.newPassword = t('changePassword.newPasswordMin');
     }
     if (!confirmPassword) {

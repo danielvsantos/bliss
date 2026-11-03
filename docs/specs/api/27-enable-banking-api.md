@@ -86,7 +86,7 @@ The callback never relies on the API root (which bounces to `/auth/login`). The 
 ## Changes to existing routes
 
 - `GET /api/plaid/items` adds `provider`, `aspspCountry` and `userId` per item, and `paused` on Enable Banking items (#148: no tenant credentials and not revoked).
-- `POST /api/plaid/{resync,rotate-token,fetch-historical,sync-accounts,disconnect}` and `PATCH /api/plaid/items` answer `400 { code: 'WRONG_PROVIDER' }` for Enable Banking items, so an Enable Banking session id is never sent to Plaid. `exchange-public-token` and `webhook` look items up by Plaid's `item_id` and cannot reach `eb_` items; `items/hard-delete` stays provider-agnostic.
+- `POST /api/plaid/{create-link-token,resync,rotate-token,fetch-historical,sync-accounts,disconnect}` and `PATCH /api/plaid/items` answer `400 { code: 'WRONG_PROVIDER' }` for Enable Banking items, so an Enable Banking session id is never sent to Plaid. `exchange-public-token` and `webhook` look items up by Plaid's `item_id` and cannot reach `eb_` items; `items/hard-delete` stays provider-agnostic.
 - `PUT /api/plaid/transactions/:id`, `bulk-promote` and `confirm-seeds` promote with the provider-aware label (`bankTxLabel`): Enable Banking rows are described by their remittance text.
 - `GET /api/notifications/summary`: Enable Banking items in `LOGIN_REQUIRED` / `ERROR` produce `PLAID_ACTION_REQUIRED` ("… needs to be re-connected") **only for the authorising user**; new signal `BANK_CONSENT_EXPIRING`; admin-only `ENABLE_BANKING_CREDENTIALS_INVALID` while the tenant's credential is `INVALID` (#148) — see the [notification center spec](./14-notification-center.md).
 

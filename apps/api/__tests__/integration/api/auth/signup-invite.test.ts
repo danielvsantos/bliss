@@ -48,7 +48,7 @@ async function signup(email: string, extra: Record<string, unknown> = {}) {
   await signupHandler(
     {
       method: 'POST',
-      headers: {},
+      headers: { origin: 'http://localhost:8080' },
       cookies: {},
       query: {},
       body: {
@@ -246,7 +246,7 @@ describe('credentials sign-up in invite-only mode', () => {
     process.env.SIGNUP_MODE = 'invite_only';
     const res = makeRes();
     await signinHandler(
-      { method: 'POST', headers: {}, cookies: {}, query: {}, body: { email, password: 'password123' } } as unknown as NextApiRequest,
+      { method: 'POST', headers: { origin: 'http://localhost:8080' }, cookies: {}, query: {}, body: { email, password: 'password123' } } as unknown as NextApiRequest,
       res as unknown as NextApiResponse,
     );
     expect(res._status).toBe(200);

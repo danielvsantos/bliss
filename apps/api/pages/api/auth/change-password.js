@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { AuthService } from '../../../services/auth.service';
 import { cors } from '../../../utils/cors.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
+import { PASSWORD_MIN_LENGTH } from '../../../utils/passwordPolicy.js';
 import { withAuth } from '../../../utils/withAuth.js';
 import { requireTrustedOrigin } from '../../../utils/trustedOrigin.js';
 import { revokeAllAndRestart } from '../../../services/session.service.js';
@@ -38,8 +39,8 @@ export default withAuth(async function handler(req, res) {
     }
 
     // Validate new password length
-    if (newPassword.length < 8) {
-      res.status(StatusCodes.BAD_REQUEST).json({ error: 'New password must be at least 8 characters' });
+    if (typeof newPassword !== 'string' || newPassword.length < PASSWORD_MIN_LENGTH) {
+      res.status(StatusCodes.BAD_REQUEST).json({ error: `New password must be at least ${PASSWORD_MIN_LENGTH} characters` });
       return;
     }
 

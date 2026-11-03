@@ -144,6 +144,26 @@ export function needsRehash(storedHash) {
   return !isScryptHash(storedHash);
 }
 
+/** Bounds for a stored hash's own parameters (#78 D4). */
+const MAX_LOG2_N = 20;
+const MAX_R = 32;
+const MAX_P = 16;
+const MAX_HASH_BYTES = 64;
+
+/**
+ * True when scrypt can be run with these parameters. Everything Node would
+ * reject as invalid input is caught here, so a scrypt throw after this check
+ * is a real failure (memory, threadpool), never a malformed row.
+ */
+function validScryptParams(N, r, p) {
+  if (!Number.isInteger(N) || N < 2 || N > 2 ** MAX_LOG2_N || (N & (N - 1)) !== 0) return false;
+  if (!Number.isInteger(r) || r < 1 || r > MAX_R) return false;
+  if (!Number.isInteger(p) || p < 1 || p > MAX_P) return false;
+  // RFC 7914: N < 2^(128 * r / 8).
+  if (Math.log2(N) >= 16 * r) return false;
+  return Number.isFinite(maxmemFor(N, r));
+}
+
 /**
  * Parse a PHC-style scrypt string.
  * @returns {{ N: number, r: number, p: number, salt: Buffer, hash: Buffer }|null}
@@ -162,10 +182,11 @@ function parseScrypt(storedHash) {
     params[k] = n;
   }
   if (!params.N || !params.r || !params.p) return null;
+  if (!validScryptParams(params.N, params.r, params.p)) return null;
 
   const salt = Buffer.from(parts[3], 'base64');
   const hash = Buffer.from(parts[4], 'base64');
-  if (salt.length === 0 || hash.length === 0) return null;
+  if (salt.length === 0 || hash.length === 0 || hash.length > MAX_HASH_BYTES) return null;
 
   return { N: params.N, r: params.r, p: params.p, salt, hash };
 }
@@ -190,6 +211,10 @@ export async function verifyPassword(password, storedHash, storedSalt) {
     const parsed = parseScrypt(storedHash);
     if (!parsed) return false;
 
+    // Malformed rows were refused by parseScrypt above, so a throw here is
+    // unexpected (e.g. ERR_OUT_OF_MEMORY under memory pressure). It must not
+    // look like a wrong password (#78 R9): log it and let the caller's catch
+    // report it to Sentry and answer 500.
     try {
       const derived = await scryptAsync(password, parsed.salt, parsed.hash.length, {
         N: parsed.N,
@@ -198,10 +223,9 @@ export async function verifyPassword(password, storedHash, storedSalt) {
         maxmem: maxmemFor(parsed.N, parsed.r),
       });
       return safeEqual(derived, parsed.hash);
-    } catch {
-      // Malformed parameters (e.g. a non-power-of-two N) make scrypt throw.
-      // That is a failed verification, not a 500.
-      return false;
+    } catch (err) {
+      console.error(JSON.stringify({ event: 'password_verify_error', code: err?.code ?? null }));
+      throw err;
     }
   }
 

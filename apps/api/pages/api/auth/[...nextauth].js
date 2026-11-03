@@ -1,12 +1,11 @@
 import NextAuthImport from "next-auth";
 const NextAuth = NextAuthImport.default || NextAuthImport;
 import GoogleProviderImport from "next-auth/providers/google";
-import CredentialsProviderImport from "next-auth/providers/credentials";
 
 const GoogleProvider = GoogleProviderImport.default || GoogleProviderImport;
-const CredentialsProvider = CredentialsProviderImport.default || CredentialsProviderImport;
 import { AuthService } from '../../../services/auth.service';
 import { encode, decode } from 'next-auth/jwt';
+import { GOOGLE_EXCHANGE_WINDOW_S } from '../../../utils/googleExchange.js';
 
 // findOrCreateGoogleUser error code → `?error=` code on the auth page.
 const GOOGLE_ERROR_CODES = {
@@ -68,47 +67,15 @@ const nextAuthHandler = NextAuth({
                 };
             },
         })] : []),
-        CredentialsProvider({
-            name: 'Credentials',
-            credentials: {
-                email: { label: "Email", type: "email", placeholder: "user@example.com" },
-                password: { label: "Password", type: "password" }
-            },
-            async authorize(credentials) {
-                if (!credentials?.email || !credentials?.password) {
-                    throw new Error('Email and password are required');
-                }
-
-                const user = await AuthService.findUserByEmail(credentials.email);
-
-                // passwordSalt is null for every scrypt-format row, so only
-                // passwordHash may be required here.
-                if (!user || !user.passwordHash) {
-                    throw new Error('Invalid email or password');
-                }
-
-                // Same rehash-on-login path as pages/api/auth/signin.js. Two
-                // call sites, one implementation — a divergence here would
-                // mean NextAuth logins never upgrade their hash.
-                const isValid = await AuthService.verifyAndUpgrade(user, credentials.password);
-
-                if (!isValid) {
-                    throw new Error('Invalid email or password');
-                }
-
-                return {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    tenantId: user.tenantId,
-                };
-            }
-        })
+        // No credentials provider (#78 R1): email/password sign-in goes through
+        // the rate-limited /api/auth/signin only. NextAuth is Google glue.
     ],
     secret: process.env.NEXTAUTH_SECRET,
     session: {
         strategy: "jwt",
-        maxAge: 30 * 24 * 60 * 60, // 30 days
+        // Single-use glue (#78 R2): the cookie only has to survive the Google
+        // round-trip to /api/auth/google-token, which also enforces the window.
+        maxAge: GOOGLE_EXCHANGE_WINDOW_S,
     },
     callbacks: {
         async signIn({ user, account, profile }) {
@@ -146,6 +113,10 @@ const nextAuthHandler = NextAuth({
                 token.email = user.email;
                 token.name = user.name;
                 token.isNew = user.isNew;
+                // Immutable sign-in time (#78 R2). NextAuth re-issues `iat`
+                // on every /api/auth/session read, so google-token checks this
+                // claim instead.
+                token.signedInAt = Date.now();
             }
             return token;
         },

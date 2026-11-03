@@ -4,6 +4,8 @@ import * as Sentry from '@sentry/nextjs';
 import { AuthService } from '../../../services/auth.service';
 import { cors } from '../../../utils/cors.js';
 import { rateLimiters } from '../../../utils/rateLimit.js';
+import { requireTrustedOrigin } from '../../../utils/trustedOrigin.js';
+import { PASSWORD_MIN_LENGTH } from '../../../utils/passwordPolicy.js';
 import { DEFAULT_CATEGORIES } from '../../../lib/defaultCategories.js';
 import { startSession } from '../../../services/session.service.js';
 import { normalizeEmail } from '../../../utils/normalizeEmail.js';
@@ -35,15 +37,19 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { email, password, name, tenantName, countries, currencies, bankIds } = req.body;
+  // Login CSRF guard (#78 R7): a cross-site form POST must not create a
+  // tenant and sign the victim's browser into it.
+  if (!requireTrustedOrigin(req, res)) return;
+
+  const { email, password, name, tenantName, countries, currencies, bankIds } = req.body || {};
 
   // --- Start Validation ---
   if (!email || !password || !tenantName) {
     res.status(StatusCodes.BAD_REQUEST).json({ error: 'Email, password, and tenantName are required' });
     return;
   }
-  if (password.length < 8) {
-    res.status(StatusCodes.BAD_REQUEST).json({ error: 'Password must be at least 8 characters long' });
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+    res.status(StatusCodes.BAD_REQUEST).json({ error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
     return;
   }
   // --- End Validation ---

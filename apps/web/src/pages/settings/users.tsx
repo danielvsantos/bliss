@@ -67,6 +67,7 @@ import { Link } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import type { User, UserCreateRequest, UserUpdateRequest } from "@/types/api";
+import { PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 // Relationship type enum
 const RelationshipType = {
@@ -445,7 +446,7 @@ export default function UserManagementPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" onClick={handleAddUser} disabled={!newUser.email || !newUser.password || newUser.password.length < 6}>
+                <Button type="submit" onClick={handleAddUser} disabled={!newUser.email || !newUser.password || newUser.password.length < PASSWORD_MIN_LENGTH}>
                   <UserPlus className="mr-2 h-4 w-4" />
                   {t('userManagement.createUser')}
                 </Button>

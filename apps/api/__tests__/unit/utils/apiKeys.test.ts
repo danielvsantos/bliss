@@ -226,10 +226,13 @@ describe('touchLastUsed', () => {
 });
 
 describe('requestIp', () => {
-  it('prefers x-real-ip, then x-forwarded-for, then the socket', () => {
-    expect(requestIp({ headers: { 'x-real-ip': '1.1.1.1' } })).toBe('1.1.1.1');
-    expect(requestIp({ headers: { 'x-forwarded-for': '2.2.2.2, 3.3.3.3' } })).toBe('2.2.2.2');
+  it('uses the socket unless a trusted proxy header is configured (#78 R3)', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(requestIp({ headers: { 'x-real-ip': '1.1.1.1' }, socket: { remoteAddress: '4.4.4.4' } })).toBe('4.4.4.4');
     expect(requestIp({ headers: {}, socket: { remoteAddress: '4.4.4.4' } })).toBe('4.4.4.4');
     expect(requestIp({ headers: {} })).toBeNull();
+    vi.stubEnv('TRUST_PROXY_IP_HEADER', 'x-real-ip');
+    expect(requestIp({ headers: { 'x-real-ip': '1.1.1.1' }, socket: { remoteAddress: '4.4.4.4' } })).toBe('1.1.1.1');
+    vi.unstubAllEnvs();
   });
 });

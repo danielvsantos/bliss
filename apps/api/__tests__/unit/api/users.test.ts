@@ -105,7 +105,7 @@ describe('GET /api/users', () => {
 describe('POST /api/users (invite)', () => {
   it('returns 400 when email is missing (admin user gets past role check)', async () => {
     // The withAuth mock always injects admin. With admin user + missing email, hits 400.
-    const req = makeReq({ method: 'POST', body: { password: 'pass123' } });
+    const req = makeReq({ method: 'POST', body: { password: 'pass1234' } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
@@ -115,13 +115,23 @@ describe('POST /api/users (invite)', () => {
   });
 
   it('returns 400 for invalid email format', async () => {
-    const req = makeReq({ method: 'POST', body: { email: 'not-an-email', password: 'pass123' } });
+    const req = makeReq({ method: 'POST', body: { email: 'not-an-email', password: 'pass1234' } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
 
     expect(res._status).toBe(400);
     expect(res._body.error).toMatch(/invalid email format/i);
+  });
+
+  it('rejects a 7-character password: admin add user requires 8 like signup (#78 R10)', async () => {
+    const req = makeReq({ method: 'POST', body: { email: 'test@test.com', password: 'pass123' } });
+    const res = makeRes();
+
+    await handler(req as NextApiRequest, res as unknown as NextApiResponse);
+
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/at least 8 characters/i);
   });
 
   it('returns 400 when password is too short', async () => {
@@ -135,7 +145,7 @@ describe('POST /api/users (invite)', () => {
   });
 
   it('returns 400 for invalid role', async () => {
-    const req = makeReq({ method: 'POST', body: { email: 'test@test.com', password: 'pass123', role: 'superadmin' } });
+    const req = makeReq({ method: 'POST', body: { email: 'test@test.com', password: 'pass1234', role: 'superadmin' } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
@@ -147,7 +157,7 @@ describe('POST /api/users (invite)', () => {
   it('returns 409 when email already exists in tenant', async () => {
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'existing-user' });
 
-    const req = makeReq({ method: 'POST', body: { email: 'existing@test.com', password: 'pass123' } });
+    const req = makeReq({ method: 'POST', body: { email: 'existing@test.com', password: 'pass1234' } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);
@@ -159,7 +169,7 @@ describe('POST /api/users (invite)', () => {
     mockPrisma.user.findFirst.mockResolvedValue(null);
     mockPrisma.user.create.mockResolvedValue({ id: 'new-user', email: 'new@test.com' });
 
-    const req = makeReq({ method: 'POST', body: { email: 'new@test.com', password: 'pass123' } });
+    const req = makeReq({ method: 'POST', body: { email: 'new@test.com', password: 'pass1234' } });
     const res = makeRes();
 
     await handler(req as NextApiRequest, res as unknown as NextApiResponse);

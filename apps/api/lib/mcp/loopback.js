@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js';
+import { clientIp as resolveClientIp } from '../../utils/clientIp.js';
 
 /**
  * Loopback REST client for MCP tools (#89).
@@ -37,15 +38,13 @@ export function loopbackBaseUrl() {
   return `http://127.0.0.1:${process.env.PORT || 3000}`;
 }
 
-/** Same expression as the rate limiters' keyGenerator (utils/rateLimit.js). */
+/**
+ * The caller's IP, resolved like the rate limiters (utils/clientIp.js, #78 R3),
+ * forwarded as `x-real-ip` on loopback calls. The routes trust that header
+ * because the loopback socket is 127.0.0.1 / ::1.
+ */
 export function clientIp(req) {
-  const headers = req?.headers || {};
-  return (
-    headers['x-real-ip'] ||
-    headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-    req?.socket?.remoteAddress ||
-    '127.0.0.1'
-  );
+  return resolveClientIp(req) || '127.0.0.1';
 }
 
 /** Build a query string. Arrays repeat the key; undefined/null/'' are dropped. */
